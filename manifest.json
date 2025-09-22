@@ -1,0 +1,42 @@
+{
+  "manifest_version": 3,
+  "name": "일본어→한국어 번역기",
+  "version": "1.0",
+  "description": "Gemini API를 사용한 일본어 전용 번역 확장",
+  "permissions": [
+    "activeTab",
+    "storage",
+    "scripting",
+    "contextMenus",
+    "alarms",
+    "tabs",
+    "declarativeNetRequest"
+  ],
+  "host_permissions": [
+    "https://generativelanguage.googleapis.com/*",
+    "*://*.kakuyomu.jp/*",
+    "*://*.syosetu.com/*",
+    "<all_urls>"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "일본어 번역기"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "css": ["content.css"]
+    }
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "declarative_net_request": {
+    "rule_resources": [{
+      "id": "ruleset_1",
+      "enabled": true,
+      "path": "rules.json"
+    }]
+  }
+}
