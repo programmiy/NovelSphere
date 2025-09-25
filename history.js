@@ -426,8 +426,24 @@ async function fetchTitles(urls) {
 }
 
 function renderGroupedView(groupedByFolder, allData = {}) {
-    // If there are no regular translations but there is an error log, don't show empty state
-    if (Object.keys(groupedByFolder['폴더 없음']).length === 0 && allFolders.every(f => Object.keys(groupedByFolder[f]).length === 0)) {
+    // 1. Preserve expansion state before clearing the view
+    const expandedFolderTitles = new Set();
+    document.querySelectorAll('.history-folder-group').forEach(group => {
+        if (!group.querySelector('.folder-group-content.collapsed')) {
+            const titleEl = group.querySelector('.folder-group-title');
+            if (titleEl) expandedFolderTitles.add(titleEl.textContent);
+        }
+    });
+    const expandedUrlGroups = new Set();
+    document.querySelectorAll('.history-group').forEach(group => {
+        if (!group.querySelector('.group-item-container.collapsed')) {
+            if (group.dataset.url) expandedUrlGroups.add(group.dataset.url);
+        }
+    });
+
+    // Check for empty state
+    const hasAnyTranslations = Object.values(groupedByFolder).some(folder => Object.keys(folder).length > 0);
+    if (!hasAnyTranslations) {
         if (!document.getElementById('errorLogContainer')) {
             historyGrid.innerHTML = '';
             emptyState.style.display = 'block';
@@ -436,14 +452,13 @@ function renderGroupedView(groupedByFolder, allData = {}) {
     }
     emptyState.style.display = 'none';
     
-    // Clear only non-error-log content
-    const nonErrorGroups = historyGrid.querySelectorAll('.history-group:not(#errorLogContainer)');
-    nonErrorGroups.forEach(el => el.remove());
+    // Clear all existing folder and URL groups, but preserve the error log container
+    const groupsToRemove = historyGrid.querySelectorAll('.history-folder-group, .history-group:not(#errorLogContainer)');
+    groupsToRemove.forEach(el => el.remove());
 
     historyGrid.style.gridTemplateColumns = '1fr';
 
-    // 폴더 이름 (폴더 없음 포함)을 기준으로 정렬
-    const sortedFolderNames = [...allFolders, '폴더 없음'].filter(name => Object.keys(groupedByFolder[name]).length > 0);
+    const sortedFolderNames = [...allFolders, '폴더 없음'].filter(name => groupedByFolder[name] && Object.keys(groupedByFolder[name]).length > 0);
 
     for (const folderName of sortedFolderNames) {
         const folderGroupEl = document.createElement('div');
@@ -462,31 +477,29 @@ function renderGroupedView(groupedByFolder, allData = {}) {
 
         const folderGroupContent = folderGroupEl.querySelector('.folder-group-content');
         const folderGroupToggleBtn = folderGroupEl.querySelector('.folder-group-toggle-btn');
-        const folderSelectAllCheckbox = folderGroupEl.querySelector('.folder-select-all-checkbox'); // 새로 추가
+        const folderSelectAllCheckbox = folderGroupEl.querySelector('.folder-select-all-checkbox');
 
-        // 폴더 그룹 토글 기능 (기존과 동일)
+        // Restore folder expansion state
+        if (!expandedFolderTitles.has(folderName)) {
+            folderGroupContent.classList.add('collapsed');
+            folderGroupToggleBtn.classList.add('collapsed');
+            folderGroupToggleBtn.textContent = '▶';
+        }
+
         folderGroupToggleBtn.addEventListener('click', () => {
             folderGroupContent.classList.toggle('collapsed');
             folderGroupToggleBtn.classList.toggle('collapsed');
             folderGroupToggleBtn.textContent = folderGroupContent.classList.contains('collapsed') ? '▶' : '▼';
         });
 
-        // 폴더 전체 선택 체크박스 이벤트 리스너
         folderSelectAllCheckbox.addEventListener('change', (e) => {
             const isChecked = e.target.checked;
-            // 해당 폴더 내의 모든 URL 그룹의 체크박스를 선택/해제
-            folderGroupContent.querySelectorAll('.group-select-all-checkbox').forEach(groupCheckbox => {
-                groupCheckbox.checked = isChecked;
-                // 각 URL 그룹 내의 개별 항목 체크박스도 선택/해제
-                const group = groupCheckbox.closest('.history-group');
-                group.querySelectorAll('.item-checkbox').forEach(itemCheckbox => {
-                    itemCheckbox.checked = isChecked;
-                });
+            folderGroupContent.querySelectorAll('.item-checkbox').forEach(itemCheckbox => {
+                itemCheckbox.checked = isChecked;
             });
-            updateDeleteButtonVisibility(); // 삭제 버튼 가시성 업데이트
+            updateDeleteButtonVisibility();
         });
 
-        // 해당 폴더에 속한 URL 그룹들을 렌더링
         const urlsInFolder = Object.keys(groupedByFolder[folderName]).sort((a, b) => {
             const lastTimeA = Math.max(...groupedByFolder[folderName][a].map(t => t.timestamp || 0));
             const lastTimeB = Math.max(...groupedByFolder[folderName][b].map(t => t.timestamp || 0));
@@ -525,25 +538,28 @@ function renderGroupedView(groupedByFolder, allData = {}) {
                 <div class="group-item-container">${groupItemsHtml}</div>
             `;
 
-            // 기본 상태를 '닫힘'으로 설정
             const container = groupEl.querySelector('.group-item-container');
             const toggleBtn = groupEl.querySelector('.group-toggle-btn');
-            container.classList.add('collapsed');
-            toggleBtn.classList.add('collapsed');
-            toggleBtn.textContent = '▶';
+            
+            // Restore URL group expansion state
+            if (!expandedUrlGroups.has(url)) {
+                container.classList.add('collapsed');
+                toggleBtn.classList.add('collapsed');
+                toggleBtn.textContent = '▶';
+            }
 
             folderGroupContent.appendChild(groupEl);
         }
     }
 
-    // 폴더 할당 드롭다운 이벤트 리스너
+    // Re-delegate folder assignment dropdown listener
     historyGrid.querySelectorAll('.folder-assign-dropdown').forEach(dropdown => {
         dropdown.addEventListener('change', async (event) => {
             const urlToAssign = event.target.dataset.url;
             const newFolderName = event.target.value === '폴더 없음' ? undefined : event.target.value;
             await assignFolderToUrlTranslations(urlToAssign, newFolderName);
             showToast(`'${urlToAssign}'의 번역 기록이 폴더 '${newFolderName || '폴더 없음'}'(으)로 이동되었습니다.`);
-            loadAndRender(); // 변경 사항 반영을 위해 새로고침
+            loadAndRender();
         });
     });
 }
