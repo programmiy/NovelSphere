@@ -378,14 +378,15 @@ async function translateAllPTags() {
                 await translateChunk(subChunk, newChunkSize);
             }
         } else if (failedItems.length > 0) {
-            const item = failedItems[0];
-            console.error(`Failed to translate item ${item.id} after retries:`, item.text);
-            const errorResult = {
-                id: item.id,
-                original: item.text,
-                translated: `번역 실패: API에 의해 차단됨`
-            };
-            updateSidebarWithTranslations([errorResult]);
+            failedItems.forEach(item => {
+                console.error(`Failed to translate item ${item.id} after retries:`, item.text);
+                const errorResult = {
+                    id: item.id,
+                    original: item.text,
+                    translated: `번역 실패: API 오류`
+                };
+                updateSidebarWithTranslations([errorResult]);
+            });
         }
     }
 
