@@ -286,6 +286,23 @@ function setupEventListeners() {
         }
         updateDeleteButtonVisibility();
     });
+
+    // Add a listener for storage changes to auto-refresh the view
+    chrome.storage.onChanged.addListener((changes, namespace) => {
+        if (namespace === 'local') {
+            // Check if a translation key (http...), folder list, or error log has changed.
+            const hasDataChanges = Object.keys(changes).some(key => 
+                key.startsWith('http') || 
+                key === FOLDERS_STORAGE_KEY ||
+                key === 'error_log'
+            );
+            if (hasDataChanges) {
+                console.log('Detected changes in storage, reloading history view...');
+                showToast('새로운 번역/데이터 변경이 감지되어 목록을 새로고침합니다.', 'info');
+                loadAndRender();
+            }
+        }
+    });
 }
 
 // 개별 번역 기록에 폴더 할당 함수 (새로 추가)
