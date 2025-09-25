@@ -378,15 +378,63 @@ async function translateAllPTags() {
                 await translateChunk(subChunk, newChunkSize);
             }
         } else if (failedItems.length > 0) {
-            failedItems.forEach(item => {
-                console.error(`Failed to translate item ${item.id} after retries:`, item.text);
-                const errorResult = {
-                    id: item.id,
-                    original: item.text,
-                    translated: `번역 실패: API 오류`
-                };
-                updateSidebarWithTranslations([errorResult]);
+            for (const item of failedItems) {
+                const sentences = item.text.split('。').filter(s => s.trim().length > 0);
+                
+                // If the text can be split into multiple sentences, try the fallback.
+                if (sentences.length > 1) {
+                    await retryWithSentenceSplitting(item);
+                } else {
+                    // Cannot be split, or is a single sentence. This is a final failure.
+                    console.error(`Failed to translate item ${item.id} after retries:`, item.text);
+                    const errorResult = { id: item.id, original: item.text, translated: `번역 실패: API 오류` };
+                    updateSidebarWithTranslations([errorResult]);
+                }
+            }
+        }
+    }
+
+    async function retryWithSentenceSplitting(originalItem) {
+        logToSidebar(`문장 분할 재시도... (ID: ${originalItem.id})`, 'info');
+
+        const sentences = originalItem.text.split('。').map(s => s.trim()).filter(s => s.length > 0);
+        const subItemsForApi = sentences.map((sentence, index) => ({
+            id: `${originalItem.id}-part${index}`,
+            text: sentence + '。' // Add period back for better context
+        }));
+
+        try {
+            const response = await chrome.runtime.sendMessage({
+                action: 'batchTranslate',
+                items: subItemsForApi
             });
+
+            if (response && response.translations) {
+                const translatedSentences = response.translations.map(t => t.translated);
+                
+                if (translatedSentences.some(t => t.includes('번역 실패') || t.includes('API 오류'))) {
+                    throw new Error('Sub-sentence translation failed.');
+                }
+                
+                const combinedTranslation = translatedSentences.join(' ');
+
+                const finalResult = {
+                    id: originalItem.id,
+                    original: originalItem.text,
+                    translated: combinedTranslation
+                };
+                updateSidebarWithTranslations([finalResult]);
+                allSuccessfulResults.push(finalResult); // Add to successful results for saving
+                logToSidebar(`문장 분할 번역 성공 (ID: ${originalItem.id})`);
+
+            } else {
+                throw new Error('Malformed response from background script for split sentences.');
+            }
+
+        } catch (error) {
+            console.error(`Sentence splitting retry also failed for item ${originalItem.id}:`, error);
+            const errorResult = { id: originalItem.id, original: originalItem.text, translated: `번역 실패: 분할 재시도 실패` };
+            updateSidebarWithTranslations([errorResult]);
         }
     }
 
