@@ -9,6 +9,9 @@ let titleCache = {};
 let currentEditInfo = null;
 let currentFindReplaceUrl = null;
 
+const FOLDERS_STORAGE_KEY = 'translation_folders';
+let allFolders = []; // 모든 폴더 이름을 저장할 배열
+
 // =================================================================================
 // DOM Elements
 // =================================================================================
@@ -31,7 +34,48 @@ const openGlobalFindReplaceBtn = document.getElementById('openGlobalFindReplaceB
 document.addEventListener('DOMContentLoaded', () => {
     injectStyles();
     setupEventListeners();
-    loadAndRender();
+    // loadAndRender(); // 이 부분은 폴더 로딩 후 호출되도록 아래로 이동
+
+    const newFolderNameInput = document.getElementById('newFolderNameInput');
+    const createFolderButton = document.getElementById('createFolderButton');
+
+    // 폴더 생성 버튼 이벤트
+    if (createFolderButton) { // HTML 요소가 존재하는지 확인
+        console.log("createFolderButton 요소 찾음:", createFolderButton); // 디버깅 로그 추가
+        createFolderButton.addEventListener('click', async () => {
+            console.log("폴더 생성 버튼 클릭됨"); // 디버깅 로그 추가
+            const folderName = newFolderNameInput.value.trim();
+            console.log("입력된 폴더 이름:", folderName); // 디버깅 로그 추가
+
+            if (folderName) {
+                let folders = await loadFolders();
+                console.log("현재 폴더 목록:", folders); // 디버깅 로그 추가
+
+                if (!folders.includes(folderName)) {
+                    folders.push(folderName);
+                    await saveFolders(folders);
+                    console.log("새 폴더 저장됨:", folders); // 디버깅 로그 추가
+                    newFolderNameInput.value = ''; // 입력 필드 초기화
+                    renderFolders(); // 폴더 목록 새로고침
+                    loadAndRender(); // 번역 기록도 새로고침 (폴더 필터링 옵션 업데이트 등)
+                    showToast(`폴더 "${folderName}"가 생성되었습니다.`); // 토스트 메시지 추가
+                } else {
+                    showToast('이미 존재하는 폴더 이름입니다.', 'error');
+                }
+            } else {
+                showToast('폴더 이름을 입력해주세요.', 'error');
+            }
+        });
+    } else {
+        console.error("createFolderButton 요소를 찾을 수 없습니다."); // 디버깅 로그 추가
+    }
+
+    // 페이지 로드 시 폴더 목록도 불러와 렌더링
+    loadFolders().then(folders => {
+        allFolders = folders;
+        renderFolders();
+        loadAndRender(); // 폴더 로딩 후 번역 기록 로딩 및 렌더링
+    });
 });
 
 function injectStyles() {
@@ -74,6 +118,26 @@ function setupEventListeners() {
     deleteSelectedBtn.addEventListener('click', deleteSelectedTranslations);
     clearCacheBtn.addEventListener('click', clearTitleCache);
     openGlobalFindReplaceBtn.addEventListener('click', () => openFindReplaceModal(null));
+
+    // 폴더 필터 드롭다운 이벤트 리스너 추가
+    const folderFilterDropdown = document.getElementById('folderFilterDropdown');
+    if (folderFilterDropdown) {
+        folderFilterDropdown.addEventListener('change', () => {
+            loadAndRender(); // 필터 변경 시 번역 기록 새로고침
+        });
+    }
+
+    // 선택 항목 폴더 이동 드롭다운 이벤트 리스너 추가
+    const moveSelectedToFolderDropdown = document.getElementById('moveSelectedToFolderDropdown');
+    if (moveSelectedToFolderDropdown) {
+        moveSelectedToFolderDropdown.addEventListener('change', async (event) => {
+            const targetFolder = event.target.value;
+            if (targetFolder) { // 폴더가 선택되었을 때만 실행
+                await moveSelectedTranslationsToFolder(targetFolder === '폴더 없음' ? undefined : targetFolder);
+                event.target.value = ''; // 드롭다운 초기화
+            }
+        });
+    }
 
     const closeModal = document.getElementById('closeModal');
     const cancelEdit = document.getElementById('cancelEdit');
@@ -213,9 +277,34 @@ function setupEventListeners() {
             const group = e.target.closest('.history-group');
             const items = group.querySelectorAll('.item-checkbox');
             items.forEach(checkbox => checkbox.checked = e.target.checked);
+        } else if (e.target.classList.contains('item-folder-assign-dropdown')) { // 개별 항목 폴더 할당 드롭다운
+            const compositeKey = e.target.dataset.key;
+            const newFolderName = e.target.value === '폴더 없음' ? undefined : e.target.value;
+            assignFolderToSingleTranslation(compositeKey, newFolderName);
+            showToast(`번역 기록이 폴더 '${newFolderName || '폴더 없음'}'(으)로 이동되었습니다.`);
+            // loadAndRender(); // 변경 사항 반영을 위해 새로고침 (필요시)
         }
         updateDeleteButtonVisibility();
     });
+}
+
+// 개별 번역 기록에 폴더 할당 함수 (새로 추가)
+async function assignFolderToSingleTranslation(compositeKey, folderName) {
+    const [url, id] = compositeKey.split('|');
+    if (!url || !id) return;
+    try {
+        const result = await chrome.storage.local.get(url);
+        let translations = result[url] || [];
+        const targetIndex = translations.findIndex(t => (t.pid || t.hash) === id);
+        if (targetIndex > -1) {
+            translations[targetIndex].folderName = folderName;
+            await chrome.storage.local.set({ [url]: translations });
+            loadAndRender(); // 변경 사항 반영을 위해 새로고침
+        }
+    } catch (error) {
+        console.error('Failed to assign folder to single translation:', error);
+        showToast('개별 번역에 폴더 할당 실패했습니다.', 'error');
+    }
 }
 
 async function loadAndRender() {
@@ -230,15 +319,30 @@ async function loadAndRender() {
 
         titleCache = allData.titleCache || {};
         const flattened = [];
-        groupedTranslations = {};
+        groupedTranslations = {}; // 기존 URL 그룹화는 유지하되, 폴더 그룹화를 위해 재구성
         const urls = [];
+
+        // 폴더별로 번역 기록을 그룹화하기 위한 새로운 구조
+        const groupedByFolder = {
+            '폴더 없음': {} // 폴더에 할당되지 않은 기록들을 위한 그룹
+        };
+        allFolders.forEach(folder => {
+            groupedByFolder[folder] = {};
+        });
+
         for (const [key, value] of Object.entries(allData)) {
             if (key.startsWith('http') && Array.isArray(value)) {
                 urls.push(key);
                 const validTranslations = value.filter(t => t.pid || t.hash);
                 if (validTranslations.length > 0) {
                     validTranslations.sort((a, b) => naturalSort(a.pid || 'z', b.pid || 'z'));
-                    groupedTranslations[key] = validTranslations;
+                    
+                    // 각 번역 기록에 folderName이 있다면 해당 폴더 그룹에 추가
+                    const folderName = validTranslations[0].folderName || '폴더 없음'; // 첫 번째 항목의 폴더 이름 사용 (URL 그룹은 하나의 폴더에 속한다고 가정)
+                    if (!groupedByFolder[folderName]) {
+                        groupedByFolder[folderName] = {}; // 새 폴더가 나중에 추가될 경우 대비
+                    }
+                    groupedByFolder[folderName][key] = validTranslations;
                 }
                 validTranslations.forEach(translation => {
                     flattened.push({ url: key, ...translation, compositeKey: `${key}|${translation.pid || translation.hash}` });
@@ -247,7 +351,21 @@ async function loadAndRender() {
         }
         allTranslations = flattened.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
         await fetchTitles(urls);
-        renderGroupedView(allData);
+        
+        // 현재 선택된 폴더 필터 값 가져오기
+        const folderFilterDropdown = document.getElementById('folderFilterDropdown');
+        const selectedFolder = folderFilterDropdown ? folderFilterDropdown.value : '';
+
+        const filteredGroupedByFolder = {};
+        if (selectedFolder === '') { // "모든 폴더" 선택 시
+            Object.assign(filteredGroupedByFolder, groupedByFolder);
+        } else { // 특정 폴더 선택 시
+            if (groupedByFolder[selectedFolder]) {
+                filteredGroupedByFolder[selectedFolder] = groupedByFolder[selectedFolder];
+            }
+        }
+
+        renderGroupedView(filteredGroupedByFolder, allData); // 필터링된 groupedByFolder를 전달
         updateStats();
         updateDeleteButtonVisibility();
     } catch (error) {
@@ -276,9 +394,9 @@ async function fetchTitles(urls) {
     await chrome.storage.local.set({ titleCache });
 }
 
-function renderGroupedView(allData = {}) {
+function renderGroupedView(groupedByFolder, allData = {}) {
     // If there are no regular translations but there is an error log, don't show empty state
-    if (Object.keys(groupedTranslations).length === 0) {
+    if (Object.keys(groupedByFolder['폴더 없음']).length === 0 && allFolders.every(f => Object.keys(groupedByFolder[f]).length === 0)) {
         if (!document.getElementById('errorLogContainer')) {
             historyGrid.innerHTML = '';
             emptyState.style.display = 'block';
@@ -292,47 +410,132 @@ function renderGroupedView(allData = {}) {
     nonErrorGroups.forEach(el => el.remove());
 
     historyGrid.style.gridTemplateColumns = '1fr';
-    const sortedUrls = Object.keys(groupedTranslations).sort((a, b) => {
-        const lastTimeA = Math.max(...groupedTranslations[a].map(t => t.timestamp || 0));
-        const lastTimeB = Math.max(...groupedTranslations[b].map(t => t.timestamp || 0));
-        return lastTimeB - lastTimeA;
-    });
 
-    for (const url of sortedUrls) {
-        const translations = groupedTranslations[url];
-        const status = allData['status-' + url] || {};
-        const isApplied = status.applied;
-        const groupEl = document.createElement('div');
-        groupEl.className = 'history-group';
-        groupEl.dataset.url = url;
-        const groupItemsHtml = translations.map(t => renderItem(t, url)).join('');
-        groupEl.innerHTML = `
-            <div class="group-header">
-                <button class="group-toggle-btn">▼</button>
-                <div class="group-title-container">
-                    <div style="display: flex; align-items: center; gap: 8px;">
-                        <p class="group-title" data-url="${url}" title="${escapeHtml(urlToTitle[url] || url)}">${escapeHtml(urlToTitle[url] || url)}</p>
-                        <button class="action-btn edit-title-btn" data-url="${url}" title="제목 수정" style="padding: 2px 4px; font-size: 14px;">✏️</button>
-                    </div>
-                    <details class="group-url-details"><summary>URL</summary><p class="group-url">${escapeHtml(url)}</p></details>
-                </div>
-                <div class="group-header-actions">
-                    <button class="btn-apply ${isApplied ? 'applied' : ''}" data-url="${url}">${isApplied ? '적용 해제' : '페이지에 적용'}</button>
-                    <button class="btn-find-replace" data-url="${url}">찾아 바꾸기</button>
-                    <label class="group-select-all"><input type="checkbox" class="group-select-all-checkbox"> 전체</label>
-                </div>
+    // 폴더 이름 (폴더 없음 포함)을 기준으로 정렬
+    const sortedFolderNames = [...allFolders, '폴더 없음'].filter(name => Object.keys(groupedByFolder[name]).length > 0);
+
+    for (const folderName of sortedFolderNames) {
+        const folderGroupEl = document.createElement('div');
+        folderGroupEl.className = 'history-folder-group';
+        folderGroupEl.innerHTML = `
+            <div class="folder-group-header">
+                <button class="folder-group-toggle-btn">▼</button>
+                <h3 class="folder-group-title">${escapeHtml(folderName)}</h3>
+                <label class="folder-select-all" style="margin-left: auto;"><input type="checkbox" class="folder-select-all-checkbox"> 전체</label>
             </div>
-            <div class="group-item-container">${groupItemsHtml}</div>
+            <div class="folder-group-content">
+                <!-- URL 그룹들이 여기에 렌더링됩니다 -->
+            </div>
         `;
+        historyGrid.appendChild(folderGroupEl);
 
-        // 기본 상태를 '닫힘'으로 설정
-        const container = groupEl.querySelector('.group-item-container');
-        const toggleBtn = groupEl.querySelector('.group-toggle-btn');
-        container.classList.add('collapsed');
-        toggleBtn.classList.add('collapsed');
-        toggleBtn.textContent = '▶';
+        const folderGroupContent = folderGroupEl.querySelector('.folder-group-content');
+        const folderGroupToggleBtn = folderGroupEl.querySelector('.folder-group-toggle-btn');
+        const folderSelectAllCheckbox = folderGroupEl.querySelector('.folder-select-all-checkbox'); // 새로 추가
 
-        historyGrid.appendChild(groupEl);
+        // 폴더 그룹 토글 기능 (기존과 동일)
+        folderGroupToggleBtn.addEventListener('click', () => {
+            folderGroupContent.classList.toggle('collapsed');
+            folderGroupToggleBtn.classList.toggle('collapsed');
+            folderGroupToggleBtn.textContent = folderGroupContent.classList.contains('collapsed') ? '▶' : '▼';
+        });
+
+        // 폴더 전체 선택 체크박스 이벤트 리스너
+        folderSelectAllCheckbox.addEventListener('change', (e) => {
+            const isChecked = e.target.checked;
+            // 해당 폴더 내의 모든 URL 그룹의 체크박스를 선택/해제
+            folderGroupContent.querySelectorAll('.group-select-all-checkbox').forEach(groupCheckbox => {
+                groupCheckbox.checked = isChecked;
+                // 각 URL 그룹 내의 개별 항목 체크박스도 선택/해제
+                const group = groupCheckbox.closest('.history-group');
+                group.querySelectorAll('.item-checkbox').forEach(itemCheckbox => {
+                    itemCheckbox.checked = isChecked;
+                });
+            });
+            updateDeleteButtonVisibility(); // 삭제 버튼 가시성 업데이트
+        });
+
+        // 해당 폴더에 속한 URL 그룹들을 렌더링
+        const urlsInFolder = Object.keys(groupedByFolder[folderName]).sort((a, b) => {
+            const lastTimeA = Math.max(...groupedByFolder[folderName][a].map(t => t.timestamp || 0));
+            const lastTimeB = Math.max(...groupedByFolder[folderName][b].map(t => t.timestamp || 0));
+            return lastTimeB - lastTimeA;
+        });
+
+        for (const url of urlsInFolder) {
+            const translations = groupedByFolder[folderName][url];
+            const status = allData['status-' + url] || {};
+            const isApplied = status.applied;
+            const groupEl = document.createElement('div');
+            groupEl.className = 'history-group';
+            groupEl.dataset.url = url;
+            const groupItemsHtml = translations.map(t => renderItem(t, url)).join('');
+            groupEl.innerHTML = `
+                <div class="group-header">
+                    <button class="group-toggle-btn">▼</button>
+                    <div class="group-title-container">
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <p class="group-title" data-url="${url}" title="${escapeHtml(urlToTitle[url] || url)}">${escapeHtml(urlToTitle[url] || url)}</p>
+                            <button class="action-btn edit-title-btn" data-url="${url}" title="제목 수정" style="padding: 2px 4px; font-size: 14px;">✏️</button>
+                        </div>
+                        <details class="group-url-details"><summary>URL</summary><p class="group-url">${escapeHtml(url)}</p></details>
+                    </div>
+                    <div class="group-header-actions">
+                        <button class="btn-apply ${isApplied ? 'applied' : ''}" data-url="${url}">${isApplied ? '적용 해제' : '페이지에 적용'}</button>
+                        <button class="btn-find-replace" data-url="${url}">찾아 바꾸기</button>
+                        <label class="group-select-all"><input type="checkbox" class="group-select-all-checkbox"> 전체</label>
+                        <select class="folder-assign-dropdown" data-url="${url}">
+                            <option value="">폴더 선택</option>
+                            ${allFolders.map(f => `<option value="${escapeHtml(f)}" ${f === folderName ? 'selected' : ''}>${escapeHtml(f)}</option>`).join('')}
+                            <option value="폴더 없음" ${folderName === '폴더 없음' ? 'selected' : ''}>폴더 없음</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="group-item-container">${groupItemsHtml}</div>
+            `;
+
+            // 기본 상태를 '닫힘'으로 설정
+            const container = groupEl.querySelector('.group-item-container');
+            const toggleBtn = groupEl.querySelector('.group-toggle-btn');
+            container.classList.add('collapsed');
+            toggleBtn.classList.add('collapsed');
+            toggleBtn.textContent = '▶';
+
+            folderGroupContent.appendChild(groupEl);
+        }
+    }
+
+    // 폴더 할당 드롭다운 이벤트 리스너
+    historyGrid.querySelectorAll('.folder-assign-dropdown').forEach(dropdown => {
+        dropdown.addEventListener('change', async (event) => {
+            const urlToAssign = event.target.dataset.url;
+            const newFolderName = event.target.value === '폴더 없음' ? undefined : event.target.value;
+            await assignFolderToUrlTranslations(urlToAssign, newFolderName);
+            showToast(`'${urlToAssign}'의 번역 기록이 폴더 '${newFolderName || '폴더 없음'}'(으)로 이동되었습니다.`);
+            loadAndRender(); // 변경 사항 반영을 위해 새로고침
+        });
+    });
+}
+
+// URL의 모든 번역 기록에 폴더 할당
+async function assignFolderToUrlTranslations(url, folderName) {
+    try {
+        const result = await chrome.storage.local.get(url);
+        let translations = result[url] || [];
+        let changed = false;
+        translations = translations.map(t => {
+            if (t.folderName !== folderName) {
+                t.folderName = folderName;
+                changed = true;
+            }
+            return t;
+        });
+        if (changed) {
+            await chrome.storage.local.set({ [url]: translations });
+        }
+    } catch (error) {
+        console.error('Failed to assign folder to URL translations:', error);
+        showToast('폴더 할당에 실패했습니다.', 'error');
     }
 }
 
@@ -340,6 +543,7 @@ function renderItem(t, url) {
     const compositeKey = `${url}|${t.pid || t.hash}`;
     const date = t.timestamp ? new Date(t.timestamp) : new Date();
     const dateStr = date.toLocaleDateString('ko-KR', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    const currentFolderName = t.folderName || '폴더 없음'; // 현재 폴더 이름 가져오기
     return `
         <div class="history-item" data-key="${compositeKey}" data-pid="${t.pid || 'N/A'}">
             <div class="item-checkbox-container"><input type="checkbox" class="item-checkbox" data-key="${compositeKey}"></div>
@@ -347,6 +551,11 @@ function renderItem(t, url) {
                 <div class="item-header">
                     <div class="item-date">${dateStr}</div>
                     <div class="item-actions">
+                        <select class="item-folder-assign-dropdown" data-key="${compositeKey}">
+                            <option value="">폴더 선택</option>
+                            ${allFolders.map(f => `<option value="${escapeHtml(f)}" ${f === currentFolderName ? 'selected' : ''}>${escapeHtml(f)}</option>`).join('')}
+                            <option value="폴더 없음" ${currentFolderName === '폴더 없음' ? 'selected' : ''}>폴더 없음</option>
+                        </select>
                         <button class="action-btn edit-btn" title="수정">✏️</button>
                         <button class="action-btn copy-btn" title="복사">📋</button>
                         <button class="action-btn exclude-btn" title="번역 제외">🚫</button>
@@ -421,8 +630,7 @@ function openEditModal(compositeKey) {
 async function saveEditedTranslation() {
     if (!currentEditInfo) return;
     const { url, id } = currentEditInfo;
-    const newTranslated = document.getElementById('editTranslated').value.trim();
-    if (!newTranslated) { showToast('번역 내용을 입력하세요.', 'error'); return; }
+    const newTranslated = document.getElementById('editTranslated').value;
     try {
         const result = await chrome.storage.local.get(url);
         let translations = result[url] || [];
@@ -430,6 +638,8 @@ async function saveEditedTranslation() {
         if (targetIndex > -1) {
             translations[targetIndex].translated = newTranslated;
             translations[targetIndex].timestamp = Date.now();
+            // folderName은 수정 모달에서 변경되지 않으므로 기존 값을 유지
+            // 만약 수정 모달에서 folderName을 변경하는 UI가 있다면 여기서 업데이트 필요
             await chrome.storage.local.set({ [url]: translations });
             await loadAndRender();
             editModal.style.display = 'none';
@@ -532,14 +742,48 @@ async function executeFindReplaceHandler() {
 
 function handleSearch() {
     const query = searchBox.value.toLowerCase().trim();
-    document.querySelectorAll('.history-group').forEach(group => {
-        let hasVisibleItems = false;
-        group.querySelectorAll('.history-item').forEach(item => {
-            const isVisible = item.textContent.toLowerCase().includes(query);
-            item.classList.toggle('hidden', !isVisible);
-            if (isVisible) hasVisibleItems = true;
+    
+    // 모든 폴더 그룹을 순회
+    document.querySelectorAll('.history-folder-group').forEach(folderGroup => {
+        let hasVisibleItemsInFolder = false;
+        
+        // 폴더 이름이 검색어에 포함되는지 확인
+        const folderNameEl = folderGroup.querySelector('.folder-group-title');
+        const folderName = folderNameEl ? folderNameEl.textContent.toLowerCase() : '';
+        const folderMatchesQuery = folderName.includes(query);
+
+        // 해당 폴더 그룹 내의 모든 URL 그룹을 순회
+        folderGroup.querySelectorAll('.history-group').forEach(group => {
+            let hasVisibleItemsInGroup = false;
+            
+            // URL 그룹의 제목 또는 URL이 검색어에 포함되는지 확인
+            const groupTitleEl = group.querySelector('.group-title');
+            const groupUrlEl = group.querySelector('.group-url');
+            const groupTitle = groupTitleEl ? groupTitleEl.textContent.toLowerCase() : '';
+            const groupUrl = groupUrlEl ? groupUrlEl.textContent.toLowerCase() : '';
+            const groupMatchesQuery = groupTitle.includes(query) || groupUrl.includes(query);
+
+            // 해당 URL 그룹 내의 모든 번역 항목을 순회
+            group.querySelectorAll('.history-item').forEach(item => {
+                const isVisible = item.textContent.toLowerCase().includes(query);
+                item.classList.toggle('hidden', !isVisible);
+                if (isVisible) hasVisibleItemsInGroup = true;
+            });
+
+            // URL 그룹의 가시성 결정:
+            // 1. 그룹 내에 보이는 항목이 있거나
+            // 2. 그룹 자체의 제목/URL이 검색어와 일치하거나
+            // 3. 상위 폴더 이름이 검색어와 일치하는 경우
+            const groupShouldBeVisible = hasVisibleItemsInGroup || groupMatchesQuery || folderMatchesQuery;
+            group.classList.toggle('hidden', !groupShouldBeVisible);
+            if (groupShouldBeVisible) hasVisibleItemsInFolder = true;
         });
-        group.classList.toggle('hidden', !hasVisibleItems && !group.textContent.toLowerCase().includes(query));
+
+        // 폴더 그룹의 가시성 결정:
+        // 1. 폴더 내에 보이는 URL 그룹이 있거나
+        // 2. 폴더 이름이 검색어와 일치하는 경우
+        const folderShouldBeVisible = hasVisibleItemsInFolder || folderMatchesQuery;
+        folderGroup.classList.toggle('hidden', !folderShouldBeVisible);
     });
 }
 
@@ -599,7 +843,14 @@ function exportTranslations() {
         showToast('내보낼 번역이 없습니다.', 'error');
         return;
     }
-    const exportData = allTranslations.map(t => ({ PID: t.pid, 원문: t.original, 번역: t.translated, URL: t.url, 날짜: new Date(t.timestamp || 0).toLocaleString('ko-KR') }));
+    const exportData = allTranslations.map(t => ({
+        PID: t.pid,
+        원문: t.original,
+        번역: t.translated,
+        URL: t.url,
+        폴더: t.folderName || '폴더 없음', // 폴더 정보 추가
+        날짜: new Date(t.timestamp || 0).toLocaleString('ko-KR')
+    }));
     const dataStr = JSON.stringify(exportData, null, 2);
     const blob = new Blob([dataStr], { type: 'application/json' });
     const link = document.createElement('a');
@@ -723,4 +974,153 @@ function naturalSort(a, b) {
         }
     }
     return a.length - b.length;
+}
+
+
+
+// 선택된 번역 기록들을 지정된 폴더로 이동
+async function moveSelectedTranslationsToFolder(folderName) {
+    const checkedItems = document.querySelectorAll('.item-checkbox:checked');
+    if (checkedItems.length === 0) {
+        showToast('이동할 번역 기록을 선택해주세요.', 'info');
+        return;
+    }
+    if (!confirm(`${checkedItems.length}개의 번역 기록을 폴더 '${folderName || '폴더 없음'}'(으)로 이동하시겠습니까?`)) {
+        return;
+    }
+
+    const itemsToUpdate = {}; // { url: [id1, id2, ...], ... }
+    checkedItems.forEach(item => {
+        const [url, id] = item.dataset.key.split('|');
+        if (!itemsToUpdate[url]) itemsToUpdate[url] = [];
+        itemsToUpdate[url].push(id);
+    });
+
+    try {
+        let totalMovedCount = 0;
+        for (const url in itemsToUpdate) {
+            const idsToUpdate = new Set(itemsToUpdate[url]);
+            const result = await chrome.storage.local.get(url);
+            let translations = result[url] || [];
+            let changed = false;
+            translations = translations.map(t => {
+                if (idsToUpdate.has(t.pid || t.hash)) {
+                    if (t.folderName !== folderName) {
+                        t.folderName = folderName;
+                        changed = true;
+                        totalMovedCount++;
+                    }
+                }
+                return t;
+            });
+            if (changed) {
+                await chrome.storage.local.set({ [url]: translations });
+            }
+        }
+        await loadAndRender(); // 변경 사항 반영을 위해 새로고침
+        showToast(`${totalMovedCount}개의 번역 기록이 폴더 '${folderName || '폴더 없음'}'(으)로 이동되었습니다.`);
+    } catch (error) {
+        console.error('Failed to move selected translations:', error);
+        showToast('선택 항목 이동에 실패했습니다.', 'error');
+    }
+}
+
+// =================================================================================
+// Folder Management Functions (새로운 섹션 추가)
+// =================================================================================
+
+// 폴더 목록 불러오기
+async function loadFolders() {
+    const result = await chrome.storage.local.get(FOLDERS_STORAGE_KEY);
+    return result[FOLDERS_STORAGE_KEY] || [];
+}
+
+// 폴더 목록 저장하기
+async function saveFolders(folders) {
+    await chrome.storage.local.set({ [FOLDERS_STORAGE_KEY]: folders });
+}
+
+// 폴더 목록 렌더링
+function renderFolders() {
+    const folderListDiv = document.getElementById('folderList');
+    const folderFilterDropdown = document.getElementById('folderFilterDropdown');
+    const moveSelectedToFolderDropdown = document.getElementById('moveSelectedToFolderDropdown'); // 새로 추가
+    if (!folderListDiv || !folderFilterDropdown || !moveSelectedToFolderDropdown) return; // 요소가 없으면 리턴
+
+    folderListDiv.innerHTML = ''; // 기존 목록 지우기
+    folderFilterDropdown.innerHTML = '<option value="">모든 폴더</option>'; // 필터 드롭다운 초기화
+    moveSelectedToFolderDropdown.innerHTML = '<option value="">선택 항목 폴더에 이동</option>'; // 선택 이동 드롭다운 초기화
+
+    if (allFolders.length === 0) {
+        folderListDiv.innerHTML = '<p style="color: rgba(255, 255, 255, 0.7);">생성된 폴더가 없습니다.</p>';
+        return;
+    }
+
+    allFolders.forEach(folderName => {
+        // 폴더 목록 (folderListDiv)에 항목 추가
+        const folderItem = document.createElement('div');
+        folderItem.className = 'folder-item';
+        folderItem.innerHTML = `
+            <span>${escapeHtml(folderName)}</span>
+            <div class="folder-controls">
+                <button class="delete-folder-btn" data-folder-name="${escapeHtml(folderName)}">삭제</button>
+            </div>
+        `;
+        folderListDiv.appendChild(folderItem);
+
+        // 필터 드롭다운에 옵션 추가
+        const filterOption = document.createElement('option');
+        filterOption.value = folderName;
+        filterOption.textContent = folderName;
+        folderFilterDropdown.appendChild(filterOption);
+
+        // 선택 이동 드롭다운에 옵션 추가
+        const moveOption = document.createElement('option');
+        moveOption.value = folderName;
+        moveOption.textContent = folderName;
+        moveSelectedToFolderDropdown.appendChild(moveOption);
+    });
+
+    // 폴더 삭제 버튼 이벤트 리스너 추가 (기존과 동일)
+    folderListDiv.querySelectorAll('.delete-folder-btn').forEach(button => {
+        button.addEventListener('click', async (event) => {
+            const folderToDelete = event.target.dataset.folderName;
+            if (confirm(`정말로 폴더 "${folderToDelete}"를 삭제하시겠습니까? 이 폴더에 할당된 번역 기록은 "폴더 없음"으로 변경됩니다.`)) {
+                allFolders = allFolders.filter(name => name !== folderToDelete);
+                await saveFolders(allFolders);
+                
+                // 해당 폴더에 할당된 번역 기록의 folderName을 제거
+                await removeFolderFromTranslations(folderToDelete);
+
+                renderFolders(); // 폴더 목록 새로고침
+                loadAndRender(); // 번역 기록 새로고침
+                showToast(`폴더 "${folderToDelete}"가 삭제되었습니다.`);
+            }
+        });
+    });
+}
+
+// 번역 기록에서 폴더 정보 제거 (폴더 삭제 시 호출)
+async function removeFolderFromTranslations(folderName) {
+    const allData = await chrome.storage.local.get(null);
+    for (const url in allData) {
+        // 내부 저장소 키는 건너뛰기
+        if (url === 'apiKey' || url.startsWith('status-') || url.startsWith('excluded_sentences') || url.startsWith('error_log') || url === FOLDERS_STORAGE_KEY || url === 'titleCache') {
+            continue;
+        }
+        let translations = allData[url];
+        if (Array.isArray(translations)) {
+            let changed = false;
+            translations = translations.map(t => {
+                if (t.folderName === folderName) {
+                    delete t.folderName; // folderName 속성 제거
+                    changed = true;
+                }
+                return t;
+            });
+            if (changed) {
+                await chrome.storage.local.set({ [url]: translations });
+            }
+        }
+    }
 }

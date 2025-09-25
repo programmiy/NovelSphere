@@ -365,22 +365,281 @@
                 font-size: 2em;
             }
         }
+        .no-history { text-align: center; padding: 50px; color: #ccc; font-size: 1.2em; }
+
+        /* 폴더 관리 컨트롤 그룹 */
+        .folder-management-controls {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            flex-wrap: wrap;
+            border-right: 1px solid #e2e8f0; /* 구분선 */
+            padding-right: 15px;
+            margin-right: 15px;
+        }
+
+        /* 폴더 필터 드롭다운 */
+        #folderFilterDropdown {
+            padding: 12px 16px;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 14px;
+            background-color: white;
+            color: #333;
+            cursor: pointer;
+        }
+        #folderFilterDropdown:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        /* 폴더 그룹 스타일 */
+        .history-folder-group {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 15px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+            overflow: hidden;
+        }
+        .folder-group-header {
+            display: flex;
+            align-items: center;
+            padding: 15px 20px;
+            background: #f7fafc;
+            border-bottom: 1px solid #e2e8f0;
+            cursor: pointer;
+        }
+        .folder-group-header:hover {
+            background: #edf2f7;
+        }
+        .folder-group-toggle-btn {
+            background: none;
+            border: none;
+            font-size: 1.2em;
+            margin-right: 10px;
+            cursor: pointer;
+            transition: transform 0.2s;
+            color: #666;
+        }
+        .folder-group-toggle-btn.collapsed {
+            transform: rotate(-90deg);
+        }
+        .folder-group-title {
+            margin: 0;
+            font-size: 1.6em;
+            font-weight: 600;
+            color: #333;
+        }
+        .folder-group-content {
+            padding: 20px;
+        }
+        .folder-group-content.collapsed {
+            display: none;
+        }
+
+        /* 개별 항목 폴더 할당 드롭다운 */
+        .item-folder-assign-dropdown {
+            padding: 6px 10px;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            font-size: 12px;
+            background-color: white;
+            color: #333;
+            cursor: pointer;
+            margin-right: 5px;
+        }
+        .item-folder-assign-dropdown:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        /* 폴더 전체 선택 체크박스 */
+        .folder-select-all {
+            display: flex;
+            align-items: center;
+            font-size: 0.9em;
+            color: #666;
+            cursor: pointer;
+        }
+        .folder-select-all input[type="checkbox"] {
+            margin-right: 5px;
+            width: 16px;
+            height: 16px;
+            cursor: pointer;
+        }
+    </style>
+    <style>
+    .folder-management {
+        background-color: rgba(255, 255, 255, 0.1);
+        border-radius: 10px;
+        padding: 15px;
+        margin-bottom: 30px;
+        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    }
+    .folder-management h2 {
+        color: white;
+        font-size: 1.5em;
+        margin-top: 0;
+        margin-bottom: 15px;
+    }
+    .folder-management input[type="text"] {
+        width: calc(100% - 110px); /* 버튼 너비 고려 */
+        padding: 10px;
+        border: 1px solid rgba(255, 255, 255, 0.3);
+        border-radius: 5px;
+        background-color: rgba(255, 255, 255, 0.05);
+        color: white;
+        margin-right: 10px;
+    }
+    .folder-management input[type="text"]::placeholder {
+        color: rgba(255, 255, 255, 0.7);
+    }
+    .folder-management button {
+        width: 90px;
+        padding: 10px;
+        margin-left: 0; /* 기본 버튼 마진 제거 */
+    }
+    #folderList {
+        margin-top: 20px;
+        border-top: 1px solid rgba(255, 255, 255, 0.2);
+        padding-top: 15px;
+    }
+    .folder-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 8px 0;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        color: #e0e0e0;
+    }
+    .folder-item:last-child {
+        border-bottom: none;
+    }
+    .folder-item span {
+        font-size: 1.1em;
+    }
+    .folder-item .folder-controls button {
+        background-color: #3498db; /* 폴더 관련 버튼 색상 */
+        padding: 5px 10px;
+        font-size: 0.8em;
+        margin-left: 5px;
+    }
+    .folder-item .folder-controls button:hover {
+        background-color: #2980b9;
+    }
+    .folder-item .folder-controls .delete-folder-btn {
+        background-color: #e74c3c;
+    }
+    .folder-item .folder-controls .delete-folder-btn:hover {
+        background-color: #c0392b;
+    }
+    </style>
+    <style>
+    .folder-management {
+        background-color: rgba(255, 255, 255, 0.1);
+        border-radius: 10px;
+        padding: 15px;
+        margin-bottom: 30px;
+        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    }
+    .folder-management h2 {
+        color: white;
+        font-size: 1.5em;
+        margin-top: 0;
+        margin-bottom: 15px;
+    }
+    .folder-management input[type="text"] {
+        width: calc(100% - 110px); /* 버튼 너비 고려 */
+        padding: 10px;
+        border: 1px solid rgba(255, 255, 255, 0.3);
+        border-radius: 5px;
+        background-color: rgba(255, 255, 255, 0.05);
+        color: white;
+        margin-right: 10px;
+    }
+    .folder-management input[type="text"]::placeholder {
+        color: rgba(255, 255, 255, 0.7);
+    }
+    .folder-management button {
+        width: 90px;
+        padding: 10px;
+        margin-left: 0; /* 기본 버튼 마진 제거 */
+    }
+    #folderList {
+        margin-top: 20px;
+        border-top: 1px solid rgba(255, 255, 255, 0.2);
+        padding-top: 15px;
+    }
+    .folder-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 8px 0;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        color: #e0e0e0;
+    }
+    .folder-item:last-child {
+        border-bottom: none;
+    }
+    .folder-item span {
+        font-size: 1.1em;
+    }
+    .folder-item .folder-controls button {
+        background-color: #3498db; /* 폴더 관련 버튼 색상 */
+        padding: 5px 10px;
+        font-size: 0.8em;
+        margin-left: 5px;
+    }
+    .folder-item .folder-controls button:hover {
+        background-color: #2980b9;
+    }
+    .folder-item .folder-controls .delete-folder-btn {
+        background-color: #e74c3c;
+    }
+    .folder-item .folder-controls .delete-folder-btn:hover {
+        background-color: #c0392b;
+    }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <h1>📚 번역 기록</h1>
+    <h1>📚번역 기록📚</h1>
+
             <p>저장된 일본어 번역들을 확인하고 관리하세요</p>
         </div>
 
         <div class="controls">
             <input type="text" class="search-box" id="searchBox" placeholder="번역 내용 검색...">
+            
+            <!-- 폴더 관리 UI 시작 -->
+            <div class="folder-management-controls">
+                <input type="text" id="newFolderNameInput" placeholder="새 폴더 이름" class="search-box">
+                <button id="createFolderButton" class="btn btn-primary">폴더 생성</button>
+                <select id="folderFilterDropdown" class="search-box">
+                    <option value="">모든 폴더</option>
+                    <!-- 폴더 목록이 여기에 동적으로 추가됩니다 -->
+                </select>
+            </div>
+            <!-- 폴더 관리 UI 끝 -->
+
             <button class="btn btn-primary" id="exportBtn">📤 내보내기</button>
-            <button class="btn btn-primary" id="openGlobalFindReplaceBtn" style="background-color: #ed8936;">🔍 전체 찾아 바꾸기</button> <!-- New button -->
+            <button class="btn btn-primary" id="openGlobalFindReplaceBtn" style="background-color: #ed8936;">🔍 전체 찾아 바꾸기</button>
+ <!-- New button -->
+            
+            <!-- 선택 항목 폴더에 이동 드롭다운 추가 -->
+            <select id="moveSelectedToFolderDropdown" class="search-box" style="min-width: 150px;">
+                <option value="">선택 항목 폴더에 이동</option>
+                <!-- 폴더 목록이 여기에 동적으로 추가됩니다 -->
+            </select>
+
             <button class="btn btn-danger" id="deleteSelectedBtn" style="background-color: #dd6b20; display: none;">🗑️ 선택 삭제</button>
             <button class="btn btn-danger" id="clearAllBtn">🗑️ 전체 삭제</button>
             <button id="clearCacheBtn" class="btn" style="background: #ed8936; margin-left: auto;">🔄 제목 캐시 초기화</button>
+        </div>
+
+        <div id="folderList" style="display: none;">
+            <!-- 폴더 목록이 여기에 동적으로 추가됩니다 (필터링 드롭다운과 별개로) -->
         </div>
 
         <div class="stats" id="stats">

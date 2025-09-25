@@ -221,15 +221,27 @@ async function saveSingleTranslation(pid, original, translated) {
     const url = window.location.href;
     try {
         let translations = await loadTranslationsForUrl() || [];
-        const existingIndex = translations.findIndex(t => t.pid === pid);
+        
+        // pid와 original을 모두 사용하여 더 정확하게 항목을 찾습니다.
+        const existingIndex = translations.findIndex(t => t.pid === pid && t.original === original);
         
         if (existingIndex > -1) {
-            translations[existingIndex].original = original;
+            // 기존 항목 업데이트
             translations[existingIndex].translated = translated;
             translations[existingIndex].timestamp = Date.now();
         } else {
-            translations.push({ pid, original, translated, timestamp: Date.now() });
+            // 새 항목 추가
+            const newTranslation = {
+                pid: pid,
+                original: original,
+                translated: translated,
+                timestamp: Date.now(),
+                // pid가 없는 경우를 대비하여 해시값 생성
+                hash: pid ? null : hashCode(original) 
+            };
+            translations.push(newTranslation);
         }
+        
         await chrome.storage.local.set({ [url]: translations });
     } catch (error) {
         console.error("Error saving translation:", error);
@@ -449,20 +461,16 @@ function updateSidebarWithTranslations(translations) {
 
             const translatedCell = row.querySelector('.translated-text');
             
-            // 번역 실패 혹은 번역 결과가 원문과 동일한 경우를 에러로 처리
             const isError = item.translated.includes('번역 실패');
 
             if (isError) {
-                translatedCell.style.color = 'red';
-                if (item.translated.trim() === item.original.trim()) {
-                    item.translated = '번역 실패: 원문과 동일';
-                }
+                item.translated = ''; // 번역 실패 시 빈 문자열로 설정
             }
             
-            translatedCell.innerHTML = escapeHtml(item.translated || '번역 실패');
+            translatedCell.innerHTML = escapeHtml(item.translated);
             translatedCell.setAttribute('contenteditable', 'true');
             const saveBtn = row.querySelector('.save-btn');
-            saveBtn.disabled = isError;
+            saveBtn.disabled = false; // 항상 저장 버튼 활성화
         }
     });
 }
