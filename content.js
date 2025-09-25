@@ -330,7 +330,7 @@ async function translateAllPTags() {
     logToSidebar(`총 ${textsToTranslate.length}개의 문장 번역을 시작합니다 (적응형 묶음 방식).`);
     addPlaceholderRows(textsToTranslate);
 
-    const allSuccessfulResults = [];
+    const allFinishedResults = [];
     
     async function translateChunk(items, chunkSize) {
         if (isTranslationCancelled) return;
@@ -344,12 +344,12 @@ async function translateAllPTags() {
             if (isTranslationCancelled) return;
 
             if (response && response.translations) {
-                const successes = response.translations.filter(t => !t.translated.includes('번역 실패'));
-                const failures = response.translations.filter(t => t.translated.includes('번역 실패'));
+                const successes = response.translations.filter(t => !t.translated.includes('번역 실패') && !t.translated.includes('API 오류'));
+                const failures = response.translations.filter(t => t.translated.includes('번역 실패') || t.translated.includes('API 오류'));
 
                 if (successes.length > 0) {
                     updateSidebarWithTranslations(successes);
-                    allSuccessfulResults.push(...successes);
+                    allFinishedResults.push(...successes);
                 }
 
                 if (failures.length > 0) {
@@ -387,8 +387,11 @@ async function translateAllPTags() {
                 } else {
                     // Cannot be split, or is a single sentence. This is a final failure.
                     console.error(`Failed to translate item ${item.id} after retries:`, item.text);
-                    const errorResult = { id: item.id, original: item.text, translated: `번역 실패: API 오류` };
-                    updateSidebarWithTranslations([errorResult]);
+                    const errorResultForUI = { id: item.id, original: item.text, translated: `번역 실패: API 오류` };
+                    updateSidebarWithTranslations([errorResultForUI]);
+
+                    const resultForStorage = { id: item.id, original: item.text, translated: '' };
+                    allFinishedResults.push(resultForStorage);
                 }
             }
         }
@@ -424,7 +427,7 @@ async function translateAllPTags() {
                     translated: combinedTranslation
                 };
                 updateSidebarWithTranslations([finalResult]);
-                allSuccessfulResults.push(finalResult); // Add to successful results for saving
+                allFinishedResults.push(finalResult);
                 logToSidebar(`문장 분할 번역 성공 (ID: ${originalItem.id})`);
 
             } else {
@@ -433,8 +436,11 @@ async function translateAllPTags() {
 
         } catch (error) {
             console.error(`Sentence splitting retry also failed for item ${originalItem.id}:`, error);
-            const errorResult = { id: originalItem.id, original: originalItem.text, translated: `번역 실패: 분할 재시도 실패` };
-            updateSidebarWithTranslations([errorResult]);
+            const errorResultForUI = { id: originalItem.id, original: originalItem.text, translated: `번역 실패: 분할 재시도 실패` };
+            updateSidebarWithTranslations([errorResultForUI]);
+
+            const resultForStorage = { id: originalItem.id, original: originalItem.text, translated: '' };
+            allFinishedResults.push(resultForStorage);
         }
     }
 
@@ -462,8 +468,8 @@ async function translateAllPTags() {
 
     // Finalize
     document.getElementById('stop-translation-btn').style.display = 'none';
-    if (allSuccessfulResults.length > 0) {
-        await saveAllTranslations(allSuccessfulResults);
+    if (allFinishedResults.length > 0) {
+        await saveAllTranslations(allFinishedResults);
     }
     sortSidebar();
     logToSidebar("모든 번역 작업이 완료되었습니다.");
