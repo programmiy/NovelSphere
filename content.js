@@ -461,17 +461,32 @@ function updateSidebarWithTranslations(translations) {
             originalCell.innerHTML = escapeHtml(item.original);
 
             const translatedCell = row.querySelector('.translated-text');
+            const saveBtn = row.querySelector('.save-btn');
             
-            const isError = item.translated.includes('번역 실패');
+            const isError = item.translated.includes('번역 실패') || item.translated.includes('API 오류');
 
             if (isError) {
-                item.translated = ''; // 번역 실패 시 빈 문자열로 설정
+                translatedCell.innerHTML = escapeHtml(item.translated);
+                translatedCell.setAttribute('contenteditable', 'false');
+                translatedCell.style.color = 'red';
+                saveBtn.disabled = true;
+            } else {
+                translatedCell.innerHTML = escapeHtml(item.translated);
+                translatedCell.setAttribute('contenteditable', 'true');
+                translatedCell.style.color = ''; // Reset color
+                saveBtn.disabled = false;
+
+                // Clone and replace the button to remove any old listeners and attach a new one
+                const newSaveBtn = saveBtn.cloneNode(true);
+                saveBtn.parentNode.replaceChild(newSaveBtn, saveBtn);
+
+                newSaveBtn.addEventListener('click', async () => {
+                    const editedText = translatedCell.textContent.trim();
+                    await saveSingleTranslation(item.id, item.original, editedText);
+                    newSaveBtn.textContent = '저장됨!';
+                    setTimeout(() => { newSaveBtn.textContent = '저장'; }, 1500);
+                });
             }
-            
-            translatedCell.innerHTML = escapeHtml(item.translated);
-            translatedCell.setAttribute('contenteditable', 'true');
-            const saveBtn = row.querySelector('.save-btn');
-            saveBtn.disabled = false; // 항상 저장 버튼 활성화
         }
     });
 }
