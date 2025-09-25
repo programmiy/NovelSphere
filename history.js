@@ -298,9 +298,18 @@ function setupEventListeners() {
             );
             if (hasDataChanges) {
                 console.log('Detected changes in storage, reloading history view...');
-                showToast('새로운 번역/데이터 변경이 감지되어 목록을 새로고침합니다.', 'info');
+                showToast('데이터 변경이 감지되어 목록을 새로고침합니다.', 'info');
                 loadAndRender();
             }
+        }
+    });
+
+    // Add listener to refresh data when tab becomes visible
+    document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "visible") {
+            console.log("Tab is visible, refreshing data.");
+            showToast('탭이 활성화되어 데이터를 새로고침합니다.', 'info');
+            loadAndRender();
         }
     });
 }
@@ -336,36 +345,41 @@ async function loadAndRender() {
 
         titleCache = allData.titleCache || {};
         const flattened = [];
-        groupedTranslations = {}; // 기존 URL 그룹화는 유지하되, 폴더 그룹화를 위해 재구성
         const urls = [];
 
-        // 폴더별로 번역 기록을 그룹화하기 위한 새로운 구조
-        const groupedByFolder = {
-            '폴더 없음': {} // 폴더에 할당되지 않은 기록들을 위한 그룹
-        };
-        allFolders.forEach(folder => {
-            groupedByFolder[folder] = {};
-        });
+        // New, correct grouping logic
+        const groupedByFolder = {};
+        allFolders.forEach(folder => { groupedByFolder[folder] = {}; });
+        groupedByFolder['폴더 없음'] = {};
 
         for (const [key, value] of Object.entries(allData)) {
             if (key.startsWith('http') && Array.isArray(value)) {
                 urls.push(key);
                 const validTranslations = value.filter(t => t.pid || t.hash);
-                if (validTranslations.length > 0) {
-                    validTranslations.sort((a, b) => naturalSort(a.pid || 'z', b.pid || 'z'));
-                    
-                    // 각 번역 기록에 folderName이 있다면 해당 폴더 그룹에 추가
-                    const folderName = validTranslations[0].folderName || '폴더 없음'; // 첫 번째 항목의 폴더 이름 사용 (URL 그룹은 하나의 폴더에 속한다고 가정)
-                    if (!groupedByFolder[folderName]) {
-                        groupedByFolder[folderName] = {}; // 새 폴더가 나중에 추가될 경우 대비
-                    }
-                    groupedByFolder[folderName][key] = validTranslations;
-                }
+
                 validTranslations.forEach(translation => {
+                    const folderName = translation.folderName || '폴더 없음';
+                    if (!groupedByFolder[folderName]) {
+                        groupedByFolder[folderName] = {}; // Safety for new folders created elsewhere
+                    }
+                    if (!groupedByFolder[folderName][key]) {
+                        groupedByFolder[folderName][key] = [];
+                    }
+                    groupedByFolder[folderName][key].push(translation);
+
+                    // also populate flattened array for stats
                     flattened.push({ url: key, ...translation, compositeKey: `${key}|${translation.pid || translation.hash}` });
                 });
             }
         }
+
+        // Sort items within each URL group
+        for (const folder in groupedByFolder) {
+            for (const url in groupedByFolder[folder]) {
+                groupedByFolder[folder][url].sort((a, b) => naturalSort(a.pid || 'z', b.pid || 'z'));
+            }
+        }
+
         allTranslations = flattened.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
         await fetchTitles(urls);
         
