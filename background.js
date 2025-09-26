@@ -83,7 +83,7 @@ async function handleBatchTranslate(items) {
     const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
     
     const texts = items.map(item => item.text);
-    const prompt = `You are a translation API. Translate the following Japanese texts into Korean. Return a single valid JSON array of strings. The output array must contain the translation for each input text in the same order. Do not include any other text or explanations.`;
+    const prompt = `You are a translation API. Translate the following Japanese texts into Korean. Return a single valid JSON array of strings. The output array must contain the translation for each input text in the same order. Do not include any other text or explanations. For dialogues enclosed in 「」, please translate them while keeping the 「」 symbols. For example, 「おはよう」 should be translated as 「안녕」.`;
     const textsToTranslate = items.map(item => item.text);
 
     const MAX_RETRIES = 3;
