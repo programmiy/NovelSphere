@@ -1,3 +1,58 @@
+
+// =================================================================================
+// One-time migration script for quote style
+// =================================================================================
+async function migrateQuotes() {
+    const migrationStatus = await chrome.storage.local.get('quote_migration_v1');
+    if (migrationStatus.quote_migration_v1) {
+        // Migration has already been performed.
+        return;
+    }
+
+    const allData = await chrome.storage.local.get(null);
+    let updatedCount = 0;
+    let urlsUpdated = new Set();
+
+    for (const key in allData) {
+        // Skip non-translation data
+        if (key.startsWith('status-') || key === 'apiKey' || key === 'error_log' || key === 'excluded_sentences' || key === 'quote_migration_v1') {
+            continue;
+        }
+
+        const translations = allData[key];
+        if (Array.isArray(translations)) {
+            let wasUpdated = false;
+            const updatedTranslations = translations.map(t => {
+                // Check if original has Japanese quotes and translated has standard quotes
+                if (t.original && t.translated && t.original.includes('「') && t.original.includes('」') && t.translated.startsWith('"') && t.translated.endsWith('"')) {
+                    // Replace standard quotes with Japanese quotes
+                    t.translated = `「${t.translated.substring(1, t.translated.length - 1)}」`;
+                    updatedCount++;
+                    wasUpdated = true;
+                }
+                return t;
+            });
+
+            if (wasUpdated) {
+                await chrome.storage.local.set({ [key]: updatedTranslations });
+                urlsUpdated.add(key);
+            }
+        }
+    }
+
+    if (updatedCount > 0) {
+        console.log(`Quote migration complete. Updated ${updatedCount} translations across ${urlsUpdated.size} URLs.`);
+    } else {
+        console.log("No translations found that required quote migration.");
+    }
+
+    // Set flag to prevent running the migration again
+    await chrome.storage.local.set({ 'quote_migration_v1': true });
+}
+
+// Run the migration script when the extension starts
+migrateQuotes();
+// =================================================================================
 // DEBUG: Check for granted permissions
 chrome.permissions.getAll(permissions => {
   console.log("Permissions granted to the extension:", permissions);
