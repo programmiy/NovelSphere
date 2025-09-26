@@ -3,8 +3,8 @@
 // One-time migration script for quote style
 // =================================================================================
 async function migrateQuotes() {
-    const migrationStatus = await chrome.storage.local.get('quote_migration_v1');
-    if (migrationStatus.quote_migration_v1) {
+    const migrationStatus = await chrome.storage.local.get('quote_migration_v2');
+    if (migrationStatus.quote_migration_v2) {
         // Migration has already been performed.
         return;
     }
@@ -15,7 +15,7 @@ async function migrateQuotes() {
 
     for (const key in allData) {
         // Skip non-translation data
-        if (key.startsWith('status-') || key === 'apiKey' || key === 'error_log' || key === 'excluded_sentences' || key === 'quote_migration_v1') {
+        if (key.startsWith('status-') || key === 'apiKey' || key === 'error_log' || key === 'excluded_sentences' || key.startsWith('quote_migration_')) {
             continue;
         }
 
@@ -23,12 +23,17 @@ async function migrateQuotes() {
         if (Array.isArray(translations)) {
             let wasUpdated = false;
             const updatedTranslations = translations.map(t => {
-                // Check if original has Japanese quotes and translated has standard quotes
-                if (t.original && t.translated && t.original.includes('「') && t.original.includes('」') && t.translated.startsWith('"') && t.translated.endsWith('"')) {
-                    // Replace standard quotes with Japanese quotes
-                    t.translated = `「${t.translated.substring(1, t.translated.length - 1)}」`;
-                    updatedCount++;
-                    wasUpdated = true;
+                if (t.original && t.translated && t.translated.startsWith('"') && t.translated.endsWith('"')) {
+                    const innerText = t.translated.substring(1, t.translated.length - 1);
+                    if (t.original.includes('「') && t.original.includes('」')) {
+                        t.translated = `「${innerText}」`;
+                        updatedCount++;
+                        wasUpdated = true;
+                    } else if (t.original.includes('『') && t.original.includes('』')) {
+                        t.translated = `『${innerText}』`;
+                        updatedCount++;
+                        wasUpdated = true;
+                    }
                 }
                 return t;
             });
@@ -41,18 +46,18 @@ async function migrateQuotes() {
     }
 
     if (updatedCount > 0) {
-        console.log(`Quote migration complete. Updated ${updatedCount} translations across ${urlsUpdated.size} URLs.`);
+        console.log(`Quote migration v2 complete. Updated ${updatedCount} translations across ${urlsUpdated.size} URLs.`);
     } else {
-        console.log("No translations found that required quote migration.");
+        console.log("No translations found that required quote migration v2.");
     }
 
     // Set flag to prevent running the migration again
-    await chrome.storage.local.set({ 'quote_migration_v1': true });
+    await chrome.storage.local.set({ 'quote_migration_v2': true });
 }
 
 // Run the migration script when the extension starts
 migrateQuotes();
-// =================================================================================
+// ==================================================================================
 // DEBUG: Check for granted permissions
 chrome.permissions.getAll(permissions => {
   console.log("Permissions granted to the extension:", permissions);
@@ -138,7 +143,7 @@ async function handleBatchTranslate(items) {
     const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
     
     const texts = items.map(item => item.text);
-    const prompt = `You are a translation API. Translate the following Japanese texts into Korean. Return a single valid JSON array of strings. The output array must contain the translation for each input text in the same order. Do not include any other text or explanations. For dialogues enclosed in 「」, please translate them while keeping the 「」 symbols. For example, 「おはよう」 should be translated as 「안녕」.`;
+    const prompt = `You are a translation API. Translate the following Japanese texts into Korean. Return a single valid JSON array of strings. The output array must contain the translation for each input text in the same order. Do not include any other text or explanations. Preserve the original quotation marks (「」 and 『』) in the translation. For example, 「おはよう」 should be translated as 「안녕」, and 『何をですか？』 should be translated as 『무엇을요?』.`;
     const textsToTranslate = items.map(item => item.text);
 
     const MAX_RETRIES = 3;
