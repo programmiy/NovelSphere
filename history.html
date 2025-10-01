@@ -48,7 +48,25 @@
         .main-header { text-align: center; margin-bottom: 32px; }
         .main-header h1 { font-size: 28px; font-weight: 700; }
         .main-header p { font-size: 16px; color: var(--text-secondary); margin-top: 4px; }
-        .controls-bar { background: var(--card-bg); padding: 16px; border-radius: var(--border-radius); margin-bottom: 24px; box-shadow: var(--shadow); border: 1px solid var(--border-color); display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+
+        .master-controls {
+            background: var(--card-bg);
+            padding: 16px;
+            border-radius: var(--border-radius);
+            margin-bottom: 24px;
+            box-shadow: var(--shadow);
+            border: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 16px;
+        }
+        .control-bar-wrapper { flex: 2; display: flex; flex-wrap: wrap; gap: 12px; align-items: center; min-width: 400px; }
+        .folder-management-wrapper { flex: 1; display: flex; gap: 12px; padding-left: 16px; border-left: 1px solid var(--border-color); min-width: 250px;}
+        .stats-wrapper { flex: 1; display: flex; justify-content: space-around; gap: 16px; padding-left: 16px; border-left: 1px solid var(--border-color); min-width: 300px;}
+
+
+
         .control-group { display: flex; gap: 8px; align-items: center; }
         .control-group.right { margin-left: auto; }
         .form-input, .form-select { padding: 8px 12px; border: 1px solid var(--border-color); border-radius: 6px; font-size: 14px; background-color: var(--card-bg); transition: border-color 0.2s, box-shadow 0.2s; z-index: 10; position: relative; }
@@ -187,8 +205,8 @@
         #bulk-actions .form-select { background-color: rgba(255,255,255,0.2); border-color: rgba(255,255,255,0.3); color: white; }
         #bulk-actions .btn-danger { background-color: #c92a2a; border-color: #c92a2a; }
 
-        /* Folder Management Controls */
-        .folder-management-controls { background: var(--card-bg); padding: 16px; border-radius: var(--border-radius); margin-bottom: 24px; box-shadow: var(--shadow); border: 1px solid var(--border-color); display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+
+
         #folderList { background: var(--card-bg); padding: 16px; border-radius: var(--border-radius); margin-bottom: 24px; box-shadow: var(--shadow); border: 1px solid var(--border-color); }
         .folder-item { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border-color); }
         .folder-item:last-child { border-bottom: none; }
@@ -212,8 +230,7 @@
         .error-log-item a:hover { text-decoration: underline; }
         .error-log-item ul { background: #fff5f5; border: 1px solid #fecaca; border-radius: 4px; padding: 10px 10px 10px 30px; font-size: 12px; margin-top: 0; }
 
-        /* Stats */
-        .stats-bar { background: var(--group-header-bg); padding: 16px; border-radius: var(--border-radius); margin-bottom: 24px; box-shadow: var(--shadow); border: 1px solid var(--border-color); display: flex; justify-content: space-around; align-items: center; flex-wrap: wrap; gap: 16px; }
+
         .stat-item { display: flex; flex-direction: column; align-items: center; gap: 4px; }
         .stat-number { font-size: 24px; font-weight: 700; color: var(--primary-color); }
         .stat-label { font-size: 12px; color: var(--text-secondary); margin-top: 4px; }
@@ -241,55 +258,55 @@
 
         <div id="status-message" style="position: absolute; top: 24px; right: 24px; background-color: var(--primary-color); color: white; padding: 8px 16px; border-radius: 6px; font-size: 14px; display: none; z-index: 100;"></div>
 
-        <div class="controls-bar">
-            <div class="control-group">
-                <input type="text" class="form-input search-box" id="searchBox" placeholder="검색...">
-                <select id="folderFilterDropdown" class="form-select">
-                    <option value="">모든 폴더</option>
-                </select>
-                <button id="openGlobalFindReplaceBtn" class="btn btn-outline">🔍 전체 찾아 바꾸기</button>
+        <div class="master-controls">
+            <div class="control-bar-wrapper">
+                <div class="control-group">
+                    <input type="text" class="form-input search-box" id="searchBox" placeholder="검색...">
+                    <select id="folderFilterDropdown" class="form-select">
+                        <option value="">모든 폴더</option>
+                    </select>
+                    <button id="openGlobalFindReplaceBtn" class="btn btn-outline">🔍 전체 찾아 바꾸기</button>
+                </div>
+                <div class="control-group right">
+                    <button class="btn btn-primary" id="exportPdfBtn">PDF로 내보내기</button>
+                    <button class="btn btn-outline" id="exportJsonBtn">JSON으로 내보내기</button>
+                    <button class="btn btn-outline" id="clearCacheBtn">🔄 제목 캐시 초기화</button>
+                    <button class="btn btn-outline" id="darkModeToggle">
+                        <span class="material-icons">dark_mode</span>
+                    </button>
+                    <button class="btn btn-danger" id="clearAllBtn">전체 삭제</button>
+                </div>
             </div>
-            <div class="control-group right">
-                <button class="btn btn-primary" id="exportPdfBtn">PDF로 내보내기</button>
-                <button class="btn btn-outline" id="exportJsonBtn">JSON으로 내보내기</button>
-                <button class="btn btn-outline" id="clearCacheBtn">🔄 제목 캐시 초기화</button>
-                <button class="btn btn-outline" id="darkModeToggle">
-                    <span class="material-icons">dark_mode</span>
-                </button>
-                <button class="btn btn-danger" id="clearAllBtn">전체 삭제</button>
+            <div class="folder-management-wrapper">
+                 <input type="text" id="newFolderNameInput" placeholder="새 폴더 이름" class="form-input" style="flex: 1; min-width: 150px;">
+                 <button id="createFolderButton" class="btn btn-primary">폴더 생성</button>
             </div>
-            <div class="control-group" id="bulk-actions" style="display: none; width: 100%; background-color: var(--primary-color); color: white; padding: 12px 16px; border-radius: 8px; margin-top: 16px; align-items: center; justify-content: space-between;">
-                   <span id="selection-count" style="font-weight: 500;"></span>
-                   <div style="display: flex; gap: 10px; align-items: center;">
-                                           <select id="moveSelectedToFolderDropdown" class="form-select" style="min-width: 150px; background-color: rgba(255,255,255,0.2); border-color: rgba(255,255,255,0.3); color: white;" disabled>
-                                               <option value="">폴더로 이동...</option>
-                                           </select>
-                                           <button class="btn btn-danger" id="deleteSelectedBtn" style="background-color: #c92a2a; border-color: #c92a2a;" disabled>선택 삭제</button>                                     </div>
-               </div>
+            <div class="stats-wrapper">
+                <div class="stat-item">
+                    <div class="stat-number" id="totalCount">0</div>
+                    <div class="stat-label">총 번역</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-number" id="todayCount">0</div>
+                    <div class="stat-label">오늘 번역</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-number" id="avgLength">0</div>
+                    <div class="stat-label">평균 길이</div>
+                </div>
+            </div>
+        </div>
 
-        <div class="folder-management-controls" style="background: var(--card-bg); padding: 16px; border-radius: var(--border-radius); margin-bottom: 24px; box-shadow: var(--shadow); border: 1px solid var(--border-color); display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
-            <input type="text" id="newFolderNameInput" placeholder="새 폴더 이름" class="form-input search-box" style="flex: 1; min-width: 200px;">
-            <button id="createFolderButton" class="btn btn-primary">폴더 생성</button>
+        <div class="control-group" id="bulk-actions" style="display: none; width: 100%; background-color: var(--primary-color); color: white; padding: 12px 16px; border-radius: 8px; margin-top: 16px; align-items: center; justify-content: space-between;">
+               <span id="selection-count" style="font-weight: 500;"></span>
+               <div style="display: flex; gap: 10px; align-items: center;">
+                                       <select id="moveSelectedToFolderDropdown" class="form-select" style="min-width: 150px; background-color: rgba(255,255,255,0.2); border-color: rgba(255,255,255,0.3); color: white;" disabled>
+                                           <option value="">폴더로 이동...</option>
+                                       </select>
+                                       <button class="btn btn-danger" id="deleteSelectedBtn" style="background-color: #c92a2a; border-color: #c92a2a;" disabled>선택 삭제</button>                                     </div>
         </div>
 
         <div id="folderList" style="display: none; background: var(--card-bg); padding: 16px; border-radius: var(--border-radius); margin-bottom: 24px; box-shadow: var(--shadow); border: 1px solid var(--border-color);">
-            <!-- 폴더 목록이 여기에 동적으로 추가됩니다 -->
-        </div>
-
-        <div class="stats-bar" id="stats">
-            <div class="stat-item">
-                <div class="stat-number" id="totalCount">0</div>
-                <div class="stat-label">총 번역</div>
-            </div>
-            <div class="stat-item">
-                <div class="stat-number" id="todayCount">0</div>
-                <div class="stat-label">오늘 번역</div>
-            </div>
-            <div class="stat-item">
-                <div class="stat-number" id="avgLength">0</div>
-                <div class="stat-label">평균 길이</div>
-            </div>
-        </div>
 
         <div id="history-container">
             <div id="loading-skeleton" style="display: none;">
