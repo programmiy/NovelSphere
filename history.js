@@ -490,6 +490,14 @@ function updateStats() {
     document.getElementById('avgLength').textContent = allTranslations.length > 0 ? Math.round(allTranslations.reduce((sum, t) => sum + (t.original || '').length, 0) / allTranslations.length) : 0;
 }
 
+function updateStats() {
+    document.getElementById('totalCount').textContent = allTranslations.length;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    document.getElementById('todayCount').textContent = allTranslations.filter(t => t.timestamp && new Date(t.timestamp) >= today).length;
+    document.getElementById('avgLength').textContent = allTranslations.length > 0 ? Math.round(allTranslations.reduce((sum, t) => sum + (t.original || '').length, 0) / allTranslations.length) : 0;
+}
+
 function updateBulkActionPanel() {
     const checkedItems = document.querySelectorAll('.item-checkbox:checked');
     const panel = document.getElementById('bulk-actions');
