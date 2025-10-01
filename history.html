@@ -3,698 +3,349 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>번역 기록 - 일본어 번역기</title>
+    <title>번역 기록 - UI 개선</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
     <style>
+        /* --- NEW UI/UX STYLES --- */
+        :root {
+            --font-primary: 'Noto Sans KR', sans-serif;
+            --bg-color: #f8f9fa;
+            --header-bg: #ffffff;
+            --text-color: #212529;
+            --text-secondary: #495057;
+            --primary-color: #4C6EF5;
+            --secondary-color: #20c997;
+            --danger-color: #fa5252;
+            --warning-color: #fab005;
+            --border-color: #dee2e6;
+            --card-bg: #ffffff;
+            --shadow: 0 4px 15px rgba(0, 0, 0, 0.06);
+            --border-radius: 8px;
+        }
+
+        /* --- Base & Reset --- */
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
         }
-
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            color: #333;
-        }
-
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 20px;
-        }
-
-        .header {
-            text-align: center;
-            color: white;
-            margin-bottom: 30px;
-        }
-
-        .header h1 {
-            font-size: 2.5em;
-            margin-bottom: 10px;
-            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
-        }
-
-        .header p {
-            font-size: 1.1em;
-            opacity: 0.9;
-        }
-
-        .controls {
-            background: rgba(255, 255, 255, 0.95);
-            padding: 20px;
-            border-radius: 15px;
-            margin-bottom: 20px;
-            backdrop-filter: blur(10px);
-            display: flex;
-            gap: 15px;
-            align-items: center;
-            flex-wrap: wrap;
-        }
-
-        .search-box {
-            flex: 1;
-            min-width: 200px;
-            padding: 12px 16px;
-            border: 2px solid #e2e8f0;
-            border-radius: 8px;
+            font-family: var(--font-primary);
+            background-color: var(--bg-color);
+            color: var(--text-color);
             font-size: 14px;
-            transition: border-color 0.2s;
+            line-height: 1.6;
         }
-
-        .search-box:focus {
-            outline: none;
-            border-color: #667eea;
-        }
-
-        .btn {
-            padding: 12px 20px;
-            border: none;
-            border-radius: 8px;
-            font-size: 14px;
-            font-weight: 500;
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-
-        .btn-primary {
-            background: #667eea;
-            color: white;
-        }
-
-        .btn-primary:hover {
-            background: #5a67d8;
-            transform: translateY(-1px);
-        }
-
-        .btn-danger {
-            background: #e53e3e;
-            color: white;
-        }
-
-        .btn-danger:hover {
-            background: #c53030;
-            transform: translateY(-1px);
-        }
-
-        .stats {
-            background: rgba(255, 255, 255, 0.95);
-            padding: 15px 20px;
-            border-radius: 15px;
-            margin-bottom: 20px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            backdrop-filter: blur(10px);
-        }
-
-        .stat-item {
-            text-align: center;
-        }
-
-        .stat-number {
-            font-size: 1.8em;
-            font-weight: 600;
-            color: #667eea;
-        }
-
-        .stat-label {
-            font-size: 0.9em;
-            color: #666;
-            margin-top: 5px;
-        }
-
-        .history-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
-            gap: 20px;
-        }
-
-        .history-item {
-            background: rgba(255, 255, 255, 0.95);
-            border-radius: 15px;
-            padding: 20px;
-            backdrop-filter: blur(10px);
-            transition: all 0.2s;
-            cursor: pointer;
-        }
-
-        .history-item:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
-        }
-
-        .item-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: flex-start;
-            margin-bottom: 15px;
-        }
-
-        .item-date {
-            font-size: 0.85em;
-            color: #666;
-            background: #f7fafc;
-            padding: 4px 8px;
-            border-radius: 12px;
-        }
-
-        .item-actions {
-            display: flex;
-            gap: 5px;
-        }
-
-        .action-btn {
-            width: 28px;
-            height: 28px;
-            border: none;
-            border-radius: 50%;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 14px;
-            transition: all 0.2s;
-        }
-
-        .edit-btn {
-            background: #48bb78;
-            color: white;
-        }
-
-        .copy-btn {
-            background: #4299e1;
-            color: white;
-        }
-
-        .delete-btn {
-            background: #e53e3e;
-            color: white;
-        }
-
-        .action-btn:hover {
-            transform: scale(1.1);
-        }
-
-        .original-text {
-            background: #f7fafc;
-            padding: 12px;
-            border-radius: 8px;
-            margin-bottom: 10px;
-            border-left: 4px solid #667eea;
-        }
-
-        .translated-text {
-            background: #f0fff4;
-            padding: 12px;
-            border-radius: 8px;
-            border-left: 4px solid #48bb78;
-        }
-
-        .text-label {
-            font-size: 0.8em;
-            font-weight: 600;
-            color: #666;
-            margin-bottom: 5px;
-            text-transform: uppercase;
-        }
-
-        .text-content {
-            line-height: 1.5;
-            word-break: break-all;
-            font-size: 18pt;
-        }
-
-        .original-text .text-content {
-            font-family: 'BIZ UDMincho', serif;
-        }
-
-        .empty-state {
-            text-align: center;
-            padding: 60px 20px;
-            color: white;
-        }
-
-        .empty-icon {
-            font-size: 4em;
-            margin-bottom: 20px;
-            opacity: 0.6;
-        }
-
-        .empty-title {
-            font-size: 1.5em;
-            margin-bottom: 10px;
-        }
-
-        .empty-text {
-            opacity: 0.8;
-            font-size: 1.1em;
-        }
-
-        .edit-modal {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(0, 0, 0, 0.7);
-            display: none;
-            justify-content: center;
-            align-items: center;
-            z-index: 1000;
-        }
-
-        .modal-content {
-            background: white;
-            border-radius: 15px;
-            padding: 25px;
-            max-width: 600px;
-            width: 90%;
-            max-height: 80vh;
-            overflow-y: auto;
-        }
-
-        .modal-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 20px;
-        }
-
-        .modal-title {
-            font-size: 1.3em;
-            font-weight: 600;
-        }
-
-        .close-btn {
-            background: none;
-            border: none;
-            font-size: 24px;
-            cursor: pointer;
-            color: #999;
-            width: 32px;
-            height: 32px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            border-radius: 50%;
-            transition: all 0.2s;
-        }
-
-        .close-btn:hover {
-            background: #f7fafc;
-            color: #333;
-        }
-
-        .form-group {
-            margin-bottom: 20px;
-        }
-
-        .form-label {
-            display: block;
-            margin-bottom: 8px;
-            font-weight: 500;
-            color: #333;
-        }
-
-        .form-textarea {
-            width: 100%;
-            min-height: 80px;
-            padding: 12px;
-            border: 2px solid #e2e8f0;
-            border-radius: 8px;
+        button, input, select, textarea {
             font-family: inherit;
-            font-size: 14px;
-            resize: vertical;
-            transition: border-color 0.2s;
         }
 
-        .form-textarea:focus {
-            outline: none;
-            border-color: #667eea;
+        /* --- Layout --- */
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 24px;
+        }
+        .main-header {
+            text-align: center;
+            margin-bottom: 32px;
+        }
+        .main-header h1 {
+            font-size: 28px;
+            font-weight: 700;
+            color: var(--text-color);
+        }
+        .main-header p {
+            font-size: 16px;
+            color: var(--text-secondary);
+            margin-top: 4px;
         }
 
-        .modal-actions {
+        /* --- Controls Bar --- */
+        .controls-bar {
+            background: var(--card-bg);
+            padding: 16px;
+            border-radius: var(--border-radius);
+            margin-bottom: 24px;
+            box-shadow: var(--shadow);
+            border: 1px solid var(--border-color);
             display: flex;
-            gap: 10px;
-            justify-content: flex-end;
-        }
-
-        @media (max-width: 768px) {
-            .container {
-                padding: 10px;
-            }
-
-            .history-grid {
-                grid-template-columns: 1fr;
-                gap: 15px;
-            }
-
-            .controls {
-                flex-direction: column;
-                align-items: stretch;
-            }
-
-            .stats {
-                flex-direction: column;
-                gap: 15px;
-            }
-
-            .header h1 {
-                font-size: 2em;
-            }
-        }
-        .no-history { text-align: center; padding: 50px; color: #ccc; font-size: 1.2em; }
-
-        /* 폴더 관리 컨트롤 그룹 */
-        .folder-management-controls {
-            display: flex;
-            gap: 10px;
+            gap: 12px;
             align-items: center;
             flex-wrap: wrap;
-            border-right: 1px solid #e2e8f0; /* 구분선 */
-            padding-right: 15px;
-            margin-right: 15px;
+        }
+        .control-group {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+        .control-group.right {
+            margin-left: auto;
         }
 
-        /* 폴더 필터 드롭다운 */
-        #folderFilterDropdown {
-            padding: 12px 16px;
-            border: 2px solid #e2e8f0;
-            border-radius: 8px;
+        /* --- Form Elements --- */
+        .form-input, .form-select {
+            padding: 8px 12px;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
             font-size: 14px;
-            background-color: white;
-            color: #333;
-            cursor: pointer;
+            background-color: #fff;
+            transition: border-color 0.2s, box-shadow 0.2s;
         }
-        #folderFilterDropdown:focus {
+        .form-input:focus, .form-select:focus {
             outline: none;
-            border-color: #667eea;
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 2px rgba(76, 110, 245, 0.2);
+        }
+        .search-box {
+            min-width: 250px;
         }
 
-        /* 폴더 그룹 스타일 */
-        .history-folder-group {
-            background: rgba(255, 255, 255, 0.95);
-            border-radius: 15px;
-            margin-bottom: 20px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
-            overflow: hidden;
+        /* --- Buttons --- */
+        .btn {
+            padding: 8px 16px;
+            border: 1px solid transparent;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
         }
-        .folder-group-header {
+        .btn-primary {
+            background-color: var(--primary-color);
+            color: white;
+        }
+        .btn-primary:hover { background-color: #364FC7; }
+        .btn-secondary {
+            background-color: var(--secondary-color);
+            color: white;
+        }
+        .btn-secondary:hover { background-color: #0ca678; }
+        .btn-danger {
+            background-color: var(--danger-color);
+            color: white;
+        }
+        .btn-danger:hover { background-color: #c92a2a; }
+        .btn-warning {
+            background-color: var(--warning-color);
+            color: #fff;
+        }
+        .btn-warning:hover { background-color: #f08c00; }
+        .btn-outline {
+            background-color: transparent;
+            border-color: var(--border-color);
+            color: var(--text-secondary);
+        }
+        .btn-outline:hover {
+            background-color: var(--light-gray);
+            color: var(--text-color);
+        }
+
+        /* --- History List Layout --- */
+        #history-container {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+        .folder-group, .url-group {
+            background: var(--card-bg);
+            border-radius: var(--border-radius);
+            border: 1px solid var(--border-color);
+            overflow: hidden;
+            transition: box-shadow 0.2s;
+        }
+        .folder-group:hover, .url-group:hover {
+            box-shadow: var(--shadow);
+        }
+        .group-header {
             display: flex;
             align-items: center;
-            padding: 15px 20px;
-            background: #f7fafc;
-            border-bottom: 1px solid #e2e8f0;
+            padding: 12px 16px;
             cursor: pointer;
+            user-select: none;
+            background-color: #f8f9fa;
         }
-        .folder-group-header:hover {
-            background: #edf2f7;
+        .group-header:hover {
+            background-color: #f1f3f5;
         }
-        .folder-group-toggle-btn {
-            background: none;
-            border: none;
-            font-size: 1.2em;
-            margin-right: 10px;
-            cursor: pointer;
+        .group-toggle {
+            margin-right: 12px;
             transition: transform 0.2s;
-            color: #666;
         }
-        .folder-group-toggle-btn.collapsed {
+        .group-toggle.collapsed {
             transform: rotate(-90deg);
         }
-        .folder-group-title {
-            margin: 0;
-            font-size: 1.6em;
-            font-weight: 600;
-            color: #333;
+        .group-title {
+            font-size: 16px;
+            font-weight: 500;
+            flex-grow: 1;
         }
-        .folder-group-content {
-            padding: 20px;
+        .group-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
         }
-        .folder-group-content.collapsed {
+        .group-content {
+            padding: 0;
+        }
+        .group-content.collapsed {
             display: none;
         }
 
-        /* 개별 항목 폴더 할당 드롭다운 */
-        .item-folder-assign-dropdown {
-            padding: 6px 10px;
-            border: 1px solid #e2e8f0;
-            border-radius: 6px;
-            font-size: 12px;
-            background-color: white;
-            color: #333;
-            cursor: pointer;
-            margin-right: 5px;
+        /* --- History Item Row --- */
+        .history-item {
+            display: flex;
+            align-items: flex-start;
+            padding: 16px;
+            border-top: 1px solid var(--border-color);
         }
-        .item-folder-assign-dropdown:focus {
-            outline: none;
-            border-color: #667eea;
+        .history-item:hover {
+            background-color: #f8f9fa;
+        }
+        .item-checkbox-container {
+            padding-top: 5px;
+            margin-right: 16px;
+        }
+        .item-main {
+            flex-grow: 1;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+        }
+        .item-text-block .text-label {
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--text-secondary);
+            margin-bottom: 4px;
+        }
+        .item-text-block .text-content {
+            line-height: 1.7;
+        }
+        .item-actions-container {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            align-items: flex-end;
+        }
+        .item-date {
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-bottom: 8px;
+        }
+        .item-actions {
+            display: flex;
+            gap: 4px;
+        }
+        .item-actions .btn {
+            padding: 4px;
+            font-size: 12px;
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
         }
 
-        /* 폴더 전체 선택 체크박스 */
-        .folder-select-all {
-            display: flex;
-            align-items: center;
-            font-size: 0.9em;
-            color: #666;
-            cursor: pointer;
+        /* --- Empty State --- */
+        .empty-state {
+            text-align: center;
+            padding: 80px 20px;
+            background: var(--card-bg);
+            border-radius: var(--border-radius);
+            border: 1px solid var(--border-color);
         }
-        .folder-select-all input[type="checkbox"] {
-            margin-right: 5px;
-            width: 16px;
-            height: 16px;
-            cursor: pointer;
+        .empty-state h2 { font-size: 20px; margin-bottom: 8px; }
+        .empty-state p { font-size: 16px; color: var(--text-secondary); }
+
+        /* --- Modals --- */
+        .edit-modal {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0, 0, 0, 0.6);
+            display: none; justify-content: center; align-items: center;
+            z-index: 1000;
         }
-    </style>
-    <style>
-    .folder-management {
-        background-color: rgba(255, 255, 255, 0.1);
-        border-radius: 10px;
-        padding: 15px;
-        margin-bottom: 30px;
-        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-    }
-    .folder-management h2 {
-        color: white;
-        font-size: 1.5em;
-        margin-top: 0;
-        margin-bottom: 15px;
-    }
-    .folder-management input[type="text"] {
-        width: calc(100% - 110px); /* 버튼 너비 고려 */
-        padding: 10px;
-        border: 1px solid rgba(255, 255, 255, 0.3);
-        border-radius: 5px;
-        background-color: rgba(255, 255, 255, 0.05);
-        color: white;
-        margin-right: 10px;
-    }
-    .folder-management input[type="text"]::placeholder {
-        color: rgba(255, 255, 255, 0.7);
-    }
-    .folder-management button {
-        width: 90px;
-        padding: 10px;
-        margin-left: 0; /* 기본 버튼 마진 제거 */
-    }
-    #folderList {
-        margin-top: 20px;
-        border-top: 1px solid rgba(255, 255, 255, 0.2);
-        padding-top: 15px;
-    }
-    .folder-item {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 8px 0;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-        color: #e0e0e0;
-    }
-    .folder-item:last-child {
-        border-bottom: none;
-    }
-    .folder-item span {
-        font-size: 1.1em;
-    }
-    .folder-item .folder-controls button {
-        background-color: #3498db; /* 폴더 관련 버튼 색상 */
-        padding: 5px 10px;
-        font-size: 0.8em;
-        margin-left: 5px;
-    }
-    .folder-item .folder-controls button:hover {
-        background-color: #2980b9;
-    }
-    .folder-item .folder-controls .delete-folder-btn {
-        background-color: #e74c3c;
-    }
-    .folder-item .folder-controls .delete-folder-btn:hover {
-        background-color: #c0392b;
-    }
-    </style>
-    <style>
-    .folder-management {
-        background-color: rgba(255, 255, 255, 0.1);
-        border-radius: 10px;
-        padding: 15px;
-        margin-bottom: 30px;
-        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-    }
-    .folder-management h2 {
-        color: white;
-        font-size: 1.5em;
-        margin-top: 0;
-        margin-bottom: 15px;
-    }
-    .folder-management input[type="text"] {
-        width: calc(100% - 110px); /* 버튼 너비 고려 */
-        padding: 10px;
-        border: 1px solid rgba(255, 255, 255, 0.3);
-        border-radius: 5px;
-        background-color: rgba(255, 255, 255, 0.05);
-        color: white;
-        margin-right: 10px;
-    }
-    .folder-management input[type="text"]::placeholder {
-        color: rgba(255, 255, 255, 0.7);
-    }
-    .folder-management button {
-        width: 90px;
-        padding: 10px;
-        margin-left: 0; /* 기본 버튼 마진 제거 */
-    }
-    #folderList {
-        margin-top: 20px;
-        border-top: 1px solid rgba(255, 255, 255, 0.2);
-        padding-top: 15px;
-    }
-    .folder-item {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 8px 0;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-        color: #e0e0e0;
-    }
-    .folder-item:last-child {
-        border-bottom: none;
-    }
-    .folder-item span {
-        font-size: 1.1em;
-    }
-    .folder-item .folder-controls button {
-        background-color: #3498db; /* 폴더 관련 버튼 색상 */
-        padding: 5px 10px;
-        font-size: 0.8em;
-        margin-left: 5px;
-    }
-    .folder-item .folder-controls button:hover {
-        background-color: #2980b9;
-    }
-    .folder-item .folder-controls .delete-folder-btn {
-        background-color: #e74c3c;
-    }
-    .folder-item .folder-controls .delete-folder-btn:hover {
-        background-color: #c0392b;
-    }
+        .modal-content {
+            background: white; border-radius: var(--border-radius);
+            padding: 24px; max-width: 700px; width: 90%;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+        .modal-header {
+            display: flex; justify-content: space-between; align-items: center;
+            margin-bottom: 20px;
+        }
+        .modal-title { font-size: 20px; font-weight: 600; }
+        .close-btn { background: none; border: none; font-size: 24px; cursor: pointer; color: var(--medium-gray); }
+        .form-group { margin-bottom: 16px; }
+        .form-label { display: block; margin-bottom: 8px; font-weight: 500; }
+        .form-textarea {
+            width: 100%; min-height: 100px; padding: 10px;
+            border: 1px solid var(--border-color); border-radius: 6px;
+            font-size: 14px; resize: vertical;
+        }
+        .modal-actions { display: flex; gap: 10px; justify-content: flex-end; }
+
+        /* --- Utility --- */
+        .hidden { display: none; }
     </style>
 </head>
 <body>
     <div class="container">
-        <div class="header">
-    <h1>📚번역 기록📚</h1>
+        <header class="main-header">
+            <h1>번역 기록</h1>
+            <p>저장된 모든 번역을 탐색하고 관리합니다.</p>
+        </header>
 
-            <p>저장된 일본어 번역들을 확인하고 관리하세요</p>
-        </div>
-
-        <div class="controls">
-            <input type="text" class="search-box" id="searchBox" placeholder="번역 내용 검색...">
-            
-            <!-- 폴더 관리 UI 시작 -->
-            <div class="folder-management-controls">
-                <input type="text" id="newFolderNameInput" placeholder="새 폴더 이름" class="search-box">
-                <button id="createFolderButton" class="btn btn-primary">폴더 생성</button>
-                <select id="folderFilterDropdown" class="search-box">
+        <div class="controls-bar">
+            <div class="control-group">
+                <input type="text" class="form-input search-box" id="searchBox" placeholder="검색...">
+            </div>
+            <div class="control-group">
+                <select id="folderFilterDropdown" class="form-select">
                     <option value="">모든 폴더</option>
-                    <!-- 폴더 목록이 여기에 동적으로 추가됩니다 -->
                 </select>
             </div>
-            <!-- 폴더 관리 UI 끝 -->
-
-            <button class="btn btn-primary" id="exportJsonBtn">JSON으로 내보내기</button>
-            <button class="btn btn-primary" id="exportPdfBtn" style="background-color: #48bb78;">PDF로 내보내기</button>
-            <button class="btn btn-primary" id="openGlobalFindReplaceBtn" style="background-color: #ed8936;">🔍 전체 찾아 바꾸기</button>
- <!-- New button -->
-            
-            <!-- 선택 항목 폴더에 이동 드롭다운 추가 -->
-            <select id="moveSelectedToFolderDropdown" class="search-box" style="min-width: 150px;">
-                <option value="">선택 항목 폴더에 이동</option>
-                <!-- 폴더 목록이 여기에 동적으로 추가됩니다 -->
-            </select>
-
-            <button class="btn btn-danger" id="deleteSelectedBtn" style="background-color: #dd6b20; display: none;">🗑️ 선택 삭제</button>
-            <button class="btn btn-danger" id="clearAllBtn">🗑️ 전체 삭제</button>
-            <button id="clearCacheBtn" class="btn" style="background: #ed8936; margin-left: auto;">🔄 제목 캐시 초기화</button>
-        </div>
-
-        <div id="folderList" style="display: none;">
-            <!-- 폴더 목록이 여기에 동적으로 추가됩니다 (필터링 드롭다운과 별개로) -->
-        </div>
-
-        <div class="stats" id="stats">
-            <div class="stat-item">
-                <div class="stat-number" id="totalCount">0</div>
-                <div class="stat-label">총 번역</div>
-            </div>
-            <div class="stat-item">
-                <div class="stat-number" id="todayCount">0</div>
-                <div class="stat-label">오늘 번역</div>
-            </div>
-            <div class="stat-item">
-                <div class="stat-number" id="avgLength">0</div>
-                <div class="stat-label">평균 길이</div>
+            <div class="control-group right">
+                <button class="btn btn-secondary" id="exportPdfBtn">PDF로 내보내기</button>
+                <button class="btn btn-outline" id="exportJsonBtn">JSON으로 내보내기</button>
+                <button class="btn btn-danger" id="clearAllBtn">전체 삭제</button>
             </div>
         </div>
 
-        <div class="history-grid" id="historyGrid">
-            <!-- 번역 기록들이 여기에 동적으로 추가됩니다 -->
+        <div id="history-container">
+            <!-- New list-based history will be rendered here by history.js -->
         </div>
 
         <div class="empty-state" id="emptyState" style="display: none;">
-            <div class="empty-icon">📝</div>
-            <div class="empty-title">아직 번역 기록이 없습니다</div>
-            <div class="empty-text">웹페이지에서 일본어를 번역하면 여기에 기록이 저장됩니다</div>
+            <h2>기록이 없습니다</h2>
+            <p>웹페이지에서 일본어를 번역하면 여기에 기록이 저장됩니다.</p>
         </div>
     </div>
 
-    <!-- 편집 모달 -->
+    <!-- Modals (structure is mostly unchanged) -->
     <div class="edit-modal" id="editModal">
         <div class="modal-content">
             <div class="modal-header">
                 <div class="modal-title">번역 수정</div>
                 <button class="close-btn" id="closeModal">×</button>
             </div>
-            
             <div class="form-group">
                 <label class="form-label">원본 텍스트 (일본어)</label>
                 <textarea class="form-textarea" id="editOriginal" readonly></textarea>
             </div>
-            
             <div class="form-group">
                 <label class="form-label">번역 텍스트 (한국어)</label>
                 <textarea class="form-textarea" id="editTranslated"></textarea>
             </div>
-            
             <div class="modal-actions">
+                <button class="btn btn-outline" id="cancelEdit">취소</button>
                 <button class="btn btn-primary" id="saveEdit">저장</button>
-                <button class="btn" id="cancelEdit" style="background: #e2e8f0; color: #4a5568;">취소</button>
             </div>
         </div>
     </div>
 
-    <!-- 찾아 바꾸기 모달 -->
     <div class="edit-modal" id="findReplaceModal">
         <div class="modal-content">
             <div class="modal-header">
@@ -703,15 +354,15 @@
             </div>
             <div class="form-group">
                 <label class="form-label">찾을 내용</label>
-                <input type="text" class="search-box" style="width: 100%" id="findText">
+                <input type="text" class="form-input" style="width: 100%" id="findText">
             </div>
             <div class="form-group">
                 <label class="form-label">바꿀 내용</label>
-                <input type="text" class="search-box" style="width: 100%" id="replaceText">
+                <input type="text" class="form-input" style="width: 100%" id="replaceText">
             </div>
             <div class="modal-actions">
+                <button class="btn btn-outline" id="cancelFindReplace">취소</button>
                 <button class="btn btn-primary" id="executeFindReplace">실행</button>
-                <button class="btn" id="cancelFindReplace" style="background: #e2e8f0; color: #4a5568;">취소</button>
             </div>
         </div>
     </div>

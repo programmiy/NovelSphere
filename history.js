@@ -16,154 +16,9 @@ let allFolders = []; // 모든 폴더 이름을 저장할 배열
 // DOM Elements
 // =================================================================================
 
-const historyGrid = document.getElementById('historyGrid');
-const emptyState = document.getElementById('emptyState');
-const searchBox = document.getElementById('searchBox');
-const exportJsonBtn = document.getElementById('exportJsonBtn');
-const clearAllBtn = document.getElementById('clearAllBtn');
-const deleteSelectedBtn = document.getElementById('deleteSelectedBtn');
-const clearCacheBtn = document.getElementById('clearCacheBtn');
-const editModal = document.getElementById('editModal');
-const findReplaceModal = document.getElementById('findReplaceModal');
-const openGlobalFindReplaceBtn = document.getElementById('openGlobalFindReplaceBtn');
-
-// =================================================================================
-// Initialization
-// =================================================================================
-
-document.addEventListener('DOMContentLoaded', () => {
-    injectStyles();
-    setupEventListeners();
-    // loadAndRender(); // 이 부분은 폴더 로딩 후 호출되도록 아래로 이동
-
-    const newFolderNameInput = document.getElementById('newFolderNameInput');
-    const createFolderButton = document.getElementById('createFolderButton');
-
-    // 폴더 생성 버튼 이벤트
-    if (createFolderButton) { // HTML 요소가 존재하는지 확인
-        console.log("createFolderButton 요소 찾음:", createFolderButton); // 디버깅 로그 추가
-        createFolderButton.addEventListener('click', async () => {
-            console.log("폴더 생성 버튼 클릭됨"); // 디버깅 로그 추가
-            const folderName = newFolderNameInput.value.trim();
-            console.log("입력된 폴더 이름:", folderName); // 디버깅 로그 추가
-
-            if (folderName) {
-                let folders = await loadFolders();
-                console.log("현재 폴더 목록:", folders); // 디버깅 로그 추가
-
-                if (!folders.includes(folderName)) {
-                    folders.push(folderName);
-                    await saveFolders(folders);
-                    console.log("새 폴더 저장됨:", folders); // 디버깅 로그 추가
-                    newFolderNameInput.value = ''; // 입력 필드 초기화
-                    renderFolders(); // 폴더 목록 새로고침
-                    loadAndRender(); // 번역 기록도 새로고침 (폴더 필터링 옵션 업데이트 등)
-                    showToast(`폴더 "${folderName}"가 생성되었습니다.`); // 토스트 메시지 추가
-                } else {
-                    showToast('이미 존재하는 폴더 이름입니다.', 'error');
-                }
-            } else {
-                showToast('폴더 이름을 입력해주세요.', 'error');
-            }
-        });
-    } else {
-        console.error("createFolderButton 요소를 찾을 수 없습니다."); // 디버깅 로그 추가
-    }
-
-    // 페이지 로드 시 폴더 목록도 불러와 렌더링
-    loadFolders().then(folders => {
-        allFolders = folders;
-        renderFolders();
-        loadAndRender(); // 폴더 로딩 후 번역 기록 로딩 및 렌더링
-    });
-});
-
-function injectStyles() {
-    const style = document.createElement('style');
-    style.textContent = `
-        .history-group { margin-bottom: 1.5rem; border: 1px solid #e0e0e0; border-radius: 8px; background-color: #ffffff; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
-        .group-header { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; background-color: #f7f7f7; border-bottom: 1px solid #e0e0e0; border-top-left-radius: 8px; border-top-right-radius: 8px; cursor: pointer; }
-        .group-header:hover { background-color: #eff3f8; }
-        .group-title-container { flex-grow: 1; margin: 0 15px; min-width: 0; }
-        .group-title { font-size: 16px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .group-url-details { font-size: 12px; }
-        .group-url-details summary { cursor: pointer; display: inline-block; margin-top: 4px; color: #555; }
-        .group-url { word-break: break-all; color: #777; margin-top: 4px; }
-        .group-header-actions { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
-        .group-toggle-btn { background: none; border: none; font-size: 18px; cursor: pointer; padding: 0 5px; transition: transform 0.2s; }
-        .group-toggle-btn.collapsed { transform: rotate(-90deg); }
-        .group-item-container { padding: 16px; }
-        .group-item-container.collapsed { display: none; }
-        .btn-apply, .btn-find-replace { padding: 6px 12px; font-size: 12px; color: white; border: none; border-radius: 6px; cursor: pointer; transition: background-color 0.2s; }
-        .btn-apply { background-color: #3182ce; }
-        .btn-apply:hover { background-color: #2c5282; }
-        .btn-apply.applied { background-color: #c53030; }
-        .btn-apply.applied:hover { background-color: #9b2c2c; }
-        .btn-find-replace { background-color: #ed8936; }
-        .btn-find-replace:hover { background-color: #dd6b20; }
-        .group-select-all { display: flex; align-items: center; font-size: 12px; color: #555; }
-        .history-item { display: flex; border-bottom: 1px solid #f0f0f0; padding-bottom: 1rem; margin-bottom: 1rem; }
-        .history-item:last-child { border-bottom: none; margin-bottom: 0; }
-        .item-checkbox-container { padding: 8px 16px 0 0; }
-        .item-content-container { flex-grow: 1; }
-        .hidden { display: none; }
-    `;
-    document.head.appendChild(style);
-}
-
-function setupEventListeners() {
-    searchBox.addEventListener('input', handleSearch);
-    exportJsonBtn.addEventListener('click', exportTranslationsAsJson);
-    clearAllBtn.addEventListener('click', clearAllTranslations);
-    deleteSelectedBtn.addEventListener('click', deleteSelectedTranslations);
-    clearCacheBtn.addEventListener('click', clearTitleCache);
-    openGlobalFindReplaceBtn.addEventListener('click', () => openFindReplaceModal(null));
-
-    const exportPdfBtn = document.getElementById('exportPdfBtn');
-    exportPdfBtn.addEventListener('click', exportToPrintableHtml);
-
-    // 폴더 필터 드롭다운 이벤트 리스너 추가
-    const folderFilterDropdown = document.getElementById('folderFilterDropdown');
-    if (folderFilterDropdown) {
-        folderFilterDropdown.addEventListener('change', () => {
-            loadAndRender(); // 필터 변경 시 번역 기록 새로고침
-        });
-    }
-
-    // 선택 항목 폴더 이동 드롭다운 이벤트 리스너 추가
-    const moveSelectedToFolderDropdown = document.getElementById('moveSelectedToFolderDropdown');
-    if (moveSelectedToFolderDropdown) {
-        moveSelectedToFolderDropdown.addEventListener('change', async (event) => {
-            const targetFolder = event.target.value;
-            if (targetFolder) { // 폴더가 선택되었을 때만 실행
-                await moveSelectedTranslationsToFolder(targetFolder === '폴더 없음' ? undefined : targetFolder);
-                event.target.value = ''; // 드롭다운 초기화
-            }
-        });
-    }
-
-    const closeModal = document.getElementById('closeModal');
-    const cancelEdit = document.getElementById('cancelEdit');
-    const saveEdit = document.getElementById('saveEdit');
-    closeModal.addEventListener('click', () => editModal.style.display = 'none');
-    cancelEdit.addEventListener('click', () => editModal.style.display = 'none');
-    saveEdit.addEventListener('click', saveEditedTranslation);
-
-    const closeFindReplaceModal = document.getElementById('closeFindReplaceModal');
-    const cancelFindReplace = document.getElementById('cancelFindReplace');
-    const executeFindReplace = document.getElementById('executeFindReplace');
-    closeFindReplaceModal.addEventListener('click', closeFindReplaceModalHandler);
-    cancelFindReplace.addEventListener('click', closeFindReplaceModalHandler);
-    executeFindReplace.addEventListener('click', executeFindReplaceHandler);
-
-    document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') {
-            if (editModal.style.display === 'flex') editModal.style.display = 'none';
-            if (findReplaceModal.style.display === 'flex') closeFindReplaceModalHandler();
-        }
-    });
-
-    historyGrid.addEventListener('click', (e) => {
+const historyContainer = document.getElementById('history-container');
+// ...
+    historyContainer.addEventListener('click', (e) => {
         const target = e.target;
 
         if (target.classList.contains('edit-title-btn')) {
@@ -399,7 +254,8 @@ async function loadAndRender() {
             }
         }
 
-        renderGroupedView(filteredGroupedByFolder, allData); // 필터링된 groupedByFolder를 전달
+        const historyContainer = document.getElementById('history-container');
+        renderGroupedView(filteredGroupedByFolder, historyContainer, allData);
         updateStats();
         updateDeleteButtonVisibility();
     } catch (error) {
@@ -428,143 +284,61 @@ async function fetchTitles(urls) {
     await chrome.storage.local.set({ titleCache });
 }
 
-function renderGroupedView(groupedByFolder, allData = {}) {
-    // 1. Preserve expansion state before clearing the view
-    const expandedFolderTitles = new Set();
-    document.querySelectorAll('.history-folder-group').forEach(group => {
-        if (!group.querySelector('.folder-group-content.collapsed')) {
-            const titleEl = group.querySelector('.folder-group-title');
-            if (titleEl) expandedFolderTitles.add(titleEl.textContent);
-        }
-    });
-    const expandedUrlGroups = new Set();
-    document.querySelectorAll('.history-group').forEach(group => {
-        if (!group.querySelector('.group-item-container.collapsed')) {
-            if (group.dataset.url) expandedUrlGroups.add(group.dataset.url);
-        }
-    });
-
-    // Check for empty state
+function renderGroupedView(groupedByFolder, container, allData = {}) {
+    const emptyState = document.getElementById('emptyState');
+    
     const hasAnyTranslations = Object.values(groupedByFolder).some(folder => Object.keys(folder).length > 0);
+
     if (!hasAnyTranslations) {
-        if (!document.getElementById('errorLogContainer')) {
-            historyGrid.innerHTML = '';
-            emptyState.style.display = 'block';
-        }
+        container.innerHTML = '';
+        emptyState.style.display = 'block';
         return;
     }
     emptyState.style.display = 'none';
-    
-    // Clear all existing folder and URL groups, but preserve the error log container
-    const groupsToRemove = historyGrid.querySelectorAll('.history-folder-group, .history-group:not(#errorLogContainer)');
-    groupsToRemove.forEach(el => el.remove());
-
-    historyGrid.style.gridTemplateColumns = '1fr';
+    container.innerHTML = '';
 
     const sortedFolderNames = [...allFolders, '폴더 없음'].filter(name => groupedByFolder[name] && Object.keys(groupedByFolder[name]).length > 0);
 
     for (const folderName of sortedFolderNames) {
         const folderGroupEl = document.createElement('div');
-        folderGroupEl.className = 'history-folder-group';
-        folderGroupEl.innerHTML = `
-            <div class="folder-group-header">
-                <button class="folder-group-toggle-btn">▼</button>
-                <h3 class="folder-group-title">${escapeHtml(folderName)}</h3>
-                <label class="folder-select-all" style="margin-left: auto;"><input type="checkbox" class="folder-select-all-checkbox"> 전체</label>
-            </div>
-            <div class="folder-group-content">
-                <!-- URL 그룹들이 여기에 렌더링됩니다 -->
-            </div>
-        `;
-        historyGrid.appendChild(folderGroupEl);
-
-        const folderGroupContent = folderGroupEl.querySelector('.folder-group-content');
-        const folderGroupToggleBtn = folderGroupEl.querySelector('.folder-group-toggle-btn');
-        const folderSelectAllCheckbox = folderGroupEl.querySelector('.folder-select-all-checkbox');
-
-        // Restore folder expansion state
-        if (!expandedFolderTitles.has(folderName)) {
-            folderGroupContent.classList.add('collapsed');
-            folderGroupToggleBtn.classList.add('collapsed');
-            folderGroupToggleBtn.textContent = '▶';
-        }
-
-        folderGroupToggleBtn.addEventListener('click', () => {
-            folderGroupContent.classList.toggle('collapsed');
-            folderGroupToggleBtn.classList.toggle('collapsed');
-            folderGroupToggleBtn.textContent = folderGroupContent.classList.contains('collapsed') ? '▶' : '▼';
-        });
-
-        folderSelectAllCheckbox.addEventListener('change', (e) => {
-            const isChecked = e.target.checked;
-            folderGroupContent.querySelectorAll('.item-checkbox').forEach(itemCheckbox => {
-                itemCheckbox.checked = isChecked;
-            });
-            updateDeleteButtonVisibility();
-        });
-
+        folderGroupEl.className = 'folder-group';
+        
         const urlsInFolder = Object.keys(groupedByFolder[folderName]).sort((a, b) => {
             const lastTimeA = Math.max(...groupedByFolder[folderName][a].map(t => t.timestamp || 0));
             const lastTimeB = Math.max(...groupedByFolder[folderName][b].map(t => t.timestamp || 0));
             return lastTimeB - lastTimeA;
         });
 
+        let urlGroupsHtml = '';
         for (const url of urlsInFolder) {
             const translations = groupedByFolder[folderName][url];
-            const status = allData['status-' + url] || {};
-            const isApplied = status.applied;
-            const groupEl = document.createElement('div');
-            groupEl.className = 'history-group';
-            groupEl.dataset.url = url;
+            const title = urlToTitle[url] || url;
             const groupItemsHtml = translations.map(t => renderItem(t, url)).join('');
-            groupEl.innerHTML = `
-                <div class="group-header">
-                    <button class="group-toggle-btn">▼</button>
-                    <div class="group-title-container">
-                        <div style="display: flex; align-items: center; gap: 8px;">
-                            <p class="group-title" data-url="${url}" title="${escapeHtml(urlToTitle[url] || url)}">${escapeHtml(urlToTitle[url] || url)}</p>
-                            <button class="action-btn edit-title-btn" data-url="${url}" title="제목 수정" style="padding: 2px 4px; font-size: 14px;">✏️</button>
+
+            urlGroupsHtml += `
+                <div class="url-group">
+                    <div class="group-header">
+                        <span class="group-toggle">▼</span>
+                        <div class="group-title">${escapeHtml(title)}</div>
+                        <div class="group-actions">
+                            <label><input type="checkbox" class="group-select-all-checkbox" data-url="${url}"> 전체 선택</label>
                         </div>
-                        <details class="group-url-details"><summary>URL</summary><p class="group-url">${escapeHtml(url)}</p></details>
                     </div>
-                    <div class="group-header-actions">
-                        <button class="btn-apply ${isApplied ? 'applied' : ''}" data-url="${url}">${isApplied ? '적용 해제' : '페이지에 적용'}</button>
-                        <button class="btn-find-replace" data-url="${url}">찾아 바꾸기</button>
-                        <label class="group-select-all"><input type="checkbox" class="group-select-all-checkbox"> 전체</label>
-                        <select class="folder-assign-dropdown" data-url="${url}">
-                            <option value="">폴더 선택</option>
-                            ${allFolders.map(f => `<option value="${escapeHtml(f)}" ${f === folderName ? 'selected' : ''}>${escapeHtml(f)}</option>`).join('')}
-                            <option value="폴더 없음" ${folderName === '폴더 없음' ? 'selected' : ''}>폴더 없음</option>
-                        </select>
-                    </div>
+                    <div class="group-content">${groupItemsHtml}</div>
                 </div>
-                <div class="group-item-container">${groupItemsHtml}</div>
             `;
-
-            const container = groupEl.querySelector('.group-item-container');
-            const toggleBtn = groupEl.querySelector('.group-toggle-btn');
-            
-            // Restore URL group expansion state
-            if (!expandedUrlGroups.has(url)) {
-                container.classList.add('collapsed');
-                toggleBtn.classList.add('collapsed');
-                toggleBtn.textContent = '▶';
-            }
-
-            folderGroupContent.appendChild(groupEl);
         }
-    }
 
-    // Re-delegate folder assignment dropdown listener
-    historyGrid.querySelectorAll('.folder-assign-dropdown').forEach(dropdown => {
-        dropdown.addEventListener('change', async (event) => {
-            const urlToAssign = event.target.dataset.url;
-            const newFolderName = event.target.value === '폴더 없음' ? undefined : event.target.value;
-            await assignFolderToUrlTranslations(urlToAssign, newFolderName);
-            showToast(`'${urlToAssign}'의 번역 기록이 폴더 '${newFolderName || '폴더 없음'}'(으)로 이동되었습니다.`);
-            loadAndRender();
-        });
-    });
+        folderGroupEl.innerHTML = `
+            <div class="group-header">
+                <span class="group-toggle">▼</span>
+                <h3 class="group-title">${escapeHtml(folderName)} (${urlsInFolder.length})</h3>
+            </div>
+            <div class="group-content">${urlGroupsHtml}</div>
+        `;
+
+        container.appendChild(folderGroupEl);
+    }
 }
 
 // URL의 모든 번역 기록에 폴더 할당
