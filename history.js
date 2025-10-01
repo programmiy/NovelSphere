@@ -255,6 +255,7 @@ function setupEventListeners() {
 }
 
 async function loadAndRender() {
+    const groupedByUrl = {};
     const loadingSkeleton = document.getElementById('loading-skeleton');
     const emptyState = document.getElementById('emptyState');
     const historyContainer = document.getElementById('history-container');
