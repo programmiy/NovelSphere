@@ -268,7 +268,6 @@ function setupEventListeners() {
 
 async function loadAndRender() {
     showToast('번역 기록을 불러오는 중...', 'info');
-    const groupedByUrl = {};
     const loadingSkeleton = document.getElementById('loading-skeleton');
     const emptyState = document.getElementById('emptyState');
     const historyContainer = document.getElementById('history-container');
