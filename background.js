@@ -96,11 +96,22 @@ if (chrome.contextMenus) {
 
 // 메시지 처리 (콘텐츠 스크립트에서 오는 요청들)
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    const channelClosedMessage = "The message channel closed before a response was received.";
+
     if (request.action === 'batchTranslate') {
-        handleBatchTranslate(request.items)
-            .then(translations => sendResponse({ translations }))
-            .catch(error => {
-                // Log to history if it's a content block error
+        (async () => {
+            try {
+                const translations = await handleBatchTranslate(request.items);
+                try {
+                    sendResponse({ translations });
+                } catch (e) {
+                    if (e.message.includes(channelClosedMessage)) {
+                        console.log("Failed to send translation success response: Channel was closed by the client.");
+                    } else {
+                        console.error("Error sending translation success response:", e);
+                    }
+                }
+            } catch (error) {
                 if (error.message && error.message.includes('PROHIBITED_CONTENT')) {
                     saveErrorLog(request.items, error.message, sender.tab?.url);
                 }
@@ -109,15 +120,49 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                     original: item.text,
                     translated: `번역 실패: ${error.message}`
                 }));
-                sendResponse({ translations: errorResponse });
-            });
+                try {
+                    sendResponse({ translations: errorResponse });
+                } catch (e) {
+                    if (e.message.includes(channelClosedMessage)) {
+                        console.log("Failed to send translation error response: Channel was closed by the client.");
+                    } else {
+                        console.error("Error sending translation error response:", e);
+                    }
+                }
+            }
+        })();
         return true; // 비동기 응답을 위해 true 반환
     } else if (request.action === 'fetchTitle') {
-        fetchPageTitle(request.url)
-            .then(title => sendResponse({ title }))
-            .catch(error => sendResponse({ title: request.url, error: error.message }));
+        (async () => {
+            try {
+                const title = await fetchPageTitle(request.url);
+                try {
+                    sendResponse({ title });
+                } catch (e) {
+                    if (e.message.includes(channelClosedMessage)) {
+                        console.log("Failed to send title success response: Channel was closed by the client.");
+                    } else {
+                        console.error("Error sending title success response:", e);
+                    }
+                }
+            } catch (error) {
+                try {
+                    sendResponse({ title: request.url, error: error.message });
+                } catch (e) {
+                    if (e.message.includes(channelClosedMessage)) {
+                        console.log("Failed to send title error response: Channel was closed by the client.");
+                    } else {
+                        console.error("Error sending title error response:", e);
+                    }
+                }
+            }
+        })();
         return true; // 비동기 응답을 위해 true 반환
     }
+    // For any other actions, or if action is not defined, do nothing.
+    // The channel will close synchronously and the sender will get an error,
+    // which is the expected behavior for unhandled actions when a response is awaited.
+    return false;
 });
 
 async function fetchPageTitle(url) {
@@ -143,8 +188,16 @@ async function handleBatchTranslate(items) {
     const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
     
     const texts = items.map(item => item.text);
-    const prompt = `You are a translation API. Translate the following Japanese texts into Korean. Return a single valid JSON array of strings. The output array must contain the translation for each input text in the same order. Do not include any other text or explanations. Preserve the original quotation marks (「」 and 『』) in the translation. For example, 「おはよう」 should be translated as 「안녕」, and 『何をですか？』 should be translated as 『무엇을요?』.`;
-    const textsToTranslate = items.map(item => item.text);
+    const prompt = `You are a translation API. Translate the following Japanese texts into Korean. Return a single valid JSON array of strings. The output array must contain the translation for each input text in the same order. Do not include any other text or explanations. Preserve the original quotation marks (「」 and 『』) in the translation. For example, 「おはよう」 should be translated as 「안녕」, and 『何をですか？』 should be translated as 『무엇을요?』. IMPORTANT RULE: If any single character in the translated Korean text repeats more than 10 times consecutively, you MUST truncate it to exactly 10 repetitions and append a '(반복)' marker directly after. For example, a translation resulting in '아아아아아아아아아아아아아' must be returned as '아아아아아아아아아아(반복)'.`;;
+    const textsToTranslate = items.map(item => {
+        let text = item.text;
+        // Normalize long repeating characters and special symbols to prevent API errors
+        // Example: なあぁぁぁぁぁ... -> なああ...
+        text = text.replace(/([ぁ-んァ-ヶ])\1{10,}/g, '$1'.repeat(10));
+        // Example: …… -> ...
+        text = text.replace(/[…]+/g, '...');
+        return text;
+    });
 
     const MAX_RETRIES = 3;
     let lastError = null;

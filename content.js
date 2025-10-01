@@ -334,41 +334,60 @@ async function translateAllPTags() {
     
     async function translateChunk(items, chunkSize) {
         if (isTranslationCancelled) return;
-
-        try {
-            const response = await chrome.runtime.sendMessage({
-                action: 'batchTranslate',
-                items: items
-            });
-
-            if (isTranslationCancelled) return;
-
-            if (response && response.translations) {
-                const successes = response.translations.filter(t => !t.translated.includes('번역 실패') && !t.translated.includes('API 오류'));
-                const failures = response.translations.filter(t => t.translated.includes('번역 실패') || t.translated.includes('API 오류'));
-
-                if (successes.length > 0) {
-                    updateSidebarWithTranslations(successes);
-                    allFinishedResults.push(...successes);
+    
+        const MAX_MESSAGE_RETRIES = 3;
+        for (let attempt = 0; attempt < MAX_MESSAGE_RETRIES; attempt++) {
+            try {
+                const response = await chrome.runtime.sendMessage({
+                    action: 'batchTranslate',
+                    items: items
+                });
+    
+                if (isTranslationCancelled) return;
+    
+                // The 'message channel closed' error is thrown and caught by the catch block.
+                // chrome.runtime.lastError might also be set. It's good practice to check.
+                if (chrome.runtime.lastError) {
+                    throw new Error(chrome.runtime.lastError.message);
                 }
-
-                if (failures.length > 0) {
-                    const failedOriginalItems = items.filter(originalItem =>
-                        failures.some(failedItem => failedItem.id === originalItem.id)
-                    );
-                    
-                    logToSidebar(`${failedOriginalItems.length}개 항목 번역 실패. 더 작은 단위로 재시도합니다.`, 'log-error');
-                    await handleFailure(failedOriginalItems, chunkSize);
+    
+                if (response && response.translations) {
+                    const successes = response.translations.filter(t => !t.translated.includes('번역 실패') && !t.translated.includes('API 오류'));
+                    const failures = response.translations.filter(t => t.translated.includes('번역 실패') || t.translated.includes('API 오류'));
+    
+                    if (successes.length > 0) {
+                        updateSidebarWithTranslations(successes);
+                        allFinishedResults.push(...successes);
+                    }
+    
+                    if (failures.length > 0) {
+                        const failedOriginalItems = items.filter(originalItem =>
+                            failures.some(failedItem => failedItem.id === originalItem.id)
+                        );
+                        
+                        logToSidebar(`${failedOriginalItems.length}개 항목 번역 실패. 더 작은 단위로 재시도합니다.`, 'log-error');
+                        await handleFailure(failedOriginalItems, chunkSize);
+                    }
+                    return; // Success, exit retry loop.
+                } else {
+                    // This handles cases where background.js sends a response, but it's not in the expected format.
+                    throw new Error(response?.error || 'Malformed response from background script');
                 }
-            } else {
-                throw new Error(response.error || 'Malformed response from background script');
+            } catch (error) {
+                console.warn(`Chunk translation failed (attempt ${attempt + 1}/${MAX_MESSAGE_RETRIES}):`, error.message);
+                if (attempt < MAX_MESSAGE_RETRIES - 1) {
+                    const delay = 1000 * Math.pow(2, attempt); // Exponential backoff
+                    logToSidebar(`통신 오류. ${delay / 1000}초 후 재시도... (${attempt + 1}/${MAX_MESSAGE_RETRIES})`, 'log-error');
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                } else {
+                    console.error(`Chunk translation failed after all retries for ${items.length} items:`, error);
+                    logToSidebar(`${items.length}개 항목 통신 최종 실패. 더 작은 단위로 재시도합니다.`, 'log-error');
+                    // After all retries, use the existing robust failure handling which splits the chunk.
+                    await handleFailure(items, chunkSize);
+                }
             }
-        } catch (error) {
-            console.error(`Message sending failed for chunk of size ${items.length}:`, error);
-            updateSidebarWithErrors(items, `확장 프로그램 오류: ${error.message}`);
         }
     }
-
     async function handleFailure(failedItems, currentChunkSize) {
         if (isTranslationCancelled) return;
         if (currentChunkSize > 1) {
@@ -390,8 +409,12 @@ async function translateAllPTags() {
                     const errorResultForUI = { id: item.id, original: item.text, translated: `번역 실패: API 오류` };
                     updateSidebarWithTranslations([errorResultForUI]);
 
-                    const resultForStorage = { id: item.id, original: item.text, translated: '' };
-                    allFinishedResults.push(resultForStorage);
+                    // Only save a blank result if the translation was not manually cancelled by the user.
+                    // This is to distinguish permanent API failures (e.g. censorship) from temporary ones (e.g. user stop).
+                    if (!isTranslationCancelled) {
+                        const resultForStorage = { id: item.id, original: item.text, translated: '' };
+                        allFinishedResults.push(resultForStorage);
+                    }
                 }
             }
         }
@@ -439,8 +462,11 @@ async function translateAllPTags() {
             const errorResultForUI = { id: originalItem.id, original: originalItem.text, translated: `번역 실패: 분할 재시도 실패` };
             updateSidebarWithTranslations([errorResultForUI]);
 
-            const resultForStorage = { id: originalItem.id, original: originalItem.text, translated: '' };
-            allFinishedResults.push(resultForStorage);
+            // Only save a blank result if the translation was not manually cancelled by the user.
+            if (!isTranslationCancelled) {
+                const resultForStorage = { id: originalItem.id, original: originalItem.text, translated: '' };
+                allFinishedResults.push(resultForStorage);
+            }
         }
     }
 
@@ -456,7 +482,14 @@ async function translateAllPTags() {
     const chunks = chunkArray(textsToTranslate, initialChunkSize);
     let progress = 0;
 
-    for (const chunk of chunks) {
+    // 전체 묶음 수에 기반한 동적 딜레이 계산
+    let dynamicDelay = chunks.length * 100; // 묶음당 100ms
+    dynamicDelay = Math.max(500, dynamicDelay);   // 최소 0.5초
+    dynamicDelay = Math.min(5000, dynamicDelay);  // 최대 5초
+
+    logToSidebar(`동적 딜레이를 ${dynamicDelay}ms로 설정합니다.`);
+
+    for (const [index, chunk] of chunks.entries()) {
         if (isTranslationCancelled) {
             updateSidebarWithCancelled();
             break;
@@ -464,6 +497,12 @@ async function translateAllPTags() {
         progress += chunk.length;
         logToSidebar(`(${progress}/${textsToTranslate.length}) 번역 진행 중...`);
         await translateChunk(chunk, initialChunkSize);
+
+        // 마지막 묶음이 아닌 경우에만 딜레이 추가
+        if (index < chunks.length - 1) {
+            logToSidebar(`${dynamicDelay / 1000}초 후 다음 묶음을 번역합니다.`);
+            await new Promise(resolve => setTimeout(resolve, dynamicDelay));
+        }
     }
 
     // Finalize
