@@ -390,7 +390,7 @@ function renderGroupedView(groupedByFolder, container, emptyState, allData) {
                 <div class="list-group fade-in" data-url="${url}">
                     <div class="list-group-header">
                         <span class="list-group-toggle collapsed">▶</span>
-                        <h3 class="list-group-title" data-url="${url}">${escapeHtml(title)} (${translations.length})</h3>
+                        <a href="${url}" target="_blank" class="list-group-title-link"><h3 class="list-group-title" data-url="${url}">${escapeHtml(title)} (${translations.length})</h3></a>
                         <button class="btn btn-outline btn-icon edit-title-btn" data-url="${url}" title="제목 수정">✏️</button>
                         <div class="list-group-actions">
                             <button class="btn btn-secondary btn-apply ${isApplied ? 'applied' : ''}" data-url="${url}">${isApplied ? '적용 해제' : '페이지에 적용'}</button>
