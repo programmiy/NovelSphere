@@ -189,7 +189,15 @@ async function handleBatchTranslate(items) {
     
     const texts = items.map(item => item.text);
     const prompt = `You are a translation API. Translate the following Japanese texts into Korean. Return a single valid JSON array of strings. The output array must contain the translation for each input text in the same order. Do not include any other text or explanations. Preserve the original quotation marks (「」 and 『』) in the translation. For example, 「おはよう」 should be translated as 「안녕」, and 『何をですか？』 should be translated as 『무엇을요?』.`;
-    const textsToTranslate = items.map(item => item.text);
+    const textsToTranslate = items.map(item => {
+        let text = item.text;
+        // Normalize long repeating characters and special symbols to prevent API errors
+        // Example: なあぁぁぁぁぁ... -> なああ...
+        text = text.replace(/([ぁ-んァ-ヶ])\1{10,}/g, '$1'.repeat(10));
+        // Example: …… -> ...
+        text = text.replace(/[…]+/g, '...');
+        return text;
+    });
 
     const MAX_RETRIES = 3;
     let lastError = null;
