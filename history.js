@@ -267,6 +267,7 @@ function setupEventListeners() {
 }
 
 async function loadAndRender() {
+    showToast('번역 기록을 불러오는 중...', 'info');
     const groupedByUrl = {};
     const loadingSkeleton = document.getElementById('loading-skeleton');
     const emptyState = document.getElementById('emptyState');
@@ -310,6 +311,9 @@ async function loadAndRender() {
     }
 
     allTranslations = flattened.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+    if (urls.length > 0) {
+        showToast('페이지 제목을 불러오는 중...', 'info');
+    }
     await fetchTitles(urls);
     loadingSkeleton.style.display = 'none';
     
@@ -321,6 +325,7 @@ async function loadAndRender() {
     if (allData.error_log && allData.error_log.length > 0) {
         renderErrorLog(allData.error_log);
     }
+    showToast('로드 완료', 'success');
 }
 
 async function fetchTitles(urls) {
