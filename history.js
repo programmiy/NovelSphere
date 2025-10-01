@@ -14,6 +14,9 @@ function setupEventListeners() {
     document.getElementById('exportPdfBtn').addEventListener('click', exportToPrintableHtml);
     document.getElementById('clearAllBtn').addEventListener('click', clearAllTranslations);
     document.getElementById('deleteSelectedBtn').addEventListener('click', deleteSelectedTranslations);
+    document.getElementById('darkModeToggle').addEventListener('click', toggleDarkMode);
+
+    loadDarkModePreference();
 
     const container = document.getElementById('history-container');
 
@@ -55,12 +58,39 @@ function setupEventListeners() {
         }
     });
 
-    document.getElementById('closeModal').addEventListener('click', () => document.getElementById('editModal').style.display = 'none');
+    document.getElementById('editModal').style.display = 'none');
     document.getElementById('cancelEdit').addEventListener('click', () => document.getElementById('editModal').style.display = 'none');
     document.getElementById('saveEdit').addEventListener('click', saveEditedTranslation);
 }
 
+function toggleDarkMode() {
+    document.body.classList.toggle('dark-mode');
+    const isDarkMode = document.body.classList.contains('dark-mode');
+    chrome.storage.local.set({ darkMode: isDarkMode });
+    updateDarkModeToggleIcon(isDarkMode);
+}
+
+async function loadDarkModePreference() {
+    const result = await chrome.storage.local.get('darkMode');
+    const isDarkMode = result.darkMode;
+    if (isDarkMode) {
+        document.body.classList.add('dark-mode');
+    }
+    updateDarkModeToggleIcon(isDarkMode);
+}
+
+function updateDarkModeToggleIcon(isDarkMode) {
+    const toggleButton = document.getElementById('darkModeToggle');
+    if (toggleButton) {
+        toggleButton.innerHTML = `<span class="material-icons">${isDarkMode ? 'light_mode' : 'dark_mode'}</span>`;
+    }
+}
+
 async function loadAndRender() {
+    document.getElementById('loading-skeleton').style.display = 'block';
+    document.getElementById('emptyState').style.display = 'none';
+    document.getElementById('history-container').innerHTML = '';
+
     const allData = await chrome.storage.local.get(null);
     titleCache = allData.titleCache || {};
     
@@ -83,6 +113,7 @@ async function loadAndRender() {
 
     allTranslations = flattened.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
     await fetchTitles(urls);
+    document.getElementById('loading-skeleton').style.display = 'none';
     renderView(groupedByUrl);
 }
 

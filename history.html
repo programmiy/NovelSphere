@@ -7,6 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
     <style>
         :root {
             --font-primary: 'Noto Sans KR', sans-serif;
@@ -20,6 +21,25 @@
             --card-bg: #ffffff;
             --shadow: 0 4px 15px rgba(0, 0, 0, 0.06);
             --border-radius: 8px;
+            --group-header-bg: #f8f9fa;
+            --group-header-hover-bg: #f1f3f5;
+            --item-hover-bg: #f8f9fa;
+            --modal-bg: #ffffff;
+            --modal-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+        body.dark-mode {
+            --bg-color: #212529;
+            --header-bg: #343a40;
+            --text-color: #f8f9fa;
+            --text-secondary: #adb5bd;
+            --border-color: #495057;
+            --card-bg: #343a40;
+            --shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+            --group-header-bg: #343a40;
+            --group-header-hover-bg: #495057;
+            --item-hover-bg: #2c3034;
+            --modal-bg: #343a40;
+            --modal-shadow: 0 10px 30px rgba(0,0,0,0.5);
         }
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: var(--font-primary); background-color: var(--bg-color); color: var(--text-color); font-size: 14px; line-height: 1.6; }
@@ -58,7 +78,8 @@
         .item-text-block .text-content { line-height: 1.7; }
         .item-actions-container { text-align: right; }
         .item-date { font-size: 12px; color: var(--text-secondary); margin-bottom: 8px; }
-        .item-actions { display: inline-flex; gap: 4px; }
+        .item-actions { display: inline-flex; gap: 4px; opacity: 0; transition: opacity 0.2s; }
+        .history-item:hover .item-actions { opacity: 1; }
         .item-actions .btn { padding: 4px; font-size: 12px; width: 28px; height: 28px; border-radius: 50%; }
         .empty-state { text-align: center; padding: 80px 20px; background: var(--card-bg); border-radius: var(--border-radius); border: 1px solid var(--border-color); }
         .edit-modal { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.6); display: none; justify-content: center; align-items: center; z-index: 1000; }
@@ -70,6 +91,17 @@
         .form-label { display: block; margin-bottom: 8px; font-weight: 500; }
         .form-textarea { width: 100%; min-height: 100px; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; font-size: 14px; resize: vertical; }
         .modal-actions { display: flex; gap: 10px; justify-content: flex-end; }
+
+        /* Skeleton UI */
+        .skeleton-group { margin-bottom: 16px; }
+        .skeleton-header { height: 40px; background-color: #e0e0e0; border-radius: 4px; margin-bottom: 8px; animation: pulse-bg 1.5s infinite; }
+        .skeleton-item { height: 80px; background-color: #e0e0e0; border-radius: 4px; margin-bottom: 8px; animation: pulse-bg 1.5s infinite; }
+        body.dark-mode .skeleton-header, body.dark-mode .skeleton-item { background-color: #495057; }
+        @keyframes pulse-bg {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
     </style>
 </head>
 <body>
@@ -79,31 +111,44 @@
             <p>저장된 모든 번역을 탐색하고 관리합니다.</p>
         </header>
 
-        <div class="controls-bar">
-            <div class="control-group">
-                <input type="text" class="form-input search-box" id="searchBox" placeholder="검색...">
-            </div>
-            <div class="control-group">
-                <select id="folderFilterDropdown" class="form-select">
-                    <option value="">모든 폴더</option>
-                </select>
-            </div>
-            <div class="control-group right">
-                <button class="btn btn-primary" id="exportPdfBtn">PDF로 내보내기</button>
-                <button class="btn btn-outline" id="exportJsonBtn">JSON으로 내보내기</button>
-                <button class="btn btn-danger" id="clearAllBtn">전체 삭제</button>
-            </div>
-             <div class="control-group" id="bulk-actions" style="display: none; width: 100%; background-color: #e7f5ff; padding: 8px; border-radius: 6px; margin-top: 12px;">
-                <span id="selection-count"></span>
-                <select id="moveSelectedToFolderDropdown" class="form-select" style="min-width: 150px;">
-                    <option value="">폴더로 이동...</option>
-                </select>
-                <button class="btn btn-danger" id="deleteSelectedBtn">선택 삭제</button>
-            </div>
-        </div>
-
+                <div class="controls-bar">
+                    <div class="control-group">
+                        <input type="text" class="form-input search-box" id="searchBox" placeholder="검색...">
+                        <select id="folderFilterDropdown" class="form-select">
+                            <option value="">모든 폴더</option>
+                        </select>
+                    </div>
+                    <div class="control-group">
+                        <button class="btn btn-primary" id="exportPdfBtn">PDF로 내보내기</button>
+                        <button class="btn btn-outline" id="exportJsonBtn">JSON으로 내보내기</button>
+                    </div>
+                    <div class="control-group right">
+                        <button class="btn btn-danger" id="clearAllBtn">전체 삭제</button>
+                        <button class="btn btn-outline" id="darkModeToggle">
+                            <span class="material-icons">dark_mode</span>
+                        </button>
+                    </div>
+                     <div class="control-group" id="bulk-actions" style="display: none; width: 100%; background-color: var(--group-header-bg); padding: 8px; border-radius: 6px; margin-top: 12px;">
+                        <span id="selection-count"></span>
+                        <select id="moveSelectedToFolderDropdown" class="form-select" style="min-width: 150px;">
+                            <option value="">폴더로 이동...</option>
+                        </select>
+                        <button class="btn btn-danger" id="deleteSelectedBtn">선택 삭제</button>
+                    </div>
+                </div>
         <div id="history-container">
             <!-- History items will be rendered here by history.js -->
+            <div id="loading-skeleton" style="display: none;">
+                <div class="list-group skeleton-group">
+                    <div class="list-group-header skeleton-header"></div>
+                    <div class="history-item skeleton-item"></div>
+                    <div class="history-item skeleton-item"></div>
+                </div>
+                <div class="list-group skeleton-group">
+                    <div class="list-group-header skeleton-header"></div>
+                    <div class="history-item skeleton-item"></div>
+                </div>
+            </div>
         </div>
 
         <div class="empty-state" id="emptyState" style="display: none;">
