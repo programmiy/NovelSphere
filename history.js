@@ -19,7 +19,7 @@ let allFolders = []; // 모든 폴더 이름을 저장할 배열
 const historyGrid = document.getElementById('historyGrid');
 const emptyState = document.getElementById('emptyState');
 const searchBox = document.getElementById('searchBox');
-const exportBtn = document.getElementById('exportBtn');
+const exportJsonBtn = document.getElementById('exportJsonBtn');
 const clearAllBtn = document.getElementById('clearAllBtn');
 const deleteSelectedBtn = document.getElementById('deleteSelectedBtn');
 const clearCacheBtn = document.getElementById('clearCacheBtn');
@@ -113,11 +113,14 @@ function injectStyles() {
 
 function setupEventListeners() {
     searchBox.addEventListener('input', handleSearch);
-    exportBtn.addEventListener('click', exportTranslations);
+    exportJsonBtn.addEventListener('click', exportTranslationsAsJson);
     clearAllBtn.addEventListener('click', clearAllTranslations);
     deleteSelectedBtn.addEventListener('click', deleteSelectedTranslations);
     clearCacheBtn.addEventListener('click', clearTitleCache);
     openGlobalFindReplaceBtn.addEventListener('click', () => openFindReplaceModal(null));
+
+    const exportPdfBtn = document.getElementById('exportPdfBtn');
+    exportPdfBtn.addEventListener('click', exportToPrintableHtml);
 
     // 폴더 필터 드롭다운 이벤트 리스너 추가
     const folderFilterDropdown = document.getElementById('folderFilterDropdown');
@@ -885,7 +888,7 @@ async function copyTranslation(compositeKey) {
     showToast('번역이 클립보드에 복사되었습니다!');
 }
 
-function exportTranslations() {
+function exportTranslationsAsJson() {
     if (allTranslations.length === 0) {
         showToast('내보낼 번역이 없습니다.', 'error');
         return;
@@ -1170,4 +1173,94 @@ async function removeFolderFromTranslations(folderName) {
             }
         }
     }
+}
+
+function exportToPrintableHtml() {
+    const checkedItems = document.querySelectorAll('.item-checkbox:checked');
+    if (checkedItems.length === 0) {
+        showToast('내보낼 항목을 선택해주세요.', 'error');
+        return;
+    }
+
+    const selectedTranslations = [];
+    checkedItems.forEach(checkbox => {
+        const compositeKey = checkbox.dataset.key;
+        const translation = allTranslations.find(t => t.compositeKey === compositeKey);
+        if (translation) {
+            selectedTranslations.push(translation);
+        }
+    });
+
+    // Group by URL/Title
+    const groupedByUrl = selectedTranslations.reduce((acc, t) => {
+        if (!acc[t.url]) {
+            acc[t.url] = [];
+        }
+        acc[t.url].push(t);
+        return acc;
+    }, {});
+
+    let bodyContent = '';
+    for (const url in groupedByUrl) {
+        const title = urlToTitle[url] || url;
+        bodyContent += `<h2>${escapeHtml(title)}</h2>`;
+        bodyContent += '<table class="translation-table">';
+        bodyContent += '<thead><tr><th>원문 (Japanese)</th><th>번역 (Korean)</th></tr></thead>';
+        bodyContent += '<tbody>';
+        groupedByUrl[url].forEach(t => {
+            bodyContent += `<tr><td>${escapeHtml(t.original)}</td><td>${escapeHtml(t.translated)}</td></tr>`;
+        });
+        bodyContent += '</tbody></table>';
+    }
+
+    const htmlString = `
+        <!DOCTYPE html>
+        <html lang="ko">
+        <head>
+            <meta charset="UTF-8">
+            <title>번역 기록 내보내기</title>
+            <style>
+                body { font-family: 'Malgun Gothic', sans-serif; line-height: 1.6; margin: 0; padding: 0; background: #fdfdff; }
+                .container { max-width: 800px; margin: 40px auto; padding: 20px; }
+                h1, h2 { color: #333; border-bottom: 2px solid #667eea; padding-bottom: 10px; margin-top: 40px; }
+                h1 { text-align: center; font-size: 2.5em; margin-bottom: 40px; }
+                h2 { font-size: 1.8em; margin-bottom: 20px; }
+                .translation-table { width: 100%; border-collapse: collapse; margin-bottom: 40px; }
+                .translation-table th, .translation-table td {
+                    border: 1px solid #ddd;
+                    padding: 12px;
+                    text-align: left;
+                    vertical-align: top;
+                }
+                .translation-table th { background-color: #f2f2f2; font-weight: bold; }
+                .translation-table td { width: 50%; }
+                .print-btn-container { text-align: center; margin-bottom: 40px; }
+                .print-btn {
+                    padding: 12px 25px; font-size: 16px; color: white; background-color: #48bb78;
+                    border: none; border-radius: 8px; cursor: pointer;
+                }
+                @media print {
+                    .print-btn-container { display: none; }
+                    h1, h2 { page-break-before: auto; page-break-after: avoid; }
+                    table { page-break-inside: auto; }
+                    tr { page-break-inside: avoid; page-break-after: auto; }
+                }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <h1>번역 기록</h1>
+                <div class="print-btn-container">
+                    <button class="print-btn" onclick="window.print()">이 페이지 인쇄 (PDF로 저장)</button>
+                </div>
+                ${bodyContent}
+            </div>
+        </body>
+        </html>
+    `;
+
+    const newTab = window.open();
+    newTab.document.open();
+    newTab.document.write(htmlString);
+    newTab.document.close();
 }
