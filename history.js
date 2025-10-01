@@ -102,6 +102,7 @@ async function fetchTitles(urls) {
 
 async function loadAndRender() {
     console.log('loadAndRender: 시작');
+    showStatusMessage('번역 기록을 불러오는 중...');
     const loadingSkeleton = document.getElementById('loading-skeleton');
     const emptyState = document.getElementById('emptyState');
     const historyContainer = document.getElementById('history-container');
@@ -140,11 +141,15 @@ async function loadAndRender() {
     console.log('loadAndRender: groupedByUrl 데이터:', groupedByUrl);
 
     allTranslations = flattened.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+    if (urls.length > 0) {
+        showStatusMessage('페이지 제목을 불러오는 중...');
+    }
     await fetchTitles(urls);
     loadingSkeleton.style.display = 'none';
     console.log('loadAndRender: 로딩 스켈레톤 숨김');
     renderView(groupedByUrl, historyContainer, emptyState);
     console.log('loadAndRender: renderView 호출 완료');
+    showStatusMessage('번역 기록 로드 완료.');
 }
 
 function renderView(groupedByUrl, container, emptyState) {
