@@ -176,7 +176,7 @@ function renderView(groupedByUrl, container, emptyState) {
 
         groupEl.innerHTML = `
             <div class="list-group-header">
-                <span class="list-group-toggle">▼</span>
+                <span class="list-group-toggle">▲</span>
                 <h3 class="list-group-title">${escapeHtml(title)} (${translations.length})</h3>
                 <div class="list-group-actions">
                     <label><input type="checkbox" class="group-select-all-checkbox"> 전체 선택</label>
