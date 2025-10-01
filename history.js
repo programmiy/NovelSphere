@@ -154,9 +154,7 @@ function renderView(groupedByUrl) {
         const translations = groupedByUrl[url];
         const title = urlToTitle[url] || url;
         const groupEl = document.createElement('div');
-        groupEl.className = 'list-group';
-
-        const groupItemsHtml = translations.map(t => renderItem(t)).join('');
+        groupEl.className = 'list-group fade-in';
 
         groupEl.innerHTML = `
             <div class="list-group-header">
@@ -166,7 +164,21 @@ function renderView(groupedByUrl) {
                     <label><input type="checkbox" class="group-select-all-checkbox"> 전체 선택</label>
                 </div>
             </div>
-            <div class="list-group-content">${groupItemsHtml}</div>
+            <div class="list-group-content">
+                <table class="history-table">
+                    <thead>
+                        <tr>
+                            <th style="width: 40px;"></th>
+                            <th>원문</th>
+                            <th>번역</th>
+                            <th style="width: 120px;">액션</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${translations.map(t => renderItem(t)).join('')}
+                    </tbody>
+                </table>
+            </div>
         `;
         container.appendChild(groupEl);
     }
@@ -177,27 +189,31 @@ function renderItem(t) {
     const dateStr = date.toLocaleString('ko-KR', { dateStyle: 'medium', timeStyle: 'short' });
 
     return `
-        <div class="history-item" data-key="${t.compositeKey}">
-            <div class="item-checkbox-container">
+        <tr class="history-item" data-key="${t.compositeKey}">
+            <td>
                 <input type="checkbox" class="item-checkbox" data-key="${t.compositeKey}">
-            </div>
-            <div class="item-text-block">
-                <div class="text-label">원문 (ID: ${t.pid || 'N/A'})</div>
-                <div class="text-content">${escapeHtml(t.original)}</div>
-            </div>
-            <div class="item-text-block">
-                <div class="text-label">번역</div>
-                <div class="text-content">${escapeHtml(t.translated)}</div>
-            </div>
-            <div class="item-actions-container">
+            </td>
+            <td>
+                <div class="item-text-block">
+                    <div class="text-label">원문 (ID: ${t.pid || 'N/A'})</div>
+                    <div class="text-content">${escapeHtml(t.original)}</div>
+                </div>
+            </td>
+            <td>
+                <div class="item-text-block">
+                    <div class="text-label">번역</div>
+                    <div class="text-content">${escapeHtml(t.translated)}</div>
+                </div>
+            </td>
+            <td class="item-actions-container">
                 <div class="item-date">${dateStr}</div>
                 <div class="item-actions">
                     <button class="btn btn-outline edit-btn" title="수정">✏️</button>
                     <button class="btn btn-outline copy-btn" title="복사">📋</button>
                     <button class="btn btn-outline delete-btn" title="삭제">🗑️</button>
                 </div>
-            </div>
-        </div>
+            </td>
+        </tr>
     `;
 }
 
