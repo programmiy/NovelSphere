@@ -58,7 +58,7 @@ function setupEventListeners() {
         }
     });
 
-    document.getElementById('editModal').style.display = 'none');
+    document.getElementById('editModal').style.display = 'none';
     document.getElementById('cancelEdit').addEventListener('click', () => document.getElementById('editModal').style.display = 'none');
     document.getElementById('saveEdit').addEventListener('click', saveEditedTranslation);
 }
@@ -87,11 +87,13 @@ function updateDarkModeToggleIcon(isDarkMode) {
 }
 
 async function loadAndRender() {
+    console.log('loadAndRender: 시작');
     document.getElementById('loading-skeleton').style.display = 'block';
     document.getElementById('emptyState').style.display = 'none';
     document.getElementById('history-container').innerHTML = '';
 
     const allData = await chrome.storage.local.get(null);
+    console.log('loadAndRender: chrome.storage.local.get(null) 결과:', allData);
     titleCache = allData.titleCache || {};
     
     const flattened = [];
@@ -111,10 +113,15 @@ async function loadAndRender() {
         }
     }
 
+    console.log('loadAndRender: flattened 데이터:', flattened);
+    console.log('loadAndRender: groupedByUrl 데이터:', groupedByUrl);
+
     allTranslations = flattened.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
     await fetchTitles(urls);
     document.getElementById('loading-skeleton').style.display = 'none';
+    console.log('loadAndRender: 로딩 스켈레톤 숨김');
     renderView(groupedByUrl);
+    console.log('loadAndRender: renderView 호출 완료');
 }
 
 async function fetchTitles(urls) {
@@ -132,16 +139,19 @@ async function fetchTitles(urls) {
 }
 
 function renderView(groupedByUrl) {
+    console.log('renderView: 시작, groupedByUrl:', groupedByUrl);
     const container = document.getElementById('history-container');
     const emptyState = document.getElementById('emptyState');
     
     if (Object.keys(groupedByUrl).length === 0) {
         container.innerHTML = '';
         emptyState.style.display = 'block';
+        console.log('renderView: groupedByUrl 비어있음, emptyState 표시');
         return;
     }
 
     emptyState.style.display = 'none';
+    console.log('renderView: emptyState 숨김');
     container.innerHTML = '';
 
     const sortedUrls = Object.keys(groupedByUrl).sort((a, b) => {
@@ -153,6 +163,7 @@ function renderView(groupedByUrl) {
     for (const url of sortedUrls) {
         const translations = groupedByUrl[url];
         const title = urlToTitle[url] || url;
+        console.log(`renderView: 그룹 렌더링 - URL: ${url}, 제목: ${title}, 번역 수: ${translations.length}`);
         const groupEl = document.createElement('div');
         groupEl.className = 'list-group fade-in';
 
@@ -182,6 +193,7 @@ function renderView(groupedByUrl) {
         `;
         container.appendChild(groupEl);
     }
+    console.log('renderView: 모든 그룹 렌더링 완료');
 }
 
 function renderItem(t) {
