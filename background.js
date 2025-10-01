@@ -96,11 +96,22 @@ if (chrome.contextMenus) {
 
 // 메시지 처리 (콘텐츠 스크립트에서 오는 요청들)
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    const channelClosedMessage = "The message channel closed before a response was received.";
+
     if (request.action === 'batchTranslate') {
-        handleBatchTranslate(request.items)
-            .then(translations => sendResponse({ translations }))
-            .catch(error => {
-                // Log to history if it's a content block error
+        (async () => {
+            try {
+                const translations = await handleBatchTranslate(request.items);
+                try {
+                    sendResponse({ translations });
+                } catch (e) {
+                    if (e.message.includes(channelClosedMessage)) {
+                        console.log("Failed to send translation success response: Channel was closed by the client.");
+                    } else {
+                        console.error("Error sending translation success response:", e);
+                    }
+                }
+            } catch (error) {
                 if (error.message && error.message.includes('PROHIBITED_CONTENT')) {
                     saveErrorLog(request.items, error.message, sender.tab?.url);
                 }
@@ -109,15 +120,49 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                     original: item.text,
                     translated: `번역 실패: ${error.message}`
                 }));
-                sendResponse({ translations: errorResponse });
-            });
+                try {
+                    sendResponse({ translations: errorResponse });
+                } catch (e) {
+                    if (e.message.includes(channelClosedMessage)) {
+                        console.log("Failed to send translation error response: Channel was closed by the client.");
+                    } else {
+                        console.error("Error sending translation error response:", e);
+                    }
+                }
+            }
+        })();
         return true; // 비동기 응답을 위해 true 반환
     } else if (request.action === 'fetchTitle') {
-        fetchPageTitle(request.url)
-            .then(title => sendResponse({ title }))
-            .catch(error => sendResponse({ title: request.url, error: error.message }));
+        (async () => {
+            try {
+                const title = await fetchPageTitle(request.url);
+                try {
+                    sendResponse({ title });
+                } catch (e) {
+                    if (e.message.includes(channelClosedMessage)) {
+                        console.log("Failed to send title success response: Channel was closed by the client.");
+                    } else {
+                        console.error("Error sending title success response:", e);
+                    }
+                }
+            } catch (error) {
+                try {
+                    sendResponse({ title: request.url, error: error.message });
+                } catch (e) {
+                    if (e.message.includes(channelClosedMessage)) {
+                        console.log("Failed to send title error response: Channel was closed by the client.");
+                    } else {
+                        console.error("Error sending title error response:", e);
+                    }
+                }
+            }
+        })();
         return true; // 비동기 응답을 위해 true 반환
     }
+    // For any other actions, or if action is not defined, do nothing.
+    // The channel will close synchronously and the sender will get an error,
+    // which is the expected behavior for unhandled actions when a response is awaited.
+    return false;
 });
 
 async function fetchPageTitle(url) {
