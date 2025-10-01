@@ -407,6 +407,61 @@ async function copyTranslation(compositeKey) {
     }
 }
 
+function openEditModal(compositeKey) {
+    const translation = allTranslations.find(t => t.compositeKey === compositeKey);
+    if (!translation) {
+        showToast('수정할 번역을 찾을 수 없습니다.', 'error');
+        return;
+    }
+
+    currentEditInfo = {
+        compositeKey: compositeKey,
+        url: translation.url,
+        id: translation.pid || translation.hash
+    };
+
+    document.getElementById('editOriginal').value = translation.original;
+    document.getElementById('editTranslated').value = translation.translated;
+    editModal.style.display = 'flex';
+}
+
+async function saveEditedTranslation() {
+    if (!currentEditInfo) {
+        showToast('수정할 정보가 없습니다.', 'error');
+        return;
+    }
+
+    const { url, id } = currentEditInfo;
+    const newTranslatedText = document.getElementById('editTranslated').value;
+
+    try {
+        const result = await chrome.storage.local.get(url);
+        const translations = result[url] || [];
+        let found = false;
+        const updatedTranslations = translations.map(t => {
+            if ((t.pid || t.hash) === id) {
+                t.translated = newTranslatedText;
+                found = true;
+            }
+            return t;
+        });
+
+        if (found) {
+            await chrome.storage.local.set({ [url]: updatedTranslations });
+            showToast('번역이 성공적으로 수정되었습니다.', 'success');
+        } else {
+            showToast('저장할 번역을 찾지 못했습니다.', 'error');
+        }
+    } catch (error) {
+        console.error('번역 수정 중 오류 발생:', error);
+        showToast('번역 수정에 실패했습니다.', 'error');
+    } finally {
+        editModal.style.display = 'none';
+        currentEditInfo = null;
+        // loadAndRender() will be called automatically by the storage listener
+    }
+}
+
 function exportTranslationsAsJson() {
     if (allTranslations.length === 0) {
         showToast('내보낼 번역이 없습니다.', 'error');
