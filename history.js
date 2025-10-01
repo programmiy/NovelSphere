@@ -86,6 +86,20 @@ function updateDarkModeToggleIcon(isDarkMode) {
     }
 }
 
+async function fetchTitles(urls) {
+    const urlsToFetch = urls.filter(url => !titleCache[url]);
+    const titlePromises = urlsToFetch.map(url =>
+        chrome.runtime.sendMessage({ action: 'fetchTitle', url: url })
+            .then(response => { titleCache[url] = (response && response.title) ? response.title : url; })
+            .catch(() => { titleCache[url] = url; })
+    );
+    if (urlsToFetch.length > 0) {
+        await Promise.all(titlePromises);
+        await chrome.storage.local.set({ titleCache });
+    }
+    urls.forEach(url => { urlToTitle[url] = titleCache[url] || url; });
+}
+
 async function loadAndRender() {
     console.log('loadAndRender: 시작');
     const loadingSkeleton = document.getElementById('loading-skeleton');
