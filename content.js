@@ -409,8 +409,12 @@ async function translateAllPTags() {
                     const errorResultForUI = { id: item.id, original: item.text, translated: `번역 실패: API 오류` };
                     updateSidebarWithTranslations([errorResultForUI]);
 
-                    const resultForStorage = { id: item.id, original: item.text, translated: '' };
-                    allFinishedResults.push(resultForStorage);
+                    // Only save a blank result if the translation was not manually cancelled by the user.
+                    // This is to distinguish permanent API failures (e.g. censorship) from temporary ones (e.g. user stop).
+                    if (!isTranslationCancelled) {
+                        const resultForStorage = { id: item.id, original: item.text, translated: '' };
+                        allFinishedResults.push(resultForStorage);
+                    }
                 }
             }
         }
@@ -458,8 +462,11 @@ async function translateAllPTags() {
             const errorResultForUI = { id: originalItem.id, original: originalItem.text, translated: `번역 실패: 분할 재시도 실패` };
             updateSidebarWithTranslations([errorResultForUI]);
 
-            const resultForStorage = { id: originalItem.id, original: originalItem.text, translated: '' };
-            allFinishedResults.push(resultForStorage);
+            // Only save a blank result if the translation was not manually cancelled by the user.
+            if (!isTranslationCancelled) {
+                const resultForStorage = { id: originalItem.id, original: originalItem.text, translated: '' };
+                allFinishedResults.push(resultForStorage);
+            }
         }
     }
 
