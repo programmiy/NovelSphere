@@ -36,6 +36,25 @@ document.addEventListener('DOMContentLoaded', () => {
     setupEventListeners();
     loadDarkModePreference();
 
+    const deleteErrorLogBtn = document.getElementById('deleteErrorLogBtn');
+    if (deleteErrorLogBtn) {
+        deleteErrorLogBtn.addEventListener('click', async () => {
+            if (confirm('API 오류 로그를 삭제하시겠습니까?')) {
+                try {
+                    await chrome.storage.local.remove('error_log');
+                    const errorLogContainer = document.getElementById('errorLogContainer');
+                    if (errorLogContainer) {
+                        errorLogContainer.style.display = 'none'; // Hide the container instead of removing it
+                    }
+                    showToast('API 오류 로그가 삭제되었습니다.', 'success');
+                } catch (error) {
+                    console.error('Failed to delete error log:', error);
+                    showToast('오류 로그 삭제에 실패했습니다.', 'error');
+                }
+            }
+        });
+    }
+
     if (createFolderButton) {
         createFolderButton.addEventListener('click', async () => {
             const folderName = newFolderNameInput.value.trim();
@@ -200,21 +219,6 @@ function setupEventListeners() {
             return;
         }
 
-        if (target.id === 'deleteErrorLogBtn') {
-            (async () => {
-                if (confirm('API 오류 로그를 삭제하시겠습니까?')) {
-                    try {
-                        await chrome.storage.local.remove('error_log');
-                        document.getElementById('errorLogContainer').remove();
-                        showToast('API 오류 로그가 삭제되었습니다.', 'success');
-                    } catch (error) {
-                        console.error('Failed to delete error log:', error);
-                        showToast('오류 로그 삭제에 실패했습니다.', 'error');
-                    }
-                }
-            })();
-            return;
-        }
     });
 
     historyContainer.addEventListener('change', (e) => {
