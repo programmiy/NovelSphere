@@ -291,12 +291,14 @@ async function deleteSelectedTranslations() {
         }
     }
     loadAndRender();
+    showStatusMessage(`${checkedItems.length}개의 번역이 삭제되었습니다.`);
 }
 
 async function clearAllTranslations() {
     if (!confirm('모든 번역 기록을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.')) return;
     await chrome.storage.local.clear();
     loadAndRender();
+    showStatusMessage('모든 번역 기록이 삭제되었습니다.');
 }
 
 function openEditModal(compositeKey) {
@@ -316,25 +318,37 @@ async function saveEditedTranslation() {
     const result = await chrome.storage.local.get(url);
     let translations = result[url] || [];
     const targetIndex = translations.findIndex(t => (t.pid || t.hash) === id);
-    if (targetIndex > -1) {
-        translations[targetIndex].translated = newTranslated;
-        translations[targetIndex].timestamp = Date.now();
-        await chrome.storage.local.set({ [url]: translations });
-        loadAndRender();
-        document.getElementById('editModal').style.display = 'none';
+            if (targetIndex > -1) {
+                translations[targetIndex].translated = newTranslated;
+                translations[targetIndex].timestamp = Date.now();
+                await chrome.storage.local.set({ [url]: translations });
+                loadAndRender();
+                document.getElementById('editModal').style.display = 'none';
+                showStatusMessage('번역이 성공적으로 저장되었습니다.');
+            }
+        }
+    
+    async function copyTranslation(compositeKey) {
+        const translation = allTranslations.find(t => t.compositeKey === compositeKey);
+        if (translation) {
+            await navigator.clipboard.writeText(translation.translated);
+            showStatusMessage('번역이 클립보드에 복사되었습니다.');
+        }
     }
-}
-
-async function copyTranslation(compositeKey) {
-    const translation = allTranslations.find(t => t.compositeKey === compositeKey);
-    if (translation) {
-        await navigator.clipboard.writeText(translation.translated);
-        // You might want a toast notification here
+    
+    function showStatusMessage(message, type = 'info') {
+        const statusMessageEl = document.getElementById('status-message');
+        if (statusMessageEl) {
+            statusMessageEl.textContent = message;
+            statusMessageEl.style.display = 'block';
+            // Optionally, add styling based on type (e.g., 'success', 'error')
+            setTimeout(() => {
+                statusMessageEl.style.display = 'none';
+            }, 3000); // Hide after 3 seconds
+        }
     }
-}
-
-function exportTranslationsAsJson() {
-    const dataStr = JSON.stringify(allTranslations, null, 2);
+    
+    function exportTranslationsAsJson() {    const dataStr = JSON.stringify(allTranslations, null, 2);
     const blob = new Blob([dataStr], { type: 'application/json' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
