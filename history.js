@@ -7,31 +7,32 @@ let currentFindReplaceUrl = null;
 const FOLDERS_STORAGE_KEY = 'translation_folders';
 let allFolders = [];
 
-const historyContainer = document.getElementById('history-container');
-const emptyState = document.getElementById('emptyState');
-const searchBox = document.getElementById('searchBox');
-const exportJsonBtn = document.getElementById('exportJsonBtn');
-const exportPdfBtn = document.getElementById('exportPdfBtn');
-const clearAllBtn = document.getElementById('clearAllBtn');
-const deleteSelectedBtn = document.getElementById('deleteSelectedBtn');
-const clearCacheBtn = document.getElementById('clearCacheBtn');
-const darkModeToggle = document.getElementById('darkModeToggle');
-const newFolderNameInput = document.getElementById('newFolderNameInput');
-const createFolderButton = document.getElementById('createFolderButton');
-const folderFilterDropdown = document.getElementById('folderFilterDropdown');
-const moveSelectedToFolderDropdown = document.getElementById('moveSelectedToFolderDropdown');
-const editModal = document.getElementById('editModal');
-const closeModal = document.getElementById('closeModal');
-const cancelEdit = document.getElementById('cancelEdit');
-const saveEdit = document.getElementById('saveEdit');
-const findReplaceModal = document.getElementById('findReplaceModal');
-const closeFindReplaceModal = document.getElementById('closeFindReplaceModal');
-const cancelFindReplace = document.getElementById('cancelFindReplace');
-const executeFindReplace = document.getElementById('executeFindReplace');
-const bulkActionsPanel = document.getElementById('bulk-actions');
-const selectionCountSpan = document.getElementById('selection-count');
+let historyContainer, emptyState, searchBox, exportJsonBtn, exportPdfBtn, clearAllBtn, deleteSelectedBtn, clearCacheBtn, darkModeToggle, newFolderNameInput, createFolderButton, folderFilterDropdown, moveSelectedToFolderDropdown, editModal, closeModal, cancelEdit, saveEdit, findReplaceModal, closeFindReplaceModal, cancelFindReplace, executeFindReplace, bulkActionsPanel, selectionCountSpan;
 
 document.addEventListener('DOMContentLoaded', () => {
+    historyContainer = document.getElementById('history-container');
+    emptyState = document.getElementById('emptyState');
+    searchBox = document.getElementById('searchBox');
+    exportJsonBtn = document.getElementById('exportJsonBtn');
+    exportPdfBtn = document.getElementById('exportPdfBtn');
+    clearAllBtn = document.getElementById('clearAllBtn');
+    deleteSelectedBtn = document.getElementById('deleteSelectedBtn');
+    clearCacheBtn = document.getElementById('clearCacheBtn');
+    darkModeToggle = document.getElementById('darkModeToggle');
+    newFolderNameInput = document.getElementById('newFolderNameInput');
+    createFolderButton = document.getElementById('createFolderButton');
+    folderFilterDropdown = document.getElementById('folderFilterDropdown');
+    moveSelectedToFolderDropdown = document.getElementById('moveSelectedToFolderDropdown');
+    editModal = document.getElementById('editModal');
+    closeModal = document.getElementById('closeModal');
+    cancelEdit = document.getElementById('cancelEdit');
+    saveEdit = document.getElementById('saveEdit');
+    findReplaceModal = document.getElementById('findReplaceModal');
+    closeFindReplaceModal = document.getElementById('closeFindReplaceModal');
+    cancelFindReplace = document.getElementById('cancelFindReplace');
+    executeFindReplace = document.getElementById('executeFindReplace');
+    bulkActionsPanel = document.getElementById('bulk-actions');
+    selectionCountSpan = document.getElementById('selection-count');
     setupEventListeners();
     loadDarkModePreference();
 
@@ -267,10 +268,13 @@ function setupEventListeners() {
 }
 
 async function loadAndRender() {
-    showToast('번역 기록을 불러오는 중...', 'info');
+    const progressContainer = document.getElementById('progress-container');
+    if(progressContainer) {
+        progressContainer.textContent = '번역 기록을 불러오는 중...';
+        progressContainer.style.display = 'block';
+    }
+
     const loadingSkeleton = document.getElementById('loading-skeleton');
-    const emptyState = document.getElementById('emptyState');
-    const historyContainer = document.getElementById('history-container');
 
     if (!loadingSkeleton || !emptyState || !historyContainer) {
         console.error('loadAndRender: 필수 DOM 요소를 찾을 수 없습니다.');
@@ -290,7 +294,17 @@ async function loadAndRender() {
     allFolders.forEach(folder => { groupedByFolder[folder] = {}; });
     groupedByFolder['폴더 없음'] = {};
 
-    for (const [key, value] of Object.entries(allData)) {
+    const dataEntries = Object.entries(allData);
+    const totalEntries = dataEntries.length;
+    let processedEntries = 0;
+
+    for (const [key, value] of dataEntries) {
+        processedEntries++;
+        if (processedEntries % 10 === 0 || processedEntries === totalEntries) {
+            const percentage = Math.round((processedEntries / totalEntries) * 100);
+            if(progressContainer) progressContainer.textContent = `데이터 처리 중... ${percentage}%`;
+        }
+
         if (key.startsWith('http') && Array.isArray(value)) {
             urls.push(key);
             value.forEach(translation => {
@@ -324,6 +338,7 @@ async function loadAndRender() {
     if (allData.error_log && allData.error_log.length > 0) {
         renderErrorLog(allData.error_log);
     }
+    if(progressContainer) progressContainer.style.display = 'none';
     showToast('로드 완료', 'success');
 }
 
