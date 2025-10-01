@@ -389,7 +389,7 @@ function renderGroupedView(groupedByFolder, container, emptyState, allData) {
             urlGroupsHtml += `
                 <div class="list-group fade-in" data-url="${url}">
                     <div class="list-group-header">
-                        <span class="list-group-toggle">▼</span>
+                        <span class="list-group-toggle collapsed">▶</span>
                         <h3 class="list-group-title" data-url="${url}">${escapeHtml(title)} (${translations.length})</h3>
                         <button class="btn btn-outline btn-icon edit-title-btn" data-url="${url}" title="제목 수정">✏️</button>
                         <div class="list-group-actions">
@@ -398,7 +398,7 @@ function renderGroupedView(groupedByFolder, container, emptyState, allData) {
                             <label><input type="checkbox" class="group-select-all-checkbox"> 전체 선택</label>
                         </div>
                     </div>
-                    <div class="list-group-content">
+                    <div class="list-group-content collapsed">
                         <table class="history-table">
                             <thead>
                                 <tr>
@@ -419,10 +419,10 @@ function renderGroupedView(groupedByFolder, container, emptyState, allData) {
 
         folderGroupEl.innerHTML = `
             <div class="folder-group-header">
-                <span class="folder-group-toggle">▼</span>
+                <span class="folder-group-toggle collapsed">▶</span>
                 <h2 class="folder-group-title">${escapeHtml(folderName)}</h2>
             </div>
-            <div class="folder-group-content">
+            <div class="folder-group-content collapsed">
                 ${urlGroupsHtml}
             </div>
         `;
@@ -480,6 +480,14 @@ function handleSearch() {
 
         group.style.display = (hasVisibleItemsInGroup || groupTitle.includes(query)) ? '' : 'none';
     });
+}
+
+function updateStats() {
+    document.getElementById('totalCount').textContent = allTranslations.length;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    document.getElementById('todayCount').textContent = allTranslations.filter(t => t.timestamp && new Date(t.timestamp) >= today).length;
+    document.getElementById('avgLength').textContent = allTranslations.length > 0 ? Math.round(allTranslations.reduce((sum, t) => sum + (t.original || '').length, 0) / allTranslations.length) : 0;
 }
 
 function updateBulkActionPanel() {
