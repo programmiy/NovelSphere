@@ -228,6 +228,13 @@ function setupEventListeners() {
                 }
             }
             updateBulkActionPanel();
+        } else if (target.classList.contains('folder-select-all-checkbox')) {
+            const folderGroup = target.closest('.history-folder-group');
+            if (folderGroup) {
+                const itemCheckboxes = folderGroup.querySelectorAll('.item-checkbox');
+                itemCheckboxes.forEach(checkbox => { checkbox.checked = target.checked; });
+            }
+            updateBulkActionPanel();
         } else if (target.classList.contains('item-folder-assign-dropdown')) {
             const compositeKey = target.dataset.key;
             const newFolderName = target.value === '폴더 없음' ? undefined : target.value;
@@ -421,6 +428,9 @@ function renderGroupedView(groupedByFolder, container, emptyState, allData) {
             <div class="folder-group-header">
                 <span class="folder-group-toggle collapsed">▶</span>
                 <h2 class="folder-group-title">${escapeHtml(folderName)}</h2>
+                <div class="list-group-actions">
+                    <label style="margin-left: auto;"><input type="checkbox" class="folder-select-all-checkbox" data-folder-name="${escapeHtml(folderName)}"> 전체 선택</label>
+                </div>
             </div>
             <div class="folder-group-content collapsed">
                 ${urlGroupsHtml}
