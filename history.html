@@ -8,7 +8,6 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
     <style>
-        /* --- NEW UI/UX STYLES --- */
         :root {
             --font-primary: 'Noto Sans KR', sans-serif;
             --bg-color: #f8f9fa;
@@ -16,279 +15,61 @@
             --text-color: #212529;
             --text-secondary: #495057;
             --primary-color: #4C6EF5;
-            --secondary-color: #20c997;
             --danger-color: #fa5252;
-            --warning-color: #fab005;
             --border-color: #dee2e6;
             --card-bg: #ffffff;
             --shadow: 0 4px 15px rgba(0, 0, 0, 0.06);
             --border-radius: 8px;
         }
-
-        /* --- Base & Reset --- */
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        body {
-            font-family: var(--font-primary);
-            background-color: var(--bg-color);
-            color: var(--text-color);
-            font-size: 14px;
-            line-height: 1.6;
-        }
-        button, input, select, textarea {
-            font-family: inherit;
-        }
-
-        /* --- Layout --- */
-        .container {
-            max-width: 1400px;
-            margin: 0 auto;
-            padding: 24px;
-        }
-        .main-header {
-            text-align: center;
-            margin-bottom: 32px;
-        }
-        .main-header h1 {
-            font-size: 28px;
-            font-weight: 700;
-            color: var(--text-color);
-        }
-        .main-header p {
-            font-size: 16px;
-            color: var(--text-secondary);
-            margin-top: 4px;
-        }
-
-        /* --- Controls Bar --- */
-        .controls-bar {
-            background: var(--card-bg);
-            padding: 16px;
-            border-radius: var(--border-radius);
-            margin-bottom: 24px;
-            box-shadow: var(--shadow);
-            border: 1px solid var(--border-color);
-            display: flex;
-            gap: 12px;
-            align-items: center;
-            flex-wrap: wrap;
-        }
-        .control-group {
-            display: flex;
-            gap: 8px;
-            align-items: center;
-        }
-        .control-group.right {
-            margin-left: auto;
-        }
-
-        /* --- Form Elements --- */
-        .form-input, .form-select {
-            padding: 8px 12px;
-            border: 1px solid var(--border-color);
-            border-radius: 6px;
-            font-size: 14px;
-            background-color: #fff;
-            transition: border-color 0.2s, box-shadow 0.2s;
-        }
-        .form-input:focus, .form-select:focus {
-            outline: none;
-            border-color: var(--primary-color);
-            box-shadow: 0 0 0 2px rgba(76, 110, 245, 0.2);
-        }
-        .search-box {
-            min-width: 250px;
-        }
-
-        /* --- Buttons --- */
-        .btn {
-            padding: 8px 16px;
-            border: 1px solid transparent;
-            border-radius: 6px;
-            font-size: 14px;
-            font-weight: 500;
-            cursor: pointer;
-            transition: all 0.2s;
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-        }
-        .btn-primary {
-            background-color: var(--primary-color);
-            color: white;
-        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: var(--font-primary); background-color: var(--bg-color); color: var(--text-color); font-size: 14px; line-height: 1.6; }
+        button, input, select, textarea { font-family: inherit; }
+        .container { max-width: 1400px; margin: 0 auto; padding: 24px; }
+        .main-header { text-align: center; margin-bottom: 32px; }
+        .main-header h1 { font-size: 28px; font-weight: 700; }
+        .main-header p { font-size: 16px; color: var(--text-secondary); margin-top: 4px; }
+        .controls-bar { background: var(--card-bg); padding: 16px; border-radius: var(--border-radius); margin-bottom: 24px; box-shadow: var(--shadow); border: 1px solid var(--border-color); display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+        .control-group { display: flex; gap: 8px; align-items: center; }
+        .control-group.right { margin-left: auto; }
+        .form-input, .form-select { padding: 8px 12px; border: 1px solid var(--border-color); border-radius: 6px; font-size: 14px; background-color: #fff; transition: border-color 0.2s, box-shadow 0.2s; }
+        .form-input:focus, .form-select:focus { outline: none; border-color: var(--primary-color); box-shadow: 0 0 0 2px rgba(76, 110, 245, 0.2); }
+        .search-box { min-width: 250px; }
+        .btn { padding: 8px 16px; border: 1px solid transparent; border-radius: 6px; font-size: 14px; font-weight: 500; cursor: pointer; transition: all 0.2s; display: inline-flex; align-items: center; gap: 6px; }
+        .btn-primary { background-color: var(--primary-color); color: white; }
         .btn-primary:hover { background-color: #364FC7; }
-        .btn-secondary {
-            background-color: var(--secondary-color);
-            color: white;
-        }
-        .btn-secondary:hover { background-color: #0ca678; }
-        .btn-danger {
-            background-color: var(--danger-color);
-            color: white;
-        }
+        .btn-danger { background-color: var(--danger-color); color: white; }
         .btn-danger:hover { background-color: #c92a2a; }
-        .btn-warning {
-            background-color: var(--warning-color);
-            color: #fff;
-        }
-        .btn-warning:hover { background-color: #f08c00; }
-        .btn-outline {
-            background-color: transparent;
-            border-color: var(--border-color);
-            color: var(--text-secondary);
-        }
-        .btn-outline:hover {
-            background-color: var(--light-gray);
-            color: var(--text-color);
-        }
-
-        /* --- History List Layout --- */
-        #history-container {
-            display: flex;
-            flex-direction: column;
-            gap: 16px;
-        }
-        .folder-group, .url-group {
-            background: var(--card-bg);
-            border-radius: var(--border-radius);
-            border: 1px solid var(--border-color);
-            overflow: hidden;
-            transition: box-shadow 0.2s;
-        }
-        .folder-group:hover, .url-group:hover {
-            box-shadow: var(--shadow);
-        }
-        .group-header {
-            display: flex;
-            align-items: center;
-            padding: 12px 16px;
-            cursor: pointer;
-            user-select: none;
-            background-color: #f8f9fa;
-        }
-        .group-header:hover {
-            background-color: #f1f3f5;
-        }
-        .group-toggle {
-            margin-right: 12px;
-            transition: transform 0.2s;
-        }
-        .group-toggle.collapsed {
-            transform: rotate(-90deg);
-        }
-        .group-title {
-            font-size: 16px;
-            font-weight: 500;
-            flex-grow: 1;
-        }
-        .group-actions {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-        .group-content {
-            padding: 0;
-        }
-        .group-content.collapsed {
-            display: none;
-        }
-
-        /* --- History Item Row --- */
-        .history-item {
-            display: flex;
-            align-items: flex-start;
-            padding: 16px;
-            border-top: 1px solid var(--border-color);
-        }
-        .history-item:hover {
-            background-color: #f8f9fa;
-        }
-        .item-checkbox-container {
-            padding-top: 5px;
-            margin-right: 16px;
-        }
-        .item-main {
-            flex-grow: 1;
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 16px;
-        }
-        .item-text-block .text-label {
-            font-size: 12px;
-            font-weight: 500;
-            color: var(--text-secondary);
-            margin-bottom: 4px;
-        }
-        .item-text-block .text-content {
-            line-height: 1.7;
-        }
-        .item-actions-container {
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-            align-items: flex-end;
-        }
-        .item-date {
-            font-size: 12px;
-            color: var(--text-secondary);
-            margin-bottom: 8px;
-        }
-        .item-actions {
-            display: flex;
-            gap: 4px;
-        }
-        .item-actions .btn {
-            padding: 4px;
-            font-size: 12px;
-            width: 28px;
-            height: 28px;
-            border-radius: 50%;
-        }
-
-        /* --- Empty State --- */
-        .empty-state {
-            text-align: center;
-            padding: 80px 20px;
-            background: var(--card-bg);
-            border-radius: var(--border-radius);
-            border: 1px solid var(--border-color);
-        }
-        .empty-state h2 { font-size: 20px; margin-bottom: 8px; }
-        .empty-state p { font-size: 16px; color: var(--text-secondary); }
-
-        /* --- Modals --- */
-        .edit-modal {
-            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-            background: rgba(0, 0, 0, 0.6);
-            display: none; justify-content: center; align-items: center;
-            z-index: 1000;
-        }
-        .modal-content {
-            background: white; border-radius: var(--border-radius);
-            padding: 24px; max-width: 700px; width: 90%;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-        }
-        .modal-header {
-            display: flex; justify-content: space-between; align-items: center;
-            margin-bottom: 20px;
-        }
+        .btn-outline { background-color: transparent; border-color: var(--border-color); color: var(--text-secondary); }
+        .btn-outline:hover { background-color: #f1f3f5; }
+        #history-container { display: flex; flex-direction: column; gap: 16px; }
+        .list-group { background: var(--card-bg); border-radius: var(--border-radius); border: 1px solid var(--border-color); overflow: hidden; }
+        .list-group-header { display: flex; align-items: center; padding: 12px 16px; cursor: pointer; user-select: none; background-color: #f8f9fa; }
+        .list-group-header:hover { background-color: #f1f3f5; }
+        .list-group-toggle { margin-right: 12px; transition: transform 0.2s; }
+        .list-group-toggle.collapsed { transform: rotate(-90deg); }
+        .list-group-title { font-size: 16px; font-weight: 500; flex-grow: 1; }
+        .list-group-actions { display: flex; align-items: center; gap: 8px; }
+        .list-group-content { display: block; }
+        .list-group-content.collapsed { display: none; }
+        .history-item { display: grid; grid-template-columns: 40px 1fr 1fr 120px; align-items: flex-start; padding: 16px; border-top: 1px solid var(--border-color); }
+        .history-item:hover { background-color: #f8f9fa; }
+        .item-checkbox-container { display: flex; justify-content: center; padding-top: 5px; }
+        .item-text-block .text-label { font-size: 12px; font-weight: 500; color: var(--text-secondary); margin-bottom: 4px; }
+        .item-text-block .text-content { line-height: 1.7; }
+        .item-actions-container { text-align: right; }
+        .item-date { font-size: 12px; color: var(--text-secondary); margin-bottom: 8px; }
+        .item-actions { display: inline-flex; gap: 4px; }
+        .item-actions .btn { padding: 4px; font-size: 12px; width: 28px; height: 28px; border-radius: 50%; }
+        .empty-state { text-align: center; padding: 80px 20px; background: var(--card-bg); border-radius: var(--border-radius); border: 1px solid var(--border-color); }
+        .edit-modal { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.6); display: none; justify-content: center; align-items: center; z-index: 1000; }
+        .modal-content { background: white; border-radius: var(--border-radius); padding: 24px; max-width: 700px; width: 90%; box-shadow: 0 10px 30px rgba(0,0,0,0.2); }
+        .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
         .modal-title { font-size: 20px; font-weight: 600; }
-        .close-btn { background: none; border: none; font-size: 24px; cursor: pointer; color: var(--medium-gray); }
+        .close-btn { background: none; border: none; font-size: 24px; cursor: pointer; color: #adb5bd; }
         .form-group { margin-bottom: 16px; }
         .form-label { display: block; margin-bottom: 8px; font-weight: 500; }
-        .form-textarea {
-            width: 100%; min-height: 100px; padding: 10px;
-            border: 1px solid var(--border-color); border-radius: 6px;
-            font-size: 14px; resize: vertical;
-        }
+        .form-textarea { width: 100%; min-height: 100px; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; font-size: 14px; resize: vertical; }
         .modal-actions { display: flex; gap: 10px; justify-content: flex-end; }
-
-        /* --- Utility --- */
-        .hidden { display: none; }
     </style>
 </head>
 <body>
@@ -308,14 +89,21 @@
                 </select>
             </div>
             <div class="control-group right">
-                <button class="btn btn-secondary" id="exportPdfBtn">PDF로 내보내기</button>
+                <button class="btn btn-primary" id="exportPdfBtn">PDF로 내보내기</button>
                 <button class="btn btn-outline" id="exportJsonBtn">JSON으로 내보내기</button>
                 <button class="btn btn-danger" id="clearAllBtn">전체 삭제</button>
+            </div>
+             <div class="control-group" id="bulk-actions" style="display: none; width: 100%; background-color: #e7f5ff; padding: 8px; border-radius: 6px; margin-top: 12px;">
+                <span id="selection-count"></span>
+                <select id="moveSelectedToFolderDropdown" class="form-select" style="min-width: 150px;">
+                    <option value="">폴더로 이동...</option>
+                </select>
+                <button class="btn btn-danger" id="deleteSelectedBtn">선택 삭제</button>
             </div>
         </div>
 
         <div id="history-container">
-            <!-- New list-based history will be rendered here by history.js -->
+            <!-- History items will be rendered here by history.js -->
         </div>
 
         <div class="empty-state" id="emptyState" style="display: none;">
@@ -324,7 +112,7 @@
         </div>
     </div>
 
-    <!-- Modals (structure is mostly unchanged) -->
+    <!-- Modals -->
     <div class="edit-modal" id="editModal">
         <div class="modal-content">
             <div class="modal-header">
@@ -332,37 +120,16 @@
                 <button class="close-btn" id="closeModal">×</button>
             </div>
             <div class="form-group">
-                <label class="form-label">원본 텍스트 (일본어)</label>
+                <label class="form-label">원본 텍스트</label>
                 <textarea class="form-textarea" id="editOriginal" readonly></textarea>
             </div>
             <div class="form-group">
-                <label class="form-label">번역 텍스트 (한국어)</label>
+                <label class="form-label">번역 텍스트</label>
                 <textarea class="form-textarea" id="editTranslated"></textarea>
             </div>
             <div class="modal-actions">
                 <button class="btn btn-outline" id="cancelEdit">취소</button>
                 <button class="btn btn-primary" id="saveEdit">저장</button>
-            </div>
-        </div>
-    </div>
-
-    <div class="edit-modal" id="findReplaceModal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <div class="modal-title">찾아 바꾸기</div>
-                <button class="close-btn" id="closeFindReplaceModal">×</button>
-            </div>
-            <div class="form-group">
-                <label class="form-label">찾을 내용</label>
-                <input type="text" class="form-input" style="width: 100%" id="findText">
-            </div>
-            <div class="form-group">
-                <label class="form-label">바꿀 내용</label>
-                <input type="text" class="form-input" style="width: 100%" id="replaceText">
-            </div>
-            <div class="modal-actions">
-                <button class="btn btn-outline" id="cancelFindReplace">취소</button>
-                <button class="btn btn-primary" id="executeFindReplace">실행</button>
             </div>
         </div>
     </div>
