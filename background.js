@@ -188,7 +188,7 @@ async function handleBatchTranslate(items) {
     const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
     
     const texts = items.map(item => item.text);
-    const prompt = `You are a translation API. Translate the following Japanese texts into Korean. Return a single valid JSON array of strings. The output array must contain the translation for each input text in the same order. Do not include any other text or explanations. Preserve the original quotation marks (「」 and 『』) in the translation. For example, 「おはよう」 should be translated as 「안녕」, and 『何をですか？』 should be translated as 『무엇을요?』.`;
+    const prompt = `You are a translation API. Translate the following Japanese texts into Korean. Return a single valid JSON array of strings. The output array must contain the translation for each input text in the same order. Do not include any other text or explanations. Preserve the original quotation marks (「」 and 『』) in the translation. For example, 「おはよう」 should be translated as 「안녕」, and 『何をですか？』 should be translated as 『무엇을요?』. IMPORTANT RULE: If any single character in the translated Korean text repeats more than 10 times consecutively, you MUST truncate it to exactly 10 repetitions and append a '(반복)' marker directly after. For example, a translation resulting in '아아아아아아아아아아아아아' must be returned as '아아아아아아아아아아(반복)'.`;;
     const textsToTranslate = items.map(item => {
         let text = item.text;
         // Normalize long repeating characters and special symbols to prevent API errors
