@@ -88,6 +88,18 @@ function setupEventListeners() {
     historyContainer.addEventListener('click', (e) => {
         const target = e.target;
 
+        const folderHeader = target.closest('.folder-group-header');
+        if (folderHeader) {
+            const folderContent = folderHeader.nextElementSibling;
+            const toggle = folderHeader.querySelector('.folder-group-toggle');
+            if (folderContent) {
+                folderContent.classList.toggle('collapsed');
+                toggle.classList.toggle('collapsed');
+                toggle.textContent = folderContent.classList.contains('collapsed') ? '▶' : '▼';
+            }
+            return;
+        }
+
         const findReplaceBtn = target.closest('.btn-find-replace');
         if (findReplaceBtn) {
             const url = findReplaceBtn.dataset.url;
@@ -274,16 +286,25 @@ async function loadAndRender() {
     
     const flattened = [];
     const urls = [];
+    const groupedByFolder = {};
+    allFolders.forEach(folder => { groupedByFolder[folder] = {}; });
+    groupedByFolder['폴더 없음'] = {};
 
     for (const [key, value] of Object.entries(allData)) {
         if (key.startsWith('http') && Array.isArray(value)) {
             urls.push(key);
-            if (!groupedByUrl[key]) groupedByUrl[key] = [];
             value.forEach(translation => {
+                const folderName = translation.folderName || '폴더 없음';
+                if (!groupedByFolder[folderName]) {
+                    groupedByFolder[folderName] = {};
+                }
+                if (!groupedByFolder[folderName][key]) {
+                    groupedByFolder[folderName][key] = [];
+                }
                 const compositeKey = `${key}|${translation.pid || translation.hash}`;
                 const enrichedTranslation = { url: key, ...translation, compositeKey };
+                groupedByFolder[folderName][key].push(enrichedTranslation);
                 flattened.push(enrichedTranslation);
-                groupedByUrl[key].push(enrichedTranslation);
             });
         }
     }
@@ -292,7 +313,7 @@ async function loadAndRender() {
     await fetchTitles(urls);
     loadingSkeleton.style.display = 'none';
     
-    renderView(groupedByUrl, historyContainer, emptyState, allData);
+    renderGroupedView(groupedByFolder, historyContainer, emptyState, allData);
     updateStats();
     updateBulkActionPanel();
     renderFolders();
@@ -316,41 +337,45 @@ async function fetchTitles(urls) {
     urls.forEach(url => { urlToTitle[url] = titleCache[url] || url; });
 }
 
-function renderView(groupedByUrl, container, emptyState, allData) {
-    if (Object.keys(groupedByUrl).length === 0) {
+function renderGroupedView(groupedByFolder, container, emptyState, allData) {
+    const hasAnyTranslations = Object.values(groupedByFolder).some(folder => Object.keys(folder).length > 0);
+    if (!hasAnyTranslations) {
         container.innerHTML = '';
         emptyState.style.display = 'block';
         return;
     }
-
     emptyState.style.display = 'none';
     container.innerHTML = '';
 
-    const sortedUrls = Object.keys(groupedByUrl).sort((a, b) => {
-        const lastTimeA = Math.max(...groupedByUrl[a].map(t => t.timestamp || 0));
-        const lastTimeB = Math.max(...groupedByUrl[b].map(t => t.timestamp || 0));
-        return lastTimeB - lastTimeA;
-    });
+    const sortedFolderNames = [...allFolders, '폴더 없음'].filter(name => groupedByFolder[name] && Object.keys(groupedByFolder[name]).length > 0);
 
-    for (const url of sortedUrls) {
-        const translations = groupedByUrl[url];
-        const title = urlToTitle[url] || url;
-        const groupEl = document.createElement('div');
-        groupEl.className = 'list-group fade-in';
+    for (const folderName of sortedFolderNames) {
+        const folderGroupEl = document.createElement('div');
+        folderGroupEl.className = 'history-folder-group';
+        
+        const urlsInFolder = Object.keys(groupedByFolder[folderName]).sort((a, b) => {
+            const lastTimeA = Math.max(...groupedByFolder[folderName][a].map(t => t.timestamp || 0));
+            const lastTimeB = Math.max(...groupedByFolder[folderName][b].map(t => t.timestamp || 0));
+            return lastTimeB - lastTimeA;
+        });
 
-                const groupItemsHtml = translations.map(t => renderItem(t)).join('');
-        
-                const status = allData['status-' + url] || {};
-                const isApplied = status.applied;
-        
-                groupEl.innerHTML = `
+        let urlGroupsHtml = '';
+        for (const url of urlsInFolder) {
+            const translations = groupedByFolder[folderName][url];
+            const title = urlToTitle[url] || url;
+            const status = allData['status-' + url] || {};
+            const isApplied = status.applied;
+            const groupItemsHtml = translations.map(t => renderItem(t)).join('');
+
+            urlGroupsHtml += `
+                <div class="list-group fade-in" data-url="${url}">
                     <div class="list-group-header">
                         <span class="list-group-toggle">▼</span>
                         <h3 class="list-group-title" data-url="${url}">${escapeHtml(title)} (${translations.length})</h3>
                         <button class="btn btn-outline btn-icon edit-title-btn" data-url="${url}" title="제목 수정">✏️</button>
                         <div class="list-group-actions">
-                            <button class="btn btn-outline btn-apply ${isApplied ? 'applied' : ''}" data-url="${url}">${isApplied ? '적용 해제' : '페이지에 적용'}</button>
-                            <button class="btn btn-outline btn-find-replace" data-url="${url}">찾아 바꾸기</button>
+                            <button class="btn btn-secondary btn-apply ${isApplied ? 'applied' : ''}" data-url="${url}">${isApplied ? '적용 해제' : '페이지에 적용'}</button>
+                            <button class="btn btn-secondary btn-find-replace" data-url="${url}">찾아 바꾸기</button>
                             <label><input type="checkbox" class="group-select-all-checkbox"> 전체 선택</label>
                         </div>
                     </div>
@@ -369,7 +394,20 @@ function renderView(groupedByUrl, container, emptyState, allData) {
                             </tbody>
                         </table>
                     </div>
-                `;        container.appendChild(groupEl);
+                </div>
+            `;
+        }
+
+        folderGroupEl.innerHTML = `
+            <div class="folder-group-header">
+                <span class="folder-group-toggle">▼</span>
+                <h2 class="folder-group-title">${escapeHtml(folderName)}</h2>
+            </div>
+            <div class="folder-group-content">
+                ${urlGroupsHtml}
+            </div>
+        `;
+        container.appendChild(folderGroupEl);
     }
 }
 

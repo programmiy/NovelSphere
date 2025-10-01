@@ -61,6 +61,22 @@
         .btn-danger:hover { background-color: #c92a2a; }
         .btn-outline { background-color: transparent; border-color: var(--border-color); color: var(--text-secondary); }
         .btn-outline:hover { background-color: #f1f3f5; }
+        .btn-secondary {
+            background-color: #e9ecef;
+            color: #495057;
+            border-color: #e9ecef;
+        }
+        .btn-secondary:hover {
+            background-color: #dee2e6;
+        }
+        body.dark-mode .btn-secondary {
+            background-color: #495057;
+            color: #f8f9fa;
+            border-color: #495057;
+        }
+        body.dark-mode .btn-secondary:hover {
+            background-color: #5a6268;
+        }
         .btn-apply.applied { background-color: var(--danger-color); color: white; border-color: var(--danger-color); }
         #history-container { display: flex; flex-direction: column; gap: 16px; }
         .list-group { background: var(--card-bg); border-radius: var(--border-radius); border: 1px solid var(--border-color); overflow: hidden; }
@@ -73,6 +89,44 @@
         .list-group-content { display: block; overflow: hidden; transition: max-height 0.3s ease-out; }
         .list-group-content.collapsed { max-height: 0; }
         .list-group-content:not(.collapsed) { max-height: 1000px; /* 충분히 큰 값으로 설정 */ }
+
+        .history-folder-group {
+            background: var(--card-bg);
+            border-radius: var(--border-radius);
+            border: 1px solid var(--border-color);
+            margin-bottom: 16px;
+            overflow: hidden;
+        }
+        .folder-group-header {
+            display: flex;
+            align-items: center;
+            padding: 16px;
+            cursor: pointer;
+            user-select: none;
+            background-color: var(--group-header-bg);
+            border-bottom: 1px solid var(--border-color);
+        }
+        .folder-group-header:hover {
+            background-color: var(--group-header-hover-bg);
+        }
+        .folder-group-toggle {
+            margin-right: 12px;
+            transition: transform 0.2s;
+        }
+        .folder-group-toggle.collapsed {
+            transform: rotate(-90deg);
+        }
+        .folder-group-title {
+            font-size: 20px;
+            font-weight: 700;
+        }
+        .folder-group-content {
+            padding: 16px;
+        }
+        .folder-group-content.collapsed {
+            display: none;
+        }
+
 
         /* Table View */
         .history-table { width: 100%; border-collapse: collapse; }
