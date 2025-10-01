@@ -148,30 +148,17 @@
                             <span class="material-icons">dark_mode</span>
                         </button>
                     </div>
-                                  <div class="control-group" id="bulk-actions" style="width: 100%; background-color: var(--primary-color); color: white; padding: 12px 16px; border-radius: 8px; margin-top: 16px; align-items: center; justify-content: space-between;">
-                                     <span id="selection-count" style="font-weight: 500;"></span>
-                                     <div style="display: flex; gap: 10px; align-items: center;">
-                                                             <select id="moveSelectedToFolderDropdown" class="form-select" style="min-width: 150px; background-color: rgba(255,255,255,0.2); border-color: rgba(255,255,255,0.3); color: white;" disabled>
-                                                                 <option value="">폴더로 이동...</option>
-                                                             </select>
-                                                             <button class="btn btn-danger" id="deleteSelectedBtn" style="background-color: #c92a2a; border-color: #c92a2a;" disabled>선택 삭제</button>                                     </div>
-                                 </div>                </div>
+                </div>
+                <div class="control-group" id="bulk-actions" style="width: 100%; background-color: var(--primary-color); color: white; padding: 12px 16px; border-radius: 8px; margin-top: 16px; align-items: center; justify-content: space-between;">
+                   <span id="selection-count" style="font-weight: 500;"></span>
+                   <div style="display: flex; gap: 10px; align-items: center;">
+                                           <select id="moveSelectedToFolderDropdown" class="form-select" style="min-width: 150px; background-color: rgba(255,255,255,0.2); border-color: rgba(255,255,255,0.3); color: white;" disabled>
+                                               <option value="">폴더로 이동...</option>
+                                           </select>
+                                           <button class="btn btn-danger" id="deleteSelectedBtn" style="background-color: #c92a2a; border-color: #c92a2a;" disabled>선택 삭제</button>                                     </div>
+               </div>
         <div id="history-container">
-            <div class="list-group-content">
-                <table class="history-table">
-                    <thead>
-                        <tr>
-                            <th style="width: 40px;"></th>
-                            <th>원문</th>
-                            <th>번역</th>
-                            <th style="width: 120px;">액션</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <!-- History items will be rendered here -->
-                    </tbody>
-                </table>
-            </div>
+            <!-- History items will be rendered here by history.js -->
             <div id="loading-skeleton" style="display: none;">
                 <div class="list-group skeleton-group">
                     <div class="list-group-header skeleton-header"></div>
