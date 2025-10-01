@@ -235,14 +235,18 @@ function handleSearch() {
 
 function updateBulkActionPanel() {
     const checkedItems = document.querySelectorAll('.item-checkbox:checked');
-    const panel = document.getElementById('bulk-actions');
     const countSpan = document.getElementById('selection-count');
+    const moveDropdown = document.getElementById('moveSelectedToFolderDropdown');
+    const deleteButton = document.getElementById('deleteSelectedBtn');
 
     if (checkedItems.length > 0) {
-        panel.style.display = 'flex';
         countSpan.textContent = `${checkedItems.length}개 항목 선택됨`;
+        moveDropdown.disabled = false;
+        deleteButton.disabled = false;
     } else {
-        panel.style.display = 'none';
+        countSpan.textContent = '선택된 항목 없음';
+        moveDropdown.disabled = true;
+        deleteButton.disabled = true;
     }
 }
 

@@ -92,8 +92,7 @@
         .item-text-block .text-content { line-height: 1.7; }
         .item-actions-container { text-align: right; }
         .item-date { font-size: 12px; color: var(--text-secondary); margin-bottom: 8px; }
-        .item-actions { display: inline-flex; gap: 4px; opacity: 0; transition: opacity 0.2s; }
-        .history-item:hover .item-actions { opacity: 1; }
+        .item-actions { display: inline-flex; gap: 4px; }
         .item-actions .btn { padding: 4px; font-size: 12px; width: 28px; height: 28px; border-radius: 50%; }
         .empty-state { text-align: center; padding: 80px 20px; background: var(--card-bg); border-radius: var(--border-radius); border: 1px solid var(--border-color); }
         .edit-modal { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.6); display: none; justify-content: center; align-items: center; z-index: 1000; }
@@ -149,14 +148,13 @@
                             <span class="material-icons">dark_mode</span>
                         </button>
                     </div>
-                                  <div class="control-group" id="bulk-actions" style="display: none; width: 100%; background-color: var(--primary-color); color: white; padding: 12px 16px; border-radius: 8px; margin-top: 16px; align-items: center; justify-content: space-between;">
+                                  <div class="control-group" id="bulk-actions" style="width: 100%; background-color: var(--primary-color); color: white; padding: 12px 16px; border-radius: 8px; margin-top: 16px; align-items: center; justify-content: space-between;">
                                      <span id="selection-count" style="font-weight: 500;"></span>
                                      <div style="display: flex; gap: 10px; align-items: center;">
-                                         <select id="moveSelectedToFolderDropdown" class="form-select" style="min-width: 150px; background-color: rgba(255,255,255,0.2); border-color: rgba(255,255,255,0.3); color: white;">
-                                             <option value="">폴더로 이동...</option>
-                                         </select>
-                                         <button class="btn btn-danger" id="deleteSelectedBtn" style="background-color: #c92a2a; border-color: #c92a2a;">선택 삭제</button>
-                                     </div>
+                                                             <select id="moveSelectedToFolderDropdown" class="form-select" style="min-width: 150px; background-color: rgba(255,255,255,0.2); border-color: rgba(255,255,255,0.3); color: white;" disabled>
+                                                                 <option value="">폴더로 이동...</option>
+                                                             </select>
+                                                             <button class="btn btn-danger" id="deleteSelectedBtn" style="background-color: #c92a2a; border-color: #c92a2a;" disabled>선택 삭제</button>                                     </div>
                                  </div>                </div>
         <div id="history-container">
             <div class="list-group-content">
