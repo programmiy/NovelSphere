@@ -88,6 +88,82 @@ function setupEventListeners() {
     historyContainer.addEventListener('click', (e) => {
         const target = e.target;
 
+        const findReplaceBtn = target.closest('.btn-find-replace');
+        if (findReplaceBtn) {
+            const url = findReplaceBtn.dataset.url;
+            openFindReplaceModal(url);
+            return;
+        }
+
+        const applyBtn = target.closest('.btn-apply');
+        if (applyBtn) {
+            const url = applyBtn.dataset.url;
+            toggleApplyStatus(url, applyBtn);
+            return;
+        }
+
+        const editTitleBtn = target.closest('.edit-title-btn');
+        if (editTitleBtn) {
+            const url = editTitleBtn.dataset.url;
+            const titleEl = historyContainer.querySelector(`.list-group-title[data-url="${url}"]`);
+            
+            if (titleEl.isContentEditable) return;
+
+            const originalTitle = titleEl.textContent;
+            titleEl.contentEditable = 'true';
+            titleEl.focus();
+            titleEl.style.borderBottom = '1px solid var(--primary-color)';
+            titleEl.style.padding = '2px';
+            titleEl.style.backgroundColor = 'var(--item-hover-bg)';
+
+            const selection = window.getSelection();
+            const range = document.createRange();
+            range.selectNodeContents(titleEl);
+            selection.removeAllRanges();
+            selection.addRange(range);
+
+            const cleanup = () => {
+                titleEl.contentEditable = 'false';
+                titleEl.style.borderBottom = 'none';
+                titleEl.style.padding = '0';
+                titleEl.style.backgroundColor = 'transparent';
+                titleEl.removeEventListener('blur', handleBlur);
+                titleEl.removeEventListener('keydown', handleKeydown);
+            };
+
+            const saveTitle = async () => {
+                const newTitle = titleEl.textContent.trim();
+                cleanup();
+                if (newTitle && newTitle !== originalTitle) {
+                    urlToTitle[url] = newTitle;
+                    titleCache[url] = newTitle;
+                    await chrome.storage.local.set({ titleCache });
+                    showToast('제목이 수정되었습니다.', 'success');
+                } else {
+                    titleEl.textContent = originalTitle;
+                }
+            };
+
+            const handleBlur = () => {
+                saveTitle();
+            };
+
+            const handleKeydown = (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    saveTitle();
+                } else if (e.key === 'Escape') {
+                    titleEl.textContent = originalTitle;
+                    cleanup();
+                }
+            };
+
+            titleEl.addEventListener('blur', handleBlur);
+            titleEl.addEventListener('keydown', handleKeydown);
+            
+            return;
+        }
+
         const groupHeader = target.closest('.list-group-header');
         if (groupHeader && !target.closest('.list-group-actions')) {
             const groupContent = groupHeader.nextElementSibling;
@@ -215,7 +291,7 @@ async function loadAndRender() {
     await fetchTitles(urls);
     loadingSkeleton.style.display = 'none';
     
-    renderView(groupedByUrl, historyContainer, emptyState);
+    renderView(groupedByUrl, historyContainer, emptyState, allData);
     updateStats();
     updateBulkActionPanel();
     renderFolders();
@@ -239,7 +315,7 @@ async function fetchTitles(urls) {
     urls.forEach(url => { urlToTitle[url] = titleCache[url] || url; });
 }
 
-function renderView(groupedByUrl, container, emptyState) {
+function renderView(groupedByUrl, container, emptyState, allData) {
     if (Object.keys(groupedByUrl).length === 0) {
         container.innerHTML = '';
         emptyState.style.display = 'block';
@@ -261,33 +337,38 @@ function renderView(groupedByUrl, container, emptyState) {
         const groupEl = document.createElement('div');
         groupEl.className = 'list-group fade-in';
 
-        const groupItemsHtml = translations.map(t => renderItem(t)).join('');
-
-        groupEl.innerHTML = `
-            <div class="list-group-header">
-                <span class="list-group-toggle">▼</span>
-                <h3 class="list-group-title">${escapeHtml(title)} (${translations.length})</h3>
-                <div class="list-group-actions">
-                    <label><input type="checkbox" class="group-select-all-checkbox"> 전체 선택</label>
-                </div>
-            </div>
-            <div class="list-group-content">
-                <table class="history-table">
-                    <thead>
-                        <tr>
-                            <th style="width: 40px;"></th>
-                            <th>원문</th>
-                            <th>번역</th>
-                            <th style="width: 120px;">액션</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${groupItemsHtml}
-                    </tbody>
-                </table>
-            </div>
-        `;
-        container.appendChild(groupEl);
+                const groupItemsHtml = translations.map(t => renderItem(t)).join('');
+        
+                const status = allData['status-' + url] || {};
+                const isApplied = status.applied;
+        
+                groupEl.innerHTML = `
+                    <div class="list-group-header">
+                        <span class="list-group-toggle">▼</span>
+                        <h3 class="list-group-title" data-url="${url}">${escapeHtml(title)} (${translations.length})</h3>
+                        <button class="btn btn-outline btn-icon edit-title-btn" data-url="${url}" title="제목 수정">✏️</button>
+                        <div class="list-group-actions">
+                            <button class="btn btn-outline btn-apply ${isApplied ? 'applied' : ''}" data-url="${url}">${isApplied ? '적용 해제' : '페이지에 적용'}</button>
+                            <button class="btn btn-outline btn-find-replace" data-url="${url}">찾아 바꾸기</button>
+                            <label><input type="checkbox" class="group-select-all-checkbox"> 전체 선택</label>
+                        </div>
+                    </div>
+                    <div class="list-group-content">
+                        <table class="history-table">
+                            <thead>
+                                <tr>
+                                    <th style="width: 40px;"></th>
+                                    <th>원문</th>
+                                    <th>번역</th>
+                                    <th style="width: 120px;">액션</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${groupItemsHtml}
+                            </tbody>
+                        </table>
+                    </div>
+                `;        container.appendChild(groupEl);
     }
 }
 
@@ -317,6 +398,7 @@ function renderItem(t) {
                 <div class="item-actions">
                     <button class="btn btn-outline edit-btn" title="수정">✏️</button>
                     <button class="btn btn-outline copy-btn" title="복사">📋</button>
+                    <button class="btn btn-outline exclude-btn" title="제외">🚫</button>
                     <button class="btn btn-outline delete-btn" title="삭제">🗑️</button>
                 </div>
             </td>
@@ -407,6 +489,77 @@ async function copyTranslation(compositeKey) {
     }
 }
 
+async function deleteTranslation(compositeKey, skipConfirm = false) {
+    if (!skipConfirm && !confirm('이 번역을 삭제하시겠습니까?')) return;
+    const [url, id] = compositeKey.split('|');
+    if (!url || !id) return;
+    try {
+        const result = await chrome.storage.local.get(url);
+        let translations = result[url] || [];
+        const updatedTranslations = translations.filter(t => (t.pid || t.hash) !== id);
+        if (updatedTranslations.length > 0) {
+            await chrome.storage.local.set({ [url]: updatedTranslations });
+        } else {
+            await chrome.storage.local.remove(url);
+        }
+        if (!skipConfirm) {
+            showToast('번역이 삭제되었습니다.', 'success');
+        }
+        // The view will be re-rendered by the storage listener, so no need to call loadAndRender()
+    } catch (error) {
+        console.error('Delete failed:', error);
+        showToast('삭제에 실패했습니다.', 'error');
+    }
+}
+
+async function excludeTranslation(compositeKey) {
+    if (!confirm('이 문장을 번역에서 영구적으로 제외하시겠습니까? 제외된 문장은 다시 번역되지 않습니다.')) return;
+
+    const translation = allTranslations.find(t => t.compositeKey === compositeKey);
+    if (!translation) {
+        showToast('제외할 항목을 찾지 못했습니다.', 'error');
+        return;
+    }
+
+    const { url, original } = translation;
+
+    try {
+        const result = await chrome.storage.local.get('excluded_sentences');
+        const excludedDb = result.excluded_sentences || {};
+        
+        const exclusionListForUrl = excludedDb[url] || [];
+        if (!exclusionListForUrl.includes(original)) {
+            exclusionListForUrl.push(original);
+            excludedDb[url] = exclusionListForUrl;
+            await chrome.storage.local.set({ excluded_sentences: excludedDb });
+        }
+
+        // Now delete the item from the history view, skipping confirmation
+        await deleteTranslation(compositeKey, true); 
+        showToast('문장이 번역에서 제외되었습니다.', 'success');
+
+    } catch (error) {
+        console.error('Failed to exclude sentence:', error);
+        showToast('문장 제외 처리에 실패했습니다.', 'error');
+    }
+}
+
+async function toggleApplyStatus(url, button) {
+    const statusKey = 'status-' + url;
+    try {
+        const result = await chrome.storage.local.get(statusKey);
+        const currentStatus = result[statusKey] || {};
+        const newStatus = { applied: !currentStatus.applied, timestamp: Date.now() };
+        await chrome.storage.local.set({ [statusKey]: newStatus });
+        button.textContent = newStatus.applied ? '적용 해제' : '페이지에 적용';
+        button.classList.toggle('applied', newStatus.applied);
+        showToast(newStatus.applied ? '설정 완료: 이제 해당 페이지에서 번역이 적용됩니다.' : '설정 해제: 페이지에서 더 이상 번역이 적용되지 않습니다.');
+    } catch (error) {
+        console.error('Failed to toggle apply status:', error);
+        showToast('상태 변경에 실패했습니다.', 'error');
+    }
+}
+
 function openEditModal(compositeKey) {
     const translation = allTranslations.find(t => t.compositeKey === compositeKey);
     if (!translation) {
@@ -460,6 +613,97 @@ async function saveEditedTranslation() {
         currentEditInfo = null;
         // loadAndRender() will be called automatically by the storage listener
     }
+}
+
+function openFindReplaceModal(url) {
+    currentFindReplaceUrl = url;
+    document.getElementById('findText').value = '';
+    document.getElementById('replaceText').value = '';
+    findReplaceModal.style.display = 'flex';
+    document.getElementById('findText').focus();
+}
+
+function closeFindReplaceModalHandler() {
+    findReplaceModal.style.display = 'none';
+    currentFindReplaceUrl = null;
+}
+
+async function executeFindReplaceHandler() {
+    const find = document.getElementById('findText').value;
+    const replace = document.getElementById('replaceText').value;
+    const url = currentFindReplaceUrl;
+
+    if (!find) {
+        showToast('찾을 내용을 입력하세요.', 'error');
+        return;
+    }
+
+    // Global find and replace
+    if (url === null) {
+        if (!confirm(`모든 번역 기록에서 '${find}'을(를) '${replace}'(으)로 바꾸시겠습니까? 이 작업은 되돌릴 수 없습니다.`)) return;
+        
+        try {
+            let totalModifiedCount = 0;
+            const allData = await chrome.storage.local.get(null);
+            const findRegex = new RegExp(find.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&'), 'g');
+
+            for (const key in allData) {
+                if (key.startsWith('http') && Array.isArray(allData[key])) {
+                    let modifiedInThisUrl = false;
+                    allData[key].forEach(t => {
+                        if (t.translated && t.translated.includes(find)) {
+                            t.translated = t.translated.replace(findRegex, replace);
+                            totalModifiedCount++;
+                            modifiedInThisUrl = true;
+                        }
+                    });
+                    if (modifiedInThisUrl) {
+                        await chrome.storage.local.set({ [key]: allData[key] });
+                    }
+                }
+            }
+
+            if (totalModifiedCount > 0) {
+                showToast(`총 ${totalModifiedCount}개 항목에서 단어를 교체했습니다.`, 'success');
+            } else {
+                showToast('교체할 단어를 찾지 못했습니다.', 'info');
+            }
+        } catch (error) {
+            console.error('Global find and replace failed:', error);
+            showToast('전체 찾아 바꾸기에 실패했습니다.', 'error');
+        }
+
+    // URL-specific find and replace
+    } else {
+        if (!confirm(`'${urlToTitle[url] || url}'의 모든 번역에서 '${find}'을(를) '${replace}'(으)로 바꾸시겠습니까?`)) return;
+        
+        try {
+            const result = await chrome.storage.local.get(url);
+            let translations = result[url] || [];
+            let modifiedCount = 0;
+            const findRegex = new RegExp(find.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&'), 'g');
+            
+            translations.forEach(t => {
+                if (t.translated && t.translated.includes(find)) {
+                    t.translated = t.translated.replace(findRegex, replace);
+                    modifiedCount++;
+                }
+            });
+
+            if (modifiedCount > 0) {
+                await chrome.storage.local.set({ [url]: translations });
+                showToast(`${modifiedCount}개 항목에서 단어를 교체했습니다.`, 'success');
+            } else {
+                showToast('교체할 단어를 찾지 못했습니다.', 'info');
+            }
+        } catch (error) {
+            console.error('Find and replace failed:', error);
+            showToast('찾아 바꾸기에 실패했습니다.', 'error');
+        }
+    }
+
+    closeFindReplaceModalHandler();
+    // The view will auto-reload due to the storage listener
 }
 
 function exportTranslationsAsJson() {
