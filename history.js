@@ -88,9 +88,18 @@ function updateDarkModeToggleIcon(isDarkMode) {
 
 async function loadAndRender() {
     console.log('loadAndRender: 시작');
-    document.getElementById('loading-skeleton').style.display = 'block';
-    document.getElementById('emptyState').style.display = 'none';
-    document.getElementById('history-container').innerHTML = '';
+    const loadingSkeleton = document.getElementById('loading-skeleton');
+    const emptyState = document.getElementById('emptyState');
+    const historyContainer = document.getElementById('history-container');
+
+    if (!loadingSkeleton || !emptyState || !historyContainer) {
+        console.error('loadAndRender: 필수 DOM 요소(loading-skeleton, emptyState, history-container)를 찾을 수 없습니다.');
+        return;
+    }
+
+    loadingSkeleton.style.display = 'block';
+    emptyState.style.display = 'none';
+    historyContainer.innerHTML = '';
 
     const allData = await chrome.storage.local.get(null);
     console.log('loadAndRender: chrome.storage.local.get(null) 결과:', allData);
@@ -118,30 +127,14 @@ async function loadAndRender() {
 
     allTranslations = flattened.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
     await fetchTitles(urls);
-    document.getElementById('loading-skeleton').style.display = 'none';
+    loadingSkeleton.style.display = 'none';
     console.log('loadAndRender: 로딩 스켈레톤 숨김');
-    renderView(groupedByUrl);
+    renderView(groupedByUrl, historyContainer, emptyState);
     console.log('loadAndRender: renderView 호출 완료');
 }
 
-async function fetchTitles(urls) {
-    const urlsToFetch = urls.filter(url => !titleCache[url]);
-    const titlePromises = urlsToFetch.map(url =>
-        chrome.runtime.sendMessage({ action: 'fetchTitle', url: url })
-            .then(response => { titleCache[url] = (response && response.title) ? response.title : url; })
-            .catch(() => { titleCache[url] = url; })
-    );
-    if (urlsToFetch.length > 0) {
-        await Promise.all(titlePromises);
-        await chrome.storage.local.set({ titleCache });
-    }
-    urls.forEach(url => { urlToTitle[url] = titleCache[url] || url; });
-}
-
-function renderView(groupedByUrl) {
+function renderView(groupedByUrl, container, emptyState) {
     console.log('renderView: 시작, groupedByUrl:', groupedByUrl);
-    const container = document.getElementById('history-container');
-    const emptyState = document.getElementById('emptyState');
     
     if (Object.keys(groupedByUrl).length === 0) {
         container.innerHTML = '';
