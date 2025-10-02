@@ -464,7 +464,7 @@ async function translateAllPTags() {
 
             // Only save a blank result if the translation was not manually cancelled by the user.
             if (!isTranslationCancelled) {
-                const resultForStorage = { id: originalItem.id, original: originalItem.text, translated: '' };
+                const resultForStorage = { id: item.id, original: item.text, translated: '' };
                 allFinishedResults.push(resultForStorage);
             }
         }

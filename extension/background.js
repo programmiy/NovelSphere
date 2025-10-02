@@ -101,7 +101,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === 'batchTranslate') {
         (async () => {
             try {
-                const translations = await handleBatchTranslate(request.items);
+                const translations = await handleBatchTranslate(request.items, sender.tab?.url);
                 try {
                     sendResponse({ translations });
                 } catch (e) {
@@ -112,9 +112,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                     }
                 }
             } catch (error) {
-                if (error.message && error.message.includes('PROHIBITED_CONTENT')) {
-                    saveErrorLog(request.items, error.message, sender.tab?.url);
-                }
+                // 모든 종류의 오류를 로그에 기록
+                saveErrorLog(request.items, error, sender.tab?.url);
+
                 const errorResponse = request.items.map(item => ({
                     id: item.id,
                     original: item.text,
@@ -146,6 +146,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                     }
                 }
             } catch (error) {
+                // 제목 가져오기 실패 시 오류 로그 저장
+                saveErrorLog([], error, request.url);
                 try {
                     sendResponse({ title: request.url, error: error.message });
                 } catch (e) {
@@ -159,153 +161,79 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         })();
         return true; // 비동기 응답을 위해 true 반환
     }
-    // For any other actions, or if action is not defined, do nothing.
-    // The channel will close synchronously and the sender will get an error,
-    // which is the expected behavior for unhandled actions when a response is awaited.
     return false;
 });
 
 async function fetchPageTitle(url) {
     try {
-        const response = await fetch(url);
+        const response = await fetch(url, { credentials: 'include' }); // 인증 쿠키 포함
         if (!response.ok) {
-            return url; // Return URL on HTTP error
+            throw new Error(`HTTP error! status: ${response.status} for URL: ${url}`);
         }
         const text = await response.text();
         const titleMatch = text.match(/<title>(.*?)<\/title>/i);
         return titleMatch ? titleMatch[1].trim() : url;
     } catch (e) {
         console.error(`Failed to fetch title for ${url}:`, e);
-        return url; // Return URL on network error
+        // 오류를 다시 던져서 onMessage 리스너에서 잡을 수 있도록 함
+        throw new Error(`제목 가져오기 실패: ${e.message}`);
     }
 }
 
-async function handleBatchTranslate(items) {
-    const { apiKey: GEMINI_API_KEY } = await chrome.storage.local.get('apiKey');
-    if (!GEMINI_API_KEY) {
-        throw new Error("API key is not set. Please set it in the extension popup.");
-    }
-    const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
-    
+async function handleBatchTranslate(items, sourceUrl) {
     const texts = items.map(item => item.text);
-    const prompt = `You are a translation API. Translate the following Japanese texts into Korean. Return a single valid JSON array of strings. The output array must contain the translation for each input text in the same order. Do not include any other text or explanations. Preserve the original quotation marks (「」 and 『』) in the translation. For example, 「おはよう」 should be translated as 「안녕」, and 『何をですか？』 should be translated as 『무엇을요?』. IMPORTANT RULE: If any single character in the translated Korean text repeats more than 10 times consecutively, you MUST truncate it to exactly 10 repetitions and append a '(반복)' marker directly after. For example, a translation resulting in '아아아아아아아아아아아아아' must be returned as '아아아아아아아아아아(반복)'.`;;
-    const textsToTranslate = items.map(item => {
-        let text = item.text;
-        // Normalize long repeating characters and special symbols to prevent API errors
-        // Example: なあぁぁぁぁぁ... -> なああ...
-        text = text.replace(/([ぁ-んァ-ヶ])\1{10,}/g, '$1'.repeat(10));
-        // Example: …… -> ...
-        text = text.replace(/[…]+/g, '...');
-        return text;
-    });
 
-    const MAX_RETRIES = 3;
-    let lastError = null;
+    try {
+        const response = await fetch('http://127.0.0.1:8000/translate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ texts: texts })
+        });
 
-    for (let i = 0; i < MAX_RETRIES; i++) {
-        try {
-            const response = await fetch(API_URL, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    contents: [{ parts: [{ text: prompt }, { text: JSON.stringify(textsToTranslate) }] }],
-                    generationConfig: {
-                        temperature: 0.2,
-                        maxOutputTokens: 65535
-                    }
-                })
-            });
-
-            if (!response.ok) {
-                // Only retry on server errors (5xx) or rate limiting (429)
-                if (response.status === 429 || response.status >= 500) {
-                    throw new Error(`HTTP error! status: ${response.status} ${response.statusText}`);
-                } else {
-                    // For other errors (e.g., 400 Bad Request), fail immediately
-                    const errorBody = await response.text();
-                    throw new Error(`HTTP error! status: ${response.status} ${response.statusText}. Body: ${errorBody}`);
-                }
-            }
-
-            const data = await response.json();
-            console.log(`Full API Response (Attempt ${i + 1}):`, JSON.stringify(data, null, 2));
-
-            if (data.promptFeedback?.blockReason) {
-                throw new Error(`Translation blocked by API. Reason: ${data.promptFeedback.blockReason}`);
-            }
-
-            const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text;
-            if (!rawText) {
-                const finishReason = data.candidates?.[0]?.finishReason;
-                if (finishReason && finishReason !== 'STOP') {
-                    throw new Error(`Translation failed. Finish reason: ${finishReason}.`);
-                }
-                throw new Error("No text found in API response.");
-            }
-
-            let jsonString = rawText.trim();
-            if (jsonString.startsWith("```json")) {
-                jsonString = jsonString.substring(7).trim();
-            }
-            if (jsonString.endsWith("```")) {
-                jsonString = jsonString.slice(0, -3).trim();
-            }
-
-            let translatedParts;
-            try {
-                translatedParts = JSON.parse(jsonString);
-            } catch (e) {
-                console.error("Failed to parse JSON response from API:", e);
-                console.error("Cleaned string for parsing was:", jsonString);
-                throw new Error("API returned a response that was not valid JSON.");
-            }
-
-            if (!Array.isArray(translatedParts)) {
-                throw new Error("API response was valid JSON, but not an array.");
-            }
-
-            if (translatedParts.length !== texts.length) {
-                console.warn('Mismatch between original and translated text count.', { numOriginals: texts.length, numTranslated: translatedParts.length });
-                throw new Error('Translated parts count does not match original texts count.');
-            }
-
-            // Success
-            return items.map((item, index) => ({
-                id: item.id,
-                original: item.text,
-                translated: translatedParts[index]
-            }));
-
-        } catch (error) {
-            lastError = error;
-            if (i < MAX_RETRIES - 1) {
-                const delay = 1000 * Math.pow(2, i); // Exponential backoff
-                console.warn(`Translation API call failed. Attempt ${i + 1} of ${MAX_RETRIES}. Retrying in ${delay}ms...`, error.message);
-                await new Promise(resolve => setTimeout(resolve, delay));
-            }
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.detail || `Server error: ${response.status}`);
         }
-    }
 
-    // If all retries failed
-    console.error('Translation API call failed after all retries:', lastError);
-    throw lastError;
+        const data = await response.json();
+        
+        if (!data.translations || data.translations.length !== items.length) {
+            throw new Error('Received invalid translation data from server.');
+        }
+
+        return items.map((item, index) => ({
+            id: item.id,
+            original: item.text,
+            translated: data.translations[index]
+        }));
+
+    } catch (error) {
+        console.error('Translation request to local server failed:', error);
+        // 오류를 다시 던져서 상위 호출자(onMessage)가 처리하도록 함
+        throw error;
+    }
 }
 
-async function saveErrorLog(items, reason, url) {
+async function saveErrorLog(items, error, url) {
     const logEntry = {
         timestamp: Date.now(),
-        reason: reason,
-        url: url || "Unknown URL",
-        texts: items.map(item => item.text)
+        reason: error.message || '알 수 없는 오류',
+        url: url || "알 수 없는 URL",
+        texts: items.map(item => item.text),
+        stack: error.stack || null
     };
 
     try {
         const result = await chrome.storage.local.get('error_log');
         const existingLogs = result.error_log || [];
-        existingLogs.push(logEntry);
+        existingLogs.unshift(logEntry); // 최신 로그를 맨 위에 추가
+        // 로그는 최대 20개까지만 저장
+        if (existingLogs.length > 20) {
+            existingLogs.length = 20;
+        }
         await chrome.storage.local.set({ 'error_log': existingLogs });
-        console.log("Saved prohibited content error to history log.");
+        console.log("오류 로그를 저장했습니다.");
     } catch (e) {
-        console.error("Failed to save error log:", e);
+        console.error("오류 로그 저장 실패:", e);
     }
 }
