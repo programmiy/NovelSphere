@@ -19,43 +19,54 @@ if (document.readyState === 'loading') {
 
 async function applySavedTranslations() {
     const url = window.location.href;
-    const statusKey = 'status-' + url;
+    console.log("[applySavedTranslations] Checking for URL:", url);
     try {
-        const statusResult = await chrome.storage.local.get(statusKey);
-        if (statusResult[statusKey] && statusResult[statusKey].applied) {
-            const translations = await loadTranslationsForUrl();
-            if (translations && translations.length > 0) {
-                const translationMap = new Map(translations.map(t => [t.pid, t.translated]));
-                const paragraphs = getTargetParagraphs();
-                let replacementCount = 0;
-                
-                paragraphs.forEach(p => {
-                    if (translationMap.has(p.id)) {
-                        p.innerHTML = translationMap.get(p.id);
+        const fetchUrl = `http://127.0.0.1:8001/translations?url=${encodeURIComponent(url)}&limit=2000`;
+        console.log("[applySavedTranslations] Fetching from server:", fetchUrl);
+        const response = await fetch(fetchUrl);
+        
+        if (!response.ok) {
+            console.warn(`[applySavedTranslations] Server responded with ${response.status}`);
+            return false;
+        }
 
-                        // --- 스타일 수정 ---
-                        // 추천 색상(다크모드용): #E2E8F0 (밝은 회색)
-                        // 폰트를 변경하려면 아래 fontFamily의 주석을 해제하고 'YOUR_FONT_HERE'를 원하시는 폰트명으로 수정하세요.
+        const data = await response.json();
+        console.log("[applySavedTranslations] Received data from server:", data);
+        const translations = data.translations;
+
+        if (translations && translations.length > 0) {
+            console.log(`[applySavedTranslations] Found ${translations.length} translations.`);
+            const translationMap = new Map(translations.map(t => [t.pid, t.translated]));
+            const paragraphs = getTargetParagraphs();
+            let replacementCount = 0;
+            
+            paragraphs.forEach(p => {
+                if (translationMap.has(p.id)) {
+                    const translatedText = translationMap.get(p.id);
+                    if (translatedText) {
+                        p.innerHTML = translatedText;
                         const appliedStyle = {
                             color: '#E2E8F0',
                             fontFamily: 'TwoCon' 
                         };
                         Object.assign(p.style, appliedStyle);
-                        // --- 스타일 수정 끝 ---
-                        
                         replacementCount++;
                     }
-                });
-
-                if (replacementCount > 0) {
-                    console.log(`Applied ${replacementCount} translations.`);
-                    return true;
                 }
+            });
+            console.log(`[applySavedTranslations] Applied ${replacementCount} replacements.`);
+
+            if (replacementCount > 0) {
+                injectSidebar();
+                logToSidebar(`페이지에 저장된 번역 ${replacementCount}개를 적용했습니다.`);
+                showSidebar();
+                return true;
             }
         }
     } catch (error) {
-        console.error("Error applying saved translations:", error);
+        console.error("[applySavedTranslations] Error:", error);
     }
+    console.log("[applySavedTranslations] No translations applied, proceeding to translate.");
     return false;
 }
 
@@ -72,13 +83,7 @@ async function init() {
         injectSidebar();
         setupEventListeners();
 
-        const translations = await loadTranslationsForUrl();
-        if (translations && translations.length > 0) {
-            logToSidebar(`초기화: 저장된 번역 ${translations.length}개를 불러왔습니다.`);
-            populateSidebar(translations);
-        } else {
-            logToSidebar("초기화: 저장된 번역이 없습니다.");
-        }
+        logToSidebar("초기화 완료. 페이지에서 일본어를 스캔하여 번역합니다.");
         
         const hasJapanesePTags = await scanForJapanesePTags();
         if (hasJapanesePTags) {
@@ -205,17 +210,7 @@ function setupEventListeners() {
 // Data & Persistence
 // =================================================================================
 
-async function loadTranslationsForUrl() {
-    const url = window.location.href;
-    try {
-        const result = await chrome.storage.local.get(url);
-        return result[url] || null;
-    } catch (error) {
-        console.error("Error loading translations for URL:", error);
-        logToSidebar(`저장소 로딩 실패: ${error.message}`, "log-error");
-        return null;
-    }
-}
+
 
 async function saveSingleTranslation(pid, original, translated) {
     const url = window.location.href;
@@ -251,24 +246,32 @@ async function saveSingleTranslation(pid, original, translated) {
 
 async function saveAllTranslations(itemsToSave) {
     if (itemsToSave.length === 0) return;
+
     const url = window.location.href;
+    const title = document.title;
+    const records = itemsToSave.map(item => ({
+        url: url,
+        pid: item.id,
+        original: item.original,
+        translated: item.translated,
+        timestamp: Math.floor(Date.now() / 1000),
+        folderName: null, // Or some other default
+        title: title
+    }));
+
     try {
-        let translations = await loadTranslationsForUrl() || [];
-        itemsToSave.forEach(item => {
-            const existingIndex = translations.findIndex(t => t.pid === item.id);
-            if (existingIndex > -1) {
-                translations[existingIndex].original = item.original;
-                translations[existingIndex].translated = item.translated;
-                translations[existingIndex].timestamp = Date.now();
-            } else {
-                translations.push({ pid: item.id, original: item.original, translated: item.translated, timestamp: Date.now() });
-            }
+        const response = await fetch('http://127.0.0.1:8001/translations/upsert', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(records)
         });
-        await chrome.storage.local.set({ [url]: translations });
-        logToSidebar(`${itemsToSave.length}개의 번역을 저장소에 저장했습니다.`);
+        if (!response.ok) {
+            throw new Error(`Server returned status ${response.status}`);
+        }
+        logToSidebar(`${records.length}개의 번역을 서버에 저장했습니다.`);
     } catch (error) {
-        console.error("Error saving all translations:", error);
-        logToSidebar(`일괄 저장 실패: ${error.message}`, "log-error");
+        console.error("Error saving all translations to server:", error);
+        logToSidebar(`서버에 일괄 저장 실패: ${error.message}`, "log-error");
     }
 }
 

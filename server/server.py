@@ -1,7 +1,9 @@
 import sqlite3
 import json
 import requests
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, BackgroundTasks
+import re
+import time
 from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime
 from pydantic import BaseModel
@@ -37,6 +39,13 @@ def init_db():
     # 인덱스 추가로 검색 성능 향상
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_url ON translations (url);");
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_folderName ON translations (folderName);");
+
+    # Add title column if it doesn't exist for storing page titles
+    cursor.execute("PRAGMA table_info(translations)")
+    columns = [column[1] for column in cursor.fetchall()]
+    if 'title' not in columns:
+        cursor.execute("ALTER TABLE translations ADD COLUMN title TEXT")
+
     conn.commit()
     conn.close()
 
@@ -173,9 +182,10 @@ def dict_factory(cursor, row):
     return d
 
 @app.get("/translations")
-def get_translations(skip: int = 0, limit: int = 100, folder: Optional[str] = None, search: Optional[str] = None):
+def get_translations(skip: int = 0, limit: int = 100, folder: Optional[str] = None, search: Optional[str] = None, url: Optional[str] = None):
     """데이터베이스에서 번역 기록을 조회합니다."""
     conn = sqlite3.connect(DATABASE_FILE)
+    conn.text_factory = str
     conn.row_factory = dict_factory
     cursor = conn.cursor()
 
@@ -198,7 +208,13 @@ def get_translations(skip: int = 0, limit: int = 100, folder: Optional[str] = No
     if search:
         conditions.append("(original LIKE ? OR translated LIKE ?)")
         params.extend([f'%{search}%', f'%{search}%'])
-
+    
+    if url:
+        # Handle trailing slashes for more robust matching
+        url_with_slash = url if url.endswith('/') else url + '/'
+        url_without_slash = url.rstrip('/')
+        conditions.append("(url = ? OR url = ?)")
+        params.extend([url_with_slash, url_without_slash])
     if conditions:
         where_clause = " WHERE " + " AND ".join(conditions)
         count_query += where_clause
@@ -230,6 +246,7 @@ class TranslationItem(BaseModel):
     translated: str
     timestamp: int
     folderName: Optional[str] = None
+    title: Optional[str] = None # Add title field
 
 @app.post("/translations/upsert")
 def upsert_translations(items: List[TranslationItem]):
@@ -247,18 +264,26 @@ def upsert_translations(items: List[TranslationItem]):
         
         if result:
             # Update existing record
-            cursor.execute("""
-            UPDATE translations 
-            SET translated = ?, timestamp = ?, folderName = ?
-            WHERE id = ?
-            """, (item.translated, item.timestamp, item.folderName, result[0]))
+            # Only update title if it's not null, to avoid overwriting existing titles with null
+            if item.title:
+                cursor.execute("""
+                UPDATE translations 
+                SET translated = ?, timestamp = ?, folderName = ?, title = ?
+                WHERE id = ?
+                """, (item.translated, item.timestamp, item.folderName, item.title, result[0]))
+            else:
+                cursor.execute("""
+                UPDATE translations 
+                SET translated = ?, timestamp = ?, folderName = ?
+                WHERE id = ?
+                """, (item.translated, item.timestamp, item.folderName, result[0]))
             updated_count += 1
         else:
             # Insert new record
             cursor.execute("""
-            INSERT INTO translations (url, pid, original, translated, timestamp, folderName)
-            VALUES (?, ?, ?, ?, ?, ?)
-            """, (item.url, item.pid, item.original, item.translated, item.timestamp, item.folderName))
+            INSERT INTO translations (url, pid, original, translated, timestamp, folderName, title)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (item.url, item.pid, item.original, item.translated, item.timestamp, item.folderName, item.title))
             inserted_count += 1
 
     conn.commit()
@@ -307,10 +332,137 @@ def delete_translations(req: DeleteRequest):
     return {"message": f"{deleted_count}개의 항목이 삭제되었습니다."}
 
 
+class UpdateTitleRequest(BaseModel):
+    url: str
+    title: str
+
+@app.put("/translations/url_title")
+def update_title_for_url(req: UpdateTitleRequest):
+    """Updates the title for all entries with a given URL."""
+    conn = sqlite3.connect(DATABASE_FILE)
+    cursor = conn.cursor()
+    cursor.execute("UPDATE translations SET title = ? WHERE url = ?", (req.title, req.url))
+    updated_count = cursor.rowcount
+    conn.commit()
+    conn.close()
+    return {"message": f"Title updated for {updated_count} entries for URL {req.url}."}
+
+
+from collections import defaultdict
+
+@app.get("/translations_by_folder")
+def get_translations_by_folder():
+    """데이터베이스에서 모든 번역 기록을 폴더와 URL별로 그룹화하여 조회합니다."""
+    conn = sqlite3.connect(DATABASE_FILE)
+    conn.text_factory = str
+    conn.row_factory = dict_factory
+    cursor = conn.cursor()
+
+    # Order by URL as well for logical grouping
+    translations = cursor.execute("SELECT * FROM translations ORDER BY folderName, url, timestamp DESC").fetchall()
+    conn.close()
+
+    # Use a nested defaultdict
+    grouped_translations = defaultdict(lambda: defaultdict(list))
+    for t in translations:
+        folder_name = t.get("folderName") or "폴더 없음"
+        url = t.get("url")
+        if url: # Ensure there is a URL to group by
+            grouped_translations[folder_name][url].append(t)
+
+    return grouped_translations
+
+
+def _fetch_and_update_title_worker(url: str):
+    """Internal worker to fetch a single title. Returns True if title is valid and updated."""
+    try:
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+        with requests.Session() as s:
+            s.headers.update(headers)
+            # For novel18, we might need to handle the age check.
+            # A simple way is to set the over18 cookie.
+            if "novel18.syosetu.com" in url:
+                s.cookies.set("over18", "yes", domain=".syosetu.com")
+            
+            response = s.get(url, timeout=10)
+
+        response.raise_for_status()
+        
+        try:
+            html_content = response.content.decode('utf-8')
+        except UnicodeDecodeError:
+            html_content = response.text
+
+        title_match = re.search(r'<title>(.*?)</title>', html_content, re.IGNORECASE | re.DOTALL)
+        if title_match:
+            title = title_match.group(1).strip()
+            
+            # Blocklist for invalid titles
+            invalid_titles = ["年齢確認", "Just a moment...", "Log in"]
+            if not title or any(invalid in title for invalid in invalid_titles):
+                print(f"Skipping invalid title for {url}: {title}")
+                return False
+
+            conn = sqlite3.connect(DATABASE_FILE)
+            cursor = conn.cursor()
+            cursor.execute("UPDATE translations SET title = ? WHERE url = ?", (title, url))
+            conn.commit()
+            conn.close()
+            print(f"Updated title for {url}: {title}")
+            return True
+        else:
+            print(f"Could not find title for {url}")
+            return False
+
+    except requests.exceptions.RequestException as e:
+        print(f"Failed to fetch {url}: {e}")
+        return False
+    except Exception as e:
+        print(f"An error occurred while processing {url}: {e}")
+        return False
+
+def process_urls_in_background(urls: List[str]):
+    """Loops through URLs with a delay and fetches titles."""
+    print(f"Starting background task to process {len(urls)} URLs.")
+    for i, url in enumerate(urls):
+        print(f"Processing URL {i+1}/{len(urls)}: {url}")
+        _fetch_and_update_title_worker(url)
+        time.sleep(1) # Wait 1 second between requests
+    print("Finished background task for fetching titles.")
+
+
+@app.post("/fetch_missing_titles")
+async def fetch_missing_titles_endpoint(background_tasks: BackgroundTasks):
+    """
+    Fetches titles for all entries in the database that do not have a title yet.
+    This is a long-running background task.
+    """
+    conn = sqlite3.connect(DATABASE_FILE)
+    cursor = conn.cursor()
+    
+    # Get all unique URLs that have at least one entry with a missing or invalid title
+    invalid_titles_tuple = ('年齢確認', 'Just a moment...', 'Log in', '')
+    placeholders = ', '.join('?' * len(invalid_titles_tuple))
+    query = f"SELECT DISTINCT url FROM translations WHERE title IS NULL OR title IN ({placeholders})"
+    urls_to_fetch = cursor.execute(query, invalid_titles_tuple).fetchall()
+    conn.close()
+    
+    urls = [row[0] for row in urls_to_fetch]
+    
+    if not urls:
+        return {"message": "No missing titles to fetch."}
+
+    background_tasks.add_task(process_urls_in_background, urls)
+        
+    return {"message": f"Started fetching titles for {len(urls)} URLs in the background. This will take time."}
+
 @app.get("/folders")
 def get_folders():
     """데이터베이스에서 모든 고유 폴더 목록을 조회합니다."""
     conn = sqlite3.connect(DATABASE_FILE)
+    conn.text_factory = str
     cursor = conn.cursor()
     folders = cursor.execute("SELECT DISTINCT folderName FROM translations WHERE folderName IS NOT NULL ORDER BY folderName").fetchall()
     conn.close()
@@ -323,4 +475,4 @@ def read_root():
     """서버가 실행 중인지 확인하는 기본 엔드포인트입니다."""
     return {"message": "번역 기록 관리 서버가 실행 중입니다."}
 
-# uvicorn server:app --reload --port 8000
+# uvicorn server:app --reload --port 8001

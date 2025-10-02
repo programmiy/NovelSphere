@@ -1,17 +1,12 @@
 // Global state
-let allTranslations = []; // This will now only hold the currently loaded page of translations
-let allFolders = [];
+let groupedTranslations = {};
 
-// Server/UI state
-let currentPage = 1;
-let totalRecords = 0;
+// UI state
 let isLoading = false;
-const RECORDS_PER_PAGE = 50;
 let currentSearch = '';
-let currentFolder = '';
 
 // DOM element cache
-let historyContainer, emptyState, searchBox, deleteSelectedBtn, folderFilterDropdown, moveSelectedToFolderDropdown, darkModeToggle;
+let historyContainer, emptyState, searchBox, darkModeToggle, fetchAllTitlesBtn, bulkActionsPanel, selectionCount, deleteSelectedBtn, moveSelectedToFolderDropdown;
 
 // Debounce timer
 let searchTimeout;
@@ -21,115 +16,141 @@ document.addEventListener('DOMContentLoaded', () => {
     cacheDOMElements();
     setupEventListeners();
     loadDarkModePreference();
-    loadAndRender(true);
+    loadAndRenderGrouped();
 });
 
 function cacheDOMElements() {
     historyContainer = document.getElementById('history-container');
     emptyState = document.getElementById('emptyState');
     searchBox = document.getElementById('searchBox');
-    deleteSelectedBtn = document.getElementById('deleteSelectedBtn');
-    folderFilterDropdown = document.getElementById('folderFilterDropdown');
-    moveSelectedToFolderDropdown = document.getElementById('moveSelectedToFolderDropdown');
     darkModeToggle = document.getElementById('darkModeToggle');
-    // Other elements can be cached as needed
+    fetchAllTitlesBtn = document.getElementById('fetchAllTitlesBtn');
+    bulkActionsPanel = document.getElementById('bulk-actions');
+    selectionCount = document.getElementById('selection-count');
+    deleteSelectedBtn = document.getElementById('deleteSelectedBtn');
+    moveSelectedToFolderDropdown = document.getElementById('moveSelectedToFolderDropdown');
 }
 
-async function loadAndRender(isInitialLoad = false) {
+async function loadAndRenderGrouped() {
     if (isLoading) return;
     isLoading = true;
-
-    if (isInitialLoad) {
-        historyContainer.innerHTML = '';
-        currentPage = 1;
-        allTranslations = [];
-        totalRecords = 0;
-        await loadAndRenderFolders();
-    }
-
     document.getElementById('loading-skeleton').style.display = 'block';
+    historyContainer.innerHTML = '';
 
     try {
-        const skip = (currentPage - 1) * RECORDS_PER_PAGE;
-        let url = `http://127.0.0.1:8000/translations?skip=${skip}&limit=${RECORDS_PER_PAGE}`;
-        if (currentSearch) url += `&search=${encodeURIComponent(currentSearch)}`;
-        if (currentFolder) url += `&folder=${encodeURIComponent(currentFolder)}`;
+        const [translationsRes, foldersRes] = await Promise.all([
+            fetch('http://127.0.0.1:8001/translations_by_folder'),
+            fetch('http://127.0.0.1:8001/folders')
+        ]);
 
-        const response = await fetch(url);
-        if (!response.ok) throw new Error(`Server error: ${response.statusText}`);
+        if (!translationsRes.ok) throw new Error(`Server error (translations): ${translationsRes.statusText}`);
+        if (!foldersRes.ok) throw new Error(`Server error (folders): ${foldersRes.statusText}`);
         
-        const data = await response.json();
-        totalRecords = data.total_count;
-        const newTranslations = data.translations;
+        groupedTranslations = await translationsRes.json();
+        const allFolders = await foldersRes.json();
 
-        allTranslations.push(...newTranslations);
-        renderHistory(newTranslations, isInitialLoad);
-        updateBulkActionPanel(); // Update stats and panel visibility
-
-        currentPage++;
+        renderGroupedHistory();
+        populateFolderDropdowns(allFolders);
+        
     } catch (error) {
         console.error("Failed to load data:", error);
         showToast("Failed to load data. Is the server running?", "error");
     } finally {
         isLoading = false;
         document.getElementById('loading-skeleton').style.display = 'none';
-        emptyState.style.display = totalRecords === 0 ? 'block' : 'none';
+        emptyState.style.display = Object.keys(groupedTranslations).length === 0 ? 'block' : 'none';
+        updateBulkActionPanel();
     }
 }
 
-function renderHistory(translations, isInitial) {
-    const tableBody = historyContainer.querySelector('tbody');
+function populateFolderDropdowns(folders) {
+    if (!moveSelectedToFolderDropdown) return;
+    moveSelectedToFolderDropdown.innerHTML = '<option value="">폴더로 이동...</option><option value="__no_folder__">폴더 없음</option>';
+    folders.forEach(folderName => {
+        const option = `<option value="${escapeHtml(folderName)}">${escapeHtml(folderName)}</option>`;
+        moveSelectedToFolderDropdown.insertAdjacentHTML('beforeend', option);
+    });
+}
 
-    if (isInitial || !tableBody) {
-        historyContainer.innerHTML = `
-            <table class="history-table">
-                <thead>
-                    <tr>
-                        <th style="width: 40px;"><input type="checkbox" id="global-select-all"></th>
-                        <th>Original</th>
-                        <th>Translation</th>
-                        <th style="width: 150px;">Folder</th>
-                        <th style="width: 120px;">Actions</th>
-                    </tr>
-                </thead>
-                <tbody></tbody>
-            </table>
-        `;
+function renderGroupedHistory() {
+    historyContainer.innerHTML = '';
+    const sortedFolderNames = Object.keys(groupedTranslations).sort();
+
+    for (const folderName of sortedFolderNames) {
+        const urlGroups = groupedTranslations[folderName];
+        const folderContainer = document.createElement('div');
+        folderContainer.className = 'history-folder-group';
+
+        let urlGroupsHtml = '';
+        let totalTranslationsInFolder = 0;
+        const sortedUrls = Object.keys(urlGroups).sort();
+
+        for (const url of sortedUrls) {
+            const translations = urlGroups[url];
+            const filteredTranslations = translations.filter(t => 
+                !currentSearch || 
+                t.original.toLowerCase().includes(currentSearch) || 
+                t.translated.toLowerCase().includes(currentSearch)
+            );
+
+            if (filteredTranslations.length === 0) continue;
+            
+            totalTranslationsInFolder += filteredTranslations.length;
+            const groupItemsHtml = filteredTranslations.map(t => renderItem(t)).join('');
+            const title = filteredTranslations[0]?.title || url;
+            const isApplied = false; // Placeholder
+
+            urlGroupsHtml += `
+                <div class="list-group fade-in" data-url="${url}">
+                    <div class="list-group-header">
+                        <span class="list-group-toggle collapsed material-icons">chevron_right</span>
+                        <a href="${url}" target="_blank" class="list-group-title-link"><h3 class="list-group-title">${escapeHtml(title)} (${filteredTranslations.length})</h3></a>
+                        <button class="btn btn-outline btn-icon edit-title-btn" data-url="${url}" title="제목 수정">✏️</button>
+                        <div class="list-group-actions">
+                            <button class="btn btn-secondary btn-apply" data-url="${url}">페이지에 적용</button>
+                            <button class="btn btn-secondary btn-find-replace" data-url="${url}">찾아 바꾸기</button>
+                            <label class="btn"><input type="checkbox" class="group-select-all-checkbox"> 전체 선택</label>
+                        </div>
+                    </div>
+                    <div class="list-group-content collapsed">
+                        <table class="history-table">
+                            <thead>
+                                <tr>
+                                    <th style="width: 40px;"></th>
+                                    <th>원문</th>
+                                    <th>번역</th>
+                                    <th style="width: 120px;">액션</th>
+                                </tr>
+                            </thead>
+                            <tbody>${groupItemsHtml}</tbody>
+                        </table>
+                    </div>
+                </div>
+            `;
+        }
+
+        if (totalTranslationsInFolder > 0) {
+            folderContainer.innerHTML = `
+                <div class="folder-group-header">
+                    <span class="folder-group-toggle material-icons collapsed">expand_more</span>
+                    <h2 class="folder-group-title">${escapeHtml(folderName)} (${totalTranslationsInFolder})</h2>
+                    <label class="btn"><input type="checkbox" class="folder-select-all-checkbox"> 폴더 전체 선택</label>
+                </div>
+                <div class="folder-group-content collapsed">${urlGroupsHtml}</div>
+            `;
+            historyContainer.appendChild(folderContainer);
+        }
     }
-
-    const newBody = historyContainer.querySelector('tbody');
-    const itemsHtml = translations.map(t => renderItem(t)).join('');
-    newBody.insertAdjacentHTML('beforeend', itemsHtml);
 }
 
 function renderItem(t) {
     const date = new Date(t.timestamp * 1000);
     const dateStr = date.toLocaleString('ko-KR', { dateStyle: 'short', timeStyle: 'short' });
-    const folderOptions = allFolders.map(f => 
-        `<option value="${escapeHtml(f)}" ${t.folderName === f ? 'selected' : ''}>${escapeHtml(f)}</option>`
-    ).join('');
-
     return `
         <tr class="history-item" data-id="${t.id}">
-            <td><input type="checkbox" class="item-checkbox" data-id="${t.id}"></td>
-            <td>
-                <div class="item-text-block">
-                    <div class="text-label">${escapeHtml(t.url)} (ID: ${t.pid || 'N/A'})</div>
-                    <div class="text-content original-text">${escapeHtml(t.original)}</div>
-                </div>
-            </td>
-            <td>
-                <div class="item-text-block">
-                    <div class="text-label">Translation</div>
-                    <div class="text-content translated-text" contenteditable="true">${escapeHtml(t.translated)}</div>
-                </div>
-            </td>
-            <td>
-                 <select class="form-select item-folder-assign-dropdown" data-id="${t.id}">
-                    <option value="" ${!t.folderName ? 'selected' : ''}>No Folder</option>
-                    ${folderOptions}
-                </select>
-            </td>
+            <td style="width: 40px; text-align: center;"><input type="checkbox" class="item-checkbox" data-id="${t.id}"></td>
+            <td><div class="item-text-block"><div class="text-content original-text">${escapeHtml(t.original)}</div></div></td>
+            <td><div class="item-text-block"><div class="text-content translated-text" contenteditable="true">${escapeHtml(t.translated)}</div></div></td>
             <td class="item-actions-container">
                 <div class="item-date">${dateStr}</div>
                 <div class="item-actions">
@@ -142,189 +163,152 @@ function renderItem(t) {
     `;
 }
 
-async function loadAndRenderFolders() {
-    try {
-        const response = await fetch('http://127.0.0.1:8000/folders');
-        if (!response.ok) throw new Error('Failed to load folders');
-        allFolders = await response.json();
-        renderFoldersUI();
-    } catch (error) {
-        console.error(error);
-        showToast("Failed to load folders.", "error");
-    }
-}
-
-function renderFoldersUI() {
-    if (!folderFilterDropdown || !moveSelectedToFolderDropdown) return;
-    folderFilterDropdown.innerHTML = '<option value="">All Folders</option>';
-    moveSelectedToFolderDropdown.innerHTML = '<option value="">Move to Folder...</option><option value="">No Folder</option>';
-    allFolders.forEach(folderName => {
-        const option = `<option value="${escapeHtml(folderName)}">${escapeHtml(folderName)}</option>`;
-        folderFilterDropdown.insertAdjacentHTML('beforeend', option);
-        moveSelectedToFolderDropdown.insertAdjacentHTML('beforeend', option);
-    });
-}
-
 function setupEventListeners() {
-    // Search
     searchBox.addEventListener('input', (e) => {
         clearTimeout(searchTimeout);
         searchTimeout = setTimeout(() => {
-            currentSearch = e.target.value;
-            loadAndRender(true);
-        }, 500);
+            currentSearch = e.target.value.toLowerCase();
+            renderGroupedHistory();
+        }, 300);
     });
 
-    // Folder Filter
-    folderFilterDropdown.addEventListener('change', (e) => {
-        currentFolder = e.target.value;
-        loadAndRender(true);
-    });
-
-    // Infinite Scroll
-    window.addEventListener('scroll', () => {
-        if (isLoading) return;
-        if ((window.innerHeight + window.scrollY) >= document.body.offsetHeight - 300) {
-            if (allTranslations.length < totalRecords) {
-                loadAndRender(false);
-            }
-        }
-    });
-
-    // Event delegation for item actions
     historyContainer.addEventListener('click', handleHistoryClick);
-    historyContainer.addEventListener('change', handleHistoryChange);
+    historyContainer.addEventListener('change', handleCheckboxChange);
 
-    // Bulk actions
+    darkModeToggle.addEventListener('click', toggleDarkMode);
+    fetchAllTitlesBtn.addEventListener('click', fetchAllTitles);
     deleteSelectedBtn.addEventListener('click', deleteSelectedTranslations);
     moveSelectedToFolderDropdown.addEventListener('change', moveSelectedTranslationsToFolder);
-    
-    // Other controls
-    darkModeToggle.addEventListener('click', toggleDarkMode);
+}
+
+function handleCheckboxChange(e) {
+    const target = e.target;
+    if (!target.matches('input[type="checkbox"]')) return;
+
+    if (target.classList.contains('folder-select-all-checkbox')) {
+        const folderGroup = target.closest('.history-folder-group');
+        const itemCheckboxes = folderGroup.querySelectorAll('.item-checkbox');
+        itemCheckboxes.forEach(cb => cb.checked = target.checked);
+    }
+
+    if (target.classList.contains('group-select-all-checkbox')) {
+        const urlGroup = target.closest('.list-group');
+        const itemCheckboxes = urlGroup.querySelectorAll('.item-checkbox');
+        itemCheckboxes.forEach(cb => cb.checked = target.checked);
+    }
+
+    updateBulkActionPanel();
 }
 
 async function handleHistoryClick(e) {
     const target = e.target;
+
+    if (target.closest('.list-group-actions') || target.classList.contains('edit-title-btn')) {
+        if (target.classList.contains('btn-apply')) {
+            showToast("'페이지에 적용' 기능은 아직 구현되지 않았습니다.", 'info');
+        } else if (target.classList.contains('btn-find-replace')) {
+            showToast("'찾아 바꾸기' 기능은 아직 구현되지 않았습니다.", 'info');
+        } else if (target.classList.contains('edit-title-btn')) {
+            const url = target.dataset.url;
+            const titleElement = target.closest('.list-group-header').querySelector('.list-group-title');
+            const currentTitle = titleElement.textContent.split(' (')[0];
+            const newTitle = prompt("Enter new title:", currentTitle);
+            if (newTitle && newTitle !== currentTitle) {
+                const count = titleElement.textContent.match(/\(\d+\)/)[0];
+                titleElement.textContent = `${newTitle} ${count}`;
+                try {
+                    await fetch('http://127.0.0.1:8001/translations/url_title', {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ url: url, title: newTitle })
+                    });
+                    showToast('Title updated successfully!', 'success');
+                } catch (error) {
+                    showToast('Failed to update title.', 'error');
+                    titleElement.textContent = `${currentTitle} ${count}`;
+                }
+            }
+        }
+        return; 
+    }
+
+    const folderHeader = target.closest('.folder-group-header');
+    if (folderHeader) {
+        folderHeader.nextElementSibling.classList.toggle('collapsed');
+        folderHeader.querySelector('.folder-group-toggle').classList.toggle('collapsed');
+        return;
+    }
+
+    const urlHeader = target.closest('.list-group-header');
+    if (urlHeader) {
+        urlHeader.nextElementSibling.classList.toggle('collapsed');
+        const icon = urlHeader.querySelector('.list-group-toggle');
+        icon.classList.toggle('collapsed');
+        icon.textContent = icon.classList.contains('collapsed') ? 'chevron_right' : 'expand_more';
+        return;
+    }
+
     const itemRow = target.closest('.history-item');
     if (!itemRow) return;
 
     const id = parseInt(itemRow.dataset.id);
-
     if (target.classList.contains('delete-btn')) {
         if (!confirm('Delete this translation?')) return;
-        await fetch('http://127.0.0.1:8000/translations/delete', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ids: [id] })
-        });
+        await fetch(`http://127.0.0.1:8001/translations/delete`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: [id] }) });
         itemRow.remove();
-        totalRecords--;
-        updateBulkActionPanel();
         showToast('Deleted.');
     }
-
     if (target.classList.contains('save-item-btn')) {
-        const original = itemRow.querySelector('.original-text').textContent;
         const translated = itemRow.querySelector('.translated-text').textContent;
-        const record = allTranslations.find(t => t.id === id);
-        if (!record) return;
-
-        const itemToUpsert = { ...record, translated, timestamp: Math.floor(Date.now() / 1000) };
-        await fetch('http://127.0.0.1:8000/translations/upsert', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify([itemToUpsert])
-        });
+        await fetch('http://127.0.0.1:8001/translations/upsert', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify([{ id, translated }]) });
         showToast('Saved.');
     }
-    
     if (target.classList.contains('copy-btn')) {
-        const translatedText = itemRow.querySelector('.translated-text').textContent;
-        navigator.clipboard.writeText(translatedText);
+        navigator.clipboard.writeText(itemRow.querySelector('.translated-text').textContent);
         showToast('Copied to clipboard.');
     }
 }
 
-async function handleHistoryChange(e) {
-    const target = e.target;
-
-    if (target.classList.contains('item-folder-assign-dropdown')) {
-        const id = parseInt(target.dataset.id);
-        const newFolder = target.value || null;
-        await fetch('http://127.0.0.1:8000/translations/move', {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ids: [id], folder_name: newFolder })
-        });
-        showToast('Folder changed.');
-    }
-
-    if (target.id === 'global-select-all' || target.classList.contains('item-checkbox')) {
-        if (target.id === 'global-select-all') {
-            historyContainer.querySelectorAll('.item-checkbox').forEach(cb => cb.checked = target.checked);
-        }
-        updateBulkActionPanel();
+function updateBulkActionPanel() {
+    const checkedItems = document.querySelectorAll('.item-checkbox:checked');
+    if (checkedItems.length > 0) {
+        bulkActionsPanel.style.display = 'flex';
+        selectionCount.textContent = `${checkedItems.length}개 항목 선택됨`;
+    } else {
+        bulkActionsPanel.style.display = 'none';
     }
 }
 
 async function deleteSelectedTranslations() {
     const checkedItems = Array.from(document.querySelectorAll('.item-checkbox:checked'));
-    if (checkedItems.length === 0) return;
-    if (!confirm(`Delete ${checkedItems.length} translations?`)) return;
+    if (checkedItems.length === 0 || !confirm(`정말로 ${checkedItems.length}개의 번역을 삭제하시겠습니까?`)) return;
     
     const idsToDelete = checkedItems.map(item => parseInt(item.dataset.id));
-    await fetch('http://127.0.0.1:8000/translations/delete', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ids: idsToDelete })
-    });
+    await fetch('http://127.0.0.1:8001/translations/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: idsToDelete }) });
     showToast(`${idsToDelete.length} items deleted.`, 'success');
-    loadAndRender(true);
+    loadAndRenderGrouped();
 }
 
 async function moveSelectedTranslationsToFolder(event) {
     const checkedItems = Array.from(document.querySelectorAll('.item-checkbox:checked'));
     if (checkedItems.length === 0) return;
-
-    const targetFolder = event.target.value;
-    if (targetFolder === "") return; // Ignore the placeholder "Move to folder..."
+    const newFolderName = event.target.value;
+    if (newFolderName === "") return;
 
     const idsToMove = checkedItems.map(item => parseInt(item.dataset.id));
-    const newFolderName = targetFolder === "No Folder" ? null : targetFolder;
+    const folderForAPI = newFolderName === "__no_folder__" ? null : newFolderName;
 
-    if (!confirm(`Move ${idsToMove.length} items to '${targetFolder}'?`)) return;
+    if (!confirm(`${idsToMove.length}개의 항목을 '${newFolderName}' 폴더로 이동하시겠습니까?`)) return;
 
-    await fetch('http://127.0.0.1:8000/translations/move', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ids: idsToMove, folder_name: newFolderName })
-    });
+    await fetch('http://127.0.0.1:8001/translations/move', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: idsToMove, folder_name: folderForAPI }) });
     showToast(`${idsToMove.length} items moved.`, 'success');
-    loadAndRender(true);
+    loadAndRenderGrouped();
 }
 
-function updateBulkActionPanel() {
-    const checkedItems = document.querySelectorAll('.item-checkbox:checked');
-    const panel = document.getElementById('bulk-actions');
-    const countSpan = document.getElementById('selection-count');
-    const moveDropdown = document.getElementById('moveSelectedToFolderDropdown');
-    const deleteButton = document.getElementById('deleteSelectedBtn');
-
-    document.getElementById('totalCount').textContent = totalRecords;
-
-    if (checkedItems.length > 0) {
-        panel.style.display = 'flex';
-        countSpan.textContent = `${checkedItems.length} items selected`;
-        moveDropdown.disabled = false;
-        deleteButton.disabled = false;
-    } else {
-        panel.style.display = 'none';
-    }
-}
-
+// Utility functions (escapeHtml, showToast, etc.) remain the same
 function escapeHtml(text) {
     if (text === null || text === undefined) return '';
-    return text.toString().replace(/[&<"'/]/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;','/':'&#x2F;'})[s]);
+    return text.toString().replace(/[&<>"'/]/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;','/':'&#x2F;'})[s]);
 }
 
 function showToast(message, type = 'success') {
@@ -333,69 +317,31 @@ function showToast(message, type = 'success') {
     const toast = document.createElement('div');
     toast.className = 'toast';
     toast.textContent = message;
-    toast.style.cssText = `
-        position: fixed; top: 20px; right: 20px;
-        background: ${type === 'error' ? '#e53e3e' : (type === 'info' ? '#3182ce' : '#48bb78')}; color: white;
-        padding: 12px 20px; border-radius: 8px; font-size: 14px; font-weight: 500;
-        z-index: 1001; box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-        transform: translateX(100%); transition: transform 0.3s ease;
-    `;
+    toast.style.cssText = `position: fixed; top: 20px; right: 20px; background: ${type === 'error' ? '#e53e3e' : '#48bb78'}; color: white; padding: 12px 20px; border-radius: 8px; z-index: 1001;`;
     document.body.appendChild(toast);
-    setTimeout(() => { toast.style.transform = 'translateX(0)'; }, 100);
-    setTimeout(() => {
-        toast.style.transform = 'translateX(100%)';
-        setTimeout(() => toast.remove(), 300);
-    }, 3000);
+    setTimeout(() => toast.remove(), 3000);
 }
 
 function toggleDarkMode() {
     document.body.classList.toggle('dark-mode');
-    const isDarkMode = document.body.classList.contains('dark-mode');
-    chrome.storage.local.set({ darkMode: isDarkMode });
-    updateDarkModeToggleIcon(isDarkMode);
+    chrome.storage.local.set({ darkMode: document.body.classList.contains('dark-mode') });
 }
 
 async function loadDarkModePreference() {
-    const result = await chrome.storage.local.get('darkMode');
-    const isDarkMode = result.darkMode;
-    if (isDarkMode) {
-        document.body.classList.add('dark-mode');
-    }
-    updateDarkModeToggleIcon(isDarkMode);
+    const { darkMode } = await chrome.storage.local.get('darkMode');
+    if (darkMode) document.body.classList.add('dark-mode');
 }
 
-function updateDarkModeToggleIcon(isDarkMode) {
-    const toggleButton = document.getElementById('darkModeToggle');
-    if (toggleButton) {
-        toggleButton.innerHTML = `<span class="material-icons">${isDarkMode ? 'light_mode' : 'dark_mode'}</span>`;
+async function fetchAllTitles() {
+    if (!confirm('제목이 없는 모든 항목의 제목을 가져오시겠습니까? 이 작업은 시간이 오래 걸릴 수 있습니다.')) return;
+    showToast('백그라운드에서 제목 가져오기를 시작합니다...', 'info');
+    try {
+        const response = await fetch('http://127.0.0.1:8001/fetch_missing_titles', { method: 'POST' });
+        if (!response.ok) throw new Error(`Server error: ${response.statusText}`);
+        const result = await response.json();
+        showToast(result.message, 'success');
+        setTimeout(() => { showToast('새로고침하여 새 제목을 확인하세요.', 'info'); loadAndRenderGrouped(); }, 5000);
+    } catch (error) {
+        showToast('제목 가져오기 작업을 시작하지 못했습니다.', 'error');
     }
-}
-
-function renderErrorLog(logs) {
-    const container = document.getElementById('errorLogContainer');
-    const contentDiv = document.getElementById('errorLogContent');
-    if (!container || !contentDiv) return;
-
-    if (!logs || logs.length === 0) {
-        container.style.display = 'none';
-        return;
-    }
-
-    container.style.display = 'block';
-    contentDiv.innerHTML = logs.map(log => {
-        const date = new Date(log.timestamp).toLocaleString('ko-KR');
-        const texts = log.texts.map(t => `<li>${escapeHtml(t)}</li>`).join('');
-        const stack = log.stack ? `<pre style="white-space: pre-wrap; font-size: 11px; color: #888; background: #f0f0f0; padding: 5px; border-radius: 4px;">${escapeHtml(log.stack)}</pre>` : '';
-
-        return `
-            <div class="error-log-item">
-                <p><strong>시간:</strong> ${date}</p>
-                <p><strong>원인:</strong> <span style="color: var(--danger-color);">${escapeHtml(log.reason)}</span></p>
-                <p><strong>URL:</strong> <a href="${log.url}" target="_blank">${escapeHtml(log.url)}</a></p>
-                <p><strong>관련 텍스트:</strong></p>
-                <ul>${texts}</ul>
-                ${stack}
-            </div>
-        `;
-    }).join('');
 }
