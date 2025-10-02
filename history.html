@@ -108,7 +108,7 @@
         .list-group-actions { display: flex; align-items: center; gap: 8px; }
         .list-group-content { display: block; overflow: hidden; transition: max-height 0.3s ease-out; }
         .list-group-content.collapsed { max-height: 0; }
-        .list-group-content:not(.collapsed) { max-height: none; /* 콘텐츠가 잘리지 않도록 최대 높이 제한 제거 */ }
+        .list-group-content:not(.collapsed) { max-height: none; /* 충분히 큰 값으로 설정 */ }
 
         .history-folder-group {
             background: var(--card-bg);
@@ -162,7 +162,7 @@
 
         .item-checkbox-container { display: flex; justify-content: center; padding-top: 5px; }
         .item-text-block .text-label { font-size: 12px; font-weight: 500; color: var(--text-secondary); margin-bottom: 4px; }
-        .item-text-block .text-content { line-height: 1.7; }
+        .item-text-block .text-content { line-height: 1.7; white-space: normal; word-break: break-word; }
         .item-actions-container { text-align: right; }
         .item-date { font-size: 12px; color: var(--text-secondary); margin-bottom: 8px; }
         .item-actions { display: inline-flex; gap: 4px; }
@@ -313,31 +313,18 @@
         <div id="folderList" style="display: none; background: var(--card-bg); padding: 16px; border-radius: var(--border-radius); margin-bottom: 24px; box-shadow: var(--shadow); border: 1px solid var(--border-color);">
         </div>
 
-        <div id="errorLogContainer" class="list-group" style="display: none;">
-            <div class="list-group-header">
-                <h3 class="list-group-title">API 오류 로그</h3>
-                <div class="list-group-actions">
-                    <button class="btn btn-danger" id="deleteErrorLogBtn">로그 삭제</button>
+        <div id="history-container">
+            <div id="loading-skeleton" style="display: none;">
+                <div class="list-group skeleton-group">
+                    <div class="list-group-header skeleton-header"></div>
+                    <div class="history-item skeleton-item"></div>
+                    <div class="history-item skeleton-item"></div>
+                </div>
+                <div class="list-group skeleton-group">
+                    <div class="list-group-header skeleton-header"></div>
+                    <div class="history-item skeleton-item"></div>
                 </div>
             </div>
-            <div class="list-group-content">
-                <div id="errorLogContent"></div>
-            </div>
-        </div>
-
-        <div id="loading-skeleton" style="display: none;">
-            <div class="list-group skeleton-group">
-                <div class="list-group-header skeleton-header"></div>
-                <div class="history-item skeleton-item"></div>
-                <div class="history-item skeleton-item"></div>
-            </div>
-            <div class="list-group skeleton-group">
-                <div class="list-group-header skeleton-header"></div>
-                <div class="history-item skeleton-item"></div>
-            </div>
-        </div>
-
-        <div id="history-container">
         </div>
 
         <div class="empty-state" id="emptyState" style="display: none;">

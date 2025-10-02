@@ -110,12 +110,18 @@ function setupEventListeners() {
 
         const folderHeader = target.closest('.folder-group-header');
         if (folderHeader) {
-            const folderContent = folderHeader.nextElementSibling;
-            const toggle = folderHeader.querySelector('.folder-group-toggle');
-            if (folderContent) {
-                folderContent.classList.toggle('collapsed');
-                toggle.classList.toggle('collapsed');
-                toggle.textContent = folderContent.classList.contains('collapsed') ? '▶' : '▼';
+            // If the click originated from the folder-select-all-checkbox, stop propagation
+            if (target.classList.contains('folder-select-all-checkbox')) {
+                e.stopPropagation();
+                // Do not return here, allow the change event to be handled if it's a change
+            } else {
+                const folderContent = folderHeader.nextElementSibling;
+                const toggle = folderHeader.querySelector('.folder-group-toggle');
+                if (folderContent) {
+                    folderContent.classList.toggle('collapsed');
+                    toggle.classList.toggle('collapsed');
+                    toggle.textContent = folderContent.classList.contains('collapsed') ? '▶' : '▼';
+                }
             }
             return;
         }
@@ -233,9 +239,10 @@ function setupEventListeners() {
             }
             updateBulkActionPanel();
         } else if (target.classList.contains('folder-select-all-checkbox')) {
-            const folderGroup = target.closest('.history-folder-group');
-            if (folderGroup) {
-                const itemCheckboxes = folderGroup.querySelectorAll('.item-checkbox');
+            const folderName = target.dataset.folderName; // Get folder name from data attribute
+            if (folderName) {
+                // Select all item checkboxes within the specific folder group
+                const itemCheckboxes = document.querySelectorAll(`.history-folder-group:has(.folder-group-header .folder-select-all-checkbox[data-folder-name="${folderName}"]) .item-checkbox`);
                 itemCheckboxes.forEach(checkbox => { checkbox.checked = target.checked; });
             }
             updateBulkActionPanel();
@@ -433,7 +440,7 @@ function renderGroupedView(groupedByFolder, container, emptyState, allData) {
                 <span class="folder-group-toggle collapsed">▶</span>
                 <h2 class="folder-group-title">${escapeHtml(folderName)}</h2>
                 <div class="list-group-actions">
-                    <label><input type="checkbox" class="folder-select-all-checkbox" data-folder-name="${escapeHtml(folderName)}"> 전체 선택</label>
+                    <label style="margin-left: auto;"><input type="checkbox" class="folder-select-all-checkbox" data-folder-name="${escapeHtml(folderName)}"> 전체 선택</label>
                 </div>
             </div>
             <div class="folder-group-content collapsed">
@@ -878,36 +885,6 @@ function showToast(message, type = 'success') {
         toast.style.transform = 'translateX(100%)';
         setTimeout(() => toast.remove(), 300);
     }, 3000);
-}
-
-function renderErrorLog(errorLog) {
-    const errorLogContainer = document.getElementById('errorLogContainer');
-    const errorLogContent = document.getElementById('errorLogContent');
-
-    if (!errorLogContainer || !errorLogContent) {
-        console.error('Error log container or content element not found.');
-        return;
-    }
-
-    if (errorLog.length === 0) {
-        errorLogContainer.style.display = 'none';
-        return;
-    }
-
-    errorLogContent.innerHTML = ''; // Clear previous logs
-    errorLogContainer.style.display = 'block';
-
-    errorLog.forEach((log, index) => {
-        const logItem = document.createElement('div');
-        logItem.className = 'error-log-item';
-        logItem.innerHTML = `
-            <p><strong>시간:</strong> ${new Date(log.timestamp).toLocaleString()}</p>
-            <p><strong>URL:</strong> <a href="${log.url}" target="_blank">${log.url}</a></p>
-            <p><strong>메시지:</strong> ${escapeHtml(log.message)}</p>
-            ${log.stack ? `<p><strong>스택:</strong></p><ul><li>${escapeHtml(log.stack).split('\n').join('</li><li>')}</li></ul>` : ''}
-        `;
-        errorLogContent.appendChild(logItem);
-    });
 }
 
 function naturalSort(a, b) {
