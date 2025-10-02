@@ -110,18 +110,19 @@ function setupEventListeners() {
 
         const folderHeader = target.closest('.folder-group-header');
         if (folderHeader) {
-            // If the click originated from the folder-select-all-checkbox, stop propagation
-            if (target.classList.contains('folder-select-all-checkbox')) {
-                e.stopPropagation();
-                // Do not return here, allow the change event to be handled if it's a change
-            } else {
-                const folderContent = folderHeader.nextElementSibling;
-                const toggle = folderHeader.querySelector('.folder-group-toggle');
-                if (folderContent) {
-                    folderContent.classList.toggle('collapsed');
-                    toggle.classList.toggle('collapsed');
-                    toggle.textContent = folderContent.classList.contains('collapsed') ? '▶' : '▼';
-                }
+            // --- FIX START: 폴더 접힘 문제 해결 ---
+            // 클릭의 근원지가 '전체 선택' 체크박스이거나 그것을 감싸는 라벨이면 폴더 토글 동작을 막음
+            if (target.classList.contains('folder-select-all-checkbox') || target.closest('label')?.querySelector('.folder-select-all-checkbox')) {
+                return;
+            }
+            // --- FIX END ---
+
+            const folderContent = folderHeader.nextElementSibling;
+            const toggle = folderHeader.querySelector('.folder-group-toggle');
+            if (folderContent) {
+                folderContent.classList.toggle('collapsed');
+                toggle.classList.toggle('collapsed');
+                toggle.textContent = folderContent.classList.contains('collapsed') ? '▶' : '▼';
             }
             return;
         }
@@ -237,12 +238,11 @@ function setupEventListeners() {
                     itemCheckboxes.forEach(checkbox => { checkbox.checked = target.checked; });
                 }
             }
-            updateBulkActionPanel();
         } else if (target.classList.contains('folder-select-all-checkbox')) {
-            const folderName = target.dataset.folderName; // Get folder name from data attribute
+            const folderName = target.closest('.history-folder-group');
             if (folderName) {
                 // Select all item checkboxes within the specific folder group
-                const itemCheckboxes = document.querySelectorAll(`.history-folder-group:has(.folder-group-header .folder-select-all-checkbox[data-folder-name="${folderName}"]) .item-checkbox`);
+                const itemCheckboxes = folderName.querySelectorAll('.item-checkbox');
                 itemCheckboxes.forEach(checkbox => { checkbox.checked = target.checked; });
             }
             updateBulkActionPanel();
