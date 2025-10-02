@@ -109,14 +109,7 @@ function setupEventListeners() {
         const target = e.target;
 
         const folderHeader = target.closest('.folder-group-header');
-        if (folderHeader) {
-            // --- FIX START: 폴더 접힘 문제 해결 ---
-            // 클릭의 근원지가 '전체 선택' 체크박스이거나 그것을 감싸는 라벨이면 폴더 토글 동작을 막음
-            if (target.classList.contains('folder-select-all-checkbox') || target.closest('label')?.querySelector('.folder-select-all-checkbox')) {
-                return;
-            }
-            // --- FIX END ---
-
+        if (folderHeader && !target.closest('.list-group-actions')) {
             const folderContent = folderHeader.nextElementSibling;
             const toggle = folderHeader.querySelector('.folder-group-toggle');
             if (folderContent) {
@@ -228,14 +221,21 @@ function setupEventListeners() {
 
     });
 
-        historyContainer.addEventListener('change', (e) => {
+    historyContainer.addEventListener('change', (e) => {
         const target = e.target;
         if (target.type === 'checkbox') { // 모든 체크박스 이벤트를 여기서 처리
             if (target.classList.contains('group-select-all-checkbox')) {
-                // ...
-            } else if (target.classList.contains('folder-select-all-checkbox')) { // 올바르게 중첩됨
+                const group = target.closest('.list-group');
+                if (group) {
+                    const itemCheckboxes = group.querySelectorAll('.item-checkbox');
+                    itemCheckboxes.forEach(checkbox => { checkbox.checked = target.checked; });
+                }
+            } else if (target.classList.contains('folder-select-all-checkbox')) {
                 const folderGroup = target.closest('.history-folder-group');
-                // ...
+                if (folderGroup) {
+                    const itemCheckboxes = folderGroup.querySelectorAll('.item-checkbox');
+                    itemCheckboxes.forEach(checkbox => { checkbox.checked = target.checked; });
+                }
             }
             updateBulkActionPanel();
         
@@ -277,7 +277,6 @@ function setupEventListeners() {
         }
     });
 }
-
 async function loadAndRender() {
     const progressContainer = document.getElementById('progress-container');
     if(progressContainer) {
