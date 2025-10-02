@@ -90,19 +90,13 @@ function setupEventListeners() {
         const target = e.target;
 
         const folderHeader = target.closest('.folder-group-header');
-        if (folderHeader) {
-            // If the click originated from the folder-select-all-checkbox, stop propagation
-            if (target.classList.contains('folder-select-all-checkbox')) {
-                e.stopPropagation();
-                // Do not return here, allow the change event to be handled if it's a change
-            } else {
-                const folderContent = folderHeader.nextElementSibling;
-                const toggle = folderHeader.querySelector('.folder-group-toggle');
-                if (folderContent) {
-                    folderContent.classList.toggle('collapsed');
-                    toggle.classList.toggle('collapsed');
-                    toggle.textContent = folderContent.classList.contains('collapsed') ? '▶' : '▼';
-                }
+        if (folderHeader && !target.closest('.list-group-actions')) {
+            const folderContent = folderHeader.nextElementSibling;
+            const toggle = folderHeader.querySelector('.folder-group-toggle');
+            if (folderContent) {
+                folderContent.classList.toggle('collapsed');
+                toggle.classList.toggle('collapsed');
+                toggle.textContent = folderContent.classList.contains('collapsed') ? '▶' : '▼';
             }
             return;
         }
@@ -232,14 +226,12 @@ function setupEventListeners() {
                     const itemCheckboxes = group.querySelectorAll('.item-checkbox');
                     itemCheckboxes.forEach(checkbox => { checkbox.checked = target.checked; });
                 }
-            }
-            updateBulkActionPanel();
-        } else if (target.classList.contains('folder-select-all-checkbox')) {
-            const folderName = target.dataset.folderName; // Get folder name from data attribute
-            if (folderName) {
-                // Select all item checkboxes within the specific folder group
-                const itemCheckboxes = document.querySelectorAll(`.history-folder-group:has(.folder-group-header .folder-select-all-checkbox[data-folder-name="${folderName}"]) .item-checkbox`);
-                itemCheckboxes.forEach(checkbox => { checkbox.checked = target.checked; });
+            } else if (target.classList.contains('folder-select-all-checkbox')) {
+                const folderGroup = target.closest('.history-folder-group');
+                if (folderGroup) {
+                    const itemCheckboxes = folderGroup.querySelectorAll('.item-checkbox');
+                    itemCheckboxes.forEach(checkbox => { checkbox.checked = target.checked; });
+                }
             }
             updateBulkActionPanel();
         } else if (target.classList.contains('item-folder-assign-dropdown')) {
