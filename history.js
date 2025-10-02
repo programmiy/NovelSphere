@@ -228,24 +228,17 @@ function setupEventListeners() {
 
     });
 
-    historyContainer.addEventListener('change', (e) => {
+        historyContainer.addEventListener('change', (e) => {
         const target = e.target;
-        if (target.type === 'checkbox') {
+        if (target.type === 'checkbox') { // 모든 체크박스 이벤트를 여기서 처리
             if (target.classList.contains('group-select-all-checkbox')) {
-                const group = target.closest('.list-group');
-                if (group) {
-                    const itemCheckboxes = group.querySelectorAll('.item-checkbox');
-                    itemCheckboxes.forEach(checkbox => { checkbox.checked = target.checked; });
-                }
-            }
-        } else if (target.classList.contains('folder-select-all-checkbox')) {
-            const folderName = target.closest('.history-folder-group');
-            if (folderName) {
-                // Select all item checkboxes within the specific folder group
-                const itemCheckboxes = folderName.querySelectorAll('.item-checkbox');
-                itemCheckboxes.forEach(checkbox => { checkbox.checked = target.checked; });
+                // ...
+            } else if (target.classList.contains('folder-select-all-checkbox')) { // 올바르게 중첩됨
+                const folderGroup = target.closest('.history-folder-group');
+                // ...
             }
             updateBulkActionPanel();
+        
         } else if (target.classList.contains('item-folder-assign-dropdown')) {
             const compositeKey = target.dataset.key;
             const newFolderName = target.value === '폴더 없음' ? undefined : target.value;
