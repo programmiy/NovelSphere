@@ -71,6 +71,7 @@ async function applySavedTranslations() {
 }
 
 async function init() {
+    document.body.style.border = '5px solid red';
     try {
         console.log("Translator extension initializing...");
 
