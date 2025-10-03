@@ -75,18 +75,38 @@ def translate_texts(req: TranslateRequest):
     api_key = get_api_key()
     api_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
     
-    prompt = "You are a translation API..." # 이전과 동일한 프롬프트
+    # 단순화된 프롬프트: 각 텍스트를 새 줄에 번역하도록 요청
+    prompt = (
+        "You are an expert translator. Translate the following Japanese texts to Korean. "
+        "Each text is on a new line. Maintain the same order in your response, with each translation on a new line. "
+        "Do not add any extra explanations or formatting. Just the translated texts, one per line.\n"
+        "---START OF TEXTS---\n"
+        + "\n".join(req.texts) +
+        "\n---END OF TEXTS---"
+    )
 
     try:
         response = requests.post(api_url, json={
-            "contents": [{"parts": [{"text": prompt}, {"text": json.dumps(req.texts)}]}]
+            "contents": [{"parts": [{"text": prompt}]}]
         })
         response.raise_for_status() # HTTP 오류 발생 시 예외 발생
         data = response.json()
         
-        raw_text = data.candidates[0]['content']['parts'][0]['text']
-        translated_parts = json.loads(raw_text.strip("```json\n").strip("\n```"))
+        # 모델의 응답 텍스트를 줄 단위로 분리
+        raw_text = data['candidates'][0]['content']['parts'][0]['text']
+        translated_parts = raw_text.strip().split('\n')
         
+        # 입력과 출력의 개수가 일치하는지 기본적인 검증
+        if len(translated_parts) != len(req.texts):
+            # 불일치 시, 원본 텍스트 수만큼 빈 문자열로 채워 반환 (부분적 실패 처리)
+            # 또는 에러를 발생시킬 수 있습니다. 여기서는 안전하게 빈 문자열로 채웁니다.
+            print(f"Warning: Translation count mismatch. Expected {len(req.texts)}, got {len(translated_parts)}.")
+            # 가장 가능성 있는 시나리오는 모델이 빈 문자열 하나를 반환하는 경우입니다.
+            if len(translated_parts) == 1 and translated_parts[0] == '':
+                translated_parts = ['' for _ in req.texts]
+            else: # 다른 경우, 일단 받은대로 두고 클라이언트에서 처리하도록 함
+                 pass
+
         return {"translations": translated_parts}
     except requests.exceptions.RequestException as e:
         raise HTTPException(status_code=500, detail=f"Gemini API 요청 실패: {e}")
