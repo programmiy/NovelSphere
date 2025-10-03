@@ -2,6 +2,7 @@
 // Globals & Constants
 // =================================================================================
 
+const LONG_TEXT_THRESHOLD = 150; // Define threshold for long texts
 const JAPANESE_REGEX = /[\u3000-\u303f\u3040-\u309f\u30a0-\u30ff\uff00-\uff9f\u4e00-\u9faf\u3400-\u4dbf]/;
 const PID_REGEX = /^[a-zA-Z][a-zA-Z0-9]*$/;
 let hasScannedForP_Tags = false;
@@ -311,9 +312,8 @@ async function translateAllPTags() {
             .replace(/([あアいイうウえエおオ])\1{2,}/g, '$1ー')
             .trim();
 
-        // Check against exclusion list
         if (exclusionListForThisUrl.has(text)) {
-            return; // Skip this paragraph
+            return; 
         }
 
         if (text && JAPANESE_REGEX.test(text) && !document.querySelector(`tr[data-pid="${p.id}"]`)) {
@@ -327,7 +327,15 @@ async function translateAllPTags() {
         return;
     }
 
-    logToSidebar(`총 ${textsToTranslate.length}개의 문장 번역을 시작합니다 (적응형 묶음 방식).`);
+    logToSidebar(`총 ${textsToTranslate.length}개의 문장 번역을 시작합니다.`);
+    
+    const longTexts = textsToTranslate.filter(item => item.text.length > LONG_TEXT_THRESHOLD);
+    const normalTexts = textsToTranslate.filter(item => item.text.length <= LONG_TEXT_THRESHOLD);
+
+    if (longTexts.length > 0) {
+        logToSidebar(`경고: ${longTexts.length}개의 긴 문장(${LONG_TEXT_THRESHOLD}자 이상)이 감지되어 개별적으로 처리합니다.`);
+    }
+    
     addPlaceholderRows(textsToTranslate);
 
     const allFinishedResults = [];
@@ -345,8 +353,6 @@ async function translateAllPTags() {
     
                 if (isTranslationCancelled) return;
     
-                // The 'message channel closed' error is thrown and caught by the catch block.
-                // chrome.runtime.lastError might also be set. It's good practice to check.
                 if (chrome.runtime.lastError) {
                     throw new Error(chrome.runtime.lastError.message);
                 }
@@ -368,21 +374,19 @@ async function translateAllPTags() {
                         logToSidebar(`${failedOriginalItems.length}개 항목 번역 실패. 더 작은 단위로 재시도합니다.`, 'log-error');
                         await handleFailure(failedOriginalItems, chunkSize);
                     }
-                    return; // Success, exit retry loop.
+                    return;
                 } else {
-                    // This handles cases where background.js sends a response, but it's not in the expected format.
                     throw new Error(response?.error || 'Malformed response from background script');
                 }
             } catch (error) {
                 console.warn(`Chunk translation failed (attempt ${attempt + 1}/${MAX_MESSAGE_RETRIES}):`, error.message);
                 if (attempt < MAX_MESSAGE_RETRIES - 1) {
-                    const delay = 1000 * Math.pow(2, attempt); // Exponential backoff
+                    const delay = 1000 * Math.pow(2, attempt);
                     logToSidebar(`통신 오류. ${delay / 1000}초 후 재시도... (${attempt + 1}/${MAX_MESSAGE_RETRIES})`, 'log-error');
                     await new Promise(resolve => setTimeout(resolve, delay));
                 } else {
                     console.error(`Chunk translation failed after all retries for ${items.length} items:`, error);
                     logToSidebar(`${items.length}개 항목 통신 최종 실패. 더 작은 단위로 재시도합니다.`, 'log-error');
-                    // After all retries, use the existing robust failure handling which splits the chunk.
                     await handleFailure(items, chunkSize);
                 }
             }
@@ -400,17 +404,13 @@ async function translateAllPTags() {
             for (const item of failedItems) {
                 const sentences = item.text.split('。').filter(s => s.trim().length > 0);
                 
-                // If the text can be split into multiple sentences, try the fallback.
                 if (sentences.length > 1) {
                     await retryWithSentenceSplitting(item);
                 } else {
-                    // Cannot be split, or is a single sentence. This is a final failure.
                     console.error(`Failed to translate item ${item.id} after retries:`, item.text);
                     const errorResultForUI = { id: item.id, original: item.text, translated: `번역 실패: API 오류` };
                     updateSidebarWithTranslations([errorResultForUI]);
 
-                    // Only save a blank result if the translation was not manually cancelled by the user.
-                    // This is to distinguish permanent API failures (e.g. censorship) from temporary ones (e.g. user stop).
                     if (!isTranslationCancelled) {
                         const resultForStorage = { id: item.id, original: item.text, translated: '' };
                         allFinishedResults.push(resultForStorage);
@@ -426,7 +426,7 @@ async function translateAllPTags() {
         const sentences = originalItem.text.split('。').map(s => s.trim()).filter(s => s.length > 0);
         const subItemsForApi = sentences.map((sentence, index) => ({
             id: `${originalItem.id}-part${index}`,
-            text: sentence + '。' // Add period back for better context
+            text: sentence + '。'
         }));
 
         try {
@@ -462,7 +462,6 @@ async function translateAllPTags() {
             const errorResultForUI = { id: originalItem.id, original: originalItem.text, translated: `번역 실패: 분할 재시도 실패` };
             updateSidebarWithTranslations([errorResultForUI]);
 
-            // Only save a blank result if the translation was not manually cancelled by the user.
             if (!isTranslationCancelled) {
                 const resultForStorage = { id: item.id, original: item.text, translated: '' };
                 allFinishedResults.push(resultForStorage);
@@ -470,38 +469,44 @@ async function translateAllPTags() {
         }
     }
 
-    // Dynamically calculate initial chunk size
-    const totalSize = textsToTranslate.length;
-    const idealChunks = 10;
-    let initialChunkSize = Math.ceil(totalSize / idealChunks);
-    initialChunkSize = Math.max(5, initialChunkSize);  // Min size of 5
-    initialChunkSize = Math.min(20, initialChunkSize); // Max size of 20
-
-    logToSidebar(`초기 묶음 크기를 ${initialChunkSize}(으)로 설정합니다.`);
-
-    const chunks = chunkArray(textsToTranslate, initialChunkSize);
-    let progress = 0;
-
-    // 전체 묶음 수에 기반한 동적 딜레이 계산
-    let dynamicDelay = chunks.length * 100; // 묶음당 100ms
-    dynamicDelay = Math.max(500, dynamicDelay);   // 최소 0.5초
-    dynamicDelay = Math.min(5000, dynamicDelay);  // 최대 5초
-
-    logToSidebar(`동적 딜레이를 ${dynamicDelay}ms로 설정합니다.`);
-
-    for (const [index, chunk] of chunks.entries()) {
-        if (isTranslationCancelled) {
-            updateSidebarWithCancelled();
-            break;
+    // Process long texts individually first
+    for (const [index, item] of longTexts.entries()) {
+        if (isTranslationCancelled) break;
+        logToSidebar(`긴 문장 번역 중 (${index + 1}/${longTexts.length})...`);
+        await translateChunk([item], 1);
+        if (index < longTexts.length - 1) {
+            await new Promise(resolve => setTimeout(resolve, 1000)); 
         }
-        progress += chunk.length;
-        logToSidebar(`(${progress}/${textsToTranslate.length}) 번역 진행 중...`);
-        await translateChunk(chunk, initialChunkSize);
+    }
 
-        // 마지막 묶음이 아닌 경우에만 딜레이 추가
-        if (index < chunks.length - 1) {
-            logToSidebar(`${dynamicDelay / 1000}초 후 다음 묶음을 번역합니다.`);
-            await new Promise(resolve => setTimeout(resolve, dynamicDelay));
+    // Then, process normal texts in batches
+    if (!isTranslationCancelled && normalTexts.length > 0) {
+        logToSidebar(`${normalTexts.length}개의 일반 문장을 묶음으로 번역합니다.`);
+        const totalSize = normalTexts.length;
+        const idealChunks = 10;
+        let initialChunkSize = Math.ceil(totalSize / idealChunks);
+        initialChunkSize = Math.max(5, initialChunkSize);
+        initialChunkSize = Math.min(20, initialChunkSize);
+
+        logToSidebar(`초기 묶음 크기를 ${initialChunkSize}(으)로 설정합니다.`);
+        const chunks = chunkArray(normalTexts, initialChunkSize);
+        let progress = 0;
+
+        let dynamicDelay = chunks.length * 100;
+        dynamicDelay = Math.max(500, dynamicDelay);
+        dynamicDelay = Math.min(5000, dynamicDelay);
+        logToSidebar(`동적 딜레이를 ${dynamicDelay}ms로 설정합니다.`);
+
+        for (const [index, chunk] of chunks.entries()) {
+            if (isTranslationCancelled) break;
+            progress += chunk.length;
+            logToSidebar(`(${progress}/${normalTexts.length}) 일반 문장 번역 진행 중...`);
+            await translateChunk(chunk, initialChunkSize);
+
+            if (index < chunks.length - 1) {
+                logToSidebar(`${dynamicDelay / 1000}초 후 다음 묶음을 번역합니다.`);
+                await new Promise(resolve => setTimeout(resolve, dynamicDelay));
+            }
         }
     }
 
