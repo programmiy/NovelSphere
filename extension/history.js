@@ -150,10 +150,17 @@ function renderGroupedHistory() {
             const filteredTranslations = translations.filter(t => 
                 !currentSearch || 
                 t.original.toLowerCase().includes(currentSearch) || 
-                t.translated.toLowerCase().includes(currentSearch)
+                (t.translated && t.translated.toLowerCase().includes(currentSearch))
             );
 
             if (filteredTranslations.length === 0) continue;
+
+            // Sort by pid numerically to ensure correct chapter order
+            filteredTranslations.sort((a, b) => {
+                const numA = a.pid ? parseInt(a.pid.replace('p', ''), 10) : 0;
+                const numB = b.pid ? parseInt(b.pid.replace('p', ''), 10) : 0;
+                return numA - numB;
+            });
             
             totalTranslationsInFolder += filteredTranslations.length;
             const groupItemsHtml = filteredTranslations.map(t => renderItem(t)).join('');
@@ -168,7 +175,6 @@ function renderGroupedHistory() {
                         <button class="btn btn-outline btn-icon edit-title-btn" data-url="${url}" title="제목 수정">✏️</button>
                         <div class="list-group-actions">
                             <button class="btn btn-secondary btn-apply" data-url="${url}">페이지에 적용</button>
-                            <button class="btn btn-secondary btn-find-replace" data-url="${url}">찾아 바꾸기</button>
                             <label class="btn"><input type="checkbox" class="group-select-all-checkbox"> 전체 선택</label>
                         </div>
                     </div>
@@ -387,12 +393,18 @@ async function handleHistoryClick(e) {
 
 function updateBulkActionPanel() {
     const checkedItems = document.querySelectorAll('.item-checkbox:checked');
-    if (checkedItems.length > 0) {
+    const hasSelection = checkedItems.length > 0;
+
+    if (hasSelection) {
         bulkActionsPanel.style.display = 'flex';
         selectionCount.textContent = `${checkedItems.length}개 항목 선택됨`;
     } else {
         bulkActionsPanel.style.display = 'none';
     }
+    
+    // Enable/disable buttons based on selection
+    deleteSelectedBtn.disabled = !hasSelection;
+    moveSelectedToFolderDropdown.disabled = !hasSelection;
 }
 
 async function deleteSelectedTranslations() {
