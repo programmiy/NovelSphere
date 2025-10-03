@@ -312,7 +312,7 @@ async function handleHistoryClick(e) {
 
     // Logic for toggling folder collapse/expand
     const folderHeader = target.closest('.folder-group-header');
-    if (folderHeader) {
+    if (folderHeader && !target.closest('label.btn')) { // Exclude clicks on checkbox/label
         folderHeader.nextElementSibling.classList.toggle('collapsed');
         folderHeader.querySelector('.folder-group-toggle').classList.toggle('collapsed');
         return;
