@@ -77,9 +77,11 @@ def translate_texts(req: TranslateRequest):
     
     # 단순화된 프롬프트: 각 텍스트를 새 줄에 번역하도록 요청
     prompt = (
-        "You are an expert translator. Translate the following Japanese texts to Korean. "
+        "You are an expert translator specializing in Japanese to Korean. "
+        "Translate the following Japanese texts to Korean. "
         "Each text is on a new line. Maintain the same order in your response, with each translation on a new line. "
-        "Do not add any extra explanations or formatting. Just the translated texts, one per line.\n"
+        "Crucially, you MUST preserve the original quotation marks (like 「...」 and 『...』) in the translated text. "
+        "Do not add any other extra explanations or formatting. Just the translated texts, one per line.\n"
         "---START OF TEXTS---\n"
         + "\n".join(req.texts) +
         "\n---END OF TEXTS---"

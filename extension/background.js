@@ -201,11 +201,26 @@ async function handleBatchTranslate(items, sourceUrl) {
             throw new Error('Received invalid translation data from server.');
         }
 
-        return items.map((item, index) => ({
-            id: item.id,
-            original: item.text,
-            translated: data.translations[index]
-        }));
+        // Map results and apply quote correction
+        return items.map((item, index) => {
+            let translatedText = data.translations[index];
+
+            // Post-processing to enforce quote style (belt-and-suspenders for the prompt)
+            if (translatedText && translatedText.startsWith('"') && translatedText.endsWith('"')) {
+                const innerText = translatedText.substring(1, translatedText.length - 1);
+                if (item.text.includes('「') && item.text.includes('」')) {
+                    translatedText = `「${innerText}」`;
+                } else if (item.text.includes('『') && item.text.includes('』')) {
+                    translatedText = `『${innerText}』`;
+                }
+            }
+
+            return {
+                id: item.id,
+                original: item.text,
+                translated: translatedText
+            };
+        });
 
     } catch (error) {
         console.error('Translation request to local server failed:', error);
