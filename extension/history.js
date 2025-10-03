@@ -200,9 +200,20 @@ function handleCheckboxChange(e) {
     updateBulkActionPanel();
 }
 
+function findTranslationById(id) {
+    for (const folderName in groupedTranslations) {
+        for (const url in groupedTranslations[folderName]) {
+            const item = groupedTranslations[folderName][url].find(t => t.id === id);
+            if (item) return item;
+        }
+    }
+    return null;
+}
+
 async function handleHistoryClick(e) {
     const target = e.target;
 
+    // Logic for buttons inside .list-group-actions (Apply, Find/Replace, Edit Title)
     if (target.closest('.list-group-actions') || target.classList.contains('edit-title-btn')) {
         if (target.classList.contains('btn-apply')) {
             showToast("'페이지에 적용' 기능은 아직 구현되지 않았습니다.", 'info');
@@ -214,7 +225,8 @@ async function handleHistoryClick(e) {
             const currentTitle = titleElement.textContent.split(' (')[0];
             const newTitle = prompt("Enter new title:", currentTitle);
             if (newTitle && newTitle !== currentTitle) {
-                const count = titleElement.textContent.match(/\(\d+\)/)[0];
+                const countMatch = titleElement.textContent.match(/\(\d+\)/);
+                const count = countMatch ? countMatch[0] : '';
                 titleElement.textContent = `${newTitle} ${count}`;
                 try {
                     await fetch('http://127.0.0.1:8001/translations/url_title', {
@@ -229,9 +241,10 @@ async function handleHistoryClick(e) {
                 }
             }
         }
-        return; 
+        return; // Prevent other handlers from firing
     }
 
+    // Logic for toggling folder collapse/expand
     const folderHeader = target.closest('.folder-group-header');
     if (folderHeader) {
         folderHeader.nextElementSibling.classList.toggle('collapsed');
@@ -239,6 +252,7 @@ async function handleHistoryClick(e) {
         return;
     }
 
+    // Logic for toggling URL group collapse/expand
     const urlHeader = target.closest('.list-group-header');
     if (urlHeader) {
         urlHeader.nextElementSibling.classList.toggle('collapsed');
@@ -248,22 +262,64 @@ async function handleHistoryClick(e) {
         return;
     }
 
+    // Logic for buttons inside a history item row (Save, Copy, Delete)
     const itemRow = target.closest('.history-item');
     if (!itemRow) return;
 
     const id = parseInt(itemRow.dataset.id);
+
     if (target.classList.contains('delete-btn')) {
         if (!confirm('Delete this translation?')) return;
         await fetch(`http://127.0.0.1:8001/translations/delete`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: [id] }) });
         itemRow.remove();
         showToast('Deleted.');
-    }
-    if (target.classList.contains('save-item-btn')) {
-        const translated = itemRow.querySelector('.translated-text').textContent;
-        await fetch('http://127.0.0.1:8001/translations/upsert', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify([{ id, translated }]) });
-        showToast('Saved.');
-    }
-    if (target.classList.contains('copy-btn')) {
+    } else if (target.classList.contains('save-item-btn')) {
+        const newTranslatedText = itemRow.querySelector('.translated-text').textContent;
+        const originalItem = findTranslationById(id);
+
+        if (!originalItem) {
+            showToast('Error: Could not find original item to save.', 'error');
+            return;
+        }
+
+        const updatedItemPayload = {
+            ...originalItem,
+            translated: newTranslatedText,
+            timestamp: Math.floor(Date.now() / 1000)
+        };
+        delete updatedItemPayload.id; // The upsert model does not take 'id'
+
+        try {
+            const response = await fetch('http://127.0.0.1:8001/translations/upsert', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify([updatedItemPayload])
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(`Server error: ${response.status} - ${errorData.detail || 'Unknown error'}`);
+            }
+
+            showToast('Saved.');
+            
+            // Update local state to reflect change immediately
+            originalItem.translated = newTranslatedText;
+            originalItem.timestamp = updatedItemPayload.timestamp;
+            
+            // Update the date in the UI
+            const dateElement = itemRow.querySelector('.item-date');
+            if(dateElement) {
+                 const date = new Date(updatedItemPayload.timestamp * 1000);
+                 dateElement.textContent = date.toLocaleString('ko-KR', { dateStyle: 'short', timeStyle: 'short' });
+            }
+
+        } catch (error) {
+            console.error('Failed to save translation:', error);
+            showToast(`Save failed: ${error.message}`, 'error');
+        }
+
+    } else if (target.classList.contains('copy-btn')) {
         navigator.clipboard.writeText(itemRow.querySelector('.translated-text').textContent);
         showToast('Copied to clipboard.');
     }
