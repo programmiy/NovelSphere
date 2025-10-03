@@ -4,6 +4,7 @@ let groupedTranslations = {};
 // UI state
 let isLoading = false;
 let currentSearch = '';
+let translationStatuses = {}; // Holds the apply-status for each URL
 
 // DOM element cache
 let historyContainer, emptyState, searchBox, darkModeToggle, fetchAllTitlesBtn, bulkActionsPanel, selectionCount, deleteSelectedBtn, moveSelectedToFolderDropdown;
@@ -38,9 +39,11 @@ async function loadAndRenderGrouped() {
     historyContainer.innerHTML = '';
 
     try {
-        const [translationsRes, foldersRes] = await Promise.all([
+        // Fetch all data from both server and local storage
+        const [translationsRes, foldersRes, storageData] = await Promise.all([
             fetch('http://127.0.0.1:8001/translations_by_folder'),
-            fetch('http://127.0.0.1:8001/folders')
+            fetch('http://127.0.0.1:8001/folders'),
+            chrome.storage.local.get(null)
         ]);
 
         if (!translationsRes.ok) throw new Error(`Server error (translations): ${translationsRes.statusText}`);
@@ -49,7 +52,15 @@ async function loadAndRenderGrouped() {
         groupedTranslations = await translationsRes.json();
         const allFolders = await foldersRes.json();
 
-        renderGroupedHistory();
+        // Populate translation statuses from storage
+        translationStatuses = {};
+        for (const key in storageData) {
+            if (key.startsWith('status-')) {
+                translationStatuses[key] = storageData[key];
+            }
+        }
+
+        renderGroupedHistory(); // It will use the global translationStatuses
         populateFolderDropdowns(allFolders);
         updateStatistics(groupedTranslations);
         
@@ -165,7 +176,10 @@ function renderGroupedHistory() {
             totalTranslationsInFolder += filteredTranslations.length;
             const groupItemsHtml = filteredTranslations.map(t => renderItem(t)).join('');
             const title = filteredTranslations[0]?.title || url;
-            const isApplied = false; // Placeholder
+            
+            // Check the applied status for the current URL
+            const statusKey = `status-${url}`;
+            const isApplied = translationStatuses[statusKey]?.applied || false;
 
             urlGroupsHtml += `
                 <div class="list-group fade-in" data-url="${url}">
@@ -174,7 +188,7 @@ function renderGroupedHistory() {
                         <a href="${url}" target="_blank" class="list-group-title-link"><h3 class="list-group-title">${escapeHtml(title)} (${filteredTranslations.length})</h3></a>
                         <button class="btn btn-outline btn-icon edit-title-btn" data-url="${url}" title="제목 수정">✏️</button>
                         <div class="list-group-actions">
-                            <button class="btn btn-secondary btn-apply" data-url="${url}">페이지에 적용</button>
+                            <button class="btn btn-secondary btn-apply ${isApplied ? 'applied' : ''}" data-url="${url}">${isApplied ? '적용 해제' : '페이지에 적용'}</button>
                             <label class="btn"><input type="checkbox" class="group-select-all-checkbox"> 전체 선택</label>
                         </div>
                     </div>
@@ -279,12 +293,11 @@ function findTranslationById(id) {
 async function handleHistoryClick(e) {
     const target = e.target;
 
-    // Logic for buttons inside .list-group-actions (Apply, Find/Replace, Edit Title)
+    // Logic for buttons inside .list-group-actions (Apply, Edit Title)
     if (target.closest('.list-group-actions') || target.classList.contains('edit-title-btn')) {
         if (target.classList.contains('btn-apply')) {
-            showToast("'페이지에 적용' 기능은 아직 구현되지 않았습니다.", 'info');
-        } else if (target.classList.contains('btn-find-replace')) {
-            showToast("'찾아 바꾸기' 기능은 아직 구현되지 않았습니다.", 'info');
+            const url = target.dataset.url;
+            toggleApplyStatus(url);
         } else if (target.classList.contains('edit-title-btn')) {
             const url = target.dataset.url;
             const titleElement = target.closest('.list-group-header').querySelector('.list-group-title');
@@ -388,6 +401,25 @@ async function handleHistoryClick(e) {
     } else if (target.classList.contains('copy-btn')) {
         navigator.clipboard.writeText(itemRow.querySelector('.translated-text').textContent);
         showToast('Copied to clipboard.');
+    }
+}
+
+async function toggleApplyStatus(url) {
+    const statusKey = 'status-' + url;
+    try {
+        const result = await chrome.storage.local.get(statusKey);
+        const currentStatus = result[statusKey] || {};
+        const newStatus = { applied: !currentStatus.applied, timestamp: Date.now() };
+        await chrome.storage.local.set({ [statusKey]: newStatus });
+        
+        // Update local state and re-render to show button change
+        translationStatuses[statusKey] = newStatus;
+        renderGroupedHistory();
+
+        showToast(newStatus.applied ? '설정 완료: 이제 해당 페이지에서 번역이 적용됩니다.' : '설정 해제: 페이지에서 번역이 더 이상 적용되지 않습니다.');
+    } catch (error) {
+        console.error('Failed to toggle apply status:', error);
+        showToast('상태 변경에 실패했습니다.', 'error');
     }
 }
 
