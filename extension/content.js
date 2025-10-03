@@ -24,10 +24,10 @@ async function applySavedTranslations() {
         const fetchUrl = `http://127.0.0.1:8001/translations?url=${encodeURIComponent(url)}&limit=2000`;
         console.log("[applySavedTranslations] Fetching from server:", fetchUrl);
         const response = await fetch(fetchUrl);
-        
+
         if (!response.ok) {
             console.warn(`[applySavedTranslations] Server responded with ${response.status}`);
-            return false;
+            return null;
         }
 
         const data = await response.json();
@@ -39,7 +39,7 @@ async function applySavedTranslations() {
             const translationMap = new Map(translations.map(t => [t.pid, t.translated]));
             const paragraphs = getTargetParagraphs();
             let replacementCount = 0;
-            
+
             paragraphs.forEach(p => {
                 if (translationMap.has(p.id)) {
                     const translatedText = translationMap.get(p.id);
@@ -47,7 +47,7 @@ async function applySavedTranslations() {
                         p.innerHTML = translatedText;
                         const appliedStyle = {
                             color: '#E2E8F0',
-                            fontFamily: 'TwoCon' 
+                            fontFamily: 'TwoCon'
                         };
                         Object.assign(p.style, appliedStyle);
                         replacementCount++;
@@ -57,34 +57,34 @@ async function applySavedTranslations() {
             console.log(`[applySavedTranslations] Applied ${replacementCount} replacements.`);
 
             if (replacementCount > 0) {
-                injectSidebar();
-                logToSidebar(`페이지에 저장된 번역 ${replacementCount}개를 적용했습니다.`);
-                showSidebar();
-                return true;
+                return data; // Return data for init to handle
             }
         }
     } catch (error) {
         console.error("[applySavedTranslations] Error:", error);
     }
     console.log("[applySavedTranslations] No translations applied, proceeding to translate.");
-    return false;
+    return null;
 }
 
 async function init() {
-    document.body.style.border = '5px solid red';
     try {
         console.log("Translator extension initializing...");
-
-        const applied = await applySavedTranslations();
-        if (applied) {
-            console.log("Finished translations have been applied to the page.");
-            return;
-        }
 
         injectSidebar();
         setupEventListeners();
 
-        logToSidebar("초기화 완료. 페이지에서 일본어를 스캔하여 번역합니다.");
+        const savedData = await applySavedTranslations();
+
+        if (savedData && savedData.translations && savedData.translations.length > 0) {
+            console.log("Finished translations have been applied to the page.");
+            populateSidebar(savedData.translations);
+            logToSidebar(`페이지에 저장된 번역 ${savedData.translations.length}개를 적용했습니다.`);
+            showSidebar();
+            // Do not return, allow scanning for untranslated content
+        } else {
+            logToSidebar("저장된 번역이 없습니다. 페이지에서 일본어를 스캔합니다.");
+        }
         
         const hasJapanesePTags = await scanForJapanesePTags();
         if (hasJapanesePTags) {
@@ -92,7 +92,6 @@ async function init() {
         }
     } catch (error) {
         console.error("Translator extension failed to initialize:", error);
-        // In case sidebar injection failed, we can't log to it.
         if (document.getElementById('jp-translator-sidebar')) {
             logToSidebar(`초기화 실패: ${error.message}`, "log-error");
         }
@@ -215,32 +214,29 @@ function setupEventListeners() {
 
 async function saveSingleTranslation(pid, original, translated) {
     const url = window.location.href;
+    const title = document.title;
+    const record = {
+        url: url,
+        pid: pid,
+        original: original,
+        translated: translated,
+        timestamp: Math.floor(Date.now() / 1000),
+        folderName: null,
+        title: title
+    };
+
     try {
-        let translations = await loadTranslationsForUrl() || [];
-        
-        // pid와 original을 모두 사용하여 더 정확하게 항목을 찾습니다.
-        const existingIndex = translations.findIndex(t => t.pid === pid && t.original === original);
-        
-        if (existingIndex > -1) {
-            // 기존 항목 업데이트
-            translations[existingIndex].translated = translated;
-            translations[existingIndex].timestamp = Date.now();
-        } else {
-            // 새 항목 추가
-            const newTranslation = {
-                pid: pid,
-                original: original,
-                translated: translated,
-                timestamp: Date.now(),
-                // pid가 없는 경우를 대비하여 해시값 생성
-                hash: pid ? null : hashCode(original) 
-            };
-            translations.push(newTranslation);
+        const response = await fetch('http://127.0.0.1:8001/translations/upsert', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify([record]) // API expects an array
+        });
+        if (!response.ok) {
+            throw new Error(`Server returned status ${response.status}`);
         }
-        
-        await chrome.storage.local.set({ [url]: translations });
+        logToSidebar(`(pid: ${pid}) 번역을 서버에 저장했습니다.`);
     } catch (error) {
-        console.error("Error saving translation:", error);
+        console.error("Error saving single translation to server:", error);
         logToSidebar(`번역 저장 실패 (pid: ${pid}): ${error.message}`, "log-error");
     }
 }
