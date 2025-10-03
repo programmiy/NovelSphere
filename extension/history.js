@@ -99,6 +99,39 @@ function populateFolderDropdowns(folders) {
     });
 }
 
+function sortUrlsNumerically(urls) {
+    const getUrlParts = (url) => {
+        const match = url.match(/(.*\/)(\d+)\/?$/); // Capture base path and number
+        if (match && match[1] && match[2]) {
+            return { base: match[1], episode: parseInt(match[2], 10) };
+        }
+        // Fallback for URLs that don't match the pattern
+        return { base: url, episode: null };
+    };
+
+    return urls.sort((a, b) => {
+        const partsA = getUrlParts(a);
+        const partsB = getUrlParts(b);
+
+        // If base paths are different, group by base path first
+        if (partsA.base !== partsB.base) {
+            return partsA.base.localeCompare(partsB.base);
+        }
+
+        // If base paths are the same, sort by episode number
+        if (partsA.episode !== null && partsB.episode !== null) {
+            return partsA.episode - partsB.episode;
+        }
+        
+        // Handle cases where one has an episode number and the other doesn't
+        if (partsA.episode !== null) return -1; // a comes first
+        if (partsB.episode !== null) return 1;  // b comes first
+
+        // If no episode numbers, sort by full url
+        return a.localeCompare(b);
+    });
+}
+
 function renderGroupedHistory() {
     historyContainer.innerHTML = '';
     const sortedFolderNames = Object.keys(groupedTranslations).sort();
@@ -110,7 +143,7 @@ function renderGroupedHistory() {
 
         let urlGroupsHtml = '';
         let totalTranslationsInFolder = 0;
-        const sortedUrls = Object.keys(urlGroups).sort();
+        const sortedUrls = sortUrlsNumerically(Object.keys(urlGroups));
 
         for (const url of sortedUrls) {
             const translations = urlGroups[url];
