@@ -7,10 +7,28 @@ const JAPANESE_REGEX = /[\u3000-\u303f\u3040-\u309f\u30a0-\u30ff\uff00-\uff9f\u4
 const PID_REGEX = /^[a-zA-Z][a-zA-Z0-9]*$/;
 let hasScannedForP_Tags = false;
 let isTranslationCancelled = false;
+let translationCache = new Map(); // Cache for original translation objects
 
 // =================================================================================
-// Initialization
+// Initialization & Event Listeners
 // =================================================================================
+
+// Listen for changes in storage (e.g., from the history page)
+chrome.storage.onChanged.addListener((changes, namespace) => {
+    if (namespace !== 'local') return;
+
+    const statusKey = 'status-' + window.location.href;
+    if (changes[statusKey]) {
+        const newStatus = changes[statusKey].newValue;
+        if (newStatus && newStatus.applied) {
+            console.log("Apply status turned ON. Applying translations now...");
+            applyTranslationsNow();
+        } else {
+            console.log("Apply status turned OFF. Reloading page to remove translations.");
+            window.location.reload();
+        }
+    }
+});
 
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);
@@ -18,25 +36,22 @@ if (document.readyState === 'loading') {
     init();
 }
 
-async function applySavedTranslations() {
+// This new function contains the core logic for applying translations.
+async function applyTranslationsNow() {
     const url = window.location.href;
-    console.log("[applySavedTranslations] Checking for URL:", url);
     try {
         const fetchUrl = `http://127.0.0.1:8001/translations?url=${encodeURIComponent(url)}&limit=2000`;
-        console.log("[applySavedTranslations] Fetching from server:", fetchUrl);
         const response = await fetch(fetchUrl);
-
         if (!response.ok) {
-            console.warn(`[applySavedTranslations] Server responded with ${response.status}`);
+            console.warn(`[applyTranslationsNow] Server responded with ${response.status}`);
             return null;
         }
-
         const data = await response.json();
-        console.log("[applySavedTranslations] Received data from server:", data);
         const translations = data.translations;
 
         if (translations && translations.length > 0) {
-            console.log(`[applySavedTranslations] Found ${translations.length} translations.`);
+            translationCache.clear();
+            translations.forEach(t => translationCache.set(t.pid, t));
             const translationMap = new Map(translations.map(t => [t.pid, t.translated]));
             const paragraphs = getTargetParagraphs();
             let replacementCount = 0;
@@ -46,25 +61,42 @@ async function applySavedTranslations() {
                     const translatedText = translationMap.get(p.id);
                     if (translatedText) {
                         p.innerHTML = translatedText;
-                        const appliedStyle = {
-                            color: '#E2E8F0',
-                            fontFamily: 'TwoCon'
-                        };
+                        const appliedStyle = { color: '#E2E8F0', fontFamily: 'TwoCon' };
                         Object.assign(p.style, appliedStyle);
                         replacementCount++;
                     }
                 }
             });
-            console.log(`[applySavedTranslations] Applied ${replacementCount} replacements.`);
-
-            if (replacementCount > 0) {
-                return data; // Return data for init to handle
+            console.log(`[applyTranslationsNow] Applied ${replacementCount} translations.`);
+            
+            // Also populate the sidebar if it's open
+            if (document.getElementById('jp-translator-sidebar')) {
+                populateSidebar(translations);
+                logToSidebar(`페이지에 저장된 번역 ${replacementCount}개를 적용했습니다.`);
             }
+            return data;
         }
     } catch (error) {
-        console.error("[applySavedTranslations] Error:", error);
+        console.error("Error during applyTranslationsNow:", error);
     }
-    console.log("[applySavedTranslations] No translations applied, proceeding to translate.");
+    return null;
+}
+
+// This function now just checks the flag and calls applyTranslationsNow if needed.
+async function applySavedTranslations() {
+    const url = window.location.href;
+    const statusKey = 'status-' + url;
+    try {
+        const statusResult = await chrome.storage.local.get(statusKey);
+        if (statusResult[statusKey] && statusResult[statusKey].applied) {
+            console.log("Page has 'apply' status set. Applying translations on load.");
+            return await applyTranslationsNow();
+        } else {
+            console.log("Page does not have 'apply' status set. Not applying translations on load.");
+        }
+    } catch (error) {
+        console.error("Error checking apply status:", error);
+    }
     return null;
 }
 
