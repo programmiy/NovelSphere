@@ -51,6 +51,7 @@ async function loadAndRenderGrouped() {
 
         renderGroupedHistory();
         populateFolderDropdowns(allFolders);
+        updateStatistics(groupedTranslations);
         
     } catch (error) {
         console.error("Failed to load data:", error);
@@ -61,6 +62,32 @@ async function loadAndRenderGrouped() {
         emptyState.style.display = Object.keys(groupedTranslations).length === 0 ? 'block' : 'none';
         updateBulkActionPanel();
     }
+}
+
+function updateStatistics(groupedData) {
+    let totalCount = 0;
+    let todayCount = 0;
+    let totalLength = 0;
+    const twentyFourHoursAgo = Date.now() - (24 * 60 * 60 * 1000);
+
+    for (const folderName in groupedData) {
+        for (const url in groupedData[folderName]) {
+            for (const item of groupedData[folderName][url]) {
+                totalCount++;
+                totalLength += item.translated ? item.translated.length : 0;
+                
+                if ((item.timestamp * 1000) >= twentyFourHoursAgo) {
+                    todayCount++;
+                }
+            }
+        }
+    }
+
+    const avgLength = totalCount > 0 ? Math.round(totalLength / totalCount) : 0;
+
+    document.getElementById('totalCount').textContent = totalCount;
+    document.getElementById('todayCount').textContent = todayCount;
+    document.getElementById('avgLength').textContent = avgLength;
 }
 
 function populateFolderDropdowns(folders) {
