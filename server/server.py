@@ -280,32 +280,45 @@ def upsert_translations(items: List[TranslationItem]):
     inserted_count = 0
 
     for item in items:
-        # Check if record exists
-        cursor.execute("SELECT id FROM translations WHERE url = ? AND pid = ? AND original = ?", (item.url, item.pid, item.original))
+        # URL과 PID로 기존 레코드를 조회하여 ID와 폴더 이름을 가져옵니다.
+        cursor.execute("SELECT id, folderName FROM translations WHERE url = ? AND pid = ?", (item.url, item.pid))
         result = cursor.fetchone()
         
         if result:
-            # Update existing record
-            # Only update title if it's not null, to avoid overwriting existing titles with null
+            # UPDATE: 기존 항목이 존재할 경우
+            existing_id, existing_folder = result
+            
+            # 요청에 folderName이 명시적으로 제공되지 않았다면(null), 기존 폴더 값을 유지합니다.
+            folder_name_to_use = item.folderName if item.folderName is not None else existing_folder
+            
+            # 제목 필드도 선택적으로 업데이트합니다.
             if item.title:
                 cursor.execute("""
                 UPDATE translations 
                 SET translated = ?, timestamp = ?, folderName = ?, title = ?
                 WHERE id = ?
-                """, (item.translated, item.timestamp, item.folderName, item.title, result[0]))
+                """, (item.translated, item.timestamp, folder_name_to_use, item.title, existing_id))
             else:
                 cursor.execute("""
                 UPDATE translations 
                 SET translated = ?, timestamp = ?, folderName = ?
                 WHERE id = ?
-                """, (item.translated, item.timestamp, item.folderName, result[0]))
+                """, (item.translated, item.timestamp, folder_name_to_use, existing_id))
             updated_count += 1
         else:
-            # Insert new record
+            # INSERT: 새 항목일 경우
+            folder_name_to_use = item.folderName
+            # 폴더 이름이 null이면, 동일 URL의 다른 항목에서 폴더를 상속받으려 시도합니다.
+            if folder_name_to_use is None:
+                cursor.execute("SELECT folderName FROM translations WHERE url = ? AND folderName IS NOT NULL LIMIT 1", (item.url,))
+                existing_folder_res = cursor.fetchone()
+                if existing_folder_res:
+                    folder_name_to_use = existing_folder_res[0]
+
             cursor.execute("""
             INSERT INTO translations (url, pid, original, translated, timestamp, folderName, title)
             VALUES (?, ?, ?, ?, ?, ?, ?)
-            """, (item.url, item.pid, item.original, item.translated, item.timestamp, item.folderName, item.title))
+            """, (item.url, item.pid, item.original, item.translated, item.timestamp, folder_name_to_use, item.title))
             inserted_count += 1
 
     conn.commit()
