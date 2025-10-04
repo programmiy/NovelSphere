@@ -576,11 +576,21 @@ function showToast(message, type = 'success') {
     const existing = document.querySelector('.toast');
     if (existing) existing.remove();
     const toast = document.createElement('div');
-    toast.className = 'toast';
+    toast.className = `toast ${type}`;
     toast.textContent = message;
-    toast.style.cssText = `position: fixed; top: 20px; right: 20px; background: ${type === 'error' ? '#e53e3e' : '#48bb78'}; color: white; padding: 12px 20px; border-radius: 8px; z-index: 1001;`;
+
     document.body.appendChild(toast);
-    setTimeout(() => toast.remove(), 3000);
+
+    // Slide in
+    setTimeout(() => {
+        toast.style.transform = 'translateX(0)';
+    }, 100);
+
+    // Slide out and remove
+    setTimeout(() => {
+        toast.style.transform = 'translateX(100%)';
+        setTimeout(() => toast.remove(), 300);
+    }, 3000);
 }
 
 function toggleDarkMode() {
