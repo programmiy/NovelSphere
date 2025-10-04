@@ -174,11 +174,31 @@ function renderGroupedHistory() {
 
             if (filteredTranslations.length === 0) continue;
 
-            // Sort by pid numerically to ensure correct chapter order
+            // Sort by pid using natural sort to ensure correct chapter order
             filteredTranslations.sort((a, b) => {
-                const numA = a.pid ? parseInt(a.pid.replace('p', ''), 10) : 0;
-                const numB = b.pid ? parseInt(b.pid.replace('p', ''), 10) : 0;
-                return numA - numB;
+                const re = /(\d+)/g;
+                const pidA = a.pid || '';
+                const pidB = b.pid || '';
+                const partsA = pidA.split(re);
+                const partsB = pidB.split(re);
+
+                for (let i = 0; i < Math.min(partsA.length, partsB.length); i++) {
+                    const partA = partsA[i];
+                    const partB = partsB[i];
+
+                    if (i % 2 === 1) { // It's a number part
+                        const numA = parseInt(partA, 10);
+                        const numB = parseInt(partB, 10);
+                        if (numA !== numB) {
+                            return numA - numB;
+                        }
+                    } else { // It's a string part
+                        if (partA !== partB) {
+                            return partA.localeCompare(partB);
+                        }
+                    }
+                }
+                return partsA.length - partsB.length;
             });
             
             totalTranslationsInFolder += filteredTranslations.length;
