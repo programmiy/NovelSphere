@@ -243,6 +243,84 @@
         .stat-number { font-size: 24px; font-weight: 700; color: var(--primary-color); }
         .stat-label { font-size: 12px; color: var(--text-secondary); margin-top: 4px; }
 
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+        .stat-item {
+            background-color: var(--bg-color);
+            padding: 16px;
+            border-radius: var(--border-radius);
+            border: 1px solid var(--border-color);
+        }
+        .stat-label {
+            font-size: 14px;
+            color: var(--text-secondary);
+            margin-bottom: 8px;
+        }
+        .stat-value {
+            font-size: 24px;
+            font-weight: 700;
+            color: var(--primary-color);
+        }
+        .stats-subtitle {
+            font-size: 18px;
+            font-weight: 600;
+            margin-top: 24px;
+            margin-bottom: 12px;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 8px;
+        }
+        .stats-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        .stats-table th, .stats-table td {
+            padding: 12px;
+            border-bottom: 1px solid var(--border-color);
+            text-align: left;
+        }
+        .stats-table th {
+            font-weight: 600;
+        }
+
+        /* Responsive */
+
+        #pagination-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 24px 0;
+            gap: 8px;
+        }
+        .pagination-btn {
+            padding: 8px 16px;
+            border: 1px solid var(--border-color);
+            background-color: var(--card-bg);
+            border-radius: 6px;
+            cursor: pointer;
+        }
+        .pagination-btn:hover {
+            background-color: var(--group-header-hover-bg);
+        }
+        .pagination-btn.active {
+            background-color: var(--primary-color);
+            color: white;
+            border-color: var(--primary-color);
+        }
+        .pagination-btn.disabled {
+            cursor: not-allowed;
+            opacity: 0.5;
+        }
+
+        /* Book-like theme */
+        body {
+            background-color: #FDFCF7; /* Paper-like color */
+            font-family: 'Georgia', serif; /* Serif font */
+        }
+
         /* Responsive */
         @media (max-width: 768px) {
             .container { padding: 16px; }
@@ -291,21 +369,17 @@
                  <input type="text" id="newFolderNameInput" placeholder="새 폴더 이름" class="form-input" style="flex: 1; min-width: 150px;">
                  <button id="createFolderButton" class="btn btn-primary">폴더 생성</button>
             </div>
-                    <div class="stats-wrapper">
-                        <div class="stat-item">
-                            <div class="stat-number" id="totalCount">0</div>
-                            <div class="stat-label">총 번역</div>
-                        </div>
-                        <div class="stat-item">
-                            <div class="stat-number" id="todayCount">0</div>
-                            <div class="stat-label">오늘 번역</div>
-                        </div>
-                        <div class="stat-item">
-                            <div class="stat-number" id="avgLength">0</div>
-                            <div class="stat-label">평균 길이</div>
-                        </div>
-                    </div>
-                </div>
+        </div>
+
+        <div class="stats-section-wrapper list-group">
+             <div class="list-group-header">
+                <span class="list-group-toggle material-icons collapsed">chevron_right</span>
+                <h3 class="list-group-title">통계 요약</h3>
+            </div>
+            <div id="stats-container" class="list-group-content collapsed" style="padding: 16px;">
+                <!-- Stats will be rendered here by history.js -->
+            </div>
+        </div>
             
                 <div id="errorLogContainer" class="list-group" style="display: none; margin-bottom: 16px;">
                     <div class="list-group-header" style="background-color: #ffe3e3;">
@@ -345,6 +419,7 @@
         </div>
         <div id="history-container">
         </div>
+        <div id="pagination-container"></div>
 
         <div class="empty-state" id="emptyState" style="display: none;">
             <h2>기록이 없습니다</h2>
