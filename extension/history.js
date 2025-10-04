@@ -236,6 +236,7 @@ function renderItem(t) {
                 <div class="item-actions">
                     <button class="btn btn-outline save-item-btn" title="Save">💾</button>
                     <button class="btn btn-outline copy-btn" title="Copy">📋</button>
+                    <button class="btn btn-outline exclude-btn" title="Exclude">🚫</button>
                     <button class="btn btn-outline delete-btn" title="Delete">🗑️</button>
                 </div>
             </td>
@@ -352,6 +353,21 @@ async function handleHistoryClick(e) {
         await fetch(`http://127.0.0.1:8001/translations/delete`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: [id] }) });
         itemRow.remove();
         showToast('Deleted.');
+    } else if (target.classList.contains('exclude-btn')) {
+        if (!confirm('Permanently exclude this sentence from translation?')) return;
+        try {
+            const response = await fetch(`http://127.0.0.1:8001/translations/exclude`, { 
+                method: 'POST', 
+                headers: { 'Content-Type': 'application/json' }, 
+                body: JSON.stringify({ ids: [id] }) 
+            });
+            if (!response.ok) throw new Error('Server responded with an error');
+            itemRow.remove();
+            showToast('Sentence excluded and deleted.', 'success');
+        } catch (error) {
+            console.error('Failed to exclude translation:', error);
+            showToast('Failed to exclude sentence.', 'error');
+        }
     } else if (target.classList.contains('save-item-btn')) {
         const newTranslatedText = itemRow.querySelector('.translated-text').textContent;
         const originalItem = findTranslationById(id);
