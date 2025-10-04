@@ -215,7 +215,9 @@ function renderGroupedHistory() {
                 <div class="folder-group-header">
                     <span class="folder-group-toggle material-icons collapsed">expand_more</span>
                     <h2 class="folder-group-title">${escapeHtml(folderName)} (${totalTranslationsInFolder})</h2>
-                    <label class="btn"><input type="checkbox" class="folder-select-all-checkbox"> 폴더 전체 선택</label>
+                    <div class="list-group-actions">
+                        <label class="btn"><input type="checkbox" class="folder-select-all-checkbox"> 폴더 전체 선택</label>
+                    </div>
                 </div>
                 <div class="folder-group-content collapsed">${urlGroupsHtml}</div>
             `;
@@ -270,8 +272,21 @@ function handleCheckboxChange(e) {
 
     if (target.classList.contains('folder-select-all-checkbox')) {
         const folderGroup = target.closest('.history-folder-group');
+        if (!folderGroup) return;
+
+        // Programmatically click the group-level checkboxes
+        const groupCheckboxes = folderGroup.querySelectorAll('.group-select-all-checkbox');
+        groupCheckboxes.forEach(cb => {
+            if (cb.checked !== target.checked) {
+                cb.click(); // Triggering a click will invoke its own change handler
+            }
+        });
+
+        // Fallback: Directly set all item checkboxes as well to ensure consistency
         const itemCheckboxes = folderGroup.querySelectorAll('.item-checkbox');
-        itemCheckboxes.forEach(cb => cb.checked = target.checked);
+        itemCheckboxes.forEach(cb => {
+            cb.checked = target.checked;
+        });
     }
 
     if (target.classList.contains('group-select-all-checkbox')) {
@@ -295,6 +310,11 @@ function findTranslationById(id) {
 
 async function handleHistoryClick(e) {
     const target = e.target;
+
+    // If a checkbox was clicked, do nothing. The `change` event will handle it.
+    if (target.matches('input[type="checkbox"]')) {
+        return;
+    }
 
     // Logic for buttons inside .list-group-actions (Apply, Edit Title)
     if (target.closest('.list-group-actions') || target.classList.contains('edit-title-btn')) {
@@ -328,7 +348,7 @@ async function handleHistoryClick(e) {
 
     // Logic for toggling folder collapse/expand
     const folderHeader = target.closest('.folder-group-header');
-    if (folderHeader && !target.closest('label.btn')) { // Exclude clicks on checkbox/label
+    if (folderHeader && !target.closest('.list-group-actions')) { // Exclude clicks on checkbox/label
         folderHeader.nextElementSibling.classList.toggle('collapsed');
         folderHeader.querySelector('.folder-group-toggle').classList.toggle('collapsed');
         return;
