@@ -483,7 +483,7 @@ def get_translations_by_folder():
     cursor = conn.cursor()
 
     # Order by URL as well for logical grouping
-    translations = cursor.execute("SELECT * FROM translations ORDER BY folderName, url, timestamp DESC").fetchall()
+    translations = cursor.execute("SELECT * FROM translations ORDER BY folderName, url").fetchall()
     conn.close()
 
     # Use a nested defaultdict
@@ -598,5 +598,41 @@ def get_folders():
 def read_root():
     """서버가 실행 중인지 확인하는 기본 엔드포인트입니다."""
     return {"message": "번역 기록 관리 서버가 실행 중입니다."}
+
+
+@app.post("/admin/cleanup_pids")
+def cleanup_pids():
+    """'la' 또는 'lp'로 시작하는 PID를 가진 기록을 제외 처리합니다."""
+    conn = sqlite3.connect(DATABASE_FILE)
+    cursor = conn.cursor()
+
+    # 1. 대상 선정: 'la' 또는 'lp'로 시작하는 PID를 가진 항목들을 선택합니다.
+    cursor.execute("SELECT id, url, original FROM translations WHERE lower(pid) GLOB 'la[0-9]*' OR lower(pid) GLOB 'lp[0-9]*'")
+    records_to_exclude = cursor.fetchall()
+    
+    if not records_to_exclude:
+        conn.close()
+        return {"message": "제외할 'la' 또는 'lp' PID를 가진 기록이 없습니다."}
+
+    # 2. 제외 목록에 추가: 각 항목을 excluded_sentences 테이블에 삽입합니다.
+    excluded_count = 0
+    for record_id, url, original in records_to_exclude:
+        try:
+            cursor.execute("INSERT OR IGNORE INTO excluded_sentences (url, original) VALUES (?, ?)", (url, original))
+            excluded_count += cursor.rowcount
+        except sqlite3.IntegrityError:
+            # 이미 제외 목록에 있는 경우, 무시하고 계속 진행합니다.
+            pass
+
+    # 3. 원본 테이블에서 삭제: 처리된 항목들의 ID 목록을 사용하여 삭제합니다.
+    ids_to_delete = [record[0] for record in records_to_exclude]
+    placeholders = ', '.join('?' * len(ids_to_delete))
+    cursor.execute(f"DELETE FROM translations WHERE id IN ({placeholders})", ids_to_delete)
+    deleted_count = cursor.rowcount
+
+    conn.commit()
+    conn.close()
+
+    return {"message": f"총 {deleted_count}개의 기록을 제외 처리했습니다. (새롭게 제외 목록에 추가된 항목: {excluded_count}개)"}
 
 # uvicorn server:app --reload --port 8001

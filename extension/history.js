@@ -175,31 +175,7 @@ function renderGroupedHistory() {
             if (filteredTranslations.length === 0) continue;
 
             // Sort by pid using natural sort to ensure correct chapter order
-            filteredTranslations.sort((a, b) => {
-                const re = /(\d+)/g;
-                const pidA = a.pid || '';
-                const pidB = b.pid || '';
-                const partsA = pidA.split(re);
-                const partsB = pidB.split(re);
-
-                for (let i = 0; i < Math.min(partsA.length, partsB.length); i++) {
-                    const partA = partsA[i];
-                    const partB = partsB[i];
-
-                    if (i % 2 === 1) { // It's a number part
-                        const numA = parseInt(partA, 10);
-                        const numB = parseInt(partB, 10);
-                        if (numA !== numB) {
-                            return numA - numB;
-                        }
-                    } else { // It's a string part
-                        if (partA !== partB) {
-                            return partA.localeCompare(partB);
-                        }
-                    }
-                }
-                return partsA.length - partsB.length;
-            });
+            filteredTranslations.sort((a, b) => (a.pid || '').localeCompare(b.pid || '', undefined, { numeric: true, sensitivity: 'base' }));
             
             totalTranslationsInFolder += filteredTranslations.length;
             const groupItemsHtml = filteredTranslations.map(t => renderItem(t)).join('');
@@ -596,21 +572,11 @@ function showToast(message, type = 'success') {
     const existing = document.querySelector('.toast');
     if (existing) existing.remove();
     const toast = document.createElement('div');
-    toast.className = `toast ${type}`;
+    toast.className = 'toast';
     toast.textContent = message;
-
+    toast.style.cssText = `position: fixed; top: 20px; right: 20px; background: ${type === 'error' ? '#e53e3e' : '#48bb78'}; color: white; padding: 12px 20px; border-radius: 8px; z-index: 1001;`;
     document.body.appendChild(toast);
-
-    // Slide in
-    setTimeout(() => {
-        toast.style.transform = 'translateX(0)';
-    }, 100);
-
-    // Slide out and remove
-    setTimeout(() => {
-        toast.style.transform = 'translateX(100%)';
-        setTimeout(() => toast.remove(), 300);
-    }, 3000);
+    setTimeout(() => toast.remove(), 3000);
 }
 
 function toggleDarkMode() {
