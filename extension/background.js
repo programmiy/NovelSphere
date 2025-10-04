@@ -187,7 +187,7 @@ async function handleBatchTranslate(items, sourceUrl) {
         const response = await fetch('http://127.0.0.1:8001/translate', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ texts: texts })
+            body: JSON.stringify({ texts: texts, url: sourceUrl })
         });
 
         if (!response.ok) {
