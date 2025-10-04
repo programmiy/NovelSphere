@@ -231,16 +231,18 @@ function renderGroupedHistory() {
                         </div>
                     </div>
                     <div class="list-group-content collapsed">
-                        <div class="history-list">
-                            <div class="history-list-header">
-                                <div style="width: 40px;"></div>
-                                <div style="width: 80px;">PID</div>
-                                <div>원문</div>
-                                <div>번역</div>
-                                <div style="width: 120px;">액션</div>
-                            </div>
-                            <div class="history-list-body">${groupItemsHtml}</div>
-                        </div>
+                        <table class="history-table">
+                            <thead>
+                                <tr>
+                                    <th style="width: 40px;"></th>
+                                    <th style="width: 80px;">PID</th>
+                                    <th>원문</th>
+                                    <th>번역</th>
+                                    <th style="width: 120px;">액션</th>
+                                </tr>
+                            </thead>
+                            <tbody>${groupItemsHtml}</tbody>
+                        </table>
                     </div>
                 </div>
             `;
@@ -266,23 +268,21 @@ function renderItem(t) {
     const date = new Date(t.timestamp * 1000);
     const dateStr = date.toLocaleString('ko-KR', { dateStyle: 'short', timeStyle: 'short' });
     return `
-        <div class="history-item" data-id="${t.id}">
-            <div class="item-cell" style="width: 40px; text-align: center;"><input type="checkbox" class="item-checkbox" data-id="${t.id}"></div>
-            <div class="item-cell" style="width: 80px;">${escapeHtml(t.pid)}</div>
-            <div class="item-cell original-cell"><div class="item-text-block"><div class="text-content original-text">${escapeHtml(t.original)}</div></div></div>
-            <div class="item-cell translated-cell"><div class="item-text-block"><div class="text-content translated-text" contenteditable="true">${escapeHtml(t.translated)}</div></div></div>
-            <div class="item-cell actions-cell" style="width: 120px;">
-                <div class="item-actions-container">
-                    <div class="item-date">${dateStr}</div>
-                    <div class="item-actions">
-                        <button class="btn btn-outline save-item-btn" title="Save">💾</button>
-                        <button class="btn btn-outline copy-btn" title="Copy">📋</button>
-                        <button class="btn btn-outline exclude-btn" title="Exclude">🚫</button>
-                        <button class="btn btn-outline delete-btn" title="Delete">🗑️</button>
-                    </div>
+        <tr class="history-item" data-id="${t.id}">
+            <td style="width: 40px; text-align: center;"><input type="checkbox" class="item-checkbox" data-id="${t.id}"></td>
+            <td>${escapeHtml(t.pid)}</td>
+            <td><div class="item-text-block"><div class="text-content original-text">${escapeHtml(t.original)}</div></div></td>
+            <td><div class="item-text-block"><div class="text-content translated-text" contenteditable="true">${escapeHtml(t.translated)}</div></div></td>
+            <td class="item-actions-container">
+                <div class="item-date">${dateStr}</div>
+                <div class="item-actions">
+                    <button class="btn btn-outline save-item-btn" title="Save">💾</button>
+                    <button class="btn btn-outline copy-btn" title="Copy">📋</button>
+                    <button class="btn btn-outline exclude-btn" title="Exclude">🚫</button>
+                    <button class="btn btn-outline delete-btn" title="Delete">🗑️</button>
                 </div>
-            </div>
-        </div>
+            </td>
+        </tr>
     `;
 }
 
