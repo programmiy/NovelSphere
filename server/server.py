@@ -413,6 +413,17 @@ def find_replace_all(req: FindReplaceRequest):
     return {"message": f"{updated_count}개의 항목에서 내용을 교체했습니다."}
 
 
+@app.get("/excluded_sentences")
+def get_excluded_sentences(url: str):
+    """특정 URL에 대해 제외된 모든 원문 텍스트 목록을 반환합니다."""
+    conn = sqlite3.connect(DATABASE_FILE)
+    cursor = conn.cursor()
+    cursor.execute("SELECT original FROM excluded_sentences WHERE url = ?", (url,))
+    excluded_originals = [row[0] for row in cursor.fetchall()]
+    conn.close()
+    return {"excluded_texts": excluded_originals}
+
+
 class ExcludeRequest(BaseModel):
     ids: List[int]
 

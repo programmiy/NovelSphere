@@ -8,6 +8,7 @@ const PID_REGEX = /^[a-zA-Z][a-zA-Z0-9]*$/;
 let hasScannedForP_Tags = false;
 let isTranslationCancelled = false;
 let translationCache = new Map(); // Cache for original translation objects
+let exclusionSet = new Set(); // Cache for excluded original texts
 
 // =================================================================================
 // Initialization & Event Listeners
@@ -37,23 +38,30 @@ async function init() {
         injectSidebar();
         setupEventListeners();
 
-        // 1. Always fetch existing translations from the server for the current page
+        // 1. Fetch existing translations and exclusion list in parallel
         const url = window.location.href;
-        const existingTranslations = await fetchTranslationsForUrl(url);
+        const [translations, excluded] = await Promise.all([
+            fetchTranslationsForUrl(url),
+            fetchExclusionsForUrl(url)
+        ]);
 
-        if (existingTranslations) {
+        if (excluded) {
+            exclusionSet = new Set(excluded);
+        }
+
+        if (translations) {
             // 2. Populate cache and sidebar with existing data
             translationCache.clear();
-            existingTranslations.forEach(t => translationCache.set(t.pid, t));
-            populateSidebar(existingTranslations);
-            logToSidebar(`서버에서 ${existingTranslations.length}개의 저장된 번역을 불러왔습니다.`);
+            translations.forEach(t => translationCache.set(t.pid, t));
+            populateSidebar(translations);
+            logToSidebar(`서버에서 ${translations.length}개의 저장된 번역을 불러왔습니다.`);
         }
 
         // 3. Check if translations should be applied to the page content
         const statusKey = 'status-' + url;
         const statusResult = await chrome.storage.local.get(statusKey);
         if (statusResult[statusKey] && statusResult[statusKey].applied) {
-            applyTranslationsToPage(existingTranslations);
+            applyTranslationsToPage(translations);
         }
 
         // 4. Scan for and translate any new paragraphs
@@ -83,6 +91,23 @@ async function fetchTranslationsForUrl(url) {
     } catch (error) {
         console.error("Error fetching translations for URL:", error);
         logToSidebar("서버에서 번역을 불러오는 데 실패했습니다.", "log-error");
+        return null;
+    }
+}
+
+async function fetchExclusionsForUrl(url) {
+    try {
+        const fetchUrl = `http://127.0.0.1:8001/excluded_sentences?url=${encodeURIComponent(url)}`;
+        const response = await fetch(fetchUrl);
+        if (!response.ok) {
+            console.warn(`[fetchExclusionsForUrl] Server responded with ${response.status}`);
+            return null;
+        }
+        const data = await response.json();
+        return data.excluded_texts;
+    } catch (error) {
+        console.error("Error fetching exclusion list:", error);
+        logToSidebar("서버에서 제외 목록을 불러오는 데 실패했습니다.", "log-error");
         return null;
     }
 }
@@ -325,6 +350,11 @@ async function translateAllPTags() {
         const text = p.innerHTML.replace(/<br\s*\/?>/gi, " ").replace(/<[^>]*>/g, "")
             .replace(/([あアいイうウえエおオ])\1{2,}/g, '$1ー')
             .trim();
+
+        // Check if the text is in the exclusion list
+        if (exclusionSet.has(text)) {
+            return;
+        }
 
         if (text && JAPANESE_REGEX.test(text)) {
             textsToTranslate.push({ id: p.id, text: text });
