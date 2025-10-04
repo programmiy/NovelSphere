@@ -317,6 +317,11 @@ async function translateAllPTags() {
             return;
         }
 
+        // Exclude PIDs starting with 'la' followed by numbers
+        if (/^la\d+$/.test(p.id)) {
+            return;
+        }
+
         const text = p.innerHTML.replace(/<br\s*\/?>/gi, " ").replace(/<[^>]*>/g, "")
             .replace(/([あアいイうウえエおオ])\1{2,}/g, '$1ー')
             .trim();
