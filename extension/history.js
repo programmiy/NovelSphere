@@ -7,7 +7,9 @@ let currentSearch = '';
 let translationStatuses = {}; // Holds the apply-status for each URL
 
 // DOM element cache
-let historyContainer, emptyState, searchBox, darkModeToggle, fetchAllTitlesBtn, bulkActionsPanel, selectionCount, deleteSelectedBtn, moveSelectedToFolderDropdown;
+let historyContainer, emptyState, searchBox, darkModeToggle, fetchAllTitlesBtn, bulkActionsPanel, selectionCount, deleteSelectedBtn, moveSelectedToFolderDropdown, findReplaceModal, closeFindReplaceModalBtn, cancelFindReplaceBtn, executeFindReplaceBtn, openGlobalFindReplaceBtn;
+
+// Debounce timer
 
 // Debounce timer
 let searchTimeout;
@@ -30,6 +32,12 @@ function cacheDOMElements() {
     selectionCount = document.getElementById('selection-count');
     deleteSelectedBtn = document.getElementById('deleteSelectedBtn');
     moveSelectedToFolderDropdown = document.getElementById('moveSelectedToFolderDropdown');
+    // Find & Replace Modal Elements
+    findReplaceModal = document.getElementById('findReplaceModal');
+    closeFindReplaceModalBtn = document.getElementById('closeFindReplaceModal');
+    cancelFindReplaceBtn = document.getElementById('cancelFindReplace');
+    executeFindReplaceBtn = document.getElementById('executeFindReplace');
+    openGlobalFindReplaceBtn = document.getElementById('openGlobalFindReplaceBtn');
 }
 
 async function loadAndRenderGrouped() {
@@ -197,6 +205,7 @@ function renderGroupedHistory() {
                             <thead>
                                 <tr>
                                     <th style="width: 40px;"></th>
+                                    <th style="width: 80px;">PID</th>
                                     <th>원문</th>
                                     <th>번역</th>
                                     <th style="width: 120px;">액션</th>
@@ -214,7 +223,9 @@ function renderGroupedHistory() {
                 <div class="folder-group-header">
                     <span class="folder-group-toggle material-icons collapsed">expand_more</span>
                     <h2 class="folder-group-title">${escapeHtml(folderName)} (${totalTranslationsInFolder})</h2>
-                    <label class="btn"><input type="checkbox" class="folder-select-all-checkbox"> 폴더 전체 선택</label>
+                    <div class="list-group-actions">
+                        <label class="btn"><input type="checkbox" class="folder-select-all-checkbox"> 폴더 전체 선택</label>
+                    </div>
                 </div>
                 <div class="folder-group-content collapsed">${urlGroupsHtml}</div>
             `;
@@ -229,6 +240,7 @@ function renderItem(t) {
     return `
         <tr class="history-item" data-id="${t.id}">
             <td style="width: 40px; text-align: center;"><input type="checkbox" class="item-checkbox" data-id="${t.id}"></td>
+            <td>${escapeHtml(t.pid)}</td>
             <td><div class="item-text-block"><div class="text-content original-text">${escapeHtml(t.original)}</div></div></td>
             <td><div class="item-text-block"><div class="text-content translated-text" contenteditable="true">${escapeHtml(t.translated)}</div></div></td>
             <td class="item-actions-container">
@@ -236,6 +248,7 @@ function renderItem(t) {
                 <div class="item-actions">
                     <button class="btn btn-outline save-item-btn" title="Save">💾</button>
                     <button class="btn btn-outline copy-btn" title="Copy">📋</button>
+                    <button class="btn btn-outline exclude-btn" title="Exclude">🚫</button>
                     <button class="btn btn-outline delete-btn" title="Delete">🗑️</button>
                 </div>
             </td>
@@ -259,6 +272,61 @@ function setupEventListeners() {
     fetchAllTitlesBtn.addEventListener('click', fetchAllTitles);
     deleteSelectedBtn.addEventListener('click', deleteSelectedTranslations);
     moveSelectedToFolderDropdown.addEventListener('change', moveSelectedTranslationsToFolder);
+
+    // Find & Replace Listeners
+    openGlobalFindReplaceBtn.addEventListener('click', openFindReplaceModal);
+    closeFindReplaceModalBtn.addEventListener('click', closeFindReplaceModal);
+    cancelFindReplaceBtn.addEventListener('click', closeFindReplaceModal);
+    executeFindReplaceBtn.addEventListener('click', executeGlobalFindReplace);
+}
+
+function openFindReplaceModal() {
+    if (!findReplaceModal) return;
+    document.getElementById('findText').value = '';
+    document.getElementById('replaceText').value = '';
+    findReplaceModal.style.display = 'flex';
+    document.getElementById('findText').focus();
+}
+
+function closeFindReplaceModal() {
+    if (!findReplaceModal) return;
+    findReplaceModal.style.display = 'none';
+}
+
+async function executeGlobalFindReplace() {
+    const findText = document.getElementById('findText').value;
+    const replaceText = document.getElementById('replaceText').value;
+
+    if (!findText) {
+        showToast('찾을 내용을 입력하세요.', 'error');
+        return;
+    }
+
+    if (!confirm(`모든 번역 기록에서 "${findText}"을(를) "${replaceText}"(으)로 바꾸시겠습니까? 이 작업은 되돌릴 수 없습니다.`)) {
+        return;
+    }
+
+    try {
+        const response = await fetch('http://127.0.0.1:8001/translations/find_replace', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ find_text: findText, replace_text: replaceText })
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.detail || `Server error: ${response.status}`);
+        }
+
+        const result = await response.json();
+        showToast(result.message, 'success');
+        closeFindReplaceModal();
+        loadAndRenderGrouped(); // Reload data to show changes
+
+    } catch (error) {
+        console.error("Global find and replace failed:", error);
+        showToast(`오류: ${error.message}`, 'error');
+    }
 }
 
 function handleCheckboxChange(e) {
@@ -267,8 +335,21 @@ function handleCheckboxChange(e) {
 
     if (target.classList.contains('folder-select-all-checkbox')) {
         const folderGroup = target.closest('.history-folder-group');
+        if (!folderGroup) return;
+
+        // Programmatically click the group-level checkboxes
+        const groupCheckboxes = folderGroup.querySelectorAll('.group-select-all-checkbox');
+        groupCheckboxes.forEach(cb => {
+            if (cb.checked !== target.checked) {
+                cb.click(); // Triggering a click will invoke its own change handler
+            }
+        });
+
+        // Fallback: Directly set all item checkboxes as well to ensure consistency
         const itemCheckboxes = folderGroup.querySelectorAll('.item-checkbox');
-        itemCheckboxes.forEach(cb => cb.checked = target.checked);
+        itemCheckboxes.forEach(cb => {
+            cb.checked = target.checked;
+        });
     }
 
     if (target.classList.contains('group-select-all-checkbox')) {
@@ -292,6 +373,11 @@ function findTranslationById(id) {
 
 async function handleHistoryClick(e) {
     const target = e.target;
+
+    // If a checkbox was clicked, do nothing. The `change` event will handle it.
+    if (target.matches('input[type="checkbox"]')) {
+        return;
+    }
 
     // Logic for buttons inside .list-group-actions (Apply, Edit Title)
     if (target.closest('.list-group-actions') || target.classList.contains('edit-title-btn')) {
@@ -325,7 +411,7 @@ async function handleHistoryClick(e) {
 
     // Logic for toggling folder collapse/expand
     const folderHeader = target.closest('.folder-group-header');
-    if (folderHeader && !target.closest('label.btn')) { // Exclude clicks on checkbox/label
+    if (folderHeader && !target.closest('.list-group-actions')) { // Exclude clicks on checkbox/label
         folderHeader.nextElementSibling.classList.toggle('collapsed');
         folderHeader.querySelector('.folder-group-toggle').classList.toggle('collapsed');
         return;
@@ -352,6 +438,21 @@ async function handleHistoryClick(e) {
         await fetch(`http://127.0.0.1:8001/translations/delete`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: [id] }) });
         itemRow.remove();
         showToast('Deleted.');
+    } else if (target.classList.contains('exclude-btn')) {
+        if (!confirm('Permanently exclude this sentence from translation?')) return;
+        try {
+            const response = await fetch(`http://127.0.0.1:8001/translations/exclude`, { 
+                method: 'POST', 
+                headers: { 'Content-Type': 'application/json' }, 
+                body: JSON.stringify({ ids: [id] }) 
+            });
+            if (!response.ok) throw new Error('Server responded with an error');
+            itemRow.remove();
+            showToast('Sentence excluded and deleted.', 'success');
+        } catch (error) {
+            console.error('Failed to exclude translation:', error);
+            showToast('Failed to exclude sentence.', 'error');
+        }
     } else if (target.classList.contains('save-item-btn')) {
         const newTranslatedText = itemRow.querySelector('.translated-text').textContent;
         const originalItem = findTranslationById(id);

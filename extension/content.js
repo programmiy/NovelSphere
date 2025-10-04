@@ -19,14 +19,8 @@ chrome.storage.onChanged.addListener((changes, namespace) => {
 
     const statusKey = 'status-' + window.location.href;
     if (changes[statusKey]) {
-        const newStatus = changes[statusKey].newValue;
-        if (newStatus && newStatus.applied) {
-            console.log("Apply status turned ON. Applying translations now...");
-            applyTranslationsNow();
-        } else {
-            console.log("Apply status turned OFF. Reloading page to remove translations.");
-            window.location.reload();
-        }
+        console.log("Apply status changed. Reloading page to apply changes.");
+        window.location.reload();
     }
 });
 
@@ -36,70 +30,6 @@ if (document.readyState === 'loading') {
     init();
 }
 
-// This new function contains the core logic for applying translations.
-async function applyTranslationsNow() {
-    const url = window.location.href;
-    try {
-        const fetchUrl = `http://127.0.0.1:8001/translations?url=${encodeURIComponent(url)}&limit=2000`;
-        const response = await fetch(fetchUrl);
-        if (!response.ok) {
-            console.warn(`[applyTranslationsNow] Server responded with ${response.status}`);
-            return null;
-        }
-        const data = await response.json();
-        const translations = data.translations;
-
-        if (translations && translations.length > 0) {
-            translationCache.clear();
-            translations.forEach(t => translationCache.set(t.pid, t));
-            const translationMap = new Map(translations.map(t => [t.pid, t.translated]));
-            const paragraphs = getTargetParagraphs();
-            let replacementCount = 0;
-
-            paragraphs.forEach(p => {
-                if (translationMap.has(p.id)) {
-                    const translatedText = translationMap.get(p.id);
-                    if (translatedText) {
-                        p.innerHTML = translatedText;
-                        const appliedStyle = { color: '#E2E8F0', fontFamily: 'TwoCon' };
-                        Object.assign(p.style, appliedStyle);
-                        replacementCount++;
-                    }
-                }
-            });
-            console.log(`[applyTranslationsNow] Applied ${replacementCount} translations.`);
-            
-            // Also populate the sidebar if it's open
-            if (document.getElementById('jp-translator-sidebar')) {
-                populateSidebar(translations);
-                logToSidebar(`페이지에 저장된 번역 ${replacementCount}개를 적용했습니다.`);
-            }
-            return data;
-        }
-    } catch (error) {
-        console.error("Error during applyTranslationsNow:", error);
-    }
-    return null;
-}
-
-// This function now just checks the flag and calls applyTranslationsNow if needed.
-async function applySavedTranslations() {
-    const url = window.location.href;
-    const statusKey = 'status-' + url;
-    try {
-        const statusResult = await chrome.storage.local.get(statusKey);
-        if (statusResult[statusKey] && statusResult[statusKey].applied) {
-            console.log("Page has 'apply' status set. Applying translations on load.");
-            return await applyTranslationsNow();
-        } else {
-            console.log("Page does not have 'apply' status set. Not applying translations on load.");
-        }
-    } catch (error) {
-        console.error("Error checking apply status:", error);
-    }
-    return null;
-}
-
 async function init() {
     try {
         console.log("Translator extension initializing...");
@@ -107,28 +37,76 @@ async function init() {
         injectSidebar();
         setupEventListeners();
 
-        const savedData = await applySavedTranslations();
+        // 1. Always fetch existing translations from the server for the current page
+        const url = window.location.href;
+        const existingTranslations = await fetchTranslationsForUrl(url);
 
-        if (savedData && savedData.translations && savedData.translations.length > 0) {
-            console.log("Finished translations have been applied to the page.");
-            populateSidebar(savedData.translations);
-            logToSidebar(`페이지에 저장된 번역 ${savedData.translations.length}개를 적용했습니다.`);
-            showSidebar();
-            // Do not return, allow scanning for untranslated content
-        } else {
-            logToSidebar("저장된 번역이 없습니다. 페이지에서 일본어를 스캔합니다.");
+        if (existingTranslations) {
+            // 2. Populate cache and sidebar with existing data
+            translationCache.clear();
+            existingTranslations.forEach(t => translationCache.set(t.pid, t));
+            populateSidebar(existingTranslations);
+            logToSidebar(`서버에서 ${existingTranslations.length}개의 저장된 번역을 불러왔습니다.`);
         }
-        
+
+        // 3. Check if translations should be applied to the page content
+        const statusKey = 'status-' + url;
+        const statusResult = await chrome.storage.local.get(statusKey);
+        if (statusResult[statusKey] && statusResult[statusKey].applied) {
+            applyTranslationsToPage(existingTranslations);
+        }
+
+        // 4. Scan for and translate any new paragraphs
         const hasJapanesePTags = await scanForJapanesePTags();
         if (hasJapanesePTags) {
-            showSidebar();
+            showSidebar(); // This will trigger translateAllPTags for new content
         }
+
     } catch (error) {
         console.error("Translator extension failed to initialize:", error);
         if (document.getElementById('jp-translator-sidebar')) {
             logToSidebar(`초기화 실패: ${error.message}`, "log-error");
         }
     }
+}
+
+async function fetchTranslationsForUrl(url) {
+    try {
+        const fetchUrl = `http://127.0.0.1:8001/translations?url=${encodeURIComponent(url)}&limit=5000`; // Increased limit
+        const response = await fetch(fetchUrl);
+        if (!response.ok) {
+            console.warn(`[fetchTranslationsForUrl] Server responded with ${response.status}`);
+            return null;
+        }
+        const data = await response.json();
+        return data.translations;
+    } catch (error) {
+        console.error("Error fetching translations for URL:", error);
+        logToSidebar("서버에서 번역을 불러오는 데 실패했습니다.", "log-error");
+        return null;
+    }
+}
+
+function applyTranslationsToPage(translations) {
+    if (!translations || translations.length === 0) return;
+
+    const translationMap = new Map(translations.map(t => [t.pid, t.translated]));
+    const paragraphs = getTargetParagraphs();
+    let replacementCount = 0;
+
+    paragraphs.forEach(p => {
+        if (translationMap.has(p.id)) {
+            const translatedText = translationMap.get(p.id);
+            if (translatedText) {
+                p.innerHTML = translatedText;
+                const appliedStyle = { color: '#E2E8F0', fontFamily: 'TwoCon' };
+                Object.assign(p.style, appliedStyle);
+                replacementCount++;
+            }
+        }
+    });
+    console.log(`[applyTranslationsToPage] Applied ${replacementCount} translations to page content.`);
+    logToSidebar(`페이지에 저장된 번역 ${replacementCount}개를 적용했습니다.`);
 }
 
 // =================================================================================
@@ -331,24 +309,19 @@ async function translateAllPTags() {
     document.getElementById('stop-translation-btn').style.display = 'inline-block';
     document.getElementById('retry-translation-btn').style.display = 'none';
 
-    // Load exclusion list
-    const url = window.location.href;
-    const exclusionData = await chrome.storage.local.get('excluded_sentences');
-    const excludedDb = exclusionData.excluded_sentences || {};
-    const exclusionListForThisUrl = new Set(excludedDb[url] || []);
-
     const paragraphs = getTargetParagraphs();
     const textsToTranslate = [];
     paragraphs.forEach(p => {
+        // Check against the cache first. If it's already translated, skip.
+        if (translationCache.has(p.id)) {
+            return;
+        }
+
         const text = p.innerHTML.replace(/<br\s*\/?>/gi, " ").replace(/<[^>]*>/g, "")
             .replace(/([あアいイうウえエおオ])\1{2,}/g, '$1ー')
             .trim();
 
-        if (exclusionListForThisUrl.has(text)) {
-            return; 
-        }
-
-        if (text && JAPANESE_REGEX.test(text) && !document.querySelector(`tr[data-pid="${p.id}"]`)) {
+        if (text && JAPANESE_REGEX.test(text)) {
             textsToTranslate.push({ id: p.id, text: text });
         }
     });

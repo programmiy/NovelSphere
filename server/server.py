@@ -46,6 +46,17 @@ def init_db():
     if 'title' not in columns:
         cursor.execute("ALTER TABLE translations ADD COLUMN title TEXT")
 
+    # Create excluded_sentences table
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS excluded_sentences (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        url TEXT NOT NULL,
+        original TEXT NOT NULL,
+        UNIQUE(url, original)
+    );
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_excluded_url_original ON excluded_sentences (url, original);")
+
     conn.commit()
     conn.close()
 
@@ -68,14 +79,34 @@ app.add_middleware(
 
 class TranslateRequest(BaseModel):
     texts: List[str]
+    url: str
 
 @app.post("/translate")
 def translate_texts(req: TranslateRequest):
-    """Gemini API를 호출하여 텍스트를 번역합니다."""
+    """Gemini API를 호출하여 텍스트를 번역합니다. 제외된 텍스트는 건너뜁니다."""
+    conn = sqlite3.connect(DATABASE_FILE)
+    cursor = conn.cursor()
+
+    # URL에 대해 제외된 문장 목록을 가져옵니다.
+    cursor.execute("SELECT original FROM excluded_sentences WHERE url = ?", (req.url,))
+    excluded_originals = {row[0] for row in cursor.fetchall()}
+    conn.close()
+
+    # 번역할 텍스트와 제외된 텍스트를 분리합니다.
+    texts_to_translate = []
+    original_indices = {}
+    for i, text in enumerate(req.texts):
+        if text not in excluded_originals:
+            original_indices[len(texts_to_translate)] = i
+            texts_to_translate.append(text)
+
+    # 번역할 텍스트가 없으면 빈 결과를 반환합니다.
+    if not texts_to_translate:
+        return {"translations": ["" for _ in req.texts]}
+
+    # Gemini API 호출
     api_key = get_api_key()
     api_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
-    
-    # 단순화된 프롬프트: 각 텍스트를 새 줄에 번역하도록 요청
     prompt = (
         "You are an expert translator specializing in Japanese to Korean. "
         "Translate the following Japanese texts to Korean. "
@@ -83,7 +114,7 @@ def translate_texts(req: TranslateRequest):
         "Crucially, you MUST preserve the original quotation marks (like 「...」 and 『...』) in the translated text. "
         "Do not add any other extra explanations or formatting. Just the translated texts, one per line.\n"
         "---START OF TEXTS---\n"
-        + "\n".join(req.texts) +
+        + "\n".join(texts_to_translate) +
         "\n---END OF TEXTS---"
     )
 
@@ -91,25 +122,19 @@ def translate_texts(req: TranslateRequest):
         response = requests.post(api_url, json={
             "contents": [{"parts": [{"text": prompt}]}]
         })
-        response.raise_for_status() # HTTP 오류 발생 시 예외 발생
+        response.raise_for_status()
         data = response.json()
         
-        # 모델의 응답 텍스트를 줄 단위로 분리
         raw_text = data['candidates'][0]['content']['parts'][0]['text']
         translated_parts = raw_text.strip().split('\n')
         
-        # 입력과 출력의 개수가 일치하는지 기본적인 검증
-        if len(translated_parts) != len(req.texts):
-            # 불일치 시, 원본 텍스트 수만큼 빈 문자열로 채워 반환 (부분적 실패 처리)
-            # 또는 에러를 발생시킬 수 있습니다. 여기서는 안전하게 빈 문자열로 채웁니다.
-            print(f"Warning: Translation count mismatch. Expected {len(req.texts)}, got {len(translated_parts)}.")
-            # 가장 가능성 있는 시나리오는 모델이 빈 문자열 하나를 반환하는 경우입니다.
-            if len(translated_parts) == 1 and translated_parts[0] == '':
-                translated_parts = ['' for _ in req.texts]
-            else: # 다른 경우, 일단 받은대로 두고 클라이언트에서 처리하도록 함
-                 pass
+        # 최종 결과 리스트를 생성합니다.
+        final_translations = ["" for _ in req.texts]
+        for i, translated_text in enumerate(translated_parts):
+            if i in original_indices:
+                final_translations[original_indices[i]] = translated_text
 
-        return {"translations": translated_parts}
+        return {"translations": final_translations}
     except requests.exceptions.RequestException as e:
         raise HTTPException(status_code=500, detail=f"Gemini API 요청 실패: {e}")
     except (KeyError, IndexError, json.JSONDecodeError) as e:
@@ -365,6 +390,59 @@ def delete_translations(req: DeleteRequest):
     conn.close()
 
     return {"message": f"{deleted_count}개의 항목이 삭제되었습니다."}
+
+
+class FindReplaceRequest(BaseModel):
+    find_text: str
+    replace_text: str
+
+@app.post("/translations/find_replace")
+def find_replace_all(req: FindReplaceRequest):
+    """모든 번역 기록의 번역된 텍스트에 대해 찾아 바꾸기를 수행합니다."""
+    conn = sqlite3.connect(DATABASE_FILE)
+    cursor = conn.cursor()
+
+    # SQLite의 replace 함수를 사용하여 모든 항목을 업데이트합니다.
+    query = "UPDATE translations SET translated = REPLACE(translated, ?, ?)"
+    cursor.execute(query, (req.find_text, req.replace_text))
+    updated_count = cursor.rowcount
+    
+    conn.commit()
+    conn.close()
+
+    return {"message": f"{updated_count}개의 항목에서 내용을 교체했습니다."}
+
+
+class ExcludeRequest(BaseModel):
+    ids: List[int]
+
+@app.post("/translations/exclude")
+def exclude_translations(req: ExcludeRequest):
+    """지정된 ID의 번역 기록을 제외 목록에 추가하고 원본을 삭제합니다."""
+    conn = sqlite3.connect(DATABASE_FILE)
+    cursor = conn.cursor()
+    
+    excluded_count = 0
+    for translation_id in req.ids:
+        # 1. ID를 기반으로 url과 original 텍스트를 가져옵니다.
+        cursor.execute("SELECT url, original FROM translations WHERE id = ?", (translation_id,))
+        result = cursor.fetchone()
+        
+        if result:
+            url, original = result
+            
+            # 2. excluded_sentences 테이블에 추가합니다. (중복 시 무시)
+            cursor.execute("INSERT OR IGNORE INTO excluded_sentences (url, original) VALUES (?, ?)", (url, original))
+            
+            # 3. translations 테이블에서 원본 항목을 삭제합니다.
+            cursor.execute("DELETE FROM translations WHERE id = ?", (translation_id,))
+            
+            excluded_count += 1
+
+    conn.commit()
+    conn.close()
+
+    return {"message": f"{excluded_count}개의 항목이 제외 목록에 추가되었습니다."}
 
 
 class UpdateTitleRequest(BaseModel):
