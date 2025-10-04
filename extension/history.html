@@ -149,16 +149,70 @@
         }
 
 
-        /* Table View */
-        .history-table { width: 100%; border-collapse: collapse; }
-        .history-table th, .history-table td { padding: 12px 16px; border-bottom: 1px solid var(--border-color); text-align: left; }
-        .history-table th { background-color: var(--group-header-bg); font-weight: 500; color: var(--text-secondary); }
-        .history-table tbody tr:last-child td { border-bottom: none; }
-        .history-table tbody tr:hover { background-color: var(--item-hover-bg); }
-        .history-table .item-checkbox-container { padding-top: 0; }
-        .history-table .item-actions-container { text-align: center; }
-        .history-table .item-date { display: block; margin-bottom: 4px; }
-        .history-table .item-actions { justify-content: center; }
+        /* New List-based Layout */
+        .history-list-header, .history-item {
+            display: flex;
+            align-items: stretch;
+            border-bottom: 1px solid var(--border-color);
+            padding: 8px 0;
+        }
+        .history-list-header {
+            font-weight: 600;
+            color: var(--text-secondary);
+            padding: 12px 16px;
+        }
+        .history-item:hover { 
+            background-color: var(--item-hover-bg);
+        }
+        .history-list-body .history-item:last-child {
+            border-bottom: none;
+        }
+        .item-cell {
+            padding: 4px 16px;
+            display: flex;
+            align-items: center;
+        }
+        .original-cell, .translated-cell {
+            flex: 1;
+        }
+
+        /* Book-like 2-column layout for wide screens */
+        @media (min-width: 1200px) {
+            .history-list-header {
+                display: none; /* Hide header in book view */
+            }
+            .history-item {
+                flex-wrap: wrap;
+                padding: 24px;
+                border-bottom: 1px solid var(--border-color);
+            }
+            .original-cell, .translated-cell {
+                flex-basis: 50%;
+                padding: 12px 24px;
+                border-left: 1px solid var(--border-color);
+            }
+            .original-cell {
+                order: 2;
+                border-left: none;
+            }
+            .translated-cell {
+                order: 3;
+            }
+            .item-cell[style*="width: 40px"] { /* Checkbox */
+                order: 1;
+                width: 100% !important;
+                padding-bottom: 12px;
+            }
+            .item-cell[style*="width: 80px"] { /* PID */
+                display: none; /* Hide PID in book view for now */
+            }
+            .actions-cell {
+                order: 4;
+                width: 100% !important;
+                padding-top: 12px;
+                justify-content: flex-end;
+            }
+        }
 
         .item-checkbox-container { display: flex; justify-content: center; padding-top: 5px; }
         .item-text-block .text-label { font-size: 12px; font-weight: 500; color: var(--text-secondary); margin-bottom: 4px; }
