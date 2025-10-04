@@ -342,8 +342,8 @@ async function translateAllPTags() {
             return;
         }
 
-        // Exclude PIDs starting with 'la' followed by numbers
-        if (/^la\d+$/.test(p.id)) {
+        // Exclude PIDs starting with 'la' or 'lp' followed by numbers
+        if (/^(la|lp)\d+$/i.test(p.id)) {
             return;
         }
 
