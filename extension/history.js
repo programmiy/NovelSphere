@@ -7,7 +7,9 @@ let currentSearch = '';
 let translationStatuses = {}; // Holds the apply-status for each URL
 
 // DOM element cache
-let historyContainer, emptyState, searchBox, darkModeToggle, fetchAllTitlesBtn, bulkActionsPanel, selectionCount, deleteSelectedBtn, moveSelectedToFolderDropdown;
+let historyContainer, emptyState, searchBox, darkModeToggle, fetchAllTitlesBtn, bulkActionsPanel, selectionCount, deleteSelectedBtn, moveSelectedToFolderDropdown, findReplaceModal, closeFindReplaceModalBtn, cancelFindReplaceBtn, executeFindReplaceBtn, openGlobalFindReplaceBtn;
+
+// Debounce timer
 
 // Debounce timer
 let searchTimeout;
@@ -30,6 +32,12 @@ function cacheDOMElements() {
     selectionCount = document.getElementById('selection-count');
     deleteSelectedBtn = document.getElementById('deleteSelectedBtn');
     moveSelectedToFolderDropdown = document.getElementById('moveSelectedToFolderDropdown');
+    // Find & Replace Modal Elements
+    findReplaceModal = document.getElementById('findReplaceModal');
+    closeFindReplaceModalBtn = document.getElementById('closeFindReplaceModal');
+    cancelFindReplaceBtn = document.getElementById('cancelFindReplace');
+    executeFindReplaceBtn = document.getElementById('executeFindReplace');
+    openGlobalFindReplaceBtn = document.getElementById('openGlobalFindReplaceBtn');
 }
 
 async function loadAndRenderGrouped() {
@@ -264,6 +272,61 @@ function setupEventListeners() {
     fetchAllTitlesBtn.addEventListener('click', fetchAllTitles);
     deleteSelectedBtn.addEventListener('click', deleteSelectedTranslations);
     moveSelectedToFolderDropdown.addEventListener('change', moveSelectedTranslationsToFolder);
+
+    // Find & Replace Listeners
+    openGlobalFindReplaceBtn.addEventListener('click', openFindReplaceModal);
+    closeFindReplaceModalBtn.addEventListener('click', closeFindReplaceModal);
+    cancelFindReplaceBtn.addEventListener('click', closeFindReplaceModal);
+    executeFindReplaceBtn.addEventListener('click', executeGlobalFindReplace);
+}
+
+function openFindReplaceModal() {
+    if (!findReplaceModal) return;
+    document.getElementById('findText').value = '';
+    document.getElementById('replaceText').value = '';
+    findReplaceModal.style.display = 'flex';
+    document.getElementById('findText').focus();
+}
+
+function closeFindReplaceModal() {
+    if (!findReplaceModal) return;
+    findReplaceModal.style.display = 'none';
+}
+
+async function executeGlobalFindReplace() {
+    const findText = document.getElementById('findText').value;
+    const replaceText = document.getElementById('replaceText').value;
+
+    if (!findText) {
+        showToast('찾을 내용을 입력하세요.', 'error');
+        return;
+    }
+
+    if (!confirm(`모든 번역 기록에서 "${findText}"을(를) "${replaceText}"(으)로 바꾸시겠습니까? 이 작업은 되돌릴 수 없습니다.`)) {
+        return;
+    }
+
+    try {
+        const response = await fetch('http://127.0.0.1:8001/translations/find_replace', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ find_text: findText, replace_text: replaceText })
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.detail || `Server error: ${response.status}`);
+        }
+
+        const result = await response.json();
+        showToast(result.message, 'success');
+        closeFindReplaceModal();
+        loadAndRenderGrouped(); // Reload data to show changes
+
+    } catch (error) {
+        console.error("Global find and replace failed:", error);
+        showToast(`오류: ${error.message}`, 'error');
+    }
 }
 
 function handleCheckboxChange(e) {

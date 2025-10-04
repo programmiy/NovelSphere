@@ -392,6 +392,27 @@ def delete_translations(req: DeleteRequest):
     return {"message": f"{deleted_count}개의 항목이 삭제되었습니다."}
 
 
+class FindReplaceRequest(BaseModel):
+    find_text: str
+    replace_text: str
+
+@app.post("/translations/find_replace")
+def find_replace_all(req: FindReplaceRequest):
+    """모든 번역 기록의 번역된 텍스트에 대해 찾아 바꾸기를 수행합니다."""
+    conn = sqlite3.connect(DATABASE_FILE)
+    cursor = conn.cursor()
+
+    # SQLite의 replace 함수를 사용하여 모든 항목을 업데이트합니다.
+    query = "UPDATE translations SET translated = REPLACE(translated, ?, ?)"
+    cursor.execute(query, (req.find_text, req.replace_text))
+    updated_count = cursor.rowcount
+    
+    conn.commit()
+    conn.close()
+
+    return {"message": f"{updated_count}개의 항목에서 내용을 교체했습니다."}
+
+
 class ExcludeRequest(BaseModel):
     ids: List[int]
 
