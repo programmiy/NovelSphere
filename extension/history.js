@@ -197,6 +197,7 @@ function renderGroupedHistory() {
                             <thead>
                                 <tr>
                                     <th style="width: 40px;"></th>
+                                    <th style="width: 80px;">PID</th>
                                     <th>원문</th>
                                     <th>번역</th>
                                     <th style="width: 120px;">액션</th>
@@ -229,6 +230,7 @@ function renderItem(t) {
     return `
         <tr class="history-item" data-id="${t.id}">
             <td style="width: 40px; text-align: center;"><input type="checkbox" class="item-checkbox" data-id="${t.id}"></td>
+            <td>${escapeHtml(t.pid)}</td>
             <td><div class="item-text-block"><div class="text-content original-text">${escapeHtml(t.original)}</div></div></td>
             <td><div class="item-text-block"><div class="text-content translated-text" contenteditable="true">${escapeHtml(t.translated)}</div></div></td>
             <td class="item-actions-container">
