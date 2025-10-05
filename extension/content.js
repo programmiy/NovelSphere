@@ -594,6 +594,11 @@ function addPlaceholderRows(items) {
 
 function updateSidebarWithTranslations(translations) {
     translations.forEach(item => {
+        // If the translation is null or undefined, skip updating this item's UI.
+        if (item.translated === null || typeof item.translated === 'undefined') {
+            return;
+        }
+
         const row = document.querySelector(`tr[data-pid="${item.id}"]`);
         if (row) {
             const originalCell = row.querySelector('.original-text');
