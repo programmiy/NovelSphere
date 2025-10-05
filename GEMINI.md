@@ -18,4 +18,5 @@
    * 수정된 **코드 파일**과 생성된 **문서 파일**을 함께 스테이징합니다.
    * 두 파일을 **하나의 커밋**으로 묶습니다. 커밋 메시지는 문서 파일명과 유사하게 작성합니다.
 6. 원격 저장소 는 `main`만 존재 , `origin`사용하지 않음
-7. **마무리:** (1.git push main extra (로컬 extra를 원격 main에 푸시)  2. git checkout main (main 브랜치로 전환)  4. git merge extra (extra를 main에 병합)  5. git push main main (main을 원격 main에 푸시)  6. git checkout  extra (extra 브랜치로 다시 전환))
+7. **마무리:** (git push main extra (로컬 extra를 원격 main에 푸시)
+8. 기능 작동 확인후 수행: 1. git checkout main (main 브랜치로 전환)  2. git merge extra (extra를 main에 병합)  3. git push main main (main을 원격 main에 푸시)  4. git checkout  extra (extra 브랜치로 다시 전환))
