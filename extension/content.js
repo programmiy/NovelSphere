@@ -475,14 +475,14 @@ async function translateAllPTags() {
                 items: subItemsForApi
             });
 
-            if (response && response.translations) {
-                const translatedSentences = response.translations.map(t => t.translated);
+            if (response && response.translations && response.translations.length === subItemsForApi.length) {
+                const reconstructedParts = response.translations.map((result, index) => {
+                    const isError = result.translated.includes('번역 실패') || result.translated.includes('API 오류');
+                    // If translation fails, fall back to the original sentence part.
+                    return isError ? subItemsForApi[index].text : result.translated;
+                });
                 
-                if (translatedSentences.some(t => t.includes('번역 실패') || t.includes('API 오류'))) {
-                    throw new Error('Sub-sentence translation failed.');
-                }
-                
-                const combinedTranslation = translatedSentences.join(' ');
+                const combinedTranslation = reconstructedParts.join(' ');
 
                 const finalResult = {
                     id: originalItem.id,
@@ -494,7 +494,7 @@ async function translateAllPTags() {
                 logToSidebar(`문장 분할 번역 성공 (ID: ${originalItem.id})`);
 
             } else {
-                throw new Error('Malformed response from background script for split sentences.');
+                throw new Error('Malformed or incomplete response from background script for split sentences.');
             }
 
         } catch (error) {
@@ -503,7 +503,8 @@ async function translateAllPTags() {
             updateSidebarWithTranslations([errorResultForUI]);
 
             if (!isTranslationCancelled) {
-                const resultForStorage = { id: item.id, original: item.text, translated: '' };
+                // Save the original text instead of an empty string to prevent data loss
+                const resultForStorage = { id: originalItem.id, original: originalItem.text, translated: originalItem.text };
                 allFinishedResults.push(resultForStorage);
             }
         }
