@@ -10,6 +10,10 @@ let isTranslationCancelled = false;
 let translationCache = new Map(); // Cache for original translation objects
 let exclusionSet = new Set(); // Cache for excluded original texts
 
+// Circuit Breaker state
+let consecutiveApiErrors = 0;
+const MAX_CONSECUTIVE_ERRORS = 6;
+
 // =================================================================================
 // Initialization & Event Listeners
 // =================================================================================
@@ -398,8 +402,11 @@ async function translateAllPTags() {
                 }
     
                 if (response && response.translations) {
-                    const successes = response.translations.filter(t => !t.translated.includes('번역 실패') && !t.translated.includes('API 오류'));
-                    const failures = response.translations.filter(t => t.translated.includes('번역 실패') || t.translated.includes('API 오류'));
+                    // On success, reset the consecutive error counter
+                    consecutiveApiErrors = 0;
+
+                    const successes = response.translations.filter(t => t.translated !== null && !t.translated.includes('번역 실패') && !t.translated.includes('API 오류'));
+                    const failures = response.translations.filter(t => t.translated === null || t.translated.includes('번역 실패') || t.translated.includes('API 오류'));
     
                     if (successes.length > 0) {
                         updateSidebarWithTranslations(successes);
@@ -414,12 +421,27 @@ async function translateAllPTags() {
                         logToSidebar(`${failedOriginalItems.length}개 항목 번역 실패. 더 작은 단위로 재시도합니다.`, 'log-error');
                         await handleFailure(failedOriginalItems, chunkSize);
                     }
-                    return;
+                    return; // Success, exit the retry loop
                 } else {
                     throw new Error(response?.error || 'Malformed response from background script');
                 }
             } catch (error) {
                 console.warn(`Chunk translation failed (attempt ${attempt + 1}/${MAX_MESSAGE_RETRIES}):`, error.message);
+
+                // Increment consecutive error counter for server/API errors
+                if (error.message.includes("500") || error.message.includes("API") || error.message.includes("Server error")) {
+                    consecutiveApiErrors++;
+                    logToSidebar(`연속된 서버 오류: ${consecutiveApiErrors}/${MAX_CONSECUTIVE_ERRORS}`, 'log-error');
+
+                    if (consecutiveApiErrors >= MAX_CONSECUTIVE_ERRORS) {
+                        isTranslationCancelled = true;
+                        logToSidebar("6회 이상 연속 서버 오류가 발생하여 번역을 중단합니다.", "log-error");
+                        document.getElementById('stop-translation-btn').style.display = 'none';
+                        updateSidebarWithCancelled();
+                        return; // Stop completely
+                    }
+                }
+
                 if (attempt < MAX_MESSAGE_RETRIES - 1) {
                     const delay = 1000 * Math.pow(2, attempt);
                     logToSidebar(`통신 오류. ${delay / 1000}초 후 재시도... (${attempt + 1}/${MAX_MESSAGE_RETRIES})`, 'log-error');
@@ -432,16 +454,26 @@ async function translateAllPTags() {
             }
         }
     }
+
     async function handleFailure(failedItems, currentChunkSize) {
         if (isTranslationCancelled) return;
         if (currentChunkSize > 1) {
             const newChunkSize = Math.ceil(currentChunkSize / 2);
+            logToSidebar(`묶음 단위를 ${newChunkSize}으로 줄여 재시도합니다.`);
             const subChunks = chunkArray(failedItems, newChunkSize);
-            for (const subChunk of subChunks) {
+            for (const [index, subChunk] of subChunks.entries()) {
+                if (isTranslationCancelled) break;
                 await translateChunk(subChunk, newChunkSize);
+                
+                // Add a delay between retrying smaller chunks to avoid 429 errors
+                if (index < subChunks.length - 1) {
+                    await new Promise(resolve => setTimeout(resolve, 1000)); // 1-second delay
+                }
             }
         } else if (failedItems.length > 0) {
+            // If chunk size is 1, try splitting by sentence
             for (const item of failedItems) {
+                if (isTranslationCancelled) break;
                 const sentences = item.text.split('。').filter(s => s.trim().length > 0);
                 
                 if (sentences.length > 1) {
@@ -450,11 +482,6 @@ async function translateAllPTags() {
                     console.error(`Failed to translate item ${item.id} after retries:`, item.text);
                     const errorResultForUI = { id: item.id, original: item.text, translated: `번역 실패: API 오류` };
                     updateSidebarWithTranslations([errorResultForUI]);
-
-                    if (!isTranslationCancelled) {
-                        const resultForStorage = { id: item.id, original: item.text, translated: '' };
-                        allFinishedResults.push(resultForStorage);
-                    }
                 }
             }
         }
@@ -475,14 +502,19 @@ async function translateAllPTags() {
                 items: subItemsForApi
             });
 
-            if (response && response.translations && response.translations.length === subItemsForApi.length) {
-                const reconstructedParts = response.translations.map((result, index) => {
-                    const isError = result.translated.includes('번역 실패') || result.translated.includes('API 오류');
-                    // If translation fails, fall back to the original sentence part.
-                    return isError ? subItemsForApi[index].text : result.translated;
-                });
-                
-                const combinedTranslation = reconstructedParts.join(' ');
+            if (response && response.translations) {
+                // Check if any sub-sentence translation failed (is null)
+                const hasFailedPart = response.translations.some(t => t.translated === null);
+                let combinedTranslation = null;
+
+                if (hasFailedPart) {
+                    // If any part failed, the whole translation is considered null (don't overwrite)
+                    logToSidebar(`문장 분할 번역 실패 (ID: ${originalItem.id}) - 일부 조각 번역 실패`);
+                } else {
+                    const translatedSentences = response.translations.map(t => t.translated);
+                    combinedTranslation = translatedSentences.join(' ');
+                    logToSidebar(`문장 분할 번역 성공 (ID: ${originalItem.id})`);
+                }
 
                 const finalResult = {
                     id: originalItem.id,
@@ -490,23 +522,20 @@ async function translateAllPTags() {
                     translated: combinedTranslation
                 };
                 updateSidebarWithTranslations([finalResult]);
-                allFinishedResults.push(finalResult);
-                logToSidebar(`문장 분할 번역 성공 (ID: ${originalItem.id})`);
+                
+                // Only add to results to be saved if translation was successful
+                if (combinedTranslation !== null) {
+                    allFinishedResults.push(finalResult);
+                }
 
             } else {
-                throw new Error('Malformed or incomplete response from background script for split sentences.');
+                throw new Error('Malformed response from background script for split sentences.');
             }
 
         } catch (error) {
             console.error(`Sentence splitting retry also failed for item ${originalItem.id}:`, error);
             const errorResultForUI = { id: originalItem.id, original: originalItem.text, translated: `번역 실패: 분할 재시도 실패` };
             updateSidebarWithTranslations([errorResultForUI]);
-
-            if (!isTranslationCancelled) {
-                // Save the original text instead of an empty string to prevent data loss
-                const resultForStorage = { id: originalItem.id, original: originalItem.text, translated: originalItem.text };
-                allFinishedResults.push(resultForStorage);
-            }
         }
     }
 
