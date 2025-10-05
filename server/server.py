@@ -1,11 +1,7 @@
-import sqlite3
-import json
-import requests
-from fastapi import FastAPI, HTTPException, BackgroundTasks
-import re
-import time
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Request
 from fastapi.middleware.cors import CORSMiddleware
-from datetime import datetime
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from typing import List, Optional
 
@@ -63,6 +59,10 @@ def init_db():
 # FastAPI 앱 생성
 app = FastAPI()
 
+# 정적 파일 및 템플릿 설정
+app.mount("/static", StaticFiles(directory="static"), name="static")
+templates = Jinja2Templates(directory="templates")
+
 @app.on_event("startup")
 async def startup_event():
     """서버 시작 시 데이터베이스를 초기화합니다."""
@@ -77,9 +77,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-class TranslateRequest(BaseModel):
-    texts: List[str]
-    url: str
+# --- Web UI Endpoint ---
+@app.get("/book")
+async def read_book_ui(request: Request):
+    """책 UI 웹페이지를 렌더링합니다."""
+    return templates.TemplateResponse("book_ui.html", {"request": request})
+
+
+class TranslationItemInput(BaseModel):
+    id: str
+    text: str
 
 @app.post("/translate")
 def translate_texts(req: TranslateRequest):
@@ -282,6 +289,30 @@ def get_translations(skip: int = 0, limit: int = 100, folder: Optional[str] = No
         "total_count": total_count,
         "translations": translations
     })
+
+@app.get("/paged_translations")
+def get_paged_translations(page: int = 1, per_page: int = 20):
+    """페이지네이션을 지원하는 번역 기록 조회 엔드포인트입니다."""
+    conn = sqlite3.connect(DATABASE_FILE)
+    conn.text_factory = str
+    conn.row_factory = dict_factory
+    cursor = conn.cursor()
+
+    # 전체 항목 수 계산
+    count_query = "SELECT COUNT(*) as total_count FROM translations"
+    total_count = cursor.execute(count_query).fetchone()['total_count']
+
+    # 현재 페이지 데이터 조회
+    offset = (page - 1) * per_page
+    data_query = "SELECT * FROM translations ORDER BY timestamp DESC LIMIT ? OFFSET ?"
+    translations = cursor.execute(data_query, (per_page, offset)).fetchall()
+
+    conn.close()
+
+    return {
+        "total_count": total_count,
+        "translations": translations
+    }
 
 from pydantic import BaseModel
 from typing import List, Optional
