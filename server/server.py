@@ -77,13 +77,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+class TranslationItemInput(BaseModel):
+    id: str
+    text: str
+
 class TranslateRequest(BaseModel):
-    texts: List[str]
+    items: List[TranslationItemInput]
     url: str
 
 @app.post("/translate")
 def translate_texts(req: TranslateRequest):
-    """Gemini API를 호출하여 텍스트를 번역합니다. 제외된 텍스트는 건너뜁니다."""
+    """Gemini API를 호출하여 텍스트를 번역합니다. ID 기반으로 매칭하여 안정성을 높였습니다."""
     conn = sqlite3.connect(DATABASE_FILE)
     cursor = conn.cursor()
 
@@ -92,31 +96,37 @@ def translate_texts(req: TranslateRequest):
     excluded_originals = {row[0] for row in cursor.fetchall()}
     conn.close()
 
-    # 번역할 텍스트와 제외된 텍스트를 분리합니다.
-    texts_to_translate = []
-    original_indices = {}
-    for i, text in enumerate(req.texts):
-        if text not in excluded_originals:
-            original_indices[len(texts_to_translate)] = i
-            texts_to_translate.append(text)
+    # 번역할 아이템과 제외된 아이템을 분리합니다.
+    items_to_translate = [item for item in req.items if item.text not in excluded_originals]
 
-    # 번역할 텍스트가 없으면 빈 결과를 반환합니다.
-    if not texts_to_translate:
-        return {"translations": ["" for _ in req.texts]}
+    # 번역할 텍스트가 없으면 원본 아이템 구조에 맞춰 반환합니다.
+    if not items_to_translate:
+        # 번역할 것이 없으므로, 원본 텍스트를 번역된 텍스트로 사용하여 반환
+        return {"translations": [{
+            "id": item.id,
+            "original": item.text,
+            "translated": item.text
+        } for item in req.items]}
 
     # Gemini API 호출
     api_key = get_api_key()
     api_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
+    
+    # API에 전달할 JSON 입력을 생성합니다.
+    api_input_json = json.dumps([{"id": item.id, "text": item.text} for item in items_to_translate], ensure_ascii=False)
+
     prompt = (
-        "You are an expert translator specializing in Japanese to Korean. "
-        "Translate the following Japanese texts to Korean. "
-        "Each text is on a new line. Maintain the same order in your response, with each translation on a new line. "
-        "Crucially, you MUST preserve the original quotation marks (like 「...」 and 『...』) in the translated text. "
-        "Do not add any other extra explanations or formatting. Just the translated texts, one per line.\n"
-        "---START OF TEXTS---\n"
-        + "\n".join(texts_to_translate) +
-        "\n---END OF TEXTS---"
+        "You are a JSON-only translation API. You will receive a JSON array of objects, each with an 'id' and a 'text' field. " +
+        "Your task is to translate the 'text' from Japanese to Korean. " +
+        "Your response MUST be a single, valid JSON array of objects. Each object in your response must contain the original 'id' and the translated text in a 'translated' field. " +
+        "Preserve the original quotation marks (like 「...」 and 『...』) in the translated text. " +
+        "Do not add any other explanations, formatting, or markdown code fences. Your entire output must be only the JSON data. " +
+        "Example response format: `[{\"id\": \"p1\", \"translated\": \"번역된 텍스트\"}, {\"id\": \"p1-part1\", \"translated\": \"번역된 텍스트\"}]`\n" +
+        "---START OF JSON DATA---\n" +
+        f"{api_input_json}\n" +
+        "---END OF JSON DATA---"
     )
+
 
     try:
         response = requests.post(api_url, json={
@@ -125,20 +135,40 @@ def translate_texts(req: TranslateRequest):
         response.raise_for_status()
         data = response.json()
         
+        # 응답에서 JSON 텍스트를 추출하고 정리합니다.
         raw_text = data['candidates'][0]['content']['parts'][0]['text']
-        translated_parts = raw_text.strip().split('\n')
-        
-        # 최종 결과 리스트를 생성합니다.
-        final_translations = ["" for _ in req.texts]
-        for i, translated_text in enumerate(translated_parts):
-            if i in original_indices:
-                final_translations[original_indices[i]] = translated_text
+        # 마크다운 JSON 블록을 제거하는 로직 추가
+        json_match = re.search(r'```(json)?(.*)```', raw_text, re.DOTALL)
+        if json_match:
+            clean_json_text = json_match.group(2).strip()
+        else:
+            clean_json_text = raw_text.strip()
+
+        translated_items_list = json.loads(clean_json_text)
+        translated_map = {item['id']: item['translated'] for item in translated_items_list}
+
+        # 최종 결과 리스트를 원본 순서대로 재구성합니다.
+        final_translations = []
+        for item in req.items:
+            # 번역된 결과가 있으면 사용하고, 없으면 (제외되었거나 API가 누락한 경우) null을 사용합니다.
+            translated_text = translated_map.get(item.id, None)
+            final_translations.append({
+                "id": item.id,
+                "original": item.text,
+                "translated": translated_text
+            })
 
         return {"translations": final_translations}
     except requests.exceptions.RequestException as e:
         raise HTTPException(status_code=500, detail=f"Gemini API 요청 실패: {e}")
     except (KeyError, IndexError, json.JSONDecodeError) as e:
-        raise HTTPException(status_code=500, detail=f"Gemini API 응답 처리 실패: {e}")
+        # API 응답 처리 실패 시, 각 아이템에 에러 메시지를 포함하여 반환
+        error_response = [{
+            "id": item.id,
+            "original": item.text,
+            "translated": f"번역 실패: API 응답 처리 오류 ({e})"
+        } for item in req.items]
+        return {"translations": error_response}
 
 @app.post("/migrate")
 def migrate_data():
