@@ -181,13 +181,11 @@ async function fetchPageTitle(url) {
 }
 
 async function handleBatchTranslate(items, sourceUrl) {
-    const texts = items.map(item => item.text);
-
     try {
         const response = await fetch('http://127.0.0.1:8001/translate', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ texts: texts, url: sourceUrl })
+            body: JSON.stringify({ items: items, url: sourceUrl })
         });
 
         if (!response.ok) {
@@ -197,34 +195,20 @@ async function handleBatchTranslate(items, sourceUrl) {
 
         const data = await response.json();
         
+        // The server now returns the final array of objects, so we just validate and return it.
         if (!data.translations || data.translations.length !== items.length) {
+            console.error("Mismatched response length from server", data);
             throw new Error('Received invalid translation data from server.');
         }
 
-        // Map results and apply quote correction
-        return items.map((item, index) => {
-            let translatedText = data.translations[index];
-
-            // Post-processing to enforce quote style (belt-and-suspenders for the prompt)
-            if (translatedText && translatedText.startsWith('"') && translatedText.endsWith('"')) {
-                const innerText = translatedText.substring(1, translatedText.length - 1);
-                if (item.text.includes('「') && item.text.includes('」')) {
-                    translatedText = `「${innerText}」`;
-                } else if (item.text.includes('『') && item.text.includes('』')) {
-                    translatedText = `『${innerText}』`;
-                }
-            }
-
-            return {
-                id: item.id,
-                original: item.text,
-                translated: translatedText
-            };
-        });
+        // The server response is already in the format [{id, original, translated}, ...],
+        // so we can just return it directly.
+        return data.translations;
 
     } catch (error) {
         console.error('Translation request to local server failed:', error);
-        // 오류를 다시 던져서 상위 호출자(onMessage)가 처리하도록 함
+        // Re-throw the error to be handled by the onMessage listener,
+        // which will create a per-item error response.
         throw error;
     }
 }
