@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>로컬 뷰어</title>
+    <link rel="stylesheet" href="/static/viewer.css">
+</head>
+<body>
+    <div class="viewer-container">
+        <header class="viewer-header">
+            <a href="/" class="back-link">&larr; 서재로 돌아가기</a>
+            <h1 id="book-title">로딩 중...</h1>
+            <div class="viewer-settings">
+                <label title="원본 URL, PID 등 추가 정보 표시">
+                    <input type="checkbox" id="toggle-metadata">
+                    메타데이터 표시
+                </label>
+                <button id="focus-mode-btn" title="집중 모드">✨</button>
+            </div>
+        </header>
+        <main id="content-area" class="content-area"></main>
+    </div>
+    <script src="/static/viewer.js"></script>
+</body>
+</html>
