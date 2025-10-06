@@ -527,34 +527,6 @@ def get_translations_by_folder():
     return grouped_translations
 
 
-@app.get("/paged_translations")
-def get_paged_translations(page: int = 1, per_page: int = 50):
-    """페이지네이션을 지원하는 번역 기록 조회 엔드포인트입니다."""
-    conn = sqlite3.connect(DATABASE_FILE)
-    conn.row_factory = dict_factory
-    cursor = conn.cursor()
-
-    # 전체 항목 수 계산
-    cursor.execute("SELECT COUNT(*) as total_count FROM translations")
-    total_count = cursor.fetchone()['total_count']
-
-    # 페이지네이션을 위한 offset 계산
-    offset = (page - 1) * per_page
-
-    # 해당 페이지의 데이터 조회 (URL과 PID로 정렬)
-    query = "SELECT * FROM translations ORDER BY url, pid LIMIT ? OFFSET ?"
-    translations = cursor.execute(query, (per_page, offset)).fetchall()
-
-    conn.close()
-
-    return {
-        "translations": translations,
-        "total_count": total_count,
-        "page": page,
-        "per_page": per_page
-    }
-
-
 def _fetch_and_update_title_worker(url: str):
     """Internal worker to fetch a single title. Returns True if title is valid and updated."""
     try:
@@ -691,46 +663,6 @@ def cleanup_pids():
     conn.commit()
     conn.close()
 
-    return {"message": f"Successfully deleted {deleted_count} records with 'la' or 'lp' PIDs."}
-
-
-@app.get("/statistics")
-def get_statistics():
-    """데이터베이스의 모든 번역에 대한 종합 통계를 계산하여 반환합니다."""
-    conn = sqlite3.connect(DATABASE_FILE)
-    cursor = conn.cursor()
-
-    # 전체 번역 수
-    cursor.execute("SELECT COUNT(*) FROM translations")
-    total_count = cursor.fetchone()[0]
-
-    # 오늘 번역 수
-    today_timestamp = int(datetime.now().replace(hour=0, minute=0, second=0, microsecond=0).timestamp())
-    cursor.execute("SELECT COUNT(*) FROM translations WHERE timestamp >= ?", (today_timestamp,))
-    today_count = cursor.fetchone()[0]
-
-    # 전체 글자 수
-    cursor.execute("SELECT SUM(LENGTH(original)), SUM(LENGTH(translated)) FROM translations")
-    total_chars_original, total_chars_translated = cursor.fetchone()
-
-    # 폴더별 통계
-    cursor.execute("SELECT folderName, COUNT(*), SUM(LENGTH(original)), SUM(LENGTH(translated)) FROM translations GROUP BY folderName")
-    folder_stats = cursor.fetchall()
-
-    conn.close()
-
-    return {
-        "total_count": total_count,
-        "today_count": today_count,
-        "total_chars_original": total_chars_original or 0,
-        "total_chars_translated": total_chars_translated or 0,
-        "folder_stats": [{
-            "folderName": row[0] or "폴더 없음",
-            "count": row[1],
-            "chars_original": row[2] or 0,
-            "chars_translated": row[3] or 0
-        } for row in folder_stats]
-    }
-
+    return {"message": f"총 {deleted_count}개의 기록을 제외 처리했습니다. (새롭게 제외 목록에 추가된 항목: {excluded_count}개)"}
 
 # uvicorn server:app --reload --port 8001

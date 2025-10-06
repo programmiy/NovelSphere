@@ -1,5 +1,5 @@
 // Global state
-let pageTranslations = [];
+let groupedTranslations = {};
 
 // UI state
 let isLoading = false;
@@ -7,7 +7,7 @@ let currentSearch = '';
 let translationStatuses = {}; // Holds the apply-status for each URL
 
 // DOM element cache
-let historyContainer, emptyState, searchBox, darkModeToggle, fetchAllTitlesBtn, bulkActionsPanel, selectionCount, deleteSelectedBtn, moveSelectedToFolderDropdown, findReplaceModal, closeFindReplaceModalBtn, cancelFindReplaceBtn, executeFindReplaceBtn, openGlobalFindReplaceBtn, paginationContainer;
+let historyContainer, emptyState, searchBox, darkModeToggle, fetchAllTitlesBtn, bulkActionsPanel, selectionCount, deleteSelectedBtn, moveSelectedToFolderDropdown, findReplaceModal, closeFindReplaceModalBtn, cancelFindReplaceBtn, executeFindReplaceBtn, openGlobalFindReplaceBtn;
 
 // Debounce timer
 
@@ -19,12 +19,11 @@ document.addEventListener('DOMContentLoaded', () => {
     cacheDOMElements();
     setupEventListeners();
     loadDarkModePreference();
-    loadAndRenderPage(1); // Load the first page
+    loadAndRenderGrouped();
 });
 
 function cacheDOMElements() {
     historyContainer = document.getElementById('history-container');
-    paginationContainer = document.getElementById('pagination-container');
     emptyState = document.getElementById('emptyState');
     searchBox = document.getElementById('searchBox');
     darkModeToggle = document.getElementById('darkModeToggle');
@@ -41,39 +40,27 @@ function cacheDOMElements() {
     openGlobalFindReplaceBtn = document.getElementById('openGlobalFindReplaceBtn');
 }
 
-async function loadAndRenderPage(page = 1) {
+async function loadAndRenderGrouped() {
     if (isLoading) return;
     isLoading = true;
     document.getElementById('loading-skeleton').style.display = 'block';
     historyContainer.innerHTML = '';
-    paginationContainer.innerHTML = '';
-
-    // Fetch stats in parallel
-    updateStatistics();
 
     try {
-        const res = await fetch(`http://127.0.0.1:8001/paged_translations?page=${page}`);
-        if (!res.ok) throw new Error(`Server error: ${res.statusText}`);
+        // Fetch all data from both server and local storage
+        const [translationsRes, foldersRes, storageData] = await Promise.all([
+            fetch('http://127.0.0.1:8001/translations_by_folder'),
+            fetch('http://127.0.0.1:8001/folders'),
+            chrome.storage.local.get(null)
+        ]);
+
+        if (!translationsRes.ok) throw new Error(`Server error (translations): ${translationsRes.statusText}`);
+        if (!foldersRes.ok) throw new Error(`Server error (folders): ${foldersRes.statusText}`);
         
-        const data = await res.json();
-        pageTranslations = data.translations;
+        groupedTranslations = await translationsRes.json();
+        const allFolders = await foldersRes.json();
 
-        // Manually group by URL on the client side
-        const groupedByUrl = pageTranslations.reduce((acc, t) => {
-            if (!acc[t.url]) {
-                acc[t.url] = [];
-            }
-            acc[t.url].push(t);
-            return acc;
-        }, {});
-
-        // Create a structure compatible with renderGroupedHistory
-        const groupedForRender = {
-            "All Items": groupedByUrl
-        };
-
-        // Fetch statuses from storage
-        const storageData = await chrome.storage.local.get(null);
+        // Populate translation statuses from storage
         translationStatuses = {};
         for (const key in storageData) {
             if (key.startsWith('status-')) {
@@ -81,8 +68,9 @@ async function loadAndRenderPage(page = 1) {
             }
         }
 
-        renderGroupedHistory(groupedForRender);
-        renderPagination(data.total_count, data.page, data.per_page);
+        renderGroupedHistory(); // It will use the global translationStatuses
+        populateFolderDropdowns(allFolders);
+        updateStatistics(groupedTranslations);
         
     } catch (error) {
         console.error("Failed to load data:", error);
@@ -90,57 +78,35 @@ async function loadAndRenderPage(page = 1) {
     } finally {
         isLoading = false;
         document.getElementById('loading-skeleton').style.display = 'none';
-        emptyState.style.display = pageTranslations.length === 0 ? 'block' : 'none';
+        emptyState.style.display = Object.keys(groupedTranslations).length === 0 ? 'block' : 'none';
         updateBulkActionPanel();
     }
 }
 
-async function updateStatistics() {
-    const statsContainer = document.getElementById('stats-container');
-    if (!statsContainer) return;
+function updateStatistics(groupedData) {
+    let totalCount = 0;
+    let todayCount = 0;
+    let totalLength = 0;
+    const twentyFourHoursAgo = Date.now() - (24 * 60 * 60 * 1000);
 
-    try {
-        const res = await fetch('http://127.0.0.1:8001/statistics');
-        if (!res.ok) throw new Error(`Server error: ${res.statusText}`);
-        const stats = await res.json();
-
-        let html = '<div class="stats-grid">';
-
-        // General Stats
-        html += createStatItem('총 번역 수', stats.total_count.toLocaleString());
-        html += createStatItem('오늘 번역 수', stats.today_count.toLocaleString());
-        html += createStatItem('원문 총 글자 수', stats.total_chars_original.toLocaleString());
-        html += createStatItem('번역문 총 글자 수', stats.total_chars_translated.toLocaleString());
-
-        html += '</div>';
-
-        // Folder Stats
-        if (stats.folder_stats && stats.folder_stats.length > 0) {
-            html += '<h4 class="stats-subtitle">폴더별 통계</h4>';
-            html += '<table class="stats-table"><thead><tr><th>폴더명</th><th>번역 수</th><th>원문 글자 수</th><th>번역문 글자 수</th></tr></thead><tbody>';
-            stats.folder_stats.forEach(folder => {
-                html += `<tr>
-                    <td>${escapeHtml(folder.folderName)}</td>
-                    <td>${folder.count.toLocaleString()}</td>
-                    <td>${folder.chars_original.toLocaleString()}</td>
-                    <td>${folder.chars_translated.toLocaleString()}</td>
-                </tr>`;
-            });
-            html += '</tbody></table>';
+    for (const folderName in groupedData) {
+        for (const url in groupedData[folderName]) {
+            for (const item of groupedData[folderName][url]) {
+                totalCount++;
+                totalLength += item.translated ? item.translated.length : 0;
+                
+                if ((item.timestamp * 1000) >= twentyFourHoursAgo) {
+                    todayCount++;
+                }
+            }
         }
-
-        statsContainer.innerHTML = html;
-    } catch (error) {
-        statsContainer.innerHTML = '<p style="color: var(--danger-color);">통계 정보를 불러오는 데 실패했습니다.</p>';
-        console.error("Failed to update statistics:", error);
     }
-}
 
-function createStatItem(label, value) {
-    return `<div class="stat-item">
-        <div class="stat-label">${label}</div>
-        <div class="stat-value">${value}</div>
-    </div>`;
+    const avgLength = totalCount > 0 ? Math.round(totalLength / totalCount) : 0;
+
+    document.getElementById('totalCount').textContent = totalCount;
+    document.getElementById('todayCount').textContent = todayCount;
+    document.getElementById('avgLength').textContent = avgLength;
 }
 
 function populateFolderDropdowns(folders) {
@@ -231,16 +197,18 @@ function renderGroupedHistory() {
                         </div>
                     </div>
                     <div class="list-group-content collapsed">
-                        <div class="history-list">
-                            <div class="history-list-header">
-                                <div style="width: 40px;"></div>
-                                <div style="width: 80px;">PID</div>
-                                <div>원문</div>
-                                <div>번역</div>
-                                <div style="width: 120px;">액션</div>
-                            </div>
-                            <div class="history-list-body">${groupItemsHtml}</div>
-                        </div>
+                        <table class="history-table">
+                            <thead>
+                                <tr>
+                                    <th style="width: 40px;"></th>
+                                    <th style="width: 80px;">PID</th>
+                                    <th>원문</th>
+                                    <th>번역</th>
+                                    <th style="width: 120px;">액션</th>
+                                </tr>
+                            </thead>
+                            <tbody>${groupItemsHtml}</tbody>
+                        </table>
                     </div>
                 </div>
             `;
@@ -266,23 +234,21 @@ function renderItem(t) {
     const date = new Date(t.timestamp * 1000);
     const dateStr = date.toLocaleString('ko-KR', { dateStyle: 'short', timeStyle: 'short' });
     return `
-        <div class="history-item" data-id="${t.id}">
-            <div class="item-cell" style="width: 40px; text-align: center;"><input type="checkbox" class="item-checkbox" data-id="${t.id}"></div>
-            <div class="item-cell" style="width: 80px;">${escapeHtml(t.pid)}</div>
-            <div class="item-cell original-cell"><div class="item-text-block"><div class="text-content original-text">${escapeHtml(t.original)}</div></div></div>
-            <div class="item-cell translated-cell"><div class="item-text-block"><div class="text-content translated-text" contenteditable="true">${escapeHtml(t.translated)}</div></div></div>
-            <div class="item-cell actions-cell" style="width: 120px;">
-                <div class="item-actions-container">
-                    <div class="item-date">${dateStr}</div>
-                    <div class="item-actions">
-                        <button class="btn btn-outline save-item-btn" title="Save">💾</button>
-                        <button class="btn btn-outline copy-btn" title="Copy">📋</button>
-                        <button class="btn btn-outline exclude-btn" title="Exclude">🚫</button>
-                        <button class="btn btn-outline delete-btn" title="Delete">🗑️</button>
-                    </div>
+        <tr class="history-item" data-id="${t.id}">
+            <td style="width: 40px; text-align: center;"><input type="checkbox" class="item-checkbox" data-id="${t.id}"></td>
+            <td>${escapeHtml(t.pid)}</td>
+            <td><div class="item-text-block"><div class="text-content original-text">${escapeHtml(t.original)}</div></div></td>
+            <td><div class="item-text-block"><div class="text-content translated-text" contenteditable="true">${escapeHtml(t.translated)}</div></div></td>
+            <td class="item-actions-container">
+                <div class="item-date">${dateStr}</div>
+                <div class="item-actions">
+                    <button class="btn btn-outline save-item-btn" title="Save">💾</button>
+                    <button class="btn btn-outline copy-btn" title="Copy">📋</button>
+                    <button class="btn btn-outline exclude-btn" title="Exclude">🚫</button>
+                    <button class="btn btn-outline delete-btn" title="Delete">🗑️</button>
                 </div>
-            </div>
-        </div>
+            </td>
+        </tr>
     `;
 }
 
@@ -645,54 +611,4 @@ async function fetchAllTitles() {
     } catch (error) {
         showToast('제목 가져오기 작업을 시작하지 못했습니다.', 'error');
     }
-}
-
-function renderPagination(totalCount, currentPage, perPage) {
-    if (!paginationContainer) return;
-    paginationContainer.innerHTML = '';
-    const totalPages = Math.ceil(totalCount / perPage);
-
-    if (totalPages <= 1) return;
-
-    // Previous Button
-    const prevButton = document.createElement('button');
-    prevButton.textContent = '이전';
-    prevButton.className = 'pagination-btn';
-    if (currentPage === 1) {
-        prevButton.classList.add('disabled');
-    }
-    prevButton.addEventListener('click', () => {
-        if (currentPage > 1) {
-            loadAndRenderPage(currentPage - 1);
-        }
-    });
-    paginationContainer.appendChild(prevButton);
-
-    // Page Number Buttons (simplified for now)
-    for (let i = 1; i <= totalPages; i++) {
-        const pageButton = document.createElement('button');
-        pageButton.textContent = i;
-        pageButton.className = 'pagination-btn';
-        if (i === currentPage) {
-            pageButton.classList.add('active');
-        }
-        pageButton.addEventListener('click', () => {
-            loadAndRenderPage(i);
-        });
-        paginationContainer.appendChild(pageButton);
-    }
-
-    // Next Button
-    const nextButton = document.createElement('button');
-    nextButton.textContent = '다음';
-    nextButton.className = 'pagination-btn';
-    if (currentPage === totalPages) {
-        nextButton.classList.add('disabled');
-    }
-    nextButton.addEventListener('click', () => {
-        if (currentPage < totalPages) {
-            loadAndRenderPage(currentPage + 1);
-        }
-    });
-    paginationContainer.appendChild(nextButton);
 }
