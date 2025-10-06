@@ -29,7 +29,7 @@ def get_api_key():
 
 def init_db():
     """데이터베이스를 초기화하고 테이블을 생성합니다."""
-    conn = sqlite3.connect(DATABASE_FILE)
+    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
     cursor = conn.cursor()
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS translations (
@@ -42,7 +42,8 @@ def init_db():
         folderName TEXT,
         UNIQUE(url, pid, original) -- 중복 방지
     );
-    """)
+    """
+    )
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_url ON translations (url);");
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_folderName ON translations (folderName);");
 
@@ -58,21 +59,24 @@ def init_db():
         original TEXT NOT NULL,
         UNIQUE(url, original)
     );
-    """)
+    """
+    )
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_excluded_url_original ON excluded_sentences (url, original);")
 
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS pinned_books (
         folderName TEXT PRIMARY KEY
     );
-    """)
+    """
+    )
 
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS tags (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL UNIQUE
     );
-    """)
+    """
+    )
 
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS book_tags (
@@ -81,7 +85,8 @@ def init_db():
         PRIMARY KEY (book_folderName, tag_id),
         FOREIGN KEY (tag_id) REFERENCES tags (id) ON DELETE CASCADE
     );
-    """)
+    """
+    )
 
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS book_activity (
@@ -91,7 +96,8 @@ def init_db():
         is_bookmarked INTEGER DEFAULT 0,
         notes TEXT
     );
-    """)
+    """
+    )
     
     # Safely add new columns for summary
     cursor.execute("PRAGMA table_info(book_activity)")
@@ -148,9 +154,15 @@ async def read_admin_ui(request: Request):
     return templates.TemplateResponse("admin.html", {"request": request})
 
 
+@app.get("/library")
+async def read_library_ui_alias(request: Request):
+    """'서재' UI 웹페이지를 렌더링합니다. (루트의 별칭)"""
+    return templates.TemplateResponse("library.html", {"request": request})
+
+
 async def stream_translations(book: Optional[str] = None):
     """DB에서 번역 데이터를 스트리밍합니다. '미분류' 폴더를 지원합니다."""
-    conn = sqlite3.connect(DATABASE_FILE)
+    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
     conn.row_factory = dict_factory
     cursor = conn.cursor()
     
@@ -195,7 +207,7 @@ class TranslateRequest(BaseModel):
 @app.post("/translate")
 def translate_texts(req: TranslateRequest):
     """Gemini API를 호출하여 텍스트를 번역합니다. ID 기반으로 매칭하여 안정성을 높였습니다."""
-    conn = sqlite3.connect(DATABASE_FILE)
+    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
     cursor = conn.cursor()
 
     # URL에 대해 제외된 문장 목록을 가져옵니다.
@@ -224,23 +236,20 @@ def translate_texts(req: TranslateRequest):
     # API에 전달할 JSON 입력을 생성합니다.
     api_input_json = json.dumps([{"id": item.id, "text": item.text} for item in items_to_translate], ensure_ascii=False)
 
-    prompt = (
-        "You are a JSON-only translation API. You will receive a JSON array of objects, each with an 'id' and a 'text' field. " +
-        "Your task is to translate the 'text' from Japanese to Korean. " +
-        "Your response MUST be a single, valid JSON array of objects. Each object in your response must contain the original 'id' and the translated text in a 'translated' field. " +
-        "Preserve the original quotation marks (like 「...」 and 『...』) in the translated text. " +
-        "Do not add any other explanations, formatting, or markdown code fences. Your entire output must be only the JSON data. " +
-        "Example response format: `[{{\"id\": \"p1\", \"translated\": \"번역된 텍스트\"}}, {{'id': 'p1-part1', 'translated': '번역된 텍스트'}}]`\n" +
-        "---START OF JSON DATA---\n" +
-        f"{api_input_json}\n" +
-        "---END OF JSON DATA---"
-    )
+    prompt = f"""You are a JSON-only translation API. You will receive a JSON array of objects, each with an 'id' and a 'text' field.
+Your task is to translate the 'text' from Japanese to Korean.
+Your response MUST be a single, valid JSON array of objects. Each object in your response must contain the original 'id' and the translated text in a 'translated' field.
+Preserve the original quotation marks (like 「...」 and 『...』) in the translated text.
+Do not add any other explanations, formatting, or markdown code fences. Your entire output must be only the JSON data.
+Example response format: `[{{\"id\": \"p1\", \"translated\": \"번역된 텍스트\"}}, {{'id': 'p1-part1', 'translated': '번역된 텍스트'}}]`
+---START OF JSON DATA---
+{api_input_json}
+---END OF JSON DATA---
+"""
 
 
     try:
-        response = requests.post(api_url, json={
-            "contents": [{"parts": [{"text": prompt}]}]}
-        )
+        response = requests.post(api_url, json={"contents": [{"parts": [{"text": prompt}]}]})
         response.raise_for_status()
         data = response.json()
         
@@ -268,18 +277,14 @@ def translate_texts(req: TranslateRequest):
             })
 
         return {"translations": final_translations}
-    except requests.exceptions.RequestException as e:
+    except requests.exceptions.HTTPError as e:
+        if e.response.status_code == 429:
+            raise HTTPException(status_code=429, detail="API 요청 한도 초과")
         raise HTTPException(status_code=500, detail=f"Gemini API 요청 실패: {e}")
+    except requests.exceptions.RequestException as e:
+        raise HTTPException(status_code=500, detail=f"Gemini API 연결 실패: {e}")
     except (KeyError, IndexError, json.JSONDecodeError) as e:
-        # API 응답 처리 실패 시, 각 아이템에 에러 메시지를 포함하여 반환
-        error_response = [
-            {
-                "id": item.id,
-                "original": item.text,
-                "translated": f"번역 실패: API 응답 처리 오류 ({e})"
-            } for item in req.items
-        ]
-        return {"translations": error_response}
+        raise HTTPException(status_code=500, detail=f"API 응답 처리 오류: {e}")
 
 @app.post("/migrate")
 def migrate_data():
@@ -290,7 +295,7 @@ def migrate_data():
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="migration_data.json 파일을 찾을 수 없습니다.")
 
-    conn = sqlite3.connect(DATABASE_FILE)
+    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
     cursor = conn.cursor()
     
     migrated_count = 0
@@ -371,7 +376,7 @@ def dict_factory(cursor, row):
 @app.get("/translations")
 def get_translations(skip: int = 0, limit: int = 100, folder: Optional[str] = None, search: Optional[str] = None, url: Optional[str] = None):
     """데이터베이스에서 번역 기록을 조회합니다."""
-    conn = sqlite3.connect(DATABASE_FILE)
+    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
     conn.text_factory = str
     conn.row_factory = dict_factory
     cursor = conn.cursor()
@@ -426,7 +431,7 @@ def get_translations(skip: int = 0, limit: int = 100, folder: Optional[str] = No
 @app.get("/paged_translations")
 def get_paged_translations(page: int = 1, per_page: int = 20):
     """페이지네이션을 지원하는 번역 기록 조회 엔드포인트입니다."""
-    conn = sqlite3.connect(DATABASE_FILE)
+    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
     conn.text_factory = str
     conn.row_factory = dict_factory
     cursor = conn.cursor()
@@ -460,7 +465,7 @@ class TranslationItem(BaseModel):
 @app.post("/translations/upsert")
 def upsert_translations(items: List[TranslationItem]):
     """번역 기록을 데이터베이스에 추가하거나 업데이트합니다."""
-    conn = sqlite3.connect(DATABASE_FILE)
+    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
     cursor = conn.cursor()
     
     updated_count = 0
@@ -525,7 +530,7 @@ def move_translations(req: MoveRequest):
     placeholders = ', '.join('?' * len(req.ids))
     query = f"UPDATE translations SET folderName = ? WHERE id IN ({placeholders})"
     params = [req.folder_name] + req.ids
-    conn = sqlite3.connect(DATABASE_FILE)
+    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
     cursor = conn.cursor()
     cursor.execute(query, params)
     updated_count = cursor.rowcount
@@ -538,7 +543,7 @@ def delete_translations(req: DeleteRequest):
     """지정된 ID의 번역 기록들을 삭제합니다."""
     placeholders = ', '.join('?' * len(req.ids))
     query = f"DELETE FROM translations WHERE id IN ({placeholders})"
-    conn = sqlite3.connect(DATABASE_FILE)
+    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
     cursor = conn.cursor()
     cursor.execute(query, req.ids)
     deleted_count = cursor.rowcount
@@ -554,7 +559,7 @@ class FindReplaceRequest(BaseModel):
 @app.post("/translations/find_replace")
 def find_replace_all(req: FindReplaceRequest):
     """모든 번역 기록의 번역된 텍스트에 대해 찾아 바꾸기를 수행합니다."""
-    conn = sqlite3.connect(DATABASE_FILE)
+    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
     cursor = conn.cursor()
     query = "UPDATE translations SET translated = REPLACE(translated, ?, ?)"
     cursor.execute(query, (req.find_text, req.replace_text))
@@ -567,7 +572,7 @@ def find_replace_all(req: FindReplaceRequest):
 @app.get("/excluded_sentences")
 def get_excluded_sentences(url: str):
     """특정 URL에 대해 제외된 모든 원문 텍스트 목록을 반환합니다."""
-    conn = sqlite3.connect(DATABASE_FILE)
+    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
     cursor = conn.cursor()
     cursor.execute("SELECT original FROM excluded_sentences WHERE url = ?", (url,))
     excluded_originals = [row[0] for row in cursor.fetchall()]
@@ -581,7 +586,7 @@ class ExcludeRequest(BaseModel):
 @app.post("/translations/exclude")
 def exclude_translations(req: ExcludeRequest):
     """지정된 ID의 번역 기록을 제외 목록에 추가하고 원본을 삭제합니다."""
-    conn = sqlite3.connect(DATABASE_FILE)
+    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
     cursor = conn.cursor()
     excluded_count = 0
     for translation_id in req.ids:
@@ -604,7 +609,7 @@ class UpdateTitleRequest(BaseModel):
 @app.put("/translations/url_title")
 def update_title_for_url(req: UpdateTitleRequest):
     """Updates the title for all entries with a given URL."""
-    conn = sqlite3.connect(DATABASE_FILE)
+    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
     cursor = conn.cursor()
     cursor.execute("UPDATE translations SET title = ? WHERE url = ?", (req.title, req.url))
     updated_count = cursor.rowcount
@@ -616,7 +621,7 @@ def update_title_for_url(req: UpdateTitleRequest):
 @app.get("/translations_by_folder")
 def get_translations_by_folder():
     """데이터베이스에서 모든 번역 기록을 폴더와 URL별로 그룹화하여 조회합니다."""
-    conn = sqlite3.connect(DATABASE_FILE)
+    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
     conn.text_factory = str
     conn.row_factory = dict_factory
     cursor = conn.cursor()
@@ -654,7 +659,7 @@ def _fetch_and_update_title_worker(url: str):
             if not title or any(invalid in title for invalid in invalid_titles):
                 print(f"Skipping invalid title for {url}: {title}")
                 return False
-            conn = sqlite3.connect(DATABASE_FILE)
+            conn = sqlite3.connect(DATABASE_FILE, timeout=15)
             cursor = conn.cursor()
             cursor.execute("UPDATE translations SET title = ? WHERE url = ?", (title, url))
             conn.commit()
@@ -687,7 +692,7 @@ async def fetch_missing_titles_endpoint(background_tasks: BackgroundTasks):
     Fetches titles for all entries in the database that do not have a title yet.
     This is a long-running background task.
     """
-    conn = sqlite3.connect(DATABASE_FILE)
+    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
     cursor = conn.cursor()
     invalid_titles_tuple = ('年齢確認', 'Just a moment...', 'Log in', '')
     placeholders = ', '.join('?' * len(invalid_titles_tuple))
@@ -705,7 +710,7 @@ class PinRequest(BaseModel):
 
 @app.post("/api/books/pin")
 def toggle_pin_book(req: PinRequest):
-    conn = sqlite3.connect(DATABASE_FILE)
+    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
     cursor = conn.cursor()
     cursor.execute("SELECT folderName FROM pinned_books WHERE folderName = ?", (req.folderName,))
     is_pinned = cursor.fetchone()
@@ -726,7 +731,7 @@ def get_folders():
     고정된 폴더, 그 다음 나머지 폴더 순으로 정렬하여 반환합니다.
     '미분류' 폴더도 지원하며, 각 폴더의 태그와 활동 정보를 포함합니다.
     """
-    conn = sqlite3.connect(DATABASE_FILE)
+    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
     conn.row_factory = dict_factory
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM book_activity")
@@ -761,6 +766,26 @@ def get_books():
     return get_folders()
 
 
+@app.get("/api/books/{folder_name}/urls")
+def get_book_urls(folder_name: str):
+    """Gets all URLs and their translation counts for a specific book/folder."""
+    decoded_folder_name = unquote(folder_name)
+    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
+    conn.row_factory = dict_factory
+    cursor = conn.cursor()
+
+    query = "SELECT url, title, COUNT(*) as count FROM translations WHERE folderName = ? GROUP BY url, title ORDER BY MAX(timestamp) DESC"
+    params = [decoded_folder_name]
+    if decoded_folder_name == "미분류":
+        query = "SELECT url, title, COUNT(*) as count FROM translations WHERE folderName IS NULL GROUP BY url, title ORDER BY MAX(timestamp) DESC"
+        params = []
+
+    cursor.execute(query, tuple(params))
+    urls = cursor.fetchall()
+    conn.close()
+    return urls
+
+
 # --- Tag Management APIs ---
 
 class Tag(BaseModel):
@@ -775,7 +800,7 @@ class BookTagUpdate(BaseModel):
 
 @app.get("/api/tags", response_model=List[Tag])
 def get_all_tags():
-    conn = sqlite3.connect(DATABASE_FILE)
+    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
     conn.row_factory = dict_factory
     cursor = conn.cursor()
     tags = cursor.execute("SELECT id, name FROM tags ORDER BY name").fetchall()
@@ -784,7 +809,7 @@ def get_all_tags():
 
 @app.post("/api/tags", response_model=Tag)
 def create_tag(tag: TagCreate):
-    conn = sqlite3.connect(DATABASE_FILE)
+    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
     cursor = conn.cursor()
     try:
         cursor.execute("INSERT INTO tags (name) VALUES (?)", (tag.name,))
@@ -799,7 +824,7 @@ def create_tag(tag: TagCreate):
 @app.put("/api/books/{folder_name}/tags")
 def update_book_tags(folder_name: str, req: BookTagUpdate):
     decoded_folder_name = unquote(folder_name)
-    conn = sqlite3.connect(DATABASE_FILE)
+    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
     cursor = conn.cursor()
     try:
         cursor.execute("DELETE FROM book_tags WHERE book_folderName = ?", (decoded_folder_name,))
@@ -829,7 +854,7 @@ class BookActivityUpdate(BaseModel):
 def update_book_activity(folder_name: str, req: BookActivityUpdate):
     """책의 활동 정보를 업데이트합니다 (UPSERT)."""
     decoded_folder_name = unquote(folder_name)
-    conn = sqlite3.connect(DATABASE_FILE)
+    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
     conn.row_factory = dict_factory
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM book_activity WHERE folderName = ?", (decoded_folder_name,))
@@ -856,6 +881,20 @@ def update_book_activity(folder_name: str, req: BookActivityUpdate):
     conn.close()
     return {"message": f"Activity for '{decoded_folder_name}' updated."}
 
+
+@app.get("/api/books/{folder_name}/activity")
+def get_book_activity(folder_name: str):
+    """Gets the activity data for a specific book."""
+    decoded_folder_name = unquote(folder_name)
+    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
+    conn.row_factory = dict_factory
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM book_activity WHERE folderName = ?", (decoded_folder_name,))
+    activity = cursor.fetchone()
+    conn.close()
+    if not activity:
+        return {"folderName": decoded_folder_name, "last_read_pid": None}
+    return activity
 
 def _crawl_and_update_summary_worker(folder_name: str, url: str):
     """백그라운드에서 실행될 줄거리 크롤링 및 DB 업데이트 작업자 함수"""
@@ -886,7 +925,7 @@ def _crawl_and_update_summary_worker(folder_name: str, url: str):
                 summary = meta_match.group(1).strip()
 
         if summary:
-            conn = sqlite3.connect(DATABASE_FILE)
+            conn = sqlite3.connect(DATABASE_FILE, timeout=15)
             cursor = conn.cursor()
             cursor.execute("""
                 INSERT INTO book_activity (folderName, summary) VALUES (?, ?)
@@ -909,7 +948,7 @@ async def crawl_summary_endpoint(folder_name: str, background_tasks: BackgroundT
     """줄거리 크롤링을 백그라운드 작업으로 시작하는 API 엔드포인트"""
     decoded_folder_name = unquote(folder_name)
 
-    conn = sqlite3.connect(DATABASE_FILE)
+    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
     cursor = conn.cursor()
     cursor.execute("SELECT summary_source_url FROM book_activity WHERE folderName = ?", (decoded_folder_name,))
     result = cursor.fetchone()
@@ -932,7 +971,7 @@ async def read_root(request: Request):
 @app.post("/admin/cleanup_pids")
 def cleanup_pids():
     """'la' 또는 'lp'로 시작하는 PID를 가진 기록을 제외 처리합니다."""
-    conn = sqlite3.connect(DATABASE_FILE)
+    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
     cursor = conn.cursor()
     cursor.execute("SELECT id, url, original FROM translations WHERE lower(pid) GLOB 'la[0-9]*' OR lower(pid) GLOB 'lp[0-9]*'")
     records_to_exclude = cursor.fetchall()

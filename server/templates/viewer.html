@@ -12,15 +12,18 @@
             <a href="/" class="back-link">&larr; 서재로 돌아가기</a>
             <h1 id="book-title">로딩 중...</h1>
             <div class="viewer-settings">
-                <label title="원본 URL, PID 등 추가 정보 표시">
-                    <input type="checkbox" id="toggle-metadata">
-                    메타데이터 표시
-                </label>
-                <button id="focus-mode-btn" title="집중 모드">✨</button>
+                <!-- Settings will be re-added later -->
             </div>
         </header>
         <main id="content-area" class="content-area"></main>
     </div>
     <script src="/static/viewer.js"></script>
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/static/service-worker.js');
+            });
+        }
+    </script>
 </body>
 </html>

@@ -1,4 +1,17 @@
 document.addEventListener('DOMContentLoaded', () => {
+    // --- Show Original Text Toggle ---
+    const showOriginalToggle = document.getElementById('show-original-toggle');
+    if (showOriginalToggle) {
+        // Load and set initial state from localStorage
+        const showOriginal = localStorage.getItem('showOriginalText') === 'true';
+        showOriginalToggle.checked = showOriginal;
+
+        // Save state on change
+        showOriginalToggle.addEventListener('change', (e) => {
+            localStorage.setItem('showOriginalText', e.target.checked);
+        });
+    }
+
     // State
     let allBooks = [];
     let activeTagFilter = null;
@@ -18,6 +31,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const notesSummaryTextarea = document.getElementById('book-notes-summary');
     const summarySourceUrlInput = document.getElementById('book-summary-source-url');
     const crawlSummaryBtn = document.getElementById('crawl-summary-btn');
+    const urlListModal = document.getElementById('url-list-modal');
+    const urlListBody = document.getElementById('url-list-body');
+    const urlListTitle = document.getElementById('url-list-title');
+    const urlListCloseBtn = document.getElementById('url-list-close');
 
     // --- Core Functions ---
     async function fetchBooks() {
@@ -79,6 +96,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 ${bookmarkHtml}
                 <div class="card-header">
                     <span class="pin-btn ${pinned ? 'pinned' : ''}" data-book-name-pin="${name}" title="책 고정/해제">★</span>
+                    <button class="url-menu-btn" data-book-name-menu="${name}">⋮</button>
                     <h2>${name}</h2>
                 </div>
                 <div class="card-body">
@@ -125,7 +143,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // --- Edit Modal Functions ---
+    // --- Modal Functions ---
     async function openEditModal(bookName) {
         currentEditingBook = allBooks.find(b => b.name === bookName);
         if (!currentEditingBook) return;
@@ -268,7 +286,39 @@ document.addEventListener('DOMContentLoaded', () => {
             alert(`오류: ${error.message}`);
         }
     }
-    
+
+    async function openUrlListModal(bookName) {
+        urlListTitle.textContent = `${bookName} - URL 목록`;
+        urlListBody.innerHTML = '<p>로딩 중...</p>';
+        urlListModal.style.display = 'flex';
+
+        try {
+            const response = await fetch(`/api/books/${encodeURIComponent(bookName)}/urls`);
+            if (!response.ok) throw new Error(`Server error`);
+            const urls = await response.json();
+
+            urls.sort(naturalSort);
+
+            if (urls.length > 0) {
+                urlListBody.innerHTML = `
+                    <ul>
+                        ${urls.map(urlInfo => `
+                            <li>
+                                <a href="/viewer?book=${encodeURIComponent(bookName)}&url=${encodeURIComponent(urlInfo.url)}">
+                                    ${escapeHtml(urlInfo.title || urlInfo.url)} (${urlInfo.count})
+                                </a>
+                            </li>
+                        `).join('')}
+                    </ul>
+                `;
+            } else {
+                urlListBody.innerHTML = '<p>이 책에는 URL이 없습니다.</p>';
+            }
+        } catch (e) {
+            urlListBody.innerHTML = '<p style="color: red;">URL 목록을 불러오는데 실패했습니다.</p>';
+        }
+    }
+
     // --- Hover Preview Functions ---
     function showPreview(cardElement) {
         hidePreview();
@@ -317,6 +367,31 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // --- Utility Functions ---
+    function escapeHtml(text) {
+        if (!text) return '';
+        const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' };
+        return text.replace(/[&<>"'']/g, m => map[m]);
+    }
+
+    function naturalSort(a, b) {
+        const re = /(\d+)/g;
+        const aParts = a.url.split(re);
+        const bParts = b.url.split(re);
+        for (let i = 0; i < Math.min(aParts.length, bParts.length); i++) {
+            const aPart = aParts[i];
+            const bPart = bParts[i];
+            if (i % 2) { // It's a number
+                const aNum = parseInt(aPart, 10);
+                const bNum = parseInt(bPart, 10);
+                if (aNum !== bNum) return aNum - bNum;
+            } else { // It's a string
+                if (aPart !== bPart) return aPart.localeCompare(bPart);
+            }
+        }
+        return a.url.length - b.url.length;
+    }
+
     // --- Event Listeners ---
     bookShelf.addEventListener('mouseover', (e) => {
         const card = e.target.closest('.book-card');
@@ -351,11 +426,17 @@ document.addEventListener('DOMContentLoaded', () => {
             e.stopPropagation();
             const bookName = closest('.edit-tags-btn').dataset.bookNameEdit;
             if (bookName) openEditModal(bookName);
+        } else if (closest('.url-menu-btn')) {
+            e.stopPropagation();
+            const bookName = closest('.url-menu-btn').dataset.bookNameMenu;
+            openUrlListModal(bookName);
         } else if (closest('.book-card')) {
             const bookName = closest('.book-card').dataset.bookName;
-            window.location.href = `/viewer?book=${encodeURIComponent(bookName)}`;
+            window.location.href = `/viewer?book=${bookName}`;
         } else if (target.id === 'tag-editor-close' || target.id === 'tag-editor-cancel') {
             requestCloseModal();
+        } else if (target.id === 'url-list-close') {
+            urlListModal.style.display = 'none';
         } else if (target.id === 'tag-editor-save') {
             handleSaveModal();
         }

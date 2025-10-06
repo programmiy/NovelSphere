@@ -1,3 +1,5 @@
+let apiErrorCount = 0;
+const API_ERROR_LIMIT = 3;
 
 // =================================================================================
 // One-time migration script for quote style
@@ -102,6 +104,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         (async () => {
             try {
                 const translations = await handleBatchTranslate(request.items, sender.tab?.url);
+                apiErrorCount = 0; // 성공 시 카운터 리셋
                 try {
                     sendResponse({ translations });
                 } catch (e) {
@@ -112,21 +115,43 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                     }
                 }
             } catch (error) {
-                // 모든 종류의 오류를 로그에 기록
-                saveErrorLog(request.items, error, sender.tab?.url);
+                if (error.status === 429) {
+                    apiErrorCount++;
+                    let userMessage = '';
+                    let shouldStop = false;
 
-                const errorResponse = request.items.map(item => ({
-                    id: item.id,
-                    original: item.text,
-                    translated: `번역 실패: ${error.message}`
-                }));
-                try {
-                    sendResponse({ translations: errorResponse });
-                } catch (e) {
-                    if (e.message.includes(channelClosedMessage)) {
-                        console.log("Failed to send translation error response: Channel was closed by the client.");
+                    if (apiErrorCount >= API_ERROR_LIMIT) {
+                        userMessage = `반복된 API 요청 한도 초과 오류(${apiErrorCount}회)로 번역을 중단합니다. 지금까지 번역된 내용은 저장됩니다.`;
+                        shouldStop = true;
+                        // 일정 시간 후 카운터 리셋 (예: 5분)
+                        setTimeout(() => { apiErrorCount = 0; }, 300000);
                     } else {
-                        console.error("Error sending translation error response:", e);
+                        userMessage = `API 요청 한도에 도달했습니다 (${apiErrorCount}/${API_ERROR_LIMIT}). 잠시 후 재시도합니다.`;
+                    }
+                    
+                    try {
+                        sendResponse({ notification: userMessage, stop: shouldStop });
+                    } catch (e) {
+                         if (e.message.includes(channelClosedMessage)) {
+                            console.log("Failed to send API limit notification: Channel was closed.");
+                        } else {
+                            console.error("Error sending API limit notification:", e);
+                        }
+                    }
+
+                } else {
+                    // 429가 아닌 다른 오류들
+                    saveErrorLog(request.items, error, sender.tab?.url);
+                    const errorMessage = `번역 실패: ${error.message}`;
+                    try {
+                        // 여기서는 번역문에 오류를 넣지 않고, 알림으로만 처리하도록 stop과 함께 보냄
+                        sendResponse({ notification: errorMessage, stop: true });
+                    } catch (e) {
+                        if (e.message.includes(channelClosedMessage)) {
+                            console.log("Failed to send translation error response: Channel was closed by the client.");
+                        } else {
+                            console.error("Error sending translation error response:", e);
+                        }
                     }
                 }
             }
@@ -189,7 +214,13 @@ async function handleBatchTranslate(items, sourceUrl) {
         });
 
         if (!response.ok) {
-            const errorData = await response.json();
+            if (response.status === 429) {
+                const apiLimitError = new Error("API rate limit exceeded.");
+                apiLimitError.status = 429;
+                throw apiLimitError;
+            }
+            // 다른 오류들은 서버에서 온 상세 메시지를 사용
+            const errorData = await response.json().catch(() => ({ detail: `Server error: ${response.status}` }));
             throw new Error(errorData.detail || `Server error: ${response.status}`);
         }
 

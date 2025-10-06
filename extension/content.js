@@ -10,9 +10,7 @@ let isTranslationCancelled = false;
 let translationCache = new Map(); // Cache for original translation objects
 let exclusionSet = new Set(); // Cache for excluded original texts
 
-// Circuit Breaker state
-let consecutiveApiErrors = 0;
-const MAX_CONSECUTIVE_ERRORS = 6;
+// Circuit Breaker logic is now managed by background.js
 
 // =================================================================================
 // Initialization & Event Listeners
@@ -401,12 +399,21 @@ async function translateAllPTags() {
                     throw new Error(chrome.runtime.lastError.message);
                 }
     
-                if (response && response.translations) {
-                    // On success, reset the consecutive error counter
-                    consecutiveApiErrors = 0;
+                // NEW: Handle notification/stop response from background.js
+                if (response && response.notification) {
+                    logToSidebar(response.notification, 'log-error');
+                    if (response.stop) {
+                        isTranslationCancelled = true;
+                        document.getElementById('stop-translation-btn').style.display = 'none';
+                        updateSidebarWithCancelled();
+                    }
+                    // Don't retry for API limit errors, just stop or wait.
+                    return; 
+                }
 
-                    const successes = response.translations.filter(t => t.translated !== null && !t.translated.includes('번역 실패') && !t.translated.includes('API 오류'));
-                    const failures = response.translations.filter(t => t.translated === null || t.translated.includes('번역 실패') || t.translated.includes('API 오류'));
+                if (response && response.translations) {
+                    const successes = response.translations.filter(t => t.translated !== null && !t.translated.includes('번역 실패'));
+                    const failures = response.translations.filter(t => t.translated === null || t.translated.includes('번역 실패'));
     
                     if (successes.length > 0) {
                         updateSidebarWithTranslations(successes);
@@ -423,24 +430,10 @@ async function translateAllPTags() {
                     }
                     return; // Success, exit the retry loop
                 } else {
-                    throw new Error(response?.error || 'Malformed response from background script');
+                    throw new Error('Malformed response from background script');
                 }
             } catch (error) {
                 console.warn(`Chunk translation failed (attempt ${attempt + 1}/${MAX_MESSAGE_RETRIES}):`, error.message);
-
-                // Increment consecutive error counter for server/API errors
-                if (error.message.includes("500") || error.message.includes("API") || error.message.includes("Server error")) {
-                    consecutiveApiErrors++;
-                    logToSidebar(`연속된 서버 오류: ${consecutiveApiErrors}/${MAX_CONSECUTIVE_ERRORS}`, 'log-error');
-
-                    if (consecutiveApiErrors >= MAX_CONSECUTIVE_ERRORS) {
-                        isTranslationCancelled = true;
-                        logToSidebar("6회 이상 연속 서버 오류가 발생하여 번역을 중단합니다.", "log-error");
-                        document.getElementById('stop-translation-btn').style.display = 'none';
-                        updateSidebarWithCancelled();
-                        return; // Stop completely
-                    }
-                }
 
                 if (attempt < MAX_MESSAGE_RETRIES - 1) {
                     const delay = 1000 * Math.pow(2, attempt);
