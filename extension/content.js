@@ -176,8 +176,8 @@ function injectSidebar() {
 
     const style = document.createElement('style');
     style.textContent = `
-        #jp-translator-sidebar { position: fixed; top: 0; right: -450px; width: 450px; height: 100%; background-color: #f8f9fa; border-left: 1px solid #dee2e6; box-shadow: -2px 0 8px rgba(0,0,0,0.1); z-index: 9999; transition: right 0.3s ease-in-out; display: flex; flex-direction: column; }
-        #jp-translator-sidebar.visible { right: 0; }
+        #jp-translator-sidebar { position: fixed; top: 0; right: 0; width: 450px; max-width: 90vw; min-width: 300px; height: 100%; background-color: #f8f9fa; border-left: 1px solid #dee2e6; box-shadow: -2px 0 8px rgba(0,0,0,0.1); z-index: 9999; transform: translateX(100%); transition: transform 0.3s ease-in-out; display: flex; flex-direction: column; }
+        #jp-translator-sidebar.visible { transform: translateX(0); }
         .sidebar-header { display: flex; justify-content: space-between; align-items: center; padding: 10px 15px; background-color: #667eea; color: white; flex-shrink: 0; }
         .sidebar-header h3 { margin: 0; font-size: 16px; }
         .sidebar-controls button { background: none; border: none; color: white; font-size: 20px; cursor: pointer; margin-left: 8px; }
@@ -185,10 +185,11 @@ function injectSidebar() {
         .sidebar-footer { flex-shrink: 0; border-top: 1px solid #dee2e6; background-color: #333; color: #ddd; font-family: monospace; font-size: 11px; max-height: 150px; overflow-y: auto; }
         #sidebar-log-console { padding: 8px; }
         #sidebar-log-console p { margin: 0 0 4px; border-bottom: 1px solid #444; padding-bottom: 4px; }
-        #sidebar-log-console .log-time { color: #888; margin-right: 8px; }
-        #sidebar-log-console .log-error { color: #ff8b8b; }
-        #translation-table { width: 100%; border-collapse: collapse; }
+        #translation-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
         #translation-table th, #translation-table td { padding: 12px 15px; text-align: left; border-bottom: 1px solid #e9ecef; }
+        #translation-table th:nth-child(1) { width: 45%; }
+        #translation-table th:nth-child(2) { width: 45%; }
+        #translation-table th:nth-child(3) { width: 10%; }
         #translation-table th { background-color: #f1f3f5; font-size: 12px; font-weight: 600; }
         #translation-table .original-text { font-size: 13px; color: #495057; word-break: break-all; }
         #translation-table .translated-text { font-size: 13px; color: #212529; outline: none; width: 100%; -webkit-user-modify: read-write-plaintext-only; }
