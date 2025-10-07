@@ -72,11 +72,25 @@ self.addEventListener('fetch', event => {
         return;
     }
 
-    // For API calls to the local server (e.g., /translations, /stream), always go to the network.
-    // This is crucial because this is dynamic data. We will cache the stream data separately.
-    if (url.origin === self.location.origin && (url.pathname.startsWith('/api/') || url.pathname.startsWith('/translations') || url.pathname.startsWith('/stream'))) {
-        // For stream, we will implement a more specific caching in the viewer page itself.
-        // For now, just pass through.
+    // For API calls to the local server
+    if (url.origin === self.location.origin && url.pathname.startsWith('/stream')) {
+        event.respondWith(
+            caches.open(CACHE_NAME).then(cache => {
+                return fetch(event.request).then(networkResponse => {
+                    console.log('Service Worker: Caching stream data for', url.search);
+                    cache.put(event.request, networkResponse.clone());
+                    return networkResponse;
+                }).catch(() => {
+                    console.log('Service Worker: Serving stream data from cache for', url.search);
+                    return cache.match(event.request);
+                });
+            })
+        );
+        return;
+    }
+
+    // For other API calls, always go to the network.
+    if (url.origin === self.location.origin && (url.pathname.startsWith('/api/') || url.pathname.startsWith('/translations'))) {
         event.respondWith(fetch(event.request));
         return;
     }
