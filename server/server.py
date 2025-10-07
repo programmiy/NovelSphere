@@ -219,6 +219,14 @@ def call_gemini_api_with_retry(api_url: str, prompt: str):
     response.raise_for_status()
     return response.json()
 
+def process_repeated_chars(text: str) -> str:
+    """4번 이상 반복되는 문자를 '(반복)'으로 대체합니다."""
+    if not text:
+        return text
+    # (.)는 모든 문자와 일치, \1은 첫 번째 캡처 그룹(즉, 그 문자)을 참조, {3,}는 3번 이상 반복을 의미합니다.
+    # 따라서 총 4번 이상 반복되는 문자를 찾습니다.
+    return re.sub(r'(.)\1{3,}', '(반복)', text)
+
 @app.post("/translate")
 def translate_texts(req: TranslateRequest):
     """Gemini API를 호출하여 텍스트를 번역합니다. ID 기반 매칭과 재시도 로직으로 안정성을 높였습니다."""
@@ -281,6 +289,9 @@ Example response format: `[{{\\\"id\\\": \\\"p1\\\", \\\"translated\\\": \\\"번
             # 번역 결과가 없는 경우 (제외되었거나 API가 누락) 원본 텍스트를 그대로 사용
             if translated_text is None:
                 translated_text = item.text
+            else:
+                # 반복 문자 처리 로직 추가
+                translated_text = process_repeated_chars(translated_text)
 
             final_translations.append({
                 "id": item.id,
