@@ -1,17 +1,4 @@
 document.addEventListener('DOMContentLoaded', () => {
-    // --- Show Original Text Toggle ---
-    const showOriginalToggle = document.getElementById('show-original-toggle');
-    if (showOriginalToggle) {
-        // Load and set initial state from localStorage
-        const showOriginal = localStorage.getItem('showOriginalText') === 'true';
-        showOriginalToggle.checked = showOriginal;
-
-        // Save state on change
-        showOriginalToggle.addEventListener('change', (e) => {
-            localStorage.setItem('showOriginalText', e.target.checked);
-        });
-    }
-
     // State
     let allBooks = [];
     let activeTagFilter = null;
