@@ -2,3 +2,4 @@ fastapi
 uvicorn[standard]
 fastapi-cors
 requests
+tenacity

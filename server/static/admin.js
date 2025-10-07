@@ -503,7 +503,7 @@ async function deleteSelectedTranslations() {
     if (checkedItems.length === 0 || !confirm(`정말로 ${checkedItems.length}개의 번역을 삭제하시겠습니까?`)) return;
     
     const idsToDelete = checkedItems.map(item => parseInt(item.dataset.id));
-    await fetch('http://127.0.0.1:8001/translations/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: [id] }) });
+    await fetch('http://127.0.0.1:8001/translations/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: idsToDelete }) });
     showToast(`${idsToDelete.length}개의 항목이 삭제되었습니다.`, 'success');
     loadAndRenderGrouped();
 }
