@@ -104,8 +104,8 @@ function updateStatistics(groupedData) {
 function populateFolderDropdowns(folders) {
     if (!moveSelectedToFolderDropdown) return;
     moveSelectedToFolderDropdown.innerHTML = '<option value="">폴더로 이동...</option><option value="__no_folder__">폴더 없음</option>';
-    folders.forEach(folderName => {
-        const option = `<option value="${escapeHtml(folderName)}">${escapeHtml(folderName)}</option>`;
+    folders.forEach(folder => {
+        const option = `<option value="${escapeHtml(folder.name)}">${escapeHtml(folder.name)}</option>`;
         moveSelectedToFolderDropdown.insertAdjacentHTML('beforeend', option);
     });
 }
