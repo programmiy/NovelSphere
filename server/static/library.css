@@ -86,14 +86,9 @@ body {
     border-radius: 8px;
     background-color: #fff;
     box-shadow: 0 2px 5px rgba(0,0,0,0.05);
-    cursor: pointer;
-    transition: transform 0.2s, box-shadow 0.2s;
     display: flex;
     flex-direction: column;
-    justify-content: space-between;
     padding: 1rem;
-    height: auto; /* Let content define height */
-    min-height: 180px;
 }
 
 .book-card:hover {
@@ -104,6 +99,7 @@ body {
 .card-header {
     padding-top: 1.5rem; /* Space for bookmark */
     text-align: center;
+    position: relative; /* Needed for absolute positioning of children */
 }
 
 .book-card h2 {
@@ -117,8 +113,8 @@ body {
 
 .pin-btn {
     position: absolute;
-    top: 10px;
-    right: 10px;
+    top: 0;
+    right: 0;
     font-size: 1.5rem;
     cursor: pointer;
     opacity: 0.2;
@@ -155,26 +151,10 @@ body {
     transform: scale(1.1);
 }
 
-.url-menu-btn {
-    position: absolute;
-    top: 10px;
-    left: 10px;
-    background: none;
-    border: none;
-    font-size: 1.5rem;
-    color: #aaa;
-    cursor: pointer;
-    padding: 0;
-    line-height: 1;
-}
-
-.url-menu-btn:hover {
-    color: #333;
-}
-
 .card-body {
     padding: 1rem 0;
     text-align: center;
+    flex-grow: 1; /* Make body grow to push actions to the bottom */
 }
 
 .tags-container {
@@ -199,6 +179,32 @@ body {
     font-size: 0.8rem;
     color: #6c757d;
     margin-top: 0.75rem;
+}
+
+.card-actions {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid #eee;
+}
+
+.url-menu-btn {
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    color: #aaa;
+    cursor: pointer;
+    padding: 0 8px;
+}
+
+.url-menu-btn:hover {
+    color: #333;
+}
+
+.edit-tags-btn {
+    flex-grow: 1;
 }
 
 

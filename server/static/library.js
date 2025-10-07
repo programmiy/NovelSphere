@@ -94,17 +94,18 @@ document.addEventListener('DOMContentLoaded', () => {
             return `
             <div class="book-card" data-book-name="${encodeURIComponent(name)}">
                 ${bookmarkHtml}
-                <div class="card-header">
-                    <span class="pin-btn ${pinned ? 'pinned' : ''}" data-book-name-pin="${name}" title="책 고정/해제">★</span>
-                    <button class="url-menu-btn" data-book-name-menu="${name}">⋮</button>
-                    <h2>${name}</h2>
-                </div>
-                <div class="card-body">
-                    <div class="tags-container">${tagsHtml}</div>
-                    ${lastReadHtml}
-                </div>
-                <button class="edit-tags-btn btn-secondary" data-book-name-edit="${name}">정보 편집</button>
-            </div>
+                                <div class="card-header">
+                                    <span class="pin-btn ${pinned ? 'pinned' : ''}" data-book-name-pin="${name}" title="책 고정/해제">★</span>
+                                    <h2>${name}</h2>
+                                </div>
+                                <div class="card-body">
+                                    <div class="tags-container">${tagsHtml}</div>
+                                    ${lastReadHtml}
+                                </div>
+                                <div class="card-actions">
+                                    <button class="url-menu-btn" data-book-name-menu="${name}">⋮</button>
+                                    <button class="edit-tags-btn btn-secondary" data-book-name-edit="${name}">정보 편집</button>
+                                </div>            </div>
             `;
         }).join('');
     }
