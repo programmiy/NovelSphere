@@ -176,9 +176,9 @@ function renderGroupedHistory() {
                     <div class="list-group-header">
                         <span class="list-group-toggle collapsed material-icons">chevron_right</span>
                         <a href="${url}" target="_blank" class="list-group-title-link"><h3 class="list-group-title">${escapeHtml(title)} (${filteredTranslations.length})</h3></a>
-                        <button class="btn btn-outline btn-icon edit-title-btn" data-url="${url}" title="제목 수정">수정</button>
                         <div class="list-group-actions">
-                            <button class="btn btn-secondary btn-apply ${isApplied ? 'applied' : ''}" data-url="${url}">${isApplied ? '적용 해제' : '웹페이지에 적용'}</button>
+                            <button class="btn btn-outline btn-icon edit-title-btn" data-url="${url}" title="제목 수정">✏️</button>
+                            <button class="btn btn-secondary btn-apply ${isApplied ? 'applied' : ''}" data-url="${url}">🔄️ ${isApplied ? '해제' : '적용'}</button>
                             <label class="btn"><input type="checkbox" class="group-select-all-checkbox"> 전체 선택</label>
                         </div>
                     </div>
@@ -228,10 +228,10 @@ function renderItem(t) {
             <td class="item-actions-container">
                 <div class="item-date">${dateStr}</div>
                 <div class="item-actions">
-                    <button class="btn btn-outline save-item-btn" title="Save">저장</button>
-                    <button class="btn btn-outline copy-btn" title="Copy">복사</button>
-                    <button class="btn btn-outline exclude-btn" title="Exclude">제외</button>
-                    <button class="btn btn-outline delete-btn" title="Delete">삭제</button>
+                    <button class="btn btn-outline save-item-btn" title="Save">💾</button>
+                    <button class="btn btn-outline copy-btn" title="Copy">📋</button>
+                    <button class="btn btn-outline exclude-btn" title="Exclude">❌</button>
+                    <button class="btn btn-outline delete-btn" title="Delete">🗑️</button>
                 </div>
             </td>
         </tr>

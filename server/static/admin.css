@@ -62,7 +62,7 @@
         .form-input, .form-select { padding: 8px 12px; border: 1px solid var(--border-color); border-radius: 6px; font-size: 14px; background-color: var(--card-bg); transition: border-color 0.2s, box-shadow 0.2s; z-index: 10; position: relative; }
         .form-input:focus, .form-select:focus { outline: none; border-color: var(--primary-color); box-shadow: 0 0 0 2px rgba(76, 110, 245, 0.2); }
         .search-box { min-width: 250px; }
-        .btn { padding: 8px 16px; border: 1px solid transparent; border-radius: 6px; font-size: 14px; font-weight: 500; cursor: pointer; transition: all 0.2s; display: inline-flex; align-items: center; gap: 6px; }
+        .btn { padding: 8px 16px; border: 1px solid transparent; border-radius: 6px; font-size: 14px; font-weight: 500; cursor: pointer; transition: all 0.2s; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
         .btn-primary { background-color: var(--primary-color); color: white; }
         .btn-primary:hover { background-color: #364FC7; }
         .btn-danger { background-color: var(--danger-color); color: white; }
@@ -88,14 +88,14 @@
         .btn-apply.applied { background-color: var(--danger-color); color: white; border-color: var(--danger-color); }
         #history-container { display: flex; flex-direction: column; gap: 16px; }
         .list-group { background: var(--card-bg); border-radius: var(--border-radius); border: 1px solid var(--border-color); overflow: hidden; }
-        .list-group-header { display: flex; align-items: center; padding: 12px 16px; cursor: pointer; user-select: none; background-color: var(--group-header-bg); }
+        .list-group-header { display: flex; align-items: center; padding: 12px 16px; cursor: pointer; user-select: none; background-color: var(--group-header-bg); position: relative; }
         .list-group-header:hover { background-color: var(--group-header-hover-bg); }
         .list-group-toggle { margin-right: 12px; transition: transform 0.2s; }
         .list-group-toggle.collapsed { transform: rotate(-90deg); }
-        .list-group-title { font-size: 16px; font-weight: 500; flex-grow: 1; }
-        a.list-group-title-link { text-decoration: none; color: inherit; }
+        .list-group-title { font-size: 16px; font-weight: 500; }
+        a.list-group-title-link { text-decoration: none; color: inherit; flex-grow: 1; padding-right: 280px; }
         a.list-group-title-link:hover { text-decoration: underline; }
-        .list-group-actions { display: flex; align-items: center; gap: 8px; }
+        .list-group-actions { position: absolute; top: 50%; transform: translateY(-50%); right: 16px; display: flex; align-items: center; gap: 8px; }
         .list-group-content { display: block; overflow: hidden; transition: max-height 0.3s ease-out; }
         .list-group-content.collapsed { max-height: 0; }
         .list-group-content:not(.collapsed) { max-height: none; /* 異⑸  媛쇰 ㅼ */ }
@@ -115,6 +115,7 @@
             user-select: none;
             background-color: var(--group-header-bg);
             border-bottom: 1px solid var(--border-color);
+            position: relative;
         }
         .folder-group-header:hover {
             background-color: var(--group-header-hover-bg);
@@ -130,6 +131,7 @@
             font-size: 20px;
             font-weight: 700;
             flex-grow: 1; /* Add this line */
+            padding-right: 140px;
         }
         .folder-group-content {
             padding: 16px;
@@ -156,7 +158,7 @@
         .item-actions-container { text-align: right; }
         .item-date { font-size: 12px; color: var(--text-secondary); margin-bottom: 8px; }
         .item-actions { display: inline-flex; gap: 4px; }
-        .item-actions .btn { padding: 4px; font-size: 12px; width: 28px; height: 28px; border-radius: 50%; }
+        .item-actions .btn { padding: 4px 8px; font-size: 12px; }
         .empty-state { text-align: center; padding: 80px 20px; background: var(--card-bg); border-radius: var(--border-radius); border: 1px solid var(--border-color); }
         .edit-modal { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.6); display: none; justify-content: center; align-items: center; z-index: 1000; }
         .modal-content { background: var(--modal-bg); border-radius: var(--border-radius); padding: 24px; max-width: 700px; width: 90%; box-shadow: var(--modal-shadow); }
