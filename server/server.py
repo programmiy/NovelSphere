@@ -15,6 +15,7 @@ from pydantic import BaseModel
 from typing import List, Optional
 from collections import defaultdict
 from urllib.parse import unquote
+from tenacity import retry, stop_after_attempt, wait_exponential, RetryError
 
 DATABASE_FILE = "translations.db"
 API_KEY_FILE = "api_key.txt"
@@ -204,72 +205,83 @@ class TranslateRequest(BaseModel):
     items: List[TranslationItemInput]
     url: str
 
+
+@retry(
+    wait=wait_exponential(multiplier=1, min=2, max=60),
+    stop=stop_after_attempt(5),
+    reraise=True
+)
+def call_gemini_api_with_retry(api_url: str, prompt: str):
+    """
+    Calls the Gemini API with a retry mechanism.
+    """
+    response = requests.post(api_url, json={"contents": [{"parts": [{"text": prompt}]}]}, timeout=180)
+    response.raise_for_status()
+    return response.json()
+
 @app.post("/translate")
 def translate_texts(req: TranslateRequest):
-    """Gemini API를 호출하여 텍스트를 번역합니다. ID 기반으로 매칭하여 안정성을 높였습니다."""
+    """Gemini API를 호출하여 텍스트를 번역합니다. ID 기반 매칭과 재시도 로직으로 안정성을 높였습니다."""
     conn = sqlite3.connect(DATABASE_FILE, timeout=15)
     cursor = conn.cursor()
 
-    # URL에 대해 제외된 문장 목록을 가져옵니다.
     cursor.execute("SELECT original FROM excluded_sentences WHERE url = ?", (req.url,))
     excluded_originals = {row[0] for row in cursor.fetchall()}
     conn.close()
 
-    # 번역할 아이템과 제외된 아이템을 분리합니다.
     items_to_translate = [item for item in req.items if item.text not in excluded_originals]
 
-    # 번역할 텍스트가 없으면 원본 아이템 구조에 맞춰 반환합니다.
     if not items_to_translate:
-        # 번역할 것이 없으므로, 원본 텍스트를 번역된 텍스트로 사용하여 반환
         return {"translations": [
-            {
-                "id": item.id,
-                "original": item.text,
-                "translated": item.text
-            } for item in req.items
+            {"id": item.id, "original": item.text, "translated": item.text} for item in req.items
         ]}
 
-    # Gemini API 호출
     api_key = get_api_key()
-    api_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
+    api_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
     
-    # API에 전달할 JSON 입력을 생성합니다.
     api_input_json = json.dumps([{"id": item.id, "text": item.text} for item in items_to_translate], ensure_ascii=False)
 
     prompt = f"""You are a JSON-only translation API. You will receive a JSON array of objects, each with an 'id' and a 'text' field.
 Your task is to translate the 'text' from Japanese to Korean.
 Your response MUST be a single, valid JSON array of objects. Each object in your response must contain the original 'id' and the translated text in a 'translated' field.
 Preserve the original quotation marks (like 「...」 and 『...』) in the translated text.
+If the translated text itself contains double quotes ("), you MUST escape them with a backslash (\\"). For example, a value should look like "이것은 \\"인용된\\" 텍스트입니다."
 Do not add any other explanations, formatting, or markdown code fences. Your entire output must be only the JSON data.
-Example response format: `[{{\"id\": \"p1\", \"translated\": \"번역된 텍스트\"}}, {{'id': 'p1-part1', 'translated': '번역된 텍스트'}}]`
+Example response format: `[{{\\\"id\\\": \\\"p1\\\", \\\"translated\\\": \\\"번역된 텍스트\\\"}}, {{'id': 'p1-part1', 'translated': '번역된 텍스트'}}]`
 ---START OF JSON DATA---
 {api_input_json}
 ---END OF JSON DATA---
 """
 
-
     try:
-        response = requests.post(api_url, json={"contents": [{"parts": [{"text": prompt}]}]})
-        response.raise_for_status()
-        data = response.json()
+        data = call_gemini_api_with_retry(api_url, prompt)
         
-        # 응답에서 JSON 텍스트를 추출하고 정리합니다.
         raw_text = data['candidates'][0]['content']['parts'][0]['text']
-        # 마크다운 JSON 블록을 제거하는 로직 추가
-        json_match = re.search(r'```(json)?(.*)```', raw_text, re.DOTALL)
-        if json_match:
-            clean_json_text = json_match.group(2).strip()
+        
+        # 응답에서 순수 JSON 배열을 더 안정적으로 추출합니다.
+        start_index = raw_text.find('[')
+        end_index = raw_text.rfind(']')
+        
+        if start_index != -1 and end_index != -1 and end_index > start_index:
+            clean_json_text = raw_text[start_index:end_index+1]
         else:
-            clean_json_text = raw_text.strip()
+            # Fallback: 만약 '[' 와 ']'를 찾지 못하면 기존 정규식 방식을 시도합니다.
+            json_match = re.search(r'```(json)?(.*)```', raw_text, re.DOTALL)
+            if json_match:
+                clean_json_text = json_match.group(2).strip()
+            else:
+                clean_json_text = raw_text.strip()
 
         translated_items_list = json.loads(clean_json_text)
         translated_map = {item['id']: item['translated'] for item in translated_items_list}
 
-        # 최종 결과 리스트를 원본 순서대로 재구성합니다.
         final_translations = []
         for item in req.items:
-            # 번역된 결과가 있으면 사용하고, 없으면 (제외되었거나 API가 누락한 경우) null을 사용합니다.
-            translated_text = translated_map.get(item.id, None)
+            translated_text = translated_map.get(item.id)
+            # 번역 결과가 없는 경우 (제외되었거나 API가 누락) 원본 텍스트를 그대로 사용
+            if translated_text is None:
+                translated_text = item.text
+
             final_translations.append({
                 "id": item.id,
                 "original": item.text,
@@ -277,14 +289,22 @@ Example response format: `[{{\"id\": \"p1\", \"translated\": \"번역된 텍스�
             })
 
         return {"translations": final_translations}
-    except requests.exceptions.HTTPError as e:
-        if e.response.status_code == 429:
-            raise HTTPException(status_code=429, detail="API 요청 한도 초과")
-        raise HTTPException(status_code=500, detail=f"Gemini API 요청 실패: {e}")
+    
+    except RetryError as e:
+        # 재시도 실패 후 마지막 에러를 기반으로 예외를 발생시킵니다.
+        last_exception = e.last_attempt.exception()
+        if isinstance(last_exception, requests.exceptions.HTTPError):
+            if last_exception.response.status_code == 429:
+                raise HTTPException(status_code=429, detail="API 요청 한도 초과. 잠시 후 다시 시도해주세요.")
+        raise HTTPException(status_code=500, detail=f"Gemini API 요청 실패 (재시도 후): {last_exception}")
+
     except requests.exceptions.RequestException as e:
         raise HTTPException(status_code=500, detail=f"Gemini API 연결 실패: {e}")
     except (KeyError, IndexError, json.JSONDecodeError) as e:
-        raise HTTPException(status_code=500, detail=f"API 응답 처리 오류: {e}")
+        # 원본 API 응답을 포함하여 디버깅을 돕습니다.
+        error_detail = f"API 응답 처리 오류: {e}. Original response: '{data.get('candidates', 'N/A') if 'data' in locals() else 'Response not available'}'"
+        raise HTTPException(status_code=500, detail=error_detail)
+
 
 @app.post("/migrate")
 def migrate_data():
