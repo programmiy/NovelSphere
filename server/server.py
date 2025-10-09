@@ -755,6 +755,29 @@ def toggle_pin_book(req: PinRequest):
     conn.close()
     return {"message": message}
 
+class FolderCreate(BaseModel):
+    folder_name: str
+
+@app.post("/api/folders")
+def create_folder(req: FolderCreate):
+    """새 폴더를 생성합니다. `book_activity` 테이블에 항목을 추가하여 폴더가 존재하도록 합니다."""
+    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
+    cursor = conn.cursor()
+    try:
+        cursor.execute("INSERT INTO book_activity (folderName) VALUES (?)", (req.folder_name,))
+        conn.commit()
+    except sqlite3.IntegrityError:
+        conn.close()
+        # 폴더가 이미 존재하므로 오류가 아님
+        return {"message": f"폴더 ''{req.folder_name}''가 이미 존재합니다."}
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=f"데이터베이스 오류: {e}")
+    finally:
+        conn.close()
+    return {"message": f"폴더 ''{req.folder_name}''가 생성되었습니다."}
+
+
 @app.get("/folders")
 def get_folders():
     """
