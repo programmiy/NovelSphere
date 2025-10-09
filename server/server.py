@@ -163,7 +163,7 @@ async def read_admin_ui(request: Request):
 
 @app.get("/library")
 async def read_library_ui_alias(request: Request):
-    """'서재' UI 웹페이지를 렌더링합니다. (루트의 별칭)"""
+    ""'서재' UI 웹페이지를 렌더링합니다. (루트의 별칭)"""
     return templates.TemplateResponse("library.html", {"request": request})
 
 
@@ -275,9 +275,8 @@ def translate_texts(req: TranslateRequest):
 Your task is to translate the 'text' from Japanese to Korean.
 Your response MUST be a single, valid JSON array of objects. Each object in your response must contain the original 'id' and the translated text in a 'translated' field.
 Preserve the original quotation marks (like 「...」 and 『...』) in the translated text.
-If the translated text itself contains double quotes ("), you MUST escape them with a backslash (\\"). For example, a value should look like "이것은 \\"인용된\\" 텍스트입니다."
 Do not add any other explanations, formatting, or markdown code fences. Your entire output must be only the JSON data.
-Example response format: `[{{\\\"id\\\": \\\"p1\\\", \\\"translated\\\": \\\"번역된 텍스트\\\"}}, {{'id': 'p1-part1', 'translated': '번역된 텍스트'}}]`
+Example response format: `[{{\"id\": \"p1\", \"translated\": \"번역된 텍스트\"}}]`
 ---START OF JSON DATA---
 {api_input_json}
 ---END OF JSON DATA---
@@ -314,8 +313,12 @@ Example response format: `[{{\\\"id\\\": \\\"p1\\\", \\\"translated\\\": \\\"번
             else:
                 clean_json_text = raw_text.strip()
 
-        translated_items_list = json.loads(clean_json_text)
-        translated_map = {item['id']: item['translated'] for item in translated_items_list}
+        translated_map = {}
+        # Regex to robustly find id and translated pairs, ignoring malformed objects
+        pattern = re.compile(r'{\s*"id"\s*:\s*"(?P<id>(?:\\"|[^\"])*)"\s*,\s*"translated"\s*:\s*"(?P<translated>(?:\\"|[^\"])*)"\s*}\s*')
+        for match in pattern.finditer(clean_json_text):
+            item = match.groupdict()
+            translated_map[item['id']] = item['translated']
 
         final_translations = []
         for item in req.items:
