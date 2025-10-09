@@ -115,45 +115,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                     }
                 }
             } catch (error) {
-                if (error.status === 429) {
-                    apiErrorCount++;
-                    let userMessage = '';
-                    let shouldStop = false;
-
-                    if (apiErrorCount >= API_ERROR_LIMIT) {
-                        userMessage = `반복된 API 요청 한도 초과 오류(${apiErrorCount}회)로 번역을 중단합니다. 지금까지 번역된 내용은 저장됩니다.`;
-                        shouldStop = true;
-                        // 일정 시간 후 카운터 리셋 (예: 5분)
-                        setTimeout(() => { apiErrorCount = 0; }, 300000);
-                    } else {
-                        userMessage = `API 요청 한도에 도달했습니다 (${apiErrorCount}/${API_ERROR_LIMIT}). 잠시 후 재시도합니다.`;
-                    }
-                    
-                    try {
-                        sendResponse({ notification: userMessage, stop: shouldStop });
-                    } catch (e) {
-                         if (e.message.includes(channelClosedMessage)) {
-                            console.log("Failed to send API limit notification: Channel was closed.");
-                        } else {
-                            console.error("Error sending API limit notification:", e);
-                        }
-                    }
-
-                } else {
-                    // 429가 아닌 다른 오류들
-                    saveErrorLog(request.items, error, sender.tab?.url);
-                    const errorMessage = `번역 실패: ${error.message}`;
-                    try {
-                        // 여기서는 번역문에 오류를 넣지 않고, 알림으로만 처리하도록 stop과 함께 보냄
-                        sendResponse({ notification: errorMessage, stop: true });
-                    } catch (e) {
-                        if (e.message.includes(channelClosedMessage)) {
-                            console.log("Failed to send translation error response: Channel was closed by the client.");
-                        } else {
-                            console.error("Error sending translation error response:", e);
-                        }
-                    }
-                }
+                console.error("Error in background script. Re-throwing to trigger content script's error handler:", error.message);
+                // Re-throwing the error should cause chrome.runtime.lastError to be set in the content script.
+                throw error;
             }
         })();
         return true; // 비동기 응답을 위해 true 반환

@@ -6,6 +6,7 @@ import os
 import asyncio
 import re
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Request
+from contextlib import asynccontextmanager 
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -19,7 +20,9 @@ from tenacity import retry, stop_after_attempt, wait_exponential, RetryError
 
 DATABASE_FILE = "translations.db"
 API_KEY_FILE = "api_key.txt"
-
+script_dir = os.path.dirname(os.path.abspath(__file__))
+static_dir = os.path.join(script_dir, "server/static")
+templates_dir = os.path.join(script_dir, "server/templates")
 def get_api_key():
     """api_key.txt 파일에서 API 키를 읽어옵니다."""
     try:
@@ -117,16 +120,19 @@ static_dir = os.path.join(script_dir, "static")
 templates_dir = os.path.join(script_dir, "templates")
 
 # FastAPI 앱 생성
-app = FastAPI()
+# app = FastAPI()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # 서버 시작 시 실행
+    init_db()
+    yield
+    # 서버 종료 시 실행 (필요 시 코드 추가)
 
+app = FastAPI(lifespan=lifespan)
 # 정적 파일 및 템플릿 설정
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
 templates = Jinja2Templates(directory=templates_dir)
 
-@app.on_event("startup")
-async def startup_event():
-    """서버 시작 시 데이터베이스를 초기화합니다."""
-    init_db()
 
 # CORS 미들웨어 설정
 app.add_middleware(
@@ -215,7 +221,16 @@ def call_gemini_api_with_retry(api_url: str, prompt: str):
     """
     Calls the Gemini API with a retry mechanism.
     """
-    response = requests.post(api_url, json={"contents": [{"parts": [{"text": prompt}]}]}, timeout=180)
+    payload = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "safetySettings": [
+            {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
+            {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
+            {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
+            {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"}
+        ]
+    }
+    response = requests.post(api_url, json=payload, timeout=180)
     response.raise_for_status()
     return response.json()
 
@@ -249,13 +264,19 @@ def translate_texts(req: TranslateRequest):
     
     api_input_json = json.dumps([{"id": item.id, "text": item.text} for item in items_to_translate], ensure_ascii=False)
 
+    # 참고: 아래의 큰따옴표 이스케이프 관련 지시사항은 Gemini의 안전 필터에 의해
+    # 'prohibited' 응답을 유발하는 것으로 확인되어 제거되었습니다.
+    # 향후 유사 기능 구현 시 참고용으로 주석 처리하여 남겨둡니다.
+    #
+    # If the translated text itself contains double quotes ("), you MUST escape them
+    # with a backslash (\). For example, a value should look like
+    # "이것은 \"인용된\" 텍스트입니다."
     prompt = f"""You are a JSON-only translation API. You will receive a JSON array of objects, each with an 'id' and a 'text' field.
 Your task is to translate the 'text' from Japanese to Korean.
 Your response MUST be a single, valid JSON array of objects. Each object in your response must contain the original 'id' and the translated text in a 'translated' field.
 Preserve the original quotation marks (like 「...」 and 『...』) in the translated text.
-If the translated text itself contains double quotes ("), you MUST escape them with a backslash (\\"). For example, a value should look like "이것은 \\"인용된\\" 텍스트입니다."
 Do not add any other explanations, formatting, or markdown code fences. Your entire output must be only the JSON data.
-Example response format: `[{{\\\"id\\\": \\\"p1\\\", \\\"translated\\\": \\\"번역된 텍스트\\\"}}, {{'id': 'p1-part1', 'translated': '번역된 텍스트'}}]`
+Example response format: `[{{\"id\": \"p1\", \"translated\": \"번역된 텍스트\"}}]`
 ---START OF JSON DATA---
 {api_input_json}
 ---END OF JSON DATA---
@@ -263,8 +284,20 @@ Example response format: `[{{\\\"id\\\": \\\"p1\\\", \\\"translated\\\": \\\"번
 
     try:
         data = call_gemini_api_with_retry(api_url, prompt)
-        
-        raw_text = data['candidates'][0]['content']['parts'][0]['text']
+
+        # API 응답 구조를 안전하게 파싱합니다.
+        raw_text = None
+        if data.get('candidates') and isinstance(data['candidates'], list) and data['candidates']:
+            candidate = data['candidates'][0]
+            if candidate.get('content') and candidate['content'].get('parts') and isinstance(candidate['content']['parts'], list) and candidate['content']['parts']:
+                raw_text = candidate['content']['parts'][0].get('text')
+
+        if raw_text is None:
+            feedback = data.get('promptFeedback')
+            error_detail = f"API 응답에서 번역된 텍스트를 추출할 수 없습니다. 응답: {data}"
+            if feedback:
+                error_detail += f" | 피드백: {feedback}"
+            raise HTTPException(status_code=500, detail=error_detail)
         
         # 응답에서 순수 JSON 배열을 더 안정적으로 추출합니다.
         start_index = raw_text.find('[')
@@ -275,16 +308,19 @@ Example response format: `[{{\\\"id\\\": \\\"p1\\\", \\\"translated\\\": \\\"번
         else:
             # Fallback: 만약 '[' 와 ']'를 찾지 못하면 기존 정규식 방식을 시도합니다.
             json_match = re.search(r'```(json)?(.*)```', raw_text, re.DOTALL)
-            if json_match:
-                clean_json_text = json_match.group(2).strip()
-            else:
-                clean_json_text = raw_text.strip()
-
-        translated_items_list = json.loads(clean_json_text)
-        translated_map = {item['id']: item['translated'] for item in translated_items_list}
-
-        final_translations = []
-        for item in req.items:
+                    if json_match:
+                        clean_json_text = json_match.group(2).strip()
+                    else:
+                        clean_json_text = raw_text.strip()
+            
+                    translated_map = {}
+                    # Regex to robustly find id and translated pairs, ignoring malformed objects
+                    pattern = re.compile(r'{\s*"id"\s*:\s*"(?P<id>(?:\\"|[^\"])*)"\s*,\s*"translated"\s*:\s*"(?P<translated>(?:\\"|[^\"])*)"\s*\}')
+                    for match in pattern.finditer(clean_json_text):
+                        item = match.groupdict()
+                        translated_map[item['id']] = item['translated']
+            
+                    final_translations = []        for item in req.items:
             translated_text = translated_map.get(item.id)
             # 번역 결과가 없는 경우 (제외되었거나 API가 누락) 원본 텍스트를 그대로 사용
             if translated_text is None:
