@@ -14,4 +14,31 @@
    * 두 파일을 **하나의 커밋**으로 묶습니다. 커밋 메시지는 문서 파일명과 유사하게 작성합니다.
 6. 원격 저장소 는 `main`만 존재 , `origin`사용하지 않음
 7. **마무리:** (git push main extra (로컬 extra를 원격 main에 푸시)
-8. 기능 작동 확인후 수행: 1. git checkout main (main 브랜치로 전환)  2. git merge extra (extra를 main에 병합)  3. git push main main (main을 원격 main에 푸시)  4. git checkout  extra (extra 브랜치로 다시 전환))
+## 8. 권장 병합 워크플로우 (Rebase 사용)
+
+`extra` 브랜치의 작업이 완료되면, 아래의 `rebase` 방식을 따라 충돌을 최소화하며 `main`에 병합합니다.
+
+1.  **`main` 브랜치 최신화**
+    ```shell
+    git checkout main
+    git pull main main
+    ```
+
+2.  **`extra` 브랜치 재배치 (Rebase)**
+    ```shell
+    git checkout extra
+    git rebase main
+    ```
+    *(이 과정에서 충돌이 발생하면, `extra` 브랜치에서 먼저 해결합니다.)*
+
+3.  **`main` 브랜치에 병합 및 푸시**
+    ```shell
+    git checkout main
+    git merge extra
+    git push main main
+    ```
+
+4.  **작업 브랜치로 복귀**
+    ```shell
+    git checkout extra
+    ```
