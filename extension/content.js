@@ -185,6 +185,8 @@ function injectSidebar() {
         .sidebar-footer { flex-shrink: 0; border-top: 1px solid #dee2e6; background-color: #333; color: #ddd; font-family: monospace; font-size: 11px; max-height: 150px; overflow-y: auto; }
         #sidebar-log-console { padding: 8px; }
         #sidebar-log-console p { margin: 0 0 4px; border-bottom: 1px solid #444; padding-bottom: 4px; }
+        .log-time { margin-right: 8px; }
+        .log-error { color: #ff6b6b !important; }
         #translation-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
         #translation-table th, #translation-table td { padding: 12px 15px; text-align: left; border-bottom: 1px solid #e9ecef; }
         #translation-table th:nth-child(1) { width: 45%; }
@@ -538,10 +540,9 @@ async function translateAllPTags() {
         if (isTranslationCancelled) break;
         logToSidebar(`긴 문장 번역 중 (${index + 1}/${longTexts.length})...`);
         await translateChunk([item], 1);
-        if (index < longTexts.length - 1) {
-            await new Promise(resolve => setTimeout(resolve, 1000)); 
-        }
-    }
+                    if (index < longTexts.length - 1) {
+                        await new Promise(resolve => setTimeout(resolve, 2000)); 
+                    }    }
 
     // Then, process normal texts in batches
     if (!isTranslationCancelled && normalTexts.length > 0) {
@@ -556,9 +557,9 @@ async function translateAllPTags() {
         const chunks = chunkArray(normalTexts, initialChunkSize);
         let progress = 0;
 
-        let dynamicDelay = chunks.length * 100;
-        dynamicDelay = Math.max(500, dynamicDelay);
-        dynamicDelay = Math.min(5000, dynamicDelay);
+        let dynamicDelay = chunks.length * 200; // Increased multiplier
+        dynamicDelay = Math.max(1000, dynamicDelay); // Increased min
+        dynamicDelay = Math.min(10000, dynamicDelay); // Increased max
         logToSidebar(`동적 딜레이를 ${dynamicDelay}ms로 설정합니다.`);
 
         for (const [index, chunk] of chunks.entries()) {

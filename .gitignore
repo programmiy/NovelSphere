@@ -5,6 +5,7 @@ server/translations.db
 todo.md
 
 # Python cache
-.venv/
+
 __pycache__/
+
 *.pyc
