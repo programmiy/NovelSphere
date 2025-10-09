@@ -163,7 +163,7 @@ async def read_admin_ui(request: Request):
 
 @app.get("/library")
 async def read_library_ui_alias(request: Request):
-    ""'서재' UI 웹페이지를 렌더링합니다. (루트의 별칭)"""
+    """'서재' UI 웹페이지를 렌더링합니다. (루트의 별칭)"""
     return templates.TemplateResponse("library.html", {"request": request})
 
 
