@@ -1,3 +1,5 @@
+let apiErrorCount = 0;
+const API_ERROR_LIMIT = 3;
 
 // =================================================================================
 // One-time migration script for quote style
@@ -102,6 +104,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         (async () => {
             try {
                 const translations = await handleBatchTranslate(request.items, sender.tab?.url);
+                apiErrorCount = 0; // 성공 시 카운터 리셋
                 try {
                     sendResponse({ translations });
                 } catch (e) {
@@ -112,23 +115,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                     }
                 }
             } catch (error) {
-                // 모든 종류의 오류를 로그에 기록
-                saveErrorLog(request.items, error, sender.tab?.url);
-
-                const errorResponse = request.items.map(item => ({
-                    id: item.id,
-                    original: item.text,
-                    translated: `번역 실패: ${error.message}`
-                }));
-                try {
-                    sendResponse({ translations: errorResponse });
-                } catch (e) {
-                    if (e.message.includes(channelClosedMessage)) {
-                        console.log("Failed to send translation error response: Channel was closed by the client.");
-                    } else {
-                        console.error("Error sending translation error response:", e);
-                    }
-                }
+                console.error("Error in background script. Re-throwing to trigger content script's error handler:", error.message);
+                // Re-throwing the error should cause chrome.runtime.lastError to be set in the content script.
+                throw error;
             }
         })();
         return true; // 비동기 응답을 위해 true 반환
@@ -189,7 +178,13 @@ async function handleBatchTranslate(items, sourceUrl) {
         });
 
         if (!response.ok) {
-            const errorData = await response.json();
+            if (response.status === 429) {
+                const apiLimitError = new Error("API rate limit exceeded.");
+                apiLimitError.status = 429;
+                throw apiLimitError;
+            }
+            // 다른 오류들은 서버에서 온 상세 메시지를 사용
+            const errorData = await response.json().catch(() => ({ detail: `Server error: ${response.status}` }));
             throw new Error(errorData.detail || `Server error: ${response.status}`);
         }
 

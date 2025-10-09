@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>로컬 뷰어</title>
+    <link rel="stylesheet" href="/static/viewer.css?v=1.1">
+</head>
+<body>
+    <div class="viewer-container">
+        <header class="viewer-header">
+            <a href="/" class="back-link">&larr; 서재로 돌아가기</a>
+            <h1 id="book-title">로딩 중...</h1>
+            <div class="viewer-settings">
+                <button id="focus-mode-btn" class="btn">집중 모드</button>
+                <button id="view-original-btn" class="btn">원문 보기</button>
+            </div>
+        </header>
+        <main id="content-area" class="content-area"></main>
+    </div>
+    <script src="/static/viewer.js"></script>
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/static/service-worker.js');
+            });
+        }
+    </script>
+</body>
+</html>

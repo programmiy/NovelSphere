@@ -10,9 +10,7 @@ let isTranslationCancelled = false;
 let translationCache = new Map(); // Cache for original translation objects
 let exclusionSet = new Set(); // Cache for excluded original texts
 
-// Circuit Breaker state
-let consecutiveApiErrors = 0;
-const MAX_CONSECUTIVE_ERRORS = 6;
+// Circuit Breaker logic is now managed by background.js
 
 // =================================================================================
 // Initialization & Event Listeners
@@ -178,8 +176,8 @@ function injectSidebar() {
 
     const style = document.createElement('style');
     style.textContent = `
-        #jp-translator-sidebar { position: fixed; top: 0; right: -450px; width: 450px; height: 100%; background-color: #f8f9fa; border-left: 1px solid #dee2e6; box-shadow: -2px 0 8px rgba(0,0,0,0.1); z-index: 9999; transition: right 0.3s ease-in-out; display: flex; flex-direction: column; }
-        #jp-translator-sidebar.visible { right: 0; }
+        #jp-translator-sidebar { position: fixed; top: 0; right: 0; width: 450px; max-width: 90vw; min-width: 300px; height: 100%; background-color: #f8f9fa; border-left: 1px solid #dee2e6; box-shadow: -2px 0 8px rgba(0,0,0,0.1); z-index: 9999; transform: translateX(100%); transition: transform 0.3s ease-in-out; display: flex; flex-direction: column; }
+        #jp-translator-sidebar.visible { transform: translateX(0); }
         .sidebar-header { display: flex; justify-content: space-between; align-items: center; padding: 10px 15px; background-color: #667eea; color: white; flex-shrink: 0; }
         .sidebar-header h3 { margin: 0; font-size: 16px; }
         .sidebar-controls button { background: none; border: none; color: white; font-size: 20px; cursor: pointer; margin-left: 8px; }
@@ -187,10 +185,13 @@ function injectSidebar() {
         .sidebar-footer { flex-shrink: 0; border-top: 1px solid #dee2e6; background-color: #333; color: #ddd; font-family: monospace; font-size: 11px; max-height: 150px; overflow-y: auto; }
         #sidebar-log-console { padding: 8px; }
         #sidebar-log-console p { margin: 0 0 4px; border-bottom: 1px solid #444; padding-bottom: 4px; }
-        #sidebar-log-console .log-time { color: #888; margin-right: 8px; }
-        #sidebar-log-console .log-error { color: #ff8b8b; }
-        #translation-table { width: 100%; border-collapse: collapse; }
+        .log-time { margin-right: 8px; }
+        .log-error { color: #ff6b6b !important; }
+        #translation-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
         #translation-table th, #translation-table td { padding: 12px 15px; text-align: left; border-bottom: 1px solid #e9ecef; }
+        #translation-table th:nth-child(1) { width: 45%; }
+        #translation-table th:nth-child(2) { width: 45%; }
+        #translation-table th:nth-child(3) { width: 10%; }
         #translation-table th { background-color: #f1f3f5; font-size: 12px; font-weight: 600; }
         #translation-table .original-text { font-size: 13px; color: #495057; word-break: break-all; }
         #translation-table .translated-text { font-size: 13px; color: #212529; outline: none; width: 100%; -webkit-user-modify: read-write-plaintext-only; }
@@ -401,12 +402,21 @@ async function translateAllPTags() {
                     throw new Error(chrome.runtime.lastError.message);
                 }
     
-                if (response && response.translations) {
-                    // On success, reset the consecutive error counter
-                    consecutiveApiErrors = 0;
+                // NEW: Handle notification/stop response from background.js
+                if (response && response.notification) {
+                    logToSidebar(response.notification, 'log-error');
+                    if (response.stop) {
+                        isTranslationCancelled = true;
+                        document.getElementById('stop-translation-btn').style.display = 'none';
+                        updateSidebarWithCancelled();
+                    }
+                    // Don't retry for API limit errors, just stop or wait.
+                    return; 
+                }
 
-                    const successes = response.translations.filter(t => t.translated !== null && !t.translated.includes('번역 실패') && !t.translated.includes('API 오류'));
-                    const failures = response.translations.filter(t => t.translated === null || t.translated.includes('번역 실패') || t.translated.includes('API 오류'));
+                if (response && response.translations) {
+                    const successes = response.translations.filter(t => t.translated !== null && !t.translated.includes('번역 실패'));
+                    const failures = response.translations.filter(t => t.translated === null || t.translated.includes('번역 실패'));
     
                     if (successes.length > 0) {
                         updateSidebarWithTranslations(successes);
@@ -423,24 +433,10 @@ async function translateAllPTags() {
                     }
                     return; // Success, exit the retry loop
                 } else {
-                    throw new Error(response?.error || 'Malformed response from background script');
+                    throw new Error('Malformed response from background script');
                 }
             } catch (error) {
                 console.warn(`Chunk translation failed (attempt ${attempt + 1}/${MAX_MESSAGE_RETRIES}):`, error.message);
-
-                // Increment consecutive error counter for server/API errors
-                if (error.message.includes("500") || error.message.includes("API") || error.message.includes("Server error")) {
-                    consecutiveApiErrors++;
-                    logToSidebar(`연속된 서버 오류: ${consecutiveApiErrors}/${MAX_CONSECUTIVE_ERRORS}`, 'log-error');
-
-                    if (consecutiveApiErrors >= MAX_CONSECUTIVE_ERRORS) {
-                        isTranslationCancelled = true;
-                        logToSidebar("6회 이상 연속 서버 오류가 발생하여 번역을 중단합니다.", "log-error");
-                        document.getElementById('stop-translation-btn').style.display = 'none';
-                        updateSidebarWithCancelled();
-                        return; // Stop completely
-                    }
-                }
 
                 if (attempt < MAX_MESSAGE_RETRIES - 1) {
                     const delay = 1000 * Math.pow(2, attempt);
@@ -544,10 +540,9 @@ async function translateAllPTags() {
         if (isTranslationCancelled) break;
         logToSidebar(`긴 문장 번역 중 (${index + 1}/${longTexts.length})...`);
         await translateChunk([item], 1);
-        if (index < longTexts.length - 1) {
-            await new Promise(resolve => setTimeout(resolve, 1000)); 
-        }
-    }
+                    if (index < longTexts.length - 1) {
+                        await new Promise(resolve => setTimeout(resolve, 2000)); 
+                    }    }
 
     // Then, process normal texts in batches
     if (!isTranslationCancelled && normalTexts.length > 0) {
@@ -562,9 +557,9 @@ async function translateAllPTags() {
         const chunks = chunkArray(normalTexts, initialChunkSize);
         let progress = 0;
 
-        let dynamicDelay = chunks.length * 100;
-        dynamicDelay = Math.max(500, dynamicDelay);
-        dynamicDelay = Math.min(5000, dynamicDelay);
+        let dynamicDelay = chunks.length * 200; // Increased multiplier
+        dynamicDelay = Math.max(1000, dynamicDelay); // Increased min
+        dynamicDelay = Math.min(10000, dynamicDelay); // Increased max
         logToSidebar(`동적 딜레이를 ${dynamicDelay}ms로 설정합니다.`);
 
         for (const [index, chunk] of chunks.entries()) {

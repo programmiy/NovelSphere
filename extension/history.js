@@ -38,6 +38,8 @@ function cacheDOMElements() {
     cancelFindReplaceBtn = document.getElementById('cancelFindReplace');
     executeFindReplaceBtn = document.getElementById('executeFindReplace');
     openGlobalFindReplaceBtn = document.getElementById('openGlobalFindReplaceBtn');
+    newFolderNameInput = document.getElementById('newFolderNameInput');
+    createFolderButton = document.getElementById('createFolderButton');
 }
 
 async function loadAndRenderGrouped() {
@@ -274,6 +276,35 @@ function setupEventListeners() {
     closeFindReplaceModalBtn.addEventListener('click', closeFindReplaceModal);
     cancelFindReplaceBtn.addEventListener('click', closeFindReplaceModal);
     executeFindReplaceBtn.addEventListener('click', executeGlobalFindReplace);
+    createFolderButton.addEventListener('click', createFolder);
+}
+
+async function createFolder() {
+    const newFolderName = newFolderNameInput.value.trim();
+    if (!newFolderName) {
+        showToast('폴더 이름을 입력하세요.', 'error');
+        return;
+    }
+
+    try {
+        const response = await fetch('http://127.0.0.1:8001/api/folders', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ folder_name: newFolderName })
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.detail || 'Failed to create folder');
+        }
+
+        const result = await response.json();
+        showToast(result.message, 'success');
+        newFolderNameInput.value = '';
+        loadAndRenderPage(); // Reload to show the new folder
+    } catch (error) {
+        showToast(`폴더 생성 실패: ${error.message}`, 'error');
+    }
 }
 
 function openFindReplaceModal() {

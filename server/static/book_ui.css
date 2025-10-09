@@ -1,0 +1,102 @@
+@import url('https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@400;600&display=swap');
+
+body {
+    background-color: #FDFCF7; /* Soft, paper-like off-white */
+    font-family: 'Noto Serif KR', serif;
+    color: #333;
+    margin: 0;
+    padding: 2rem;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+}
+
+.book-container {
+    width: 100%;
+    max-width: 800px;
+    background-color: #fff;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    border-radius: 4px;
+    border: 1px solid #EAEAEA;
+}
+
+.book-header {
+    padding: 1.5rem 2rem;
+    border-bottom: 1px solid #EAEAEA;
+    text-align: center;
+}
+
+.book-header h1 {
+    margin: 0;
+    font-weight: 600;
+    font-size: 1.75rem;
+}
+
+.translation-list {
+    padding: 1rem 0;
+}
+
+.translation-item {
+    padding: 1.5rem 2rem;
+    border-bottom: 1px dashed #EAEAEA;
+}
+
+.translation-item:last-child {
+    border-bottom: none;
+}
+
+.translation-item .original-text {
+    font-size: 0.9rem;
+    color: #666;
+    margin-bottom: 0.75rem;
+    font-style: italic;
+}
+
+.translation-item .translated-text {
+    font-size: 1.1rem;
+    line-height: 1.6;
+}
+
+.pagination-container {
+    display: flex;
+    justify-content: center;
+    padding: 2rem;
+    border-top: 1px solid #EAEAEA;
+}
+
+.pagination {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    gap: 0.5rem;
+}
+
+.pagination li a,
+.pagination li span {
+    display: block;
+    padding: 0.5rem 1rem;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    text-decoration: none;
+    color: #555;
+    background-color: #fff;
+    transition: background-color 0.2s, color 0.2s;
+}
+
+.pagination li a:hover {
+    background-color: #f0f0f0;
+}
+
+.pagination li.active span {
+    background-color: #667eea;
+    color: #fff;
+    border-color: #667eea;
+}
+
+.pagination li.disabled span {
+    color: #aaa;
+    background-color: #f8f8f8;
+    pointer-events: none;
+}
