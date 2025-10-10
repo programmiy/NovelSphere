@@ -438,6 +438,17 @@ async function translateAllPTags() {
             } catch (error) {
                 console.warn(`Chunk translation failed (attempt ${attempt + 1}/${MAX_MESSAGE_RETRIES}):`, error.message);
 
+                if (error && error.message && error.message.includes('PROHIBITED_CONTENT')) {
+                    logToSidebar(`번역 불가 (PROHIBITED_CONTENT): ${items.length}개 항목을 건너뜁니다.`, 'log-error');
+                    const errorResults = items.map(item => ({ 
+                        id: item.id, 
+                        original: item.text, 
+                        translated: '번역 실패: PROHIBITED_CONTENT' 
+                    }));
+                    updateSidebarWithTranslations(errorResults);
+                    return; // Do not retry
+                }
+
                 if (attempt < MAX_MESSAGE_RETRIES - 1) {
                     const delay = 1000 * Math.pow(2, attempt);
                     logToSidebar(`통신 오류. ${delay / 1000}초 후 재시도... (${attempt + 1}/${MAX_MESSAGE_RETRIES})`, 'log-error');
