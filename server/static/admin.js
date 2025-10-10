@@ -25,7 +25,7 @@ function cacheDOMElements() {
     emptyState = document.getElementById('emptyState');
     searchBox = document.getElementById('searchBox');
     darkModeToggle = document.getElementById('darkModeToggle');
-    fetchAllTitlesBtn = document.getElementById('fetchAllTitlesBtn');
+    // fetchAllTitlesBtn = document.getElementById('fetchAllTitlesBtn');
     bulkActionsPanel = document.getElementById('bulk-actions');
     selectionCount = document.getElementById('selection-count');
     deleteSelectedBtn = document.getElementById('deleteSelectedBtn');
@@ -251,7 +251,7 @@ function setupEventListeners() {
     historyContainer.addEventListener('change', handleCheckboxChange);
 
     darkModeToggle.addEventListener('click', toggleDarkMode);
-    fetchAllTitlesBtn.addEventListener('click', fetchAllTitles);
+    // fetchAllTitlesBtn.addEventListener('click', fetchAllTitles);
     deleteSelectedBtn.addEventListener('click', deleteSelectedTranslations);
     moveSelectedToFolderDropdown.addEventListener('change', moveSelectedTranslationsToFolder);
 
