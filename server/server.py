@@ -700,11 +700,17 @@ def get_translations_by_folder():
     conn.close()
     grouped_translations = defaultdict(lambda: defaultdict(list))
     for t in translations:
-        folder_name = t.get("folderName") or "폴더 없음"
+        folder_name = t.get("folderName") or "폴더 추가 대기 상태"
         url = t.get("url")
         if url:
             grouped_translations[folder_name][url].append(t)
-    return grouped_translations
+            
+    headers = {
+        "Cache-Control": "no-cache, no-store, must-revalidate",
+        "Pragma": "no-cache",
+        "Expires": "0",
+    }
+    return JSONResponse(content=dict(grouped_translations), headers=headers)
 
 
 def _fetch_and_update_title_worker(url: str):
@@ -818,6 +824,50 @@ def create_folder(req: FolderCreate):
     return {"message": f"폴더 ''{req.folder_name}''가 생성되었습니다."}
 
 
+class FolderUpdate(BaseModel):
+    new_name: str
+
+@app.put("/api/folders/{folder_name}")
+def update_folder_name(folder_name: str, req: FolderUpdate):
+    """폴더 이름을 변경합니다."""
+    old_name = unquote(folder_name)
+    new_name = req.new_name
+
+    if not new_name or old_name == new_name:
+        raise HTTPException(status_code=400, detail="잘못된 폴더 이름입니다.")
+
+    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
+    cursor = conn.cursor()
+
+    try:
+        # Check if new folder name already exists
+        cursor.execute("SELECT 1 FROM translations WHERE folderName = ? LIMIT 1", (new_name,))
+        if cursor.fetchone():
+            raise HTTPException(status_code=409, detail=f"폴더 '{new_name}'이(가) 이미 존재합니다.")
+        cursor.execute("SELECT 1 FROM book_activity WHERE folderName = ? LIMIT 1", (new_name,))
+        if cursor.fetchone():
+            raise HTTPException(status_code=409, detail=f"폴더 '{new_name}'이(가) 이미 존재합니다.")
+
+        # Update translations table
+        cursor.execute("UPDATE translations SET folderName = ? WHERE folderName = ?", (new_name, old_name))
+        
+        # Update book_activity table
+        cursor.execute("UPDATE book_activity SET folderName = ? WHERE folderName = ?", (new_name, old_name))
+
+        conn.commit()
+    except HTTPException:
+        conn.rollback()
+        raise # Re-raise the HTTP exception
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=f"데이터베이스 오류: {e}")
+    finally:
+        conn.close()
+
+    return {"message": f"폴더 이름이 '{old_name}'에서 '{new_name}'(으)로 변경되었습니다."}
+
+
+
 @app.get("/folders")
 def get_folders():
     """
@@ -837,10 +887,16 @@ def get_folders():
     cursor.execute("SELECT folderName FROM pinned_books")
     pinned_set = {row['folderName'] for row in cursor.fetchall()}
     cursor.execute("SELECT DISTINCT folderName FROM translations WHERE folderName IS NOT NULL")
-    all_folders_set = {row['folderName'] for row in cursor.fetchall()}
+    translation_folders = {row['folderName'] for row in cursor.fetchall()}
+
+    cursor.execute("SELECT DISTINCT folderName FROM book_activity WHERE folderName IS NOT NULL")
+    activity_folders = {row['folderName'] for row in cursor.fetchall()}
+
+    all_folders_set = translation_folders.union(activity_folders)
+
     cursor.execute("SELECT 1 FROM translations WHERE folderName IS NULL LIMIT 1")
     if cursor.fetchone():
-        all_folders_set.add("미분류")
+        all_folders_set.add("폴더 추가 대기 상태")
     conn.close()
     folder_objects = [
         {
@@ -851,7 +907,13 @@ def get_folders():
         } for f in all_folders_set
     ]
     sorted_folders = sorted(folder_objects, key=lambda x: (not x['pinned'], x['name']))
-    return sorted_folders
+    
+    headers = {
+        "Cache-Control": "no-cache, no-store, must-revalidate",
+        "Pragma": "no-cache",
+        "Expires": "0",
+    }
+    return JSONResponse(content=sorted_folders, headers=headers)
 
 
 @app.get("/api/books")

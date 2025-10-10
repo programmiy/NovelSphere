@@ -7,7 +7,7 @@ let currentSearch = '';
 let translationStatuses = {}; // Holds the apply-status for each URL
 
 // DOM element cache
-let historyContainer, emptyState, searchBox, darkModeToggle, fetchAllTitlesBtn, bulkActionsPanel, selectionCount, deleteSelectedBtn, moveSelectedToFolderDropdown, findReplaceModal, closeFindReplaceModalBtn, cancelFindReplaceBtn, executeFindReplaceBtn, openGlobalFindReplaceBtn;
+let historyContainer, emptyState, searchBox, darkModeToggle, fetchAllTitlesBtn, bulkActionsPanel, selectionCount, deleteSelectedBtn, moveSelectedToFolderDropdown, findReplaceModal, closeFindReplaceModalBtn, cancelFindReplaceBtn, executeFindReplaceBtn, openGlobalFindReplaceBtn, createFolderButton, newFolderNameInput;
 
 // Debounce timer
 let searchTimeout;
@@ -36,6 +36,8 @@ function cacheDOMElements() {
     cancelFindReplaceBtn = document.getElementById('cancelFindReplace');
     executeFindReplaceBtn = document.getElementById('executeFindReplace');
     openGlobalFindReplaceBtn = document.getElementById('openGlobalFindReplaceBtn');
+    createFolderButton = document.getElementById('createFolderButton');
+    newFolderNameInput = document.getElementById('newFolderNameInput');
 }
 
 async function loadAndRenderGrouped() {
@@ -47,8 +49,8 @@ async function loadAndRenderGrouped() {
     try {
         // Fetch all data from the server
         const [translationsRes, foldersRes] = await Promise.all([
-            fetch('http://127.0.0.1:8001/translations_by_folder'),
-            fetch('http://127.0.0.1:8001/folders')
+            fetch(`http://127.0.0.1:8001/translations_by_folder?t=${Date.now()}`),
+            fetch(`http://127.0.0.1:8001/folders?t=${Date.now()}`)
         ]);
 
         if (!translationsRes.ok) throw new Error(`Server error (translations): ${translationsRes.statusText}`);
@@ -58,9 +60,11 @@ async function loadAndRenderGrouped() {
         const allFolders = await foldersRes.json();
 
         // NOTE: translationStatuses logic from chrome.storage is removed as it's not available in a web context.
+
+        // NOTE: translationStatuses logic from chrome.storage is removed as it's not available in a web context.
         translationStatuses = {};
 
-        renderGroupedHistory();
+        renderGroupedHistory(allFolders);
         populateFolderDropdowns(allFolders);
         updateStatistics(groupedTranslations);
         
@@ -102,12 +106,25 @@ function updateStatistics(groupedData) {
 }
 
 function populateFolderDropdowns(folders) {
-    if (!moveSelectedToFolderDropdown) return;
-    moveSelectedToFolderDropdown.innerHTML = '<option value="">폴더로 이동...</option><option value="__no_folder__">폴더 없음</option>';
-    folders.forEach(folder => {
-        const option = `<option value="${escapeHtml(folder.name)}">${escapeHtml(folder.name)}</option>`;
-        moveSelectedToFolderDropdown.insertAdjacentHTML('beforeend', option);
-    });
+    const folderFilterDropdown = document.getElementById('folderFilterDropdown');
+
+    if (moveSelectedToFolderDropdown) {
+        moveSelectedToFolderDropdown.innerHTML = '<option value="">폴더로 이동...</option><option value="__no_folder__">폴더 추가 대기 상태</option>';
+        folders.forEach(folder => {
+            const option = `<option value="${escapeHtml(folder.name)}">${escapeHtml(folder.name)}</option>`;
+            moveSelectedToFolderDropdown.insertAdjacentHTML('beforeend', option);
+        });
+    }
+
+    if (folderFilterDropdown) {
+        const currentValue = folderFilterDropdown.value; // Preserve selection
+        folderFilterDropdown.innerHTML = '<option value="">모든 폴더</option>';
+        folders.forEach(folder => {
+            const option = `<option value="${escapeHtml(folder.name)}">${escapeHtml(folder.name)}</option>`;
+            folderFilterDropdown.insertAdjacentHTML('beforeend', option);
+        });
+        folderFilterDropdown.value = currentValue; // Restore selection if possible
+    }
 }
 
 function sortUrlsNumerically(urls) {
@@ -139,12 +156,13 @@ function sortUrlsNumerically(urls) {
     });
 }
 
-function renderGroupedHistory() {
+function renderGroupedHistory(allFolders) {
     historyContainer.innerHTML = '';
-    const sortedFolderNames = Object.keys(groupedTranslations).sort();
+    
+    const folderNames = allFolders.map(f => f.name).sort();
 
-    for (const folderName of sortedFolderNames) {
-        const urlGroups = groupedTranslations[folderName];
+    for (const folderName of folderNames) {
+        const urlGroups = groupedTranslations[folderName] || {};
         const folderContainer = document.createElement('div');
         folderContainer.className = 'history-folder-group';
 
@@ -168,8 +186,7 @@ function renderGroupedHistory() {
             const groupItemsHtml = filteredTranslations.map(t => renderItem(t)).join('');
             const title = filteredTranslations[0]?.title || url;
             
-            const statusKey = `status-${url}`;
-            const isApplied = false; // Disabled: translationStatuses[statusKey]?.applied || false;
+            const isApplied = false; // Disabled
 
             urlGroupsHtml += `
                 <div class="list-group fade-in" data-url="${url}">
@@ -200,19 +217,19 @@ function renderGroupedHistory() {
             `;
         }
 
-        if (totalTranslationsInFolder > 0) {
-            folderContainer.innerHTML = `
-                <div class="folder-group-header">
-                    <span class="folder-group-toggle material-icons collapsed">expand_more</span>
-                    <h2 class="folder-group-title">${escapeHtml(folderName)} (${totalTranslationsInFolder})</h2>
-                    <div class="list-group-actions">
-                        <label class="btn"><input type="checkbox" class="folder-select-all-checkbox"> 폴더 전체 선택</label>
-                    </div>
+        // Always render the folder header, even if it's empty
+        folderContainer.innerHTML = `
+            <div class="folder-group-header">
+                <span class="folder-group-toggle material-icons collapsed">expand_more</span>
+                <h2 class="folder-group-title">${escapeHtml(folderName)} (${totalTranslationsInFolder})</h2>
+                <div class="list-group-actions">
+                    <label class="btn"><input type="checkbox" class="folder-select-all-checkbox"> 폴더 전체 선택</label>
+                    <button class="btn btn-outline btn-icon edit-folder-name-btn" data-folder-name="${escapeHtml(folderName)}" title="폴더 이름 수정">✏️</button>
                 </div>
-                <div class="folder-group-content collapsed">${urlGroupsHtml}</div>
-            `;
-            historyContainer.appendChild(folderContainer);
-        }
+            </div>
+            <div class="folder-group-content ${totalTranslationsInFolder > 0 ? 'collapsed' : ''}">${urlGroupsHtml}</div>
+        `;
+        historyContainer.appendChild(folderContainer);
     }
 }
 
@@ -260,6 +277,7 @@ function setupEventListeners() {
     closeFindReplaceModalBtn.addEventListener('click', closeFindReplaceModal);
     cancelFindReplaceBtn.addEventListener('click', closeFindReplaceModal);
     executeFindReplaceBtn.addEventListener('click', executeGlobalFindReplace);
+    createFolderButton.addEventListener('click', createFolder);
 }
 
 function openFindReplaceModal() {
@@ -311,6 +329,43 @@ async function executeGlobalFindReplace() {
     }
 }
 
+async function createFolder() {
+    const newName = newFolderNameInput.value.trim();
+    if (!newName) {
+        showToast('폴더 이름을 입력하세요.', 'error');
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/folders', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ folder_name: newName })
+        });
+
+        const result = await response.json();
+
+        if (!response.ok) {
+            throw new Error(result.message || `Server error: ${response.status}`);
+        }
+
+        showToast(result.message, 'success');
+        newFolderNameInput.value = '';
+        
+        // Fetch the updated folder list and repopulate the dropdown.
+        const foldersRes = await fetch(`http://127.0.0.1:8001/folders?t=${Date.now()}`);
+        if (foldersRes.ok) {
+            const allFolders = await foldersRes.json();
+            populateFolderDropdowns(allFolders);
+        }
+        
+        loadAndRenderGrouped(); // Reload all data to show the new folder
+    } catch (error) {
+        console.error("Failed to create folder:", error);
+        showToast(`폴더 생성 실패: ${error.message}`, 'error');
+    }
+}
+
 function handleCheckboxChange(e) {
     const target = e.target;
     if (!target.matches('input[type="checkbox"]')) return;
@@ -354,23 +409,33 @@ function findTranslationById(id) {
 async function handleHistoryClick(e) {
     const target = e.target;
 
+    // Ignore clicks on checkboxes, they are handled by a different listener
     if (target.matches('input[type="checkbox"]')) {
         return;
     }
 
-    if (target.closest('.list-group-actions') || target.classList.contains('edit-title-btn')) {
-        if (target.classList.contains('btn-apply')) {
+    // 1. Handle Folder Name Edit
+    if (target.classList.contains('edit-folder-name-btn')) {
+        const oldFolderName = target.dataset.folderName;
+        const newFolderName = prompt(`'${oldFolderName}' 폴더의 새 이름을 입력하세요:`);
+        if (newFolderName && newFolderName.trim() !== '' && newFolderName !== oldFolderName) {
+            renameFolder(oldFolderName, newFolderName.trim());
+        }
+        return; // Action handled
+    }
+
+    // 2. Handle URL-level actions (Title Edit, Apply)
+    const urlHeader = target.closest('.list-group-header');
+    if (urlHeader) {
+        if (target.classList.contains('edit-title-btn')) {
             const url = target.dataset.url;
-            toggleApplyStatus(url);
-        } else if (target.classList.contains('edit-title-btn')) {
-            const url = target.dataset.url;
-            const titleElement = target.closest('.list-group-header').querySelector('.list-group-title');
+            const titleElement = urlHeader.querySelector('.list-group-title');
             const currentTitle = titleElement.textContent.split(' (')[0];
             const newTitle = prompt("Enter new title:", currentTitle);
             if (newTitle && newTitle !== currentTitle) {
-                const countMatch = titleElement.textContent.match(/(\d+)/); // Regex needs double backslashes
+                const countMatch = titleElement.textContent.match(/(\d+)/);
                 const count = countMatch ? countMatch[0] : '';
-                titleElement.textContent = `${newTitle} ${count}`;
+                titleElement.textContent = `${newTitle} (${count}`;
                 try {
                     await fetch('http://127.0.0.1:8001/translations/url_title', {
                         method: 'PUT',
@@ -380,104 +445,105 @@ async function handleHistoryClick(e) {
                     showToast('Title updated successfully!', 'success');
                 } catch (error) {
                     showToast('Failed to update title.', 'error');
-                    titleElement.textContent = `${currentTitle} ${count}`;
+                    titleElement.textContent = `${currentTitle} (${count}`;
                 }
             }
+            return; // Action handled
+        }
+
+        if (target.classList.contains('btn-apply')) {
+            const url = target.dataset.url;
+            toggleApplyStatus(url);
+            return; // Action handled
+        }
+
+        // If no specific action button in the url-header was clicked, treat it as a toggle
+        if (!target.closest('.list-group-actions') && !target.closest('a')) {
+            urlHeader.nextElementSibling.classList.toggle('collapsed');
+            const icon = urlHeader.querySelector('.list-group-toggle');
+            icon.classList.toggle('collapsed');
+            icon.textContent = icon.classList.contains('collapsed') ? 'chevron_right' : 'expand_more';
         }
         return;
     }
 
-    const folderHeader = target.closest('.folder-group-header');
-    if (folderHeader && !target.closest('.list-group-actions')) {
-        folderHeader.nextElementSibling.classList.toggle('collapsed');
-        folderHeader.querySelector('.folder-group-toggle').classList.toggle('collapsed');
-        return;
-    }
-
-    const urlHeader = target.closest('.list-group-header');
-    if (urlHeader) {
-        urlHeader.nextElementSibling.classList.toggle('collapsed');
-        const icon = urlHeader.querySelector('.list-group-toggle');
-        icon.classList.toggle('collapsed');
-        icon.textContent = icon.classList.contains('collapsed') ? 'chevron_right' : 'expand_more';
-        return;
-    }
-
+    // 3. Handle Item-level actions (Save, Copy, Exclude, Delete)
     const itemRow = target.closest('.history-item');
-    if (!itemRow) return;
-
-    const id = parseInt(itemRow.dataset.id);
-
-    if (target.classList.contains('delete-btn')) {
-        if (!confirm('이 번역을 삭제하시겠습니까?')) return;
-        await fetch(`http://127.0.0.1:8001/translations/delete`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: [id] }) });
-        itemRow.remove();
-        showToast('삭제되었습니다.');
-    } else if (target.classList.contains('exclude-btn')) {
-        if (!confirm('이 문장을 번역에서 영구적으로 제외하시겠습니까?')) return;
-        try {
-            const response = await fetch(`http://127.0.0.1:8001/translations/exclude`, { 
-                method: 'POST', 
-                headers: { 'Content-Type': 'application/json' }, 
-                body: JSON.stringify({ ids: [id] }) 
-            });
-            if (!response.ok) throw new Error('Server responded with an error');
+    if (itemRow) {
+        const id = parseInt(itemRow.dataset.id);
+        if (target.classList.contains('delete-btn')) {
+            if (!confirm('이 번역을 삭제하시겠습니까?')) return;
+            await fetch(`http://127.0.0.1:8001/translations/delete`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: [id] }) });
             itemRow.remove();
-            showToast('문장이 제외되고 삭제되었습니다.', 'success');
-        } catch (error) {
-            console.error('Failed to exclude translation:', error);
-            showToast('문장 제외에 실패했습니다.', 'error');
-        }
-    } else if (target.classList.contains('save-item-btn')) {
-        const newTranslatedText = itemRow.querySelector('.translated-text').textContent;
-        const originalItem = findTranslationById(id);
-
-        if (!originalItem) {
-            showToast('오류: 저장할 원본 항목을 찾을 수 없습니다.', 'error');
-            return;
-        }
-
-        const updatedItemPayload = {
-            ...originalItem,
-            translated: newTranslatedText,
-            timestamp: Math.floor(Date.now() / 1000)
-        };
-        delete updatedItemPayload.id;
-
-        try {
-            const response = await fetch('http://127.0.0.1:8001/translations/upsert', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify([updatedItemPayload])
-            });
-
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(`Server error: ${response.status} - ${errorData.detail || 'Unknown error'}`);
+            showToast('삭제되었습니다.');
+        } else if (target.classList.contains('exclude-btn')) {
+            if (!confirm('이 문장을 번역에서 영구적으로 제외하시겠습니까?')) return;
+            try {
+                const response = await fetch(`http://127.0.0.1:8001/translations/exclude`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ids: [id] })
+                });
+                if (!response.ok) throw new Error('Server responded with an error');
+                itemRow.remove();
+                showToast('문장이 제외되고 삭제되었습니다.', 'success');
+            } catch (error) {
+                console.error('Failed to exclude translation:', error);
+                showToast('문장 제외에 실패했습니다.', 'error');
             }
-
-            showToast('저장되었습니다.');
-            
-            originalItem.translated = newTranslatedText;
-            originalItem.timestamp = updatedItemPayload.timestamp;
-            
-            const dateElement = itemRow.querySelector('.item-date');
-            if(dateElement) {
-                 const date = new Date(updatedItemPayload.timestamp * 1000);
-                 dateElement.textContent = date.toLocaleString('ko-KR', { dateStyle: 'short', timeStyle: 'short' });
+        } else if (target.classList.contains('save-item-btn')) {
+            const newTranslatedText = itemRow.querySelector('.translated-text').textContent;
+            const originalItem = findTranslationById(id);
+            if (!originalItem) {
+                showToast('오류: 저장할 원본 항목을 찾을 수 없습니다.', 'error');
+                return;
             }
-
-        } catch (error) {
-            console.error('Failed to save translation:', error);
-            showToast(`저장 실패: ${error.message}`, 'error');
+            const updatedItemPayload = {
+                ...originalItem,
+                translated: newTranslatedText,
+                timestamp: Math.floor(Date.now() / 1000)
+            };
+            delete updatedItemPayload.id;
+            try {
+                const response = await fetch('http://127.0.0.1:8001/translations/upsert', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify([updatedItemPayload])
+                });
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(`Server error: ${response.status} - ${errorData.detail || 'Unknown error'}`);
+                }
+                showToast('저장되었습니다.');
+                originalItem.translated = newTranslatedText;
+                originalItem.timestamp = updatedItemPayload.timestamp;
+                const dateElement = itemRow.querySelector('.item-date');
+                if(dateElement) {
+                     const date = new Date(updatedItemPayload.timestamp * 1000);
+                     dateElement.textContent = date.toLocaleString('ko-KR', { dateStyle: 'short', timeStyle: 'short' });
+                }
+            } catch (error) {
+                console.error('Failed to save translation:', error);
+                showToast(`저장 실패: ${error.message}`, 'error');
+            }
+        } else if (target.classList.contains('copy-btn')) {
+            navigator.clipboard.writeText(itemRow.querySelector('.translated-text').textContent);
+            showToast('클립보드에 복사되었습니다.');
         }
+        return; // Action handled
+    }
 
-    } else if (target.classList.contains('copy-btn')) {
-        navigator.clipboard.writeText(itemRow.querySelector('.translated-text').textContent);
-        showToast('클립보드에 복사되었습니다.');
+    // 4. Handle Folder expand/collapse
+    const folderHeader = target.closest('.folder-group-header');
+    if (folderHeader) {
+        // Only toggle if the click was not on an action button
+        if (!target.closest('.list-group-actions')) {
+             folderHeader.nextElementSibling.classList.toggle('collapsed');
+             folderHeader.querySelector('.folder-group-toggle').classList.toggle('collapsed');
+        }
+        return;
     }
 }
-
 async function toggleApplyStatus(url) {
     // Disabled: This feature relied on chrome.storage, which is not available here.
     showToast('이 기능은 현재 비활성화되어 있습니다.', 'info');
@@ -522,6 +588,28 @@ async function moveSelectedTranslationsToFolder(event) {
     await fetch('http://127.0.0.1:8001/translations/move', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: idsToMove, folder_name: folderForAPI }) });
     showToast(`${idsToMove.length}개의 항목이 이동되었습니다.`, 'success');
     loadAndRenderGrouped();
+}
+
+async function renameFolder(oldName, newName) {
+    try {
+        const response = await fetch(`/api/folders/${encodeURIComponent(oldName)}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ new_name: newName })
+        });
+
+        const result = await response.json();
+
+        if (!response.ok) {
+            throw new Error(result.detail || `Server error: ${response.status}`);
+        }
+
+        showToast(result.message, 'success');
+        loadAndRenderGrouped(); // Reload data to show changes
+    } catch (error) {
+        console.error("Failed to rename folder:", error);
+        showToast(`폴더 이름 변경 실패: ${error.message}`, 'error');
+    }
 }
 
 function escapeHtml(text) {
