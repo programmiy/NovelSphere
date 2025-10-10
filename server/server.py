@@ -135,9 +135,12 @@ templates = Jinja2Templates(directory=templates_dir)
 
 
 # CORS 미들웨어 설정
+# allow_credentials=True 일 때 allow_origins=["*"]를 사용할 수 없으므로,
+# 로컬 개발 환경과 브라우저 확장 프로그램의 출처를 명시적으로 허용합니다.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://localhost", "http://localhost:8001", "http://127.0.0.1", "http://127.0.0.1:8001"],
+    allow_origin_regex="chrome-extension://.*",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
