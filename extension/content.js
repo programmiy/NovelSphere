@@ -454,7 +454,7 @@ async function translateAllPTags() {
 
     async function handleFailure(failedItems, currentChunkSize) {
         if (isTranslationCancelled) return;
-        if (currentChunkSize > 1) {
+        if (currentChunkSize > 1 && failedItems.length > 1) {
             const newChunkSize = Math.ceil(currentChunkSize / 2);
             logToSidebar(`묶음 단위를 ${newChunkSize}으로 줄여 재시도합니다.`);
             const subChunks = chunkArray(failedItems, newChunkSize);
@@ -526,8 +526,16 @@ async function translateAllPTags() {
 
         } catch (error) {
             console.error(`Sentence splitting retry also failed for item ${originalItem.id}:`, error);
-            const errorResultForUI = { id: originalItem.id, original: originalItem.text, translated: `번역 실패: 분할 재시도 실패` };
-            updateSidebarWithTranslations([errorResultForUI]);
+            const pid = originalItem.id;
+            const finalResult = {
+                id: pid,
+                original: originalItem.text,
+                translated: ''
+            };
+
+            updateSidebarWithTranslations([finalResult]);
+            
+            await saveAllTranslations([finalResult]);
         }
     }
 

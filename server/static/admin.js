@@ -1,13 +1,15 @@
 // Global state
 let groupedTranslations = {};
+let allFolders = [];
 
 // UI state
 let isLoading = false;
+let isFindingEmpty = false;
 let currentSearch = '';
 let translationStatuses = {}; // Holds the apply-status for each URL
 
 // DOM element cache
-let historyContainer, emptyState, searchBox, darkModeToggle, fetchAllTitlesBtn, bulkActionsPanel, selectionCount, deleteSelectedBtn, moveSelectedToFolderDropdown, findReplaceModal, closeFindReplaceModalBtn, cancelFindReplaceBtn, executeFindReplaceBtn, openGlobalFindReplaceBtn, createFolderButton, newFolderNameInput;
+let historyContainer, emptyState, searchBox, darkModeToggle, fetchAllTitlesBtn, bulkActionsPanel, selectionCount, deleteSelectedBtn, moveSelectedToFolderDropdown, findReplaceModal, closeFindReplaceModalBtn, cancelFindReplaceBtn, executeFindReplaceBtn, openGlobalFindReplaceBtn, createFolderButton, newFolderNameInput, findEmptyBtn;
 
 // Debounce timer
 let searchTimeout;
@@ -38,6 +40,7 @@ function cacheDOMElements() {
     openGlobalFindReplaceBtn = document.getElementById('openGlobalFindReplaceBtn');
     createFolderButton = document.getElementById('createFolderButton');
     newFolderNameInput = document.getElementById('newFolderNameInput');
+    findEmptyBtn = document.getElementById('findEmptyBtn');
 }
 
 async function loadAndRenderGrouped() {
@@ -57,14 +60,14 @@ async function loadAndRenderGrouped() {
         if (!foldersRes.ok) throw new Error(`Server error (folders): ${foldersRes.statusText}`);
         
         groupedTranslations = await translationsRes.json();
-        const allFolders = await foldersRes.json();
+        allFolders = await foldersRes.json();
 
         // NOTE: translationStatuses logic from chrome.storage is removed as it's not available in a web context.
 
         // NOTE: translationStatuses logic from chrome.storage is removed as it's not available in a web context.
         translationStatuses = {};
 
-        renderGroupedHistory(allFolders);
+        renderGroupedHistory();
         populateFolderDropdowns(allFolders);
         updateStatistics(groupedTranslations);
         
@@ -156,7 +159,7 @@ function sortUrlsNumerically(urls) {
     });
 }
 
-function renderGroupedHistory(allFolders) {
+function renderGroupedHistory() {
     historyContainer.innerHTML = '';
     
     const folderNames = allFolders.map(f => f.name).sort();
@@ -172,11 +175,15 @@ function renderGroupedHistory(allFolders) {
 
         for (const url of sortedUrls) {
             const translations = urlGroups[url];
-            const filteredTranslations = translations.filter(t => 
+            let filteredTranslations = translations.filter(t => 
                 !currentSearch || 
                 t.original.toLowerCase().includes(currentSearch) || 
                 (t.translated && t.translated.toLowerCase().includes(currentSearch))
             );
+
+            if (isFindingEmpty) {
+                filteredTranslations = filteredTranslations.filter(t => !t.translated || t.translated.trim() === '');
+            }
 
             if (filteredTranslations.length === 0) continue;
 
@@ -188,10 +195,13 @@ function renderGroupedHistory(allFolders) {
             
             const isApplied = false; // Disabled
 
+            // When filtering, expand the URL groups that have results.
+            const isUrlGroupCollapsed = isFindingEmpty ? false : true;
+
             urlGroupsHtml += `
                 <div class="list-group fade-in" data-url="${url}">
                     <div class="list-group-header">
-                        <span class="list-group-toggle collapsed material-icons">chevron_right</span>
+                        <span class="list-group-toggle ${isUrlGroupCollapsed ? 'collapsed' : ''} material-icons">chevron_right</span>
                         <a href="${url}" target="_blank" class="list-group-title-link"><h3 class="list-group-title">${escapeHtml(title)} (${filteredTranslations.length})</h3></a>
                         <div class="list-group-actions">
                             <button class="btn btn-outline btn-icon edit-title-btn" data-url="${url}" title="제목 수정">✏️</button>
@@ -199,7 +209,7 @@ function renderGroupedHistory(allFolders) {
                             <label class="btn"><input type="checkbox" class="group-select-all-checkbox"> 전체 선택</label>
                         </div>
                     </div>
-                    <div class="list-group-content collapsed">
+                    <div class="list-group-content ${isUrlGroupCollapsed ? 'collapsed' : ''}">
                         <table class="history-table">
                             <thead>
                                 <tr>
@@ -217,17 +227,24 @@ function renderGroupedHistory(allFolders) {
             `;
         }
 
-        // Always render the folder header, even if it's empty
+        // When filtering, hide folders that have no results.
+        if (isFindingEmpty && totalTranslationsInFolder === 0) {
+            continue;
+        }
+
+        // By default, collapse all folders unless the filter is active and there are results.
+        const isFolderCollapsed = isFindingEmpty ? (totalTranslationsInFolder === 0) : true;
+
         folderContainer.innerHTML = `
             <div class="folder-group-header">
-                <span class="folder-group-toggle material-icons collapsed">expand_more</span>
+                <span class="folder-group-toggle material-icons ${isFolderCollapsed ? 'collapsed' : ''}">expand_more</span>
                 <h2 class="folder-group-title">${escapeHtml(folderName)} (${totalTranslationsInFolder})</h2>
                 <div class="list-group-actions">
                     <label class="btn"><input type="checkbox" class="folder-select-all-checkbox"> 폴더 전체 선택</label>
                     <button class="btn btn-outline btn-icon edit-folder-name-btn" data-folder-name="${escapeHtml(folderName)}" title="폴더 이름 수정">✏️</button>
                 </div>
             </div>
-            <div class="folder-group-content ${totalTranslationsInFolder > 0 ? 'collapsed' : ''}">${urlGroupsHtml}</div>
+            <div class="folder-group-content ${isFolderCollapsed ? 'collapsed' : ''}">${urlGroupsHtml}</div>
         `;
         historyContainer.appendChild(folderContainer);
     }
@@ -260,9 +277,16 @@ function setupEventListeners() {
         clearTimeout(searchTimeout);
         searchTimeout = setTimeout(() => {
             currentSearch = e.target.value.toLowerCase();
+            // Deactivate find empty filter if user starts searching
+            if (isFindingEmpty) {
+                isFindingEmpty = false;
+                document.getElementById('findEmptyBtn').classList.remove('active');
+            }
             renderGroupedHistory();
         }, 300);
     });
+
+    findEmptyBtn.addEventListener('click', toggleFindEmpty);
 
     historyContainer.addEventListener('click', handleHistoryClick);
     historyContainer.addEventListener('change', handleCheckboxChange);
@@ -278,6 +302,42 @@ function setupEventListeners() {
     cancelFindReplaceBtn.addEventListener('click', closeFindReplaceModal);
     executeFindReplaceBtn.addEventListener('click', executeGlobalFindReplace);
     createFolderButton.addEventListener('click', createFolder);
+}
+
+function toggleFindEmpty() {
+    // If we are turning the filter ON, first check if there are any results
+    if (!isFindingEmpty) {
+        let hasEmpty = false;
+        for (const folderName in groupedTranslations) {
+            for (const url in groupedTranslations[folderName]) {
+                if (groupedTranslations[folderName][url].some(t => !t.translated || t.translated.trim() === '')) {
+                    hasEmpty = true;
+                    break;
+                }
+            }
+            if (hasEmpty) {
+                break;
+            }
+        }
+
+        // If no empty translations were found, show a message and abort
+        if (!hasEmpty) {
+            showToast("빈 번역 기록이 없습니다.", "info");
+            console.log("모든 번역기록이 정상입니다");
+            return;
+        }
+    }
+
+    isFindingEmpty = !isFindingEmpty;
+    findEmptyBtn.classList.toggle('active', isFindingEmpty);
+    
+    // The search input should be cleared when using this filter
+    if (isFindingEmpty) {
+        currentSearch = ''; 
+        searchBox.value = '';
+    }
+    
+    renderGroupedHistory(); // Re-render with the new filter active
 }
 
 function openFindReplaceModal() {

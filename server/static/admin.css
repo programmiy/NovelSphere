@@ -51,9 +51,8 @@
             flex-wrap: wrap;
             gap: 16px;
         }
-        .control-bar-wrapper { flex: 2; display: flex; flex-wrap: wrap; gap: 12px; align-items: center; min-width: 400px; }
-        .folder-management-wrapper { flex: 1; display: flex; gap: 12px; padding-left: 16px; border-left: 1px solid var(--border-color); min-width: 250px;}
-        .stats-wrapper { flex: 1; display: flex; justify-content: space-around; gap: 16px; padding-left: 16px; border-left: 1px solid var(--border-color); min-width: 300px;}
+        .control-bar-wrapper { flex: 3; display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+        .folder-management-wrapper { flex: 1; display: flex; gap: 12px; padding-left: 16px; border-left: 1px solid var(--border-color); min-width: 300px;}        .stats-wrapper { flex: 1; display: flex; justify-content: space-around; gap: 16px; padding-left: 16px; border-left: 1px solid var(--border-color); min-width: 300px;}
 
 
 
