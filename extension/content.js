@@ -383,8 +383,6 @@ async function translateAllPTags() {
     
     addPlaceholderRows(textsToTranslate);
 
-    const allFinishedResults = [];
-    
     async function translateChunk(items, chunkSize) {
         if (isTranslationCancelled) return;
     
@@ -402,7 +400,6 @@ async function translateAllPTags() {
                     throw new Error(chrome.runtime.lastError.message);
                 }
     
-                // NEW: Handle notification/stop response from background.js
                 if (response && response.notification) {
                     logToSidebar(response.notification, 'log-error');
                     if (response.stop) {
@@ -410,7 +407,6 @@ async function translateAllPTags() {
                         document.getElementById('stop-translation-btn').style.display = 'none';
                         updateSidebarWithCancelled();
                     }
-                    // Don't retry for API limit errors, just stop or wait.
                     return; 
                 }
 
@@ -420,7 +416,7 @@ async function translateAllPTags() {
     
                     if (successes.length > 0) {
                         updateSidebarWithTranslations(successes);
-                        allFinishedResults.push(...successes);
+                        await saveAllTranslations(successes); // Save successful chunks immediately
                     }
     
                     if (failures.length > 0) {
@@ -472,13 +468,11 @@ async function translateAllPTags() {
                 if (isTranslationCancelled) break;
                 await translateChunk(subChunk, newChunkSize);
                 
-                // Add a delay between retrying smaller chunks to avoid 429 errors
                 if (index < subChunks.length - 1) {
-                    await new Promise(resolve => setTimeout(resolve, 1000)); // 1-second delay
+                    await new Promise(resolve => setTimeout(resolve, 1000));
                 }
             }
         } else if (failedItems.length > 0) {
-            // If chunk size is 1, try splitting by sentence
             for (const item of failedItems) {
                 if (isTranslationCancelled) break;
                 const sentences = item.text.split('。').filter(s => s.trim().length > 0);
@@ -510,12 +504,10 @@ async function translateAllPTags() {
             });
 
             if (response && response.translations) {
-                // Check if any sub-sentence translation failed (is null)
                 const hasFailedPart = response.translations.some(t => t.translated === null);
                 let combinedTranslation = null;
 
                 if (hasFailedPart) {
-                    // If any part failed, the whole translation is considered null (don't overwrite)
                     logToSidebar(`문장 분할 번역 실패 (ID: ${originalItem.id}) - 일부 조각 번역 실패`);
                 } else {
                     const translatedSentences = response.translations.map(t => t.translated);
@@ -530,9 +522,8 @@ async function translateAllPTags() {
                 };
                 updateSidebarWithTranslations([finalResult]);
                 
-                // Only add to results to be saved if translation was successful
                 if (combinedTranslation !== null) {
-                    allFinishedResults.push(finalResult);
+                    await saveAllTranslations([finalResult]); // Save successful split-sentence results immediately
                 }
 
             } else {
@@ -588,9 +579,6 @@ async function translateAllPTags() {
 
     // Finalize
     document.getElementById('stop-translation-btn').style.display = 'none';
-    if (allFinishedResults.length > 0) {
-        await saveAllTranslations(allFinishedResults);
-    }
     sortSidebar();
     logToSidebar("모든 번역 작업이 완료되었습니다.");
 }
