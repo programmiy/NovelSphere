@@ -189,6 +189,7 @@
         }
         .toast.error { background: var(--danger-color); }
         .toast.info { background: var(--primary-color); }
+        .toast.show { transform: translateX(0); }
 
         /* Dark Mode Toggle */
         #darkModeToggle { background-color: var(--light-gray); color: var(--text-color); border-color: var(--border-color); }

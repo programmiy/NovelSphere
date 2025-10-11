@@ -102,6 +102,13 @@ def init_db():
     );
     """
     )
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS applied_urls (
+        url TEXT PRIMARY KEY
+    );
+    """
+    )
     
     # Safely add new columns for summary
     cursor.execute("PRAGMA table_info(book_activity)")
@@ -752,6 +759,39 @@ def update_title_for_url(req: UpdateTitleRequest):
     return {"message": f"Title updated for {updated_count} entries for URL {req.url}."}
 
 
+class ApplyUrlRequest(BaseModel):
+    url: str
+    apply: bool
+
+@app.post("/api/urls/apply")
+def toggle_apply_url(req: ApplyUrlRequest):
+    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
+    cursor = conn.cursor()
+    clean_url = req.url.split('#')[0].rstrip('/')
+    
+    if req.apply:
+        # To be safe, we can insert the version without slash, and the server-side matching logic will handle variations.
+        cursor.execute("INSERT OR IGNORE INTO applied_urls (url) VALUES (?)", (clean_url,))
+    else:
+        # When deleting, we should remove all possible variations to be thorough.
+        # This reuses the logic from get_translations to find all variants.
+        urls_to_delete = set()
+        urls_to_delete.add(clean_url)
+        urls_to_delete.add(clean_url + '/')
+        no_protocol_url = re.sub(r'^https?://', '', clean_url)
+        urls_to_delete.add('http://' + no_protocol_url)
+        urls_to_delete.add('https://' + no_protocol_url)
+        urls_to_delete.add('http://' + no_protocol_url + '/')
+        urls_to_delete.add('https://' + no_protocol_url + '/')
+        
+        placeholders = ', '.join('?' * len(urls_to_delete))
+        cursor.execute(f"DELETE FROM applied_urls WHERE url IN ({placeholders})", list(urls_to_delete))
+
+    conn.commit()
+    conn.close()
+    return {"message": f"Apply status for {req.url} set to {req.apply}"}
+
+
 @app.get("/translations_by_folder")
 def get_translations_by_folder():
     """데이터베이스에서 모든 번역 기록을 폴더와 URL별로 그룹화하여 조회합니다."""
@@ -759,8 +799,14 @@ def get_translations_by_folder():
     conn.text_factory = str
     conn.row_factory = dict_factory
     cursor = conn.cursor()
+
+    # Get all applied URLs first
+    cursor.execute("SELECT url FROM applied_urls")
+    applied_urls_set = {row['url'] for row in cursor.fetchall()}
+
     translations = cursor.execute("SELECT * FROM translations ORDER BY folderName, url").fetchall()
     conn.close()
+    
     grouped_translations = defaultdict(lambda: defaultdict(list))
     for t in translations:
         folder_name = t.get("folderName") or "폴더 추가 대기 상태"
@@ -768,12 +814,61 @@ def get_translations_by_folder():
         if url:
             grouped_translations[folder_name][url].append(t)
             
+    final_response = dict(grouped_translations)
+    final_response["_applied_urls"] = list(applied_urls_set)
+
     headers = {
         "Cache-Control": "no-cache, no-store, must-revalidate",
         "Pragma": "no-cache",
         "Expires": "0",
     }
-    return JSONResponse(content=dict(grouped_translations), headers=headers)
+    return JSONResponse(content=final_response, headers=headers)
+
+
+@app.get("/api/urls/apply_status")
+def get_apply_status(url: str):
+    """Checks if a URL is marked as 'applied' using robust matching."""
+    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
+    cursor = conn.cursor()
+
+    # Robust URL matching logic
+    urls_to_check = set()
+    clean_url = url.split('#')[0]
+    urls_to_check.add(clean_url.rstrip('/'))
+    urls_to_check.add(clean_url.rstrip('/') + '/')
+    no_protocol_url = re.sub(r'^https?://', '', clean_url).rstrip('/')
+    urls_to_check.add('http://' + no_protocol_url)
+    urls_to_check.add('http://' + no_protocol_url + '/')
+    urls_to_check.add('https://' + no_protocol_url)
+    urls_to_check.add('https://' + no_protocol_url + '/')
+    if no_protocol_url.startswith('www.'):
+        no_www_url = no_protocol_url.replace('www.', '', 1)
+        urls_to_check.add('http://' + no_www_url)
+        urls_to_check.add('http://' + no_www_url + '/')
+        urls_to_check.add('https://' + no_www_url)
+        urls_to_check.add('https://' + no_www_url + '/')
+    else:
+        with_www_url = 'www.' + no_protocol_url
+        urls_to_check.add('http://' + with_www_url)
+        urls_to_check.add('http://' + with_www_url + '/')
+        urls_to_check.add('https://' + with_www_url)
+        urls_to_check.add('https://' + with_www_url + '/')
+    if 'kakuyomu.jp/works/' in clean_url:
+        match = re.match(r'(https?://kakuyomu.jp/works/\d+)', clean_url)
+        if match:
+            work_url = match.group(1)
+            urls_to_check.add(work_url)
+            urls_to_check.add(work_url + '/')
+
+    url_list = list(urls_to_check)
+    placeholders = ', '.join('?' * len(url_list))
+    
+    query = f"SELECT 1 FROM applied_urls WHERE url IN ({placeholders}) LIMIT 1"
+    cursor.execute(query, url_list)
+    
+    is_applied = cursor.fetchone() is not None
+    conn.close()
+    return {"applied": is_applied}
 
 
 def _fetch_and_update_title_worker(url: str):

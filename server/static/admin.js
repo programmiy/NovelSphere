@@ -7,6 +7,7 @@ let isLoading = false;
 let isFindingEmpty = false;
 let currentSearch = '';
 let translationStatuses = {}; // Holds the apply-status for each URL
+let appliedUrlsSet = new Set();
 
 // DOM element cache
 let historyContainer, emptyState, searchBox, darkModeToggle, fetchAllTitlesBtn, bulkActionsPanel, selectionCount, deleteSelectedBtn, moveSelectedToFolderDropdown, findReplaceModal, closeFindReplaceModalBtn, cancelFindReplaceBtn, executeFindReplaceBtn, openGlobalFindReplaceBtn, createFolderButton, newFolderNameInput, findEmptyBtn;
@@ -46,6 +47,7 @@ function cacheDOMElements() {
 async function loadAndRenderGrouped() {
     if (isLoading) return;
     isLoading = true;
+    showToast('Loading data...', 'info'); // DEBUG
     document.getElementById('loading-skeleton').style.display = 'block';
     historyContainer.innerHTML = '';
 
@@ -56,18 +58,24 @@ async function loadAndRenderGrouped() {
             fetch(`http://127.0.0.1:8001/folders?t=${Date.now()}`)
         ]);
 
+        showToast('Data fetched, processing...', 'info'); // DEBUG
+
         if (!translationsRes.ok) throw new Error(`Server error (translations): ${translationsRes.statusText}`);
         if (!foldersRes.ok) throw new Error(`Server error (folders): ${foldersRes.statusText}`);
         
-        groupedTranslations = await translationsRes.json();
-        allFolders = await foldersRes.json();
+        const responseData = await translationsRes.json();
+        allFolders = await foldersRes.json(); // Assign to global allFolders
 
-        // NOTE: translationStatuses logic from chrome.storage is removed as it's not available in a web context.
+        // Populate the set of applied URLs from the server response
+        appliedUrlsSet = new Set(responseData._applied_urls || []);
+        delete responseData._applied_urls; // Clean up the metadata key
+        groupedTranslations = responseData; // Assign clean data to global
 
-        // NOTE: translationStatuses logic from chrome.storage is removed as it's not available in a web context.
+        // NOTE: translationStatuses logic is removed
         translationStatuses = {};
 
-        renderGroupedHistory();
+        showToast('Rendering history...', 'info'); // DEBUG
+        renderGroupedHistory(); // Uses global allFolders
         populateFolderDropdowns(allFolders);
         updateStatistics(groupedTranslations);
         
@@ -193,7 +201,7 @@ function renderGroupedHistory() {
             const groupItemsHtml = filteredTranslations.map(t => renderItem(t)).join('');
             const title = filteredTranslations[0]?.title || url;
             
-            const isApplied = false; // Disabled
+            const isApplied = appliedUrlsSet.has(url.split('#')[0].replace(/\/$/, ''));
 
             // When filtering, expand the URL groups that have results.
             const isUrlGroupCollapsed = isFindingEmpty ? false : true;
@@ -513,7 +521,7 @@ async function handleHistoryClick(e) {
 
         if (target.classList.contains('btn-apply')) {
             const url = target.dataset.url;
-            toggleApplyStatus(url);
+            toggleApplyStatus(url, target); // Pass button for optimistic UI update
             return; // Action handled
         }
 
@@ -604,9 +612,37 @@ async function handleHistoryClick(e) {
         return;
     }
 }
-async function toggleApplyStatus(url) {
-    // Disabled: This feature relied on chrome.storage, which is not available here.
-    showToast('이 기능은 현재 비활성화되어 있습니다.', 'info');
+async function toggleApplyStatus(url, button) {
+    const cleanUrl = url.split('#')[0].replace(/\/$/, '');
+    const shouldApply = !button.classList.contains('applied');
+
+    try {
+        const response = await fetch('/api/urls/apply', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url: cleanUrl, apply: shouldApply })
+        });
+
+        if (!response.ok) {
+            throw new Error(`Server error: ${response.statusText}`);
+        }
+
+        // Update UI optimistically
+        if (shouldApply) {
+            appliedUrlsSet.add(cleanUrl);
+            button.textContent = '해제';
+            button.classList.add('applied');
+        } else {
+            appliedUrlsSet.delete(cleanUrl);
+            button.textContent = '적용';
+            button.classList.remove('applied');
+        }
+        showToast(shouldApply ? '적용 설정 완료' : '적용 설정 해제', 'success');
+
+    } catch (error) {
+        console.error('Failed to toggle apply status:', error);
+        showToast('상태 변경에 실패했습니다.', 'error');
+    }
 }
 
 function updateBulkActionPanel() {
@@ -687,11 +723,11 @@ function showToast(message, type = 'success') {
     document.body.appendChild(toast);
 
     setTimeout(() => {
-        toast.style.transform = 'translateX(0)';
+        toast.classList.add('show');
     }, 100);
 
     setTimeout(() => {
-        toast.style.transform = 'translateX(100%)';
+        toast.classList.remove('show');
         setTimeout(() => toast.remove(), 300);
     }, 3000);
 }
