@@ -135,7 +135,7 @@ templates = Jinja2Templates(directory=templates_dir)
 
 
 # CORS 미들웨어 설정
-# allow_credentials=True 일 때 allow_origins=["*"]를 사용할 수 없으므로,
+# allow_credentials=True 일 때 allow_origins=["*"을 사용할 수 없으므로,
 # 로컬 개발 환경과 브라우저 확장 프로그램의 출처를 명시적으로 허용합니다.
 app.add_middleware(
     CORSMiddleware,
@@ -279,7 +279,7 @@ Your task is to translate the 'text' from Japanese to Korean.
 Your response MUST be a single, valid JSON array of objects. Each object in your response must contain the original 'id' and the translated text in a 'translated' field.
 Preserve the original quotation marks (like 「...」 and 『...』) in the translated text.
 Do not add any other explanations, formatting, or markdown code fences. Your entire output must be only the JSON data.
-Example response format: `[{{\"id\": \"p1\", \"translated\": \"번역된 텍스트\"}}]`
+Example response format: [{{"id": "p1", "translated": "번역된 텍스트"}}]
 ---START OF JSON DATA---
 {api_input_json}
 ---END OF JSON DATA---
@@ -292,6 +292,15 @@ Example response format: `[{{\"id\": \"p1\", \"translated\": \"번역된 텍스�
         raw_text = None
         if data.get('candidates') and isinstance(data['candidates'], list) and data['candidates']:
             candidate = data['candidates'][0]
+            
+            # 'PROHIBITED_CONTENT' 와 같은 비정상 종료 사유를 먼저 확인합니다.
+            finish_reason = candidate.get('finishReason')
+            if finish_reason and finish_reason != 'STOP':
+                # 클라이언트가 재시도할 수 있도록 별도의 상태 코드(예: 451)를 사용할 수 있지만,
+                # 여기서는 구체적인 오류 메시지와 함께 500 오류를 발생시켜 원인을 명확히 합니다.
+                error_detail = f"API가 번역을 거부했습니다. 이유: {finish_reason}. 응답: {data}"
+                raise HTTPException(status_code=500, detail=error_detail)
+
             if candidate.get('content') and candidate['content'].get('parts') and isinstance(candidate['content']['parts'], list) and candidate['content']['parts']:
                 raw_text = candidate['content']['parts'][0].get('text')
 
@@ -317,11 +326,40 @@ Example response format: `[{{\"id\": \"p1\", \"translated\": \"번역된 텍스�
                 clean_json_text = raw_text.strip()
 
         translated_map = {}
-        # Regex to robustly find id and translated pairs, ignoring malformed objects
-        pattern = re.compile(r'{\s*"id"\s*:\s*"(?P<id>(?:\\"|[^\"])*)"\s*,\s*"translated"\s*:\s*"(?P<translated>(?:\\"|[^\"])*)"\s*}\s*')
-        for match in pattern.finditer(clean_json_text):
-            item = match.groupdict()
-            translated_map[item['id']] = item['translated']
+        # 1. Find all object-like strings "{" ... "}"
+        # This is more robust to missing commas between objects.
+        object_strings = re.findall(r'\{[^\{\}]*\}', clean_json_text)
+
+        for obj_str in object_strings:
+            try:
+                # 2. Extract id
+                id_match = re.search(r'"id"\s*:\s*"(.*?)"', obj_str)
+                if not id_match:
+                    continue
+                obj_id = id_match.group(1)
+
+                # 3. Extract translated text robustly
+                trans_key_match = re.search(r'"translated"\s*:\s*"', obj_str)
+                if not trans_key_match:
+                    continue
+                
+                content_start_index = trans_key_match.end()
+                
+                # Assume content is everything from there to the last quote in the object string
+                content_end_index = obj_str.rfind('"', content_start_index)
+                
+                if content_end_index == -1:
+                    continue
+
+                translated_text = obj_str[content_start_index:content_end_index]
+                
+                # Unescape any \" that the model might have still included
+                translated_text = translated_text.replace('\\"', '"')
+
+                translated_map[obj_id] = translated_text
+            except Exception:
+                # Ignore objects that are too malformed to parse.
+                continue
 
         final_translations = []
         for item in req.items:
