@@ -68,10 +68,16 @@ async function init() {
         }
 
         // 3. Check if translations should be applied to the page content
-        const statusKey = 'status-' + url;
-        const statusResult = await chrome.storage.local.get(statusKey);
-        if (statusResult[statusKey] && statusResult[statusKey].applied) {
-            applyTranslationsToPage(translations);
+        try {
+            const response = await fetch(`http://127.0.0.1:8001/api/urls/apply_status?url=${encodeURIComponent(url)}`);
+            if (response.ok) {
+                const status = await response.json();
+                if (status.applied) {
+                    applyTranslationsToPage(translations);
+                }
+            }
+        } catch (e) {
+            console.warn('Could not fetch apply status from server', e);
         }
 
         // 4. Scan for and translate any new paragraphs
@@ -570,7 +576,7 @@ async function translateAllPTags() {
         let progress = 0;
 
         let dynamicDelay = chunks.length * 200; // Increased multiplier
-        dynamicDelay = Math.max(1000, dynamicDelay); // Increased min
+        dynamicDelay = Math.max(10000, dynamicDelay); // Increased min
         dynamicDelay = Math.min(10000, dynamicDelay); // Increased max
         logToSidebar(`동적 딜레이를 ${dynamicDelay}ms로 설정합니다.`);
 
