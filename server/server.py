@@ -139,7 +139,7 @@ templates = Jinja2Templates(directory=templates_dir)
 # 로컬 개발 환경과 브라우저 확장 프로그램의 출처를 명시적으로 허용합니다.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost", "http://localhost:8001", "http://127.0.0.1", "http://127.0.0.1:8001", "https://novel18.syosetu.com"],
+    allow_origins=["http://localhost", "http://localhost:8001", "http://1227.0.0.1", "http://127.0.0.1:8001", "https://novel18.syosetu.com", "https://kakuyomu.jp"],
     allow_origin_regex="chrome-extension://.*",
     allow_credentials=True,
     allow_methods=["*"],
@@ -469,6 +469,17 @@ def dict_factory(cursor, row):
         d[col[0]] = row[idx]
     return d
 
+@app.get("/debug/urls_by_folder")
+def debug_get_urls_by_folder(folder_name: str):
+    """Temporary debug endpoint to get distinct URLs for a folder."""
+    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
+    cursor = conn.cursor()
+    cursor.execute("SELECT DISTINCT url FROM translations WHERE folderName = ? LIMIT 10", (folder_name,))
+    urls = [row[0] for row in cursor.fetchall()]
+    conn.close()
+    return {"folder_name": folder_name, "urls": urls}
+
+
 @app.get("/translations")
 def get_translations(skip: int = 0, limit: int = 100, folder: Optional[str] = None, search: Optional[str] = None, url: Optional[str] = None):
     """데이터베이스에서 번역 기록을 조회합니다."""
@@ -498,11 +509,38 @@ def get_translations(skip: int = 0, limit: int = 100, folder: Optional[str] = No
         params.extend([f'%{search}%', f'%{search}%'])
     
     if url:
-        # Handle trailing slashes for more robust matching
-        url_with_slash = url if url.endswith('/') else url + '/'
-        url_without_slash = url.rstrip('/')
-        conditions.append("(url = ? OR url = ?)")
-        params.extend([url_with_slash, url_without_slash])
+        # Generate variations of the URL to handle http/https, www, and trailing slashes
+        urls_to_check = set()
+        
+        # 1. Add original URL with and without slash
+        urls_to_check.add(url.rstrip('/'))
+        urls_to_check.add(url.rstrip('/') + '/')
+
+        # 2. Strip protocol and add http/https variations
+        no_protocol_url = re.sub(r'^https?://', '', url).rstrip('/')
+        urls_to_check.add('http://' + no_protocol_url)
+        urls_to_check.add('http://' + no_protocol_url + '/')
+        urls_to_check.add('https://' + no_protocol_url)
+        urls_to_check.add('https://' + no_protocol_url + '/')
+
+        # 3. Handle www variations
+        if no_protocol_url.startswith('www.'):
+            no_www_url = no_protocol_url.replace('www.', '', 1)
+            urls_to_check.add('http://' + no_www_url)
+            urls_to_check.add('http://' + no_www_url + '/')
+            urls_to_check.add('https://' + no_www_url)
+            urls_to_check.add('https://' + no_www_url + '/')
+        else:
+            with_www_url = 'www.' + no_protocol_url
+            urls_to_check.add('http://' + with_www_url)
+            urls_to_check.add('http://' + with_www_url + '/')
+            urls_to_check.add('https://' + with_www_url)
+            urls_to_check.add('https://' + with_www_url + '/')
+
+        url_list = list(urls_to_check)
+        placeholders = ', '.join('?' * len(url_list))
+        conditions.append(f"url IN ({placeholders})")
+        params.extend(url_list)
     if conditions:
         where_clause = " WHERE " + " AND ".join(conditions)
         count_query += where_clause

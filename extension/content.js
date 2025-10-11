@@ -12,6 +12,14 @@ let exclusionSet = new Set(); // Cache for excluded original texts
 
 // Circuit Breaker logic is now managed by background.js
 
+function getCleanUrl() {
+    return window.location.href.split('#')[0];
+}
+
+function getCleanUrl() {
+    return window.location.href.split('#')[0];
+}
+
 // =================================================================================
 // Initialization & Event Listeners
 // =================================================================================
@@ -41,7 +49,7 @@ async function init() {
         setupEventListeners();
 
         // 1. Fetch existing translations and exclusion list in parallel
-        const url = window.location.href;
+        const url = getCleanUrl();
         const [translations, excluded] = await Promise.all([
             fetchTranslationsForUrl(url),
             fetchExclusionsForUrl(url)
@@ -254,7 +262,7 @@ function setupEventListeners() {
 
 
 async function saveSingleTranslation(pid, original, translated) {
-    const url = window.location.href;
+    const url = getCleanUrl();
     const title = document.title;
     const record = {
         url: url,
@@ -285,7 +293,7 @@ async function saveSingleTranslation(pid, original, translated) {
 async function saveAllTranslations(itemsToSave) {
     if (itemsToSave.length === 0) return;
 
-    const url = window.location.href;
+    const url = getCleanUrl();
     const title = document.title;
     const records = itemsToSave.map(item => ({
         url: url,
