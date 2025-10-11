@@ -139,7 +139,7 @@ templates = Jinja2Templates(directory=templates_dir)
 # 로컬 개발 환경과 브라우저 확장 프로그램의 출처를 명시적으로 허용합니다.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost", "http://localhost:8001", "http://127.0.0.1", "http://127.0.0.1:8001"],
+    allow_origins=["http://localhost", "http://localhost:8001", "http://127.0.0.1", "http://127.0.0.1:8001", "https://novel18.syosetu.com"],
     allow_origin_regex="chrome-extension://.*",
     allow_credentials=True,
     allow_methods=["*"],
@@ -288,37 +288,37 @@ Example response format: [{{"id": "p1", "translated": "번역된 텍스트"}}]
     try:
         data = call_gemini_api_with_retry(api_url, prompt)
 
-        # API 응답 구조를 안전하게 파싱합니다.
+        # Explicitly check for top-level feedback block for content blocking
+        feedback = data.get('promptFeedback')
+        if feedback and feedback.get('blockReason'):
+            error_detail = f"API가 콘텐츠를 차단했습니다. 이유: {feedback.get('blockReason')}"
+            raise HTTPException(status_code=500, detail=error_detail)
+
+        # Safely parse the API response for translated text
         raw_text = None
         if data.get('candidates') and isinstance(data['candidates'], list) and data['candidates']:
             candidate = data['candidates'][0]
             
-            # 'PROHIBITED_CONTENT' 와 같은 비정상 종료 사유를 먼저 확인합니다.
             finish_reason = candidate.get('finishReason')
             if finish_reason and finish_reason != 'STOP':
-                # 클라이언트가 재시도할 수 있도록 별도의 상태 코드(예: 451)를 사용할 수 있지만,
-                # 여기서는 구체적인 오류 메시지와 함께 500 오류를 발생시켜 원인을 명확히 합니다.
-                error_detail = f"API가 번역을 거부했습니다. 이유: {finish_reason}. 응답: {data}"
+                error_detail = f"API가 번역을 거부했습니다. 이유: {finish_reason}"
                 raise HTTPException(status_code=500, detail=error_detail)
 
             if candidate.get('content') and candidate['content'].get('parts') and isinstance(candidate['content']['parts'], list) and candidate['content']['parts']:
                 raw_text = candidate['content']['parts'][0].get('text')
 
         if raw_text is None:
-            feedback = data.get('promptFeedback')
+            # Fallback for any other unexpected response structure
             error_detail = f"API 응답에서 번역된 텍스트를 추출할 수 없습니다. 응답: {data}"
-            if feedback:
-                error_detail += f" | 피드백: {feedback}"
             raise HTTPException(status_code=500, detail=error_detail)
         
-        # 응답에서 순수 JSON 배열을 더 안정적으로 추출합니다.
+        # Extract the clean JSON array from the raw text response
         start_index = raw_text.find('[')
         end_index = raw_text.rfind(']')
         
         if start_index != -1 and end_index != -1 and end_index > start_index:
             clean_json_text = raw_text[start_index:end_index+1]
         else:
-            # Fallback: 만약 '[' 와 ']'를 찾지 못하면 기존 정규식 방식을 시도합니다.
             json_match = re.search(r'```(json)?(.*)```', raw_text, re.DOTALL)
             if json_match:
                 clean_json_text = json_match.group(2).strip()
@@ -326,49 +326,38 @@ Example response format: [{{"id": "p1", "translated": "번역된 텍스트"}}]
                 clean_json_text = raw_text.strip()
 
         translated_map = {}
-        # 1. Find all object-like strings "{" ... "}"
-        # This is more robust to missing commas between objects.
         object_strings = re.findall(r'\{[^\{\}]*\}', clean_json_text)
 
         for obj_str in object_strings:
             try:
-                # 2. Extract id
                 id_match = re.search(r'"id"\s*:\s*"(.*?)"', obj_str)
                 if not id_match:
                     continue
                 obj_id = id_match.group(1)
 
-                # 3. Extract translated text robustly
                 trans_key_match = re.search(r'"translated"\s*:\s*"', obj_str)
                 if not trans_key_match:
                     continue
                 
                 content_start_index = trans_key_match.end()
-                
-                # Assume content is everything from there to the last quote in the object string
                 content_end_index = obj_str.rfind('"', content_start_index)
                 
                 if content_end_index == -1:
                     continue
 
                 translated_text = obj_str[content_start_index:content_end_index]
-                
-                # Unescape any \" that the model might have still included
                 translated_text = translated_text.replace('\\"', '"')
 
                 translated_map[obj_id] = translated_text
             except Exception:
-                # Ignore objects that are too malformed to parse.
                 continue
 
         final_translations = []
         for item in req.items:
             translated_text = translated_map.get(item.id)
-            # 번역 결과가 없는 경우 (제외되었거나 API가 누락) 원본 텍스트를 그대로 사용
             if translated_text is None:
                 translated_text = item.text
             else:
-                # 반복 문자 처리 로직 추가
                 translated_text = process_repeated_chars(translated_text)
 
             final_translations.append({
@@ -380,7 +369,6 @@ Example response format: [{{"id": "p1", "translated": "번역된 텍스트"}}]
         return {"translations": final_translations}
     
     except RetryError as e:
-        # 재시도 실패 후 마지막 에러를 기반으로 예외를 발생시킵니다.
         last_exception = e.last_attempt.exception()
         if isinstance(last_exception, requests.exceptions.HTTPError):
             if last_exception.response.status_code == 429:
@@ -390,7 +378,6 @@ Example response format: [{{"id": "p1", "translated": "번역된 텍스트"}}]
     except requests.exceptions.RequestException as e:
         raise HTTPException(status_code=500, detail=f"Gemini API 연결 실패: {e}")
     except (KeyError, IndexError, json.JSONDecodeError) as e:
-        # 원본 API 응답을 포함하여 디버깅을 돕습니다.
         error_detail = f"API 응답 처리 오류: {e}. Original response: '{data.get('candidates', 'N/A') if 'data' in locals() else 'Response not available'}'"
         raise HTTPException(status_code=500, detail=error_detail)
 

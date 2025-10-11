@@ -115,9 +115,16 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                     }
                 }
             } catch (error) {
-                console.error("Error in background script. Re-throwing to trigger content script's error handler:", error.message);
-                // Re-throwing the error should cause chrome.runtime.lastError to be set in the content script.
-                throw error;
+                console.error("Error in background script, sending error response:", error.message);
+                try {
+                    sendResponse({ error: error.message });
+                } catch (e) {
+                    if (e.message.includes(channelClosedMessage)) {
+                        console.log("Failed to send error response: Channel was closed by the client.");
+                    } else {
+                        console.error("Error sending error response:", e);
+                    }
+                }
             }
         })();
         return true; // 비동기 응답을 위해 true 반환

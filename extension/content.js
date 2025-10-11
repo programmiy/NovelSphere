@@ -399,6 +399,11 @@ async function translateAllPTags() {
                 if (chrome.runtime.lastError) {
                     throw new Error(chrome.runtime.lastError.message);
                 }
+
+                // Handle explicit error response from background script
+                if (response && response.error) {
+                    throw new Error(response.error);
+                }
     
                 if (response && response.notification) {
                     logToSidebar(response.notification, 'log-error');
@@ -433,17 +438,6 @@ async function translateAllPTags() {
                 }
             } catch (error) {
                 console.warn(`Chunk translation failed (attempt ${attempt + 1}/${MAX_MESSAGE_RETRIES}):`, error.message);
-
-                if (error && error.message && error.message.includes('PROHIBITED_CONTENT')) {
-                    logToSidebar(`번역 불가 (PROHIBITED_CONTENT): ${items.length}개 항목을 건너뜁니다.`, 'log-error');
-                    const errorResults = items.map(item => ({ 
-                        id: item.id, 
-                        original: item.text, 
-                        translated: '번역 실패: PROHIBITED_CONTENT' 
-                    }));
-                    updateSidebarWithTranslations(errorResults);
-                    return; // Do not retry
-                }
 
                 if (attempt < MAX_MESSAGE_RETRIES - 1) {
                     const delay = 1000 * Math.pow(2, attempt);
