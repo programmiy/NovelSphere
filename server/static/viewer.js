@@ -1,10 +1,10 @@
-
 document.addEventListener('DOMContentLoaded', async () => {
     // --- DOM Elements ---
     const bookTitleElement = document.getElementById('book-title');
     const contentArea = document.getElementById('content-area');
     const focusModeBtn = document.getElementById('focus-mode-btn');
     const viewOriginalBtn = document.getElementById('view-original-btn');
+    const nightModeBtn = document.getElementById('night-mode-btn');
     const viewerContainer = document.querySelector('.viewer-container');
     const bookContainer = document.getElementById('book-container');
     const pageIndicator = document.getElementById('page-indicator');
@@ -13,12 +13,13 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // --- State ---
     let translationItems = [];
-    let pages = []; // Now an array of item arrays
+    let pages = [];
     let currentPage = 0;
     let showOriginal = localStorage.getItem('showOriginalText') === 'true';
     let saveTimeout;
 
     // --- Initialization ---
+    applyInitialTheme();
     const urlParams = new URLSearchParams(window.location.search);
     const bookName = urlParams.get('book');
     bookTitleElement.textContent = bookName || '책을 찾을 수 없음';
@@ -30,6 +31,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // --- Event Listeners ---
     focusModeBtn.addEventListener('click', toggleFocusMode);
     viewOriginalBtn.addEventListener('click', toggleOriginalView);
+    nightModeBtn.addEventListener('click', toggleNightMode);
     document.addEventListener('keydown', handleKeyPress);
     contentArea.addEventListener('mouseup', handleTextSelection);
     
@@ -42,9 +44,24 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // --- Functions ---
 
+    function applyInitialTheme() {
+        const isNightMode = localStorage.getItem('nightMode') === 'true';
+        if (isNightMode) {
+            document.body.classList.add('dark-mode');
+            nightModeBtn.textContent = '주간 모드';
+            nightModeBtn.classList.add('active');
+        }
+    }
+
+    function toggleNightMode() {
+        const isNightMode = document.body.classList.toggle('dark-mode');
+        localStorage.setItem('nightMode', isNightMode);
+        nightModeBtn.textContent = isNightMode ? '주간 모드' : '야간 모드';
+        nightModeBtn.classList.toggle('active', isNightMode);
+    }
+
     async function loadBook() {
         try {
-            // Fetch book content and activity data in parallel
             const [contentResponse, activityResponse] = await Promise.all([
                 fetch(`/stream?book=${encodeURIComponent(bookName)}`),
                 fetch(`/api/books/${encodeURIComponent(bookName)}/activity`)
@@ -71,7 +88,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (activityResponse.ok) {
                 const activityData = await activityResponse.json();
                 if (activityData.last_read_pid) {
-                    // Find the page containing the last read item
                     const pageIndex = pages.findIndex(pageItems => 
                         pageItems.some(item => item.pid === activityData.last_read_pid)
                     );
@@ -142,7 +158,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         contentArea.innerHTML = pageItems.map(createItemHtml).join('');
         pageIndicator.textContent = `${currentPage + 1} / ${pages.length}`;
 
-        // Save the last read position
         saveLastReadPosition();
     }
 
@@ -176,7 +191,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 body: JSON.stringify(payload)
             }).catch(error => console.error('Failed to save last read position:', error));
 
-        }, 1500); // Debounce for 1.5 seconds
+        }, 1500);
     }
 
     function showPrevPage() {

@@ -9,6 +9,13 @@
     --primary-color: #4C6EF5;
 }
 
+body.dark-mode {
+    --bg-color: #121212;
+    --text-color: #e0e0e0;
+    --border-color: #333;
+    --card-bg: #1e1e1e;
+}
+
 body {
     font-family: var(--font-primary);
     background-color: var(--bg-color);
