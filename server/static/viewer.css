@@ -161,6 +161,34 @@ body {
     position: relative; /* For absolute positioning of pages if needed */
 }
 
+.nav-arrow {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 2.5rem;
+    color: #000;
+    background-color: rgba(255, 255, 255, 0.7);
+    border-radius: 50%;
+    width: 50px;
+    height: 50px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.2s ease-in-out;
+    pointer-events: none; /* Initially not clickable */
+    user-select: none;
+}
+
+.nav-arrow.left {
+    left: 15px;
+}
+
+.nav-arrow.right {
+    right: 15px;
+}
+
 .content-area {
     /* The padding is now more important for content spacing within the page */
     padding: 4% 6%;
@@ -170,12 +198,7 @@ body {
 }
 
 #book-navigation {
-    flex-shrink: 0;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    padding: 1rem;
-    gap: 1rem;
+    display: none; /* Hide the buttons as per new UX */
 }
 
 #page-indicator {

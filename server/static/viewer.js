@@ -1,4 +1,3 @@
-
 document.addEventListener('DOMContentLoaded', async () => {
     // --- DOM Elements ---
     const bookTitleElement = document.getElementById('book-title');
@@ -6,157 +5,187 @@ document.addEventListener('DOMContentLoaded', async () => {
     const focusModeBtn = document.getElementById('focus-mode-btn');
     const viewOriginalBtn = document.getElementById('view-original-btn');
     const viewerContainer = document.querySelector('.viewer-container');
-    const prevPageBtn = document.getElementById('prev-page-btn');
-    const nextPageBtn = document.getElementById('next-page-btn');
-    const pageIndicator = document.getElementById('page-indicator');
-
-    // --- State ---
-    let translationItems = [];
-    let pages = [];
-    let currentPage = 0;
-    let showOriginal = localStorage.getItem('showOriginalText') === 'true';
-
-    // --- Initialization ---
-    const urlParams = new URLSearchParams(window.location.search);
-    const bookName = urlParams.get('book');
-    bookTitleElement.textContent = bookName || '책을 찾을 수 없음';
-
-    if (showOriginal) {
-        viewOriginalBtn.classList.add('active');
-    }
-
-    // --- Event Listeners ---
-    focusModeBtn.addEventListener('click', toggleFocusMode);
-    viewOriginalBtn.addEventListener('click', toggleOriginalView);
-    prevPageBtn.addEventListener('click', showPrevPage);
-    nextPageBtn.addEventListener('click', showNextPage);
-    document.addEventListener('keydown', handleKeyPress);
-    contentArea.addEventListener('mouseup', handleTextSelection);
-
-    // --- Main Execution ---
-    await loadBook();
-
-    // --- Functions ---
-
-    async function loadBook() {
-        try {
-            const response = await fetch(`/stream?book=${encodeURIComponent(bookName)}`);
-            if (!response.ok) throw new Error(`Server error: ${response.status}`);
-            
-            const sseText = await response.text();
-            translationItems = sseText.split('\n\n')
-                .filter(line => line.startsWith('data:'))
-                .map(line => JSON.parse(line.substring(5)));
-
-            if (translationItems.length === 0) {
-                contentArea.innerHTML = '<p>표시할 내용이 없습니다.</p>';
-                return;
-            }
-
-            const bookTitleFromData = translationItems[0]?.title || bookName;
-            bookTitleElement.textContent = bookTitleFromData;
-
-            // Wait for the browser to render everything before paginating
-            await paginate();
-            renderPage(currentPage);
-
-        } catch (error) {
-            console.error('Error loading book:', error);
-            contentArea.innerHTML = `<p style="color: red;">콘텐츠를 불러오는 데 실패했습니다: ${error.message}</p>`;
-        }
-    }
-
-    async function paginate() {
-        return new Promise(resolve => {
-            // Ensure contentArea is visible and has dimensions
-            if (contentArea.offsetHeight === 0) {
-                setTimeout(() => paginate().then(resolve), 100);
-                return;
-            }
-
-            pages = [];
-            let currentPageHtml = '';
-            const maxPageHeight = contentArea.clientHeight;
-
-            // Create a hidden measurer div with the same styles as the content area
-            const measurer = document.createElement('div');
-            measurer.style.position = 'absolute';
-            measurer.style.left = '-9999px';
-            measurer.style.width = contentArea.clientWidth + 'px';
-            measurer.style.padding = getComputedStyle(contentArea).padding;
-            measurer.style.lineHeight = getComputedStyle(contentArea).lineHeight;
-            measurer.style.fontSize = getComputedStyle(contentArea).fontSize;
-            document.body.appendChild(measurer);
-
-            for (const item of translationItems) {
-                const itemHtml = createItemHtml(item);
-                measurer.innerHTML += itemHtml;
-
-                if (measurer.scrollHeight > maxPageHeight) {
-                    pages.push(currentPageHtml); // Save the page before it overflowed
-                    currentPageHtml = itemHtml; // Start new page with the current item
-                    measurer.innerHTML = itemHtml;
-                } else {
-                    currentPageHtml += itemHtml;
-                }
-            }
-
-            // Add the last page
-            if (currentPageHtml) {
-                pages.push(currentPageHtml);
-            }
-
-            document.body.removeChild(measurer);
-            resolve();
-        });
-    }
-
-    function renderPage(pageIndex) {
-        if (pageIndex < 0 || pageIndex >= pages.length) return;
-
-        currentPage = pageIndex;
-        contentArea.innerHTML = pages[currentPage];
-
-        // Update UI
-        pageIndicator.textContent = `${currentPage + 1} / ${pages.length}`;
-        prevPageBtn.disabled = currentPage === 0;
-        nextPageBtn.disabled = currentPage === pages.length - 1;
-    }
-
-    function createItemHtml(item) {
-        let itemHtml = `<div class="translation-item" 
-                             data-id="${item.id}" 
-                             data-url="${item.url}" 
-                             data-pid="${item.pid}" 
-                             data-original="${escapeHtml(item.original)}">
-`;
+        const bookContainer = document.getElementById('book-container');
+        const pageIndicator = document.getElementById('page-indicator');
+        const navArrowLeft = document.getElementById('nav-arrow-left');
+        const navArrowRight = document.getElementById('nav-arrow-right');
+    
+        // --- State ---
+        let translationItems = [];
+        let pages = [];
+        let currentPage = 0;
+        let showOriginal = localStorage.getItem('showOriginalText') === 'true';
+    
+        // --- Initialization ---
+        const urlParams = new URLSearchParams(window.location.search);
+        const bookName = urlParams.get('book');
+        bookTitleElement.textContent = bookName || '책을 찾을 수 없음';
+    
         if (showOriginal) {
-            itemHtml += `<p class="original-text">${escapeHtml(item.original)}</p>`;
+            viewOriginalBtn.classList.add('active');
         }
-        itemHtml += `<p class="translated-text">${escapeHtml(item.translated)}</p></div>`;
-        return itemHtml;
-    }
-
-    function showPrevPage() {
-        if (currentPage > 0) {
-            renderPage(currentPage - 1);
+    
+        // --- Event Listeners ---
+        focusModeBtn.addEventListener('click', toggleFocusMode);
+        viewOriginalBtn.addEventListener('click', toggleOriginalView);
+        document.addEventListener('keydown', handleKeyPress);
+        contentArea.addEventListener('mouseup', handleTextSelection);
+        
+        bookContainer.addEventListener('click', handleBookClick);
+        bookContainer.addEventListener('mousemove', handleBookMouseMove);
+        bookContainer.addEventListener('mouseleave', handleBookMouseLeave);
+    
+        // --- Main Execution ---
+        await loadBook();
+    
+        // --- Functions ---
+    
+        async function loadBook() {
+            try {
+                const response = await fetch(`/stream?book=${encodeURIComponent(bookName)}`);
+                if (!response.ok) throw new Error(`Server error: ${response.status}`);
+                
+                const sseText = await response.text();
+                translationItems = sseText.split('\n\n')
+                    .filter(line => line.startsWith('data:'))
+                    .map(line => JSON.parse(line.substring(5)));
+    
+                if (translationItems.length === 0) {
+                    contentArea.innerHTML = '<p>표시할 내용이 없습니다.</p>';
+                    return;
+                }
+    
+                const bookTitleFromData = translationItems[0]?.title || bookName;
+                bookTitleElement.textContent = bookTitleFromData;
+    
+                await paginate();
+                renderPage(currentPage);
+    
+            } catch (error) {
+                console.error('Error loading book:', error);
+                contentArea.innerHTML = `<p style="color: red;">콘텐츠를 불러오는 데 실패했습니다: ${error.message}</p>`;
+            }
         }
-    }
-
-    function showNextPage() {
-        if (currentPage < pages.length - 1) {
-            renderPage(currentPage + 1);
+    
+        async function paginate() {
+            return new Promise(resolve => {
+                if (contentArea.offsetHeight === 0) {
+                    setTimeout(() => paginate().then(resolve), 100);
+                    return;
+                }
+    
+                pages = [];
+                let currentPageHtml = '';
+                const maxPageHeight = contentArea.clientHeight;
+    
+                const measurer = document.createElement('div');
+                measurer.style.position = 'absolute';
+                measurer.style.left = '-9999px';
+                measurer.style.width = contentArea.clientWidth + 'px';
+                measurer.style.padding = getComputedStyle(contentArea).padding;
+                measurer.style.lineHeight = getComputedStyle(contentArea).lineHeight;
+                measurer.style.fontSize = getComputedStyle(contentArea).fontSize;
+                document.body.appendChild(measurer);
+    
+                for (const item of translationItems) {
+                    const itemHtml = createItemHtml(item);
+                    measurer.innerHTML += itemHtml;
+    
+                    if (measurer.scrollHeight > maxPageHeight) {
+                        pages.push(currentPageHtml);
+                        currentPageHtml = itemHtml;
+                        measurer.innerHTML = itemHtml;
+                    } else {
+                        currentPageHtml += itemHtml;
+                    }
+                }
+    
+                if (currentPageHtml) {
+                    pages.push(currentPageHtml);
+                }
+    
+                document.body.removeChild(measurer);
+                resolve();
+            });
         }
-    }
-
-    function handleKeyPress(e) {
-        if (e.key === 'ArrowLeft') {
-            showPrevPage();
-        } else if (e.key === 'ArrowRight') {
-            showNextPage();
+    
+        function renderPage(pageIndex) {
+            if (pageIndex < 0 || pageIndex >= pages.length) return;
+    
+            currentPage = pageIndex;
+            contentArea.innerHTML = pages[currentPage];
+            pageIndicator.textContent = `${currentPage + 1} / ${pages.length}`;
         }
-    }
+    
+        function createItemHtml(item) {
+            let itemHtml = `<div class="translation-item" 
+                                 data-id="${item.id}" 
+                                 data-url="${item.url}" 
+                                 data-pid="${item.pid}" 
+                                 data-original="${escapeHtml(item.original)}">`;
+            if (showOriginal) {
+                itemHtml += `<p class="original-text">${escapeHtml(item.original)}</p>`;
+            }
+            itemHtml += `<p class="translated-text">${escapeHtml(item.translated)}</p></div>`;
+            return itemHtml;
+        }
+    
+        function showPrevPage() {
+            if (currentPage > 0) {
+                renderPage(currentPage - 1);
+            }
+        }
+    
+        function showNextPage() {
+            if (currentPage < pages.length - 1) {
+                renderPage(currentPage + 1);
+            }
+        }
+    
+        function handleKeyPress(e) {
+            if (e.key === 'ArrowLeft') {
+                showPrevPage();
+            } else if (e.key === 'ArrowRight') {
+                showNextPage();
+            }
+        }
+    
+        // --- New Navigation Handlers ---
+        function handleBookClick(e) {
+            const rect = bookContainer.getBoundingClientRect();
+            const clickX = e.clientX - rect.left;
+            const clickArea = clickX / rect.width;
+    
+            if (clickArea < 0.3) { // Left 30%
+                showPrevPage();
+            } else if (clickArea > 0.7) { // Right 30%
+                showNextPage();
+            }
+        }
+    
+        function handleBookMouseMove(e) {
+            const rect = bookContainer.getBoundingClientRect();
+            const hoverX = e.clientX - rect.left;
+            const hoverArea = hoverX / rect.width;
+    
+            if (hoverArea < 0.3) {
+                navArrowLeft.style.opacity = '1';
+                navArrowRight.style.opacity = '0';
+            } else if (hoverArea > 0.7) {
+                navArrowLeft.style.opacity = '0';
+                navArrowRight.style.opacity = '1';
+            } else {
+                navArrowLeft.style.opacity = '0';
+                navArrowRight.style.opacity = '0';
+            }
+        }
+    
+        function handleBookMouseLeave() {
+            navArrowLeft.style.opacity = '0';
+            navArrowRight.style.opacity = '0';
+        }
 
+    // --- Other Functions ---
     function toggleFocusMode() {
         viewerContainer.classList.toggle('focus-mode');
         focusModeBtn.textContent = viewerContainer.classList.contains('focus-mode') ? '집중 모드 종료' : '집중 모드';
@@ -165,7 +194,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     function toggleOriginalView() {
         showOriginal = !showOriginal;
         localStorage.setItem('showOriginalText', showOriginal);
-        window.location.reload(); // Simple reload to re-paginate
+        window.location.reload();
     }
 
     function handleTextSelection(e) {
@@ -234,7 +263,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                 translatedTextElement.style.backgroundColor = '';
             }, 1500);
             
-            // Update the item in the source array to persist change across pagination
             const itemId = parseInt(translationItem.dataset.id);
             const sourceItem = translationItems.find(i => i.id === itemId);
             if(sourceItem) sourceItem.translated = newTranslatedText;
@@ -247,6 +275,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     function escapeHtml(text) {
         if (text === null || text === undefined) return '';
-        return text.toString().replace(/[&<>'"\/]/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;','\'':'&#039;','/':'&#x2F;'})[s]);
+        return text.toString()
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
     }
 });
