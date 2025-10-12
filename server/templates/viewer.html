@@ -4,8 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>로컬 뷰어</title>
-    <link rel="stylesheet" href="/static/viewer.css?v=1.2">
-    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <link rel="stylesheet" href="/static/viewer.css?v=1.1">
 </head>
 <body>
     <div class="viewer-container">
@@ -13,34 +12,23 @@
             <a href="/" class="back-link">&larr; 서재로 돌아가기</a>
             <h1 id="book-title">로딩 중...</h1>
             <div class="viewer-settings">
-                <button id="toc-btn" class="btn"><span class="material-icons">list</span> 목차</button>
                 <button id="focus-mode-btn" class="btn">집중 모드</button>
+                <button id="view-original-btn" class="btn">원문 보기</button>
+                <button id="night-mode-btn" class="btn">야간 모드</button>
             </div>
         </header>
-
         <main id="book-container">
             <div id="content-area" class="content-area"></div>
-            <div class="nav-arrow left" id="nav-arrow-left"><span class="material-icons">chevron_left</span></div>
-            <div class="nav-arrow right" id="nav-arrow-right"><span class="material-icons">chevron_right</span></div>
+            <div class="nav-arrow left" id="nav-arrow-left">&lt;</div>
+            <div class="nav-arrow right" id="nav-arrow-right">&gt;</div>
         </main>
+        <div id="book-navigation">
+            <button id="prev-page-btn" class="btn">&lt; 이전</button>
+            <span id="page-indicator"></span>
+            <button id="next-page-btn" class="btn">다음 &gt;</button>
+        </div>
     </div>
-
-    <aside id="sidebar-toc" class="sidebar">
-        <div class="sidebar-header">
-            <h3>목차</h3>
-            <button id="sidebar-close-btn" class="btn btn-icon"><span class="material-icons">close</span></button>
-        </div>
-        <div id="sidebar-content" class="sidebar-content">
-            <!-- TOC items will be loaded here -->
-        </div>
-        <div class="sidebar-footer">
-            <button id="view-original-btn" class="btn">원문 보기</button>
-            <button id="night-mode-btn" class="btn">야간 모드</button>
-        </div>
-    </aside>
-    <div id="sidebar-overlay" class="sidebar-overlay"></div>
-
-    <script src="/static/viewer.js?v=1.2"></script>
+    <script src="/static/viewer.js"></script>
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {

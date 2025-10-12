@@ -33,7 +33,7 @@ def get_api_key():
 
 def init_db():
     """데이터베이스를 초기화하고 테이블을 생성합니다."""
-    conn = sqlite3.connect(DATABASE_FILE, timeout=15, connect_args={"check_same_thread": False})
+    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
     cursor = conn.cursor()
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS translations (
@@ -179,7 +179,7 @@ async def read_library_ui_alias(request: Request):
 
 async def stream_translations(book: Optional[str] = None):
     """DB에서 번역 데이터를 스트리밍합니다. '미분류' 폴더를 지원합니다."""
-    conn = sqlite3.connect(DATABASE_FILE, timeout=15, connect_args={"check_same_thread": False})
+    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
     conn.row_factory = dict_factory
     cursor = conn.cursor()
     
@@ -255,7 +255,7 @@ def process_repeated_chars(text: str) -> str:
 @app.post("/translate")
 def translate_texts(req: TranslateRequest):
     """Gemini API를 호출하여 텍스트를 번역합니다. ID 기반 매칭과 재시도 로직으로 안정성을 높였습니다."""
-    conn = sqlite3.connect(DATABASE_FILE, timeout=15, connect_args={"check_same_thread": False})
+    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
     cursor = conn.cursor()
 
     cursor.execute("SELECT original FROM excluded_sentences WHERE url = ?", (req.url,))
@@ -398,7 +398,7 @@ def migrate_data():
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="migration_data.json 파일을 찾을 수 없습니다.")
 
-    conn = sqlite3.connect(DATABASE_FILE, timeout=15, connect_args={"check_same_thread": False})
+    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
     cursor = conn.cursor()
     
     migrated_count = 0
@@ -479,7 +479,7 @@ def dict_factory(cursor, row):
 @app.get("/debug/urls_by_folder")
 def debug_get_urls_by_folder(folder_name: str):
     """Temporary debug endpoint to get distinct URLs for a folder."""
-    conn = sqlite3.connect(DATABASE_FILE, timeout=15, connect_args={"check_same_thread": False})
+    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
     cursor = conn.cursor()
     cursor.execute("SELECT DISTINCT url FROM translations WHERE folderName = ? LIMIT 10", (folder_name,))
     urls = [row[0] for row in cursor.fetchall()]
@@ -490,7 +490,7 @@ def debug_get_urls_by_folder(folder_name: str):
 @app.get("/translations")
 def get_translations(skip: int = 0, limit: int = 100, folder: Optional[str] = None, search: Optional[str] = None, url: Optional[str] = None):
     """데이터베이스에서 번역 기록을 조회합니다."""
-    conn = sqlite3.connect(DATABASE_FILE, timeout=15, connect_args={"check_same_thread": False})
+    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
     conn.text_factory = str
     conn.row_factory = dict_factory
     cursor = conn.cursor()
@@ -572,7 +572,7 @@ def get_translations(skip: int = 0, limit: int = 100, folder: Optional[str] = No
 @app.get("/paged_translations")
 def get_paged_translations(page: int = 1, per_page: int = 20):
     """페이지네이션을 지원하는 번역 기록 조회 엔드포인트입니다."""
-    conn = sqlite3.connect(DATABASE_FILE, timeout=15, connect_args={"check_same_thread": False})
+    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
     conn.text_factory = str
     conn.row_factory = dict_factory
     cursor = conn.cursor()
@@ -606,7 +606,7 @@ class TranslationItem(BaseModel):
 @app.post("/translations/upsert")
 def upsert_translations(items: List[TranslationItem]):
     """번역 기록을 데이터베이스에 추가하거나 업데이트합니다."""
-    conn = sqlite3.connect(DATABASE_FILE, timeout=15, connect_args={"check_same_thread": False})
+    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
     cursor = conn.cursor()
     
     updated_count = 0
@@ -671,7 +671,7 @@ def move_translations(req: MoveRequest):
     placeholders = ', '.join('?' * len(req.ids))
     query = f"UPDATE translations SET folderName = ? WHERE id IN ({placeholders})"
     params = [req.folder_name] + req.ids
-    conn = sqlite3.connect(DATABASE_FILE, timeout=15, connect_args={"check_same_thread": False})
+    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
     cursor = conn.cursor()
     cursor.execute(query, params)
     updated_count = cursor.rowcount
@@ -684,7 +684,7 @@ def delete_translations(req: DeleteRequest):
     """지정된 ID의 번역 기록들을 삭제합니다."""
     placeholders = ', '.join('?' * len(req.ids))
     query = f"DELETE FROM translations WHERE id IN ({placeholders})"
-    conn = sqlite3.connect(DATABASE_FILE, timeout=15, connect_args={"check_same_thread": False})
+    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
     cursor = conn.cursor()
     cursor.execute(query, req.ids)
     deleted_count = cursor.rowcount
@@ -700,7 +700,7 @@ class FindReplaceRequest(BaseModel):
 @app.post("/translations/find_replace")
 def find_replace_all(req: FindReplaceRequest):
     """모든 번역 기록의 번역된 텍스트에 대해 찾아 바꾸기를 수행합니다."""
-    conn = sqlite3.connect(DATABASE_FILE, timeout=15, connect_args={"check_same_thread": False})
+    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
     cursor = conn.cursor()
     query = "UPDATE translations SET translated = REPLACE(translated, ?, ?)"
     cursor.execute(query, (req.find_text, req.replace_text))
@@ -713,7 +713,7 @@ def find_replace_all(req: FindReplaceRequest):
 @app.get("/excluded_sentences")
 def get_excluded_sentences(url: str):
     """특정 URL에 대해 제외된 모든 원문 텍스트 목록을 반환합니다."""
-    conn = sqlite3.connect(DATABASE_FILE, timeout=15, connect_args={"check_same_thread": False})
+    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
     cursor = conn.cursor()
     cursor.execute("SELECT original FROM excluded_sentences WHERE url = ?", (url,))
     excluded_originals = [row[0] for row in cursor.fetchall()]
@@ -727,7 +727,7 @@ class ExcludeRequest(BaseModel):
 @app.post("/translations/exclude")
 def exclude_translations(req: ExcludeRequest):
     """지정된 ID의 번역 기록을 제외 목록에 추가하고 원본을 삭제합니다."""
-    conn = sqlite3.connect(DATABASE_FILE, timeout=15, connect_args={"check_same_thread": False})
+    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
     cursor = conn.cursor()
     excluded_count = 0
     for translation_id in req.ids:
@@ -750,7 +750,7 @@ class UpdateTitleRequest(BaseModel):
 @app.put("/translations/url_title")
 def update_title_for_url(req: UpdateTitleRequest):
     """Updates the title for all entries with a given URL."""
-    conn = sqlite3.connect(DATABASE_FILE, timeout=15, connect_args={"check_same_thread": False})
+    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
     cursor = conn.cursor()
     cursor.execute("UPDATE translations SET title = ? WHERE url = ?", (req.title, req.url))
     updated_count = cursor.rowcount
@@ -765,7 +765,7 @@ class ApplyUrlRequest(BaseModel):
 
 @app.post("/api/urls/apply")
 def toggle_apply_url(req: ApplyUrlRequest):
-    conn = sqlite3.connect(DATABASE_FILE, timeout=15, connect_args={"check_same_thread": False})
+    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
     cursor = conn.cursor()
     clean_url = req.url.split('#')[0].rstrip('/')
     
@@ -795,7 +795,7 @@ def toggle_apply_url(req: ApplyUrlRequest):
 @app.get("/translations_by_folder")
 def get_translations_by_folder():
     """데이터베이스에서 모든 번역 기록을 폴더와 URL별로 그룹화하여 조회합니다."""
-    conn = sqlite3.connect(DATABASE_FILE, timeout=15, connect_args={"check_same_thread": False})
+    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
     conn.text_factory = str
     conn.row_factory = dict_factory
     cursor = conn.cursor()
@@ -828,7 +828,7 @@ def get_translations_by_folder():
 @app.get("/api/urls/apply_status")
 def get_apply_status(url: str):
     """Checks if a URL is marked as 'applied' using robust matching."""
-    conn = sqlite3.connect(DATABASE_FILE, timeout=15, connect_args={"check_same_thread": False})
+    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
     cursor = conn.cursor()
 
     # Robust URL matching logic
@@ -894,7 +894,7 @@ def _fetch_and_update_title_worker(url: str):
             if not title or any(invalid in title for invalid in invalid_titles):
                 print(f"Skipping invalid title for {url}: {title}")
                 return False
-            conn = sqlite3.connect(DATABASE_FILE, timeout=15, connect_args={"check_same_thread": False})
+            conn = sqlite3.connect(DATABASE_FILE, timeout=15)
             cursor = conn.cursor()
             cursor.execute("UPDATE translations SET title = ? WHERE url = ?", (title, url))
             conn.commit()
@@ -927,7 +927,7 @@ async def fetch_missing_titles_endpoint(background_tasks: BackgroundTasks):
     Fetches titles for all entries in the database that do not have a title yet.
     This is a long-running background task.
     """
-    conn = sqlite3.connect(DATABASE_FILE, timeout=15, connect_args={"check_same_thread": False})
+    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
     cursor = conn.cursor()
     invalid_titles_tuple = ('年齢確認', 'Just a moment...', 'Log in', '')
     placeholders = ', '.join('?' * len(invalid_titles_tuple))
@@ -945,7 +945,7 @@ class PinRequest(BaseModel):
 
 @app.post("/api/books/pin")
 def toggle_pin_book(req: PinRequest):
-    conn = sqlite3.connect(DATABASE_FILE, timeout=15, connect_args={"check_same_thread": False})
+    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
     cursor = conn.cursor()
     cursor.execute("SELECT folderName FROM pinned_books WHERE folderName = ?", (req.folderName,))
     is_pinned = cursor.fetchone()
@@ -965,7 +965,7 @@ class FolderCreate(BaseModel):
 @app.post("/api/folders")
 def create_folder(req: FolderCreate):
     """새 폴더를 생성합니다. `book_activity` 테이블에 항목을 추가하여 폴더가 존재하도록 합니다."""
-    conn = sqlite3.connect(DATABASE_FILE, timeout=15, connect_args={"check_same_thread": False})
+    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
     cursor = conn.cursor()
     try:
         cursor.execute("INSERT INTO book_activity (folderName) VALUES (?)", (req.folder_name,))
@@ -994,7 +994,7 @@ def update_folder_name(folder_name: str, req: FolderUpdate):
     if not new_name or old_name == new_name:
         raise HTTPException(status_code=400, detail="잘못된 폴더 이름입니다.")
 
-    conn = sqlite3.connect(DATABASE_FILE, timeout=15, connect_args={"check_same_thread": False})
+    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
     cursor = conn.cursor()
 
     try:
@@ -1033,7 +1033,7 @@ def get_folders():
     고정된 폴더, 그 다음 나머지 폴더 순으로 정렬하여 반환합니다.
     '미분류' 폴더도 지원하며, 각 폴더의 태그와 활동 정보를 포함합니다.
     """
-    conn = sqlite3.connect(DATABASE_FILE, timeout=15, connect_args={"check_same_thread": False})
+    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
     conn.row_factory = dict_factory
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM book_activity")
@@ -1084,7 +1084,7 @@ def get_books():
 def get_book_urls(folder_name: str):
     """Gets all URLs and their translation counts for a specific book/folder."""
     decoded_folder_name = unquote(folder_name)
-    conn = sqlite3.connect(DATABASE_FILE, timeout=15, connect_args={"check_same_thread": False})
+    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
     conn.row_factory = dict_factory
     cursor = conn.cursor()
 
@@ -1098,93 +1098,6 @@ def get_book_urls(folder_name: str):
     urls = cursor.fetchall()
     conn.close()
     return urls
-
-
-# --- Viewer v2 APIs ---
-
-@app.get("/api/books/{book_name}/toc")
-def get_book_toc(book_name: str):
-    """Gets a lightweight table of contents (id, pid, title) for a book."""
-    decoded_folder_name = unquote(book_name)
-    conn = sqlite3.connect(DATABASE_FILE, timeout=15, connect_args={"check_same_thread": False})
-    conn.row_factory = dict_factory
-    cursor = conn.cursor()
-
-    query = "SELECT id, pid, title, url FROM translations WHERE folderName = ? ORDER BY timestamp ASC"
-    params = [decoded_folder_name]
-    if decoded_folder_name == "미분류":
-        query = "SELECT id, pid, title, url FROM translations WHERE folderName IS NULL ORDER BY timestamp ASC"
-        params = []
-
-    cursor.execute(query, tuple(params))
-    toc = cursor.fetchall()
-    conn.close()
-    return toc
-
-@app.get("/api/items/{item_id}")
-def get_item(item_id: int):
-    """Gets a single translation item by its primary ID."""
-    conn = sqlite3.connect(DATABASE_FILE, timeout=15, connect_args={"check_same_thread": False})
-    conn.row_factory = dict_factory
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM translations WHERE id = ?", (item_id,))
-    item = cursor.fetchone()
-    conn.close()
-    if not item:
-        raise HTTPException(status_code=404, detail="Item not found")
-    return item
-
-@app.get("/api/items/{item_id}/next")
-def get_next_item(item_id: int):
-    """Gets the next translation item in the book, ordered by timestamp."""
-    conn = sqlite3.connect(DATABASE_FILE, timeout=15, connect_args={"check_same_thread": False})
-    conn.row_factory = dict_factory
-    cursor = conn.cursor()
-
-    # First, get the timestamp and folder of the current item
-    cursor.execute("SELECT timestamp, folderName FROM translations WHERE id = ?", (item_id,))
-    current = cursor.fetchone()
-    if not current:
-        raise HTTPException(status_code=404, detail="Current item not found")
-
-    # Now, find the first item with a later timestamp in the same folder
-    folder_name = current['folderName']
-    if folder_name is None:
-        cursor.execute("SELECT * FROM translations WHERE folderName IS NULL AND timestamp > ? ORDER BY timestamp ASC LIMIT 1", (current['timestamp'],))
-    else:
-        cursor.execute("SELECT * FROM translations WHERE folderName = ? AND timestamp > ? ORDER BY timestamp ASC LIMIT 1", (folder_name, current['timestamp']))
-    
-    next_item = cursor.fetchone()
-    conn.close()
-    if not next_item:
-        raise HTTPException(status_code=404, detail="Next item not found")
-    return next_item
-
-@app.get("/api/items/{item_id}/prev")
-def get_prev_item(item_id: int):
-    """Gets the previous translation item in the book, ordered by timestamp."""
-    conn = sqlite3.connect(DATABASE_FILE, timeout=15, connect_args={"check_same_thread": False})
-    conn.row_factory = dict_factory
-    cursor = conn.cursor()
-
-    # First, get the timestamp and folder of the current item
-    cursor.execute("SELECT timestamp, folderName FROM translations WHERE id = ?", (item_id,))
-    current = cursor.fetchone()
-    if not current:
-        raise HTTPException(status_code=404, detail="Current item not found")
-
-    # Now, find the first item with an earlier timestamp in the same folder, in descending order
-    folder_name = current['folderName']
-    if folder_name is None:
-        cursor.execute("SELECT * FROM translations WHERE folderName IS NULL AND timestamp < ? ORDER BY timestamp DESC LIMIT 1", (current['timestamp'],))
-    else:
-        cursor.execute("SELECT * FROM translations WHERE folderName = ? AND timestamp < ? ORDER BY timestamp DESC LIMIT 1", (folder_name, current['timestamp']))
-    
-    prev_item = cursor.fetchone()
-    conn.close()
-    if not prev_item:
-        raise HTTPException(status_code=404, detail="Previous item not found")
-    return prev_item
 
 
 # --- Tag Management APIs ---
@@ -1201,7 +1114,7 @@ class BookTagUpdate(BaseModel):
 
 @app.get("/api/tags", response_model=List[Tag])
 def get_all_tags():
-    conn = sqlite3.connect(DATABASE_FILE, timeout=15, connect_args={"check_same_thread": False})
+    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
     conn.row_factory = dict_factory
     cursor = conn.cursor()
     tags = cursor.execute("SELECT id, name FROM tags ORDER BY name").fetchall()
@@ -1210,7 +1123,7 @@ def get_all_tags():
 
 @app.post("/api/tags", response_model=Tag)
 def create_tag(tag: TagCreate):
-    conn = sqlite3.connect(DATABASE_FILE, timeout=15, connect_args={"check_same_thread": False})
+    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
     cursor = conn.cursor()
     try:
         cursor.execute("INSERT INTO tags (name) VALUES (?)", (tag.name,))
@@ -1225,7 +1138,7 @@ def create_tag(tag: TagCreate):
 @app.put("/api/books/{folder_name}/tags")
 def update_book_tags(folder_name: str, req: BookTagUpdate):
     decoded_folder_name = unquote(folder_name)
-    conn = sqlite3.connect(DATABASE_FILE, timeout=15, connect_args={"check_same_thread": False})
+    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
     cursor = conn.cursor()
     try:
         cursor.execute("DELETE FROM book_tags WHERE book_folderName = ?", (decoded_folder_name,))
@@ -1255,7 +1168,7 @@ class BookActivityUpdate(BaseModel):
 def update_book_activity(folder_name: str, req: BookActivityUpdate):
     """책의 활동 정보를 업데이트합니다 (UPSERT)."""
     decoded_folder_name = unquote(folder_name)
-    conn = sqlite3.connect(DATABASE_FILE, timeout=15, connect_args={"check_same_thread": False})
+    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
     conn.row_factory = dict_factory
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM book_activity WHERE folderName = ?", (decoded_folder_name,))
@@ -1287,7 +1200,7 @@ def update_book_activity(folder_name: str, req: BookActivityUpdate):
 def get_book_activity(folder_name: str):
     """Gets the activity data for a specific book."""
     decoded_folder_name = unquote(folder_name)
-    conn = sqlite3.connect(DATABASE_FILE, timeout=15, connect_args={"check_same_thread": False})
+    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
     conn.row_factory = dict_factory
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM book_activity WHERE folderName = ?", (decoded_folder_name,))
@@ -1326,7 +1239,7 @@ def _crawl_and_update_summary_worker(folder_name: str, url: str):
                 summary = meta_match.group(1).strip()
 
         if summary:
-            conn = sqlite3.connect(DATABASE_FILE, timeout=15, connect_args={"check_same_thread": False})
+            conn = sqlite3.connect(DATABASE_FILE, timeout=15)
             cursor = conn.cursor()
             cursor.execute("""
                 INSERT INTO book_activity (folderName, summary) VALUES (?, ?)
@@ -1349,7 +1262,7 @@ async def crawl_summary_endpoint(folder_name: str, background_tasks: BackgroundT
     """줄거리 크롤링을 백그라운드 작업으로 시작하는 API 엔드포인트"""
     decoded_folder_name = unquote(folder_name)
 
-    conn = sqlite3.connect(DATABASE_FILE, timeout=15, connect_args={"check_same_thread": False})
+    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
     cursor = conn.cursor()
     cursor.execute("SELECT summary_source_url FROM book_activity WHERE folderName = ?", (decoded_folder_name,))
     result = cursor.fetchone()
@@ -1372,7 +1285,7 @@ async def read_root(request: Request):
 @app.post("/admin/cleanup_pids")
 def cleanup_pids():
     """'la' 또는 'lp'로 시작하는 PID를 가진 기록을 제외 처리합니다."""
-    conn = sqlite3.connect(DATABASE_FILE, timeout=15, connect_args={"check_same_thread": False})
+    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
     cursor = conn.cursor()
     cursor.execute("SELECT id, url, original FROM translations WHERE lower(pid) GLOB 'la[0-9]*' OR lower(pid) GLOB 'lp[0-9]*'")
     records_to_exclude = cursor.fetchall()

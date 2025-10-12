@@ -7,7 +7,6 @@
     --border-color: #dee2e6;
     --card-bg: #ffffff;
     --primary-color: #4C6EF5;
-    --sidebar-width: 320px;
 }
 
 body.dark-mode {
@@ -22,33 +21,29 @@ body {
     background-color: var(--bg-color);
     color: var(--text-color);
     margin: 0;
-    transition: background-color 0.3s ease; /* Theme change transition */
 }
 
 .viewer-container {
-    width: 100%;
-    height: 100vh;
-    display: flex;
-    flex-direction: column;
+    max-width: 800px;
+    margin: 0 auto;
+    background-color: var(--card-bg);
+    box-shadow: 0 0 15px rgba(0,0,0,0.07);
+    min-height: 100vh;
 }
 
 .viewer-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 0.75rem 1.5rem;
+    padding: 1rem 1.5rem;
     border-bottom: 1px solid var(--border-color);
-    flex-shrink: 0;
     transition: all 0.3s ease;
 }
 
 .viewer-header h1 {
     margin: 0;
-    font-size: 1.1rem;
-    font-weight: 500;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    font-size: 1.25rem;
+    font-weight: 700;
 }
 
 .viewer-settings {
@@ -64,15 +59,11 @@ body {
     font-weight: 500;
     cursor: pointer;
     background-color: transparent;
-    color: var(--text-color);
     transition: all 0.2s;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.4rem;
 }
 
 .btn:hover {
-    background-color: var(--border-color);
+    background-color: #f1f3f5;
 }
 
 .btn.active {
@@ -81,33 +72,25 @@ body {
     border-color: var(--primary-color);
 }
 
-.btn-icon {
-    padding: 6px;
-}
-
 .back-link {
     color: var(--text-color);
     text-decoration: none;
     font-weight: 500;
 }
 
-#book-container {
-    flex-grow: 1;
-    position: relative;
-    overflow: hidden;
-}
-
 .content-area {
-    padding: 4% 8%;
+    padding: 2rem 2.5rem;
     line-height: 1.8;
     font-size: 1.1rem;
-    height: 100%;
-    box-sizing: border-box;
-    overflow-y: auto; /* Re-enable scroll for single item view */
 }
 
-.translation-item:not(:first-child) {
-    margin-top: 2rem;
+.translation-item {
+    padding: 1.5rem 0;
+    border-bottom: 1px solid #eee;
+}
+
+.translation-item:first-child {
+    padding-top: 0;
 }
 
 .original-text {
@@ -121,14 +104,77 @@ body {
     color: var(--text-color);
 }
 
-/* Navigation Arrows */
+/* Editing Styles */
+.translation-item.editing {
+    box-shadow: 0 0 0 2px var(--primary-color);
+    border-radius: 4px;
+    position: relative; /* For save button positioning */
+}
+
+.translated-text[contenteditable="true"] {
+    outline: 1px solid var(--border-color);
+    padding: 0.5rem;
+    background-color: #f8f9fa;
+}
+
+.btn-save {
+    position: absolute;
+    bottom: 10px;
+    right: 10px;
+    background-color: var(--primary-color);
+    color: white;
+    border-color: var(--primary-color);
+}
+
+/* Focus Mode */
+.viewer-container.focus-mode .viewer-header {
+    justify-content: flex-end;
+}
+
+.viewer-container.focus-mode .viewer-header h1,
+.viewer-container.focus-mode .viewer-header .back-link {
+    display: none;
+}
+
+.viewer-container.focus-mode .content-area {
+    padding: 5vh 2.5rem;
+    max-width: 720px; /* Slightly narrower for better readability */
+    margin: 0 auto;
+}
+
+/* Book-like UI Styles */
+body {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    background-color: var(--bg-color);
+}
+
+.viewer-container {
+    width: 100%;
+    max-width: 90vw;
+    height: 90vh;
+    display: flex;
+    flex-direction: column;
+}
+
+#book-container {
+    flex-grow: 1;
+    background: var(--card-bg);
+    box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+    border: 1px solid var(--border-color);
+    overflow: hidden; /* This is crucial for pagination */
+    position: relative; /* For absolute positioning of pages if needed */
+}
+
 .nav-arrow {
     position: absolute;
     top: 50%;
     transform: translateY(-50%);
     font-size: 2.5rem;
-    color: var(--text-color);
-    background-color: transparent;
+    color: #000;
+    background-color: rgba(255, 255, 255, 0.7);
     border-radius: 50%;
     width: 50px;
     height: 50px;
@@ -138,97 +184,72 @@ body {
     cursor: pointer;
     opacity: 0;
     transition: opacity 0.2s ease-in-out;
-    pointer-events: none;
+    pointer-events: none; /* Initially not clickable */
     user-select: none;
 }
 
-.nav-arrow.left { left: 15px; }
-.nav-arrow.right { right: 15px; }
+.nav-arrow.left {
+    left: 15px;
+}
 
-/* Sidebar for Table of Contents */
-.sidebar {
-    position: fixed;
+.nav-arrow.right {
+    right: 15px;
+}
+
+body.dark-mode .nav-arrow {
+    color: #e0e0e0;
+    background-color: rgba(0, 0, 0, 0.5);
+}
+
+#book-container::before, #book-container::after {
+    content: '';
+    position: absolute;
     top: 0;
-    right: calc(-1 * var(--sidebar-width));
-    width: var(--sidebar-width);
-    height: 100%;
-    background-color: var(--card-bg);
-    box-shadow: -2px 0 15px rgba(0,0,0,0.1);
-    z-index: 1001;
-    display: flex;
-    flex-direction: column;
-    transition: right 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
-}
-
-.sidebar.open {
-    right: 0;
-}
-
-.sidebar-header, .sidebar-footer {
-    padding: 0.75rem 1rem;
-    flex-shrink: 0;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-}
-
-.sidebar-header {
-    border-bottom: 1px solid var(--border-color);
-}
-
-.sidebar-footer {
-    border-top: 1px solid var(--border-color);
-    gap: 0.5rem;
-}
-
-.sidebar-content {
-    flex-grow: 1;
-    overflow-y: auto;
-    padding: 0.5rem 0;
-}
-
-.toc-item {
-    display: block;
-    padding: 0.75rem 1.5rem;
-    cursor: pointer;
-    border-bottom: 1px solid var(--border-color);
-    font-size: 0.9rem;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    color: var(--text-color);
-    text-decoration: none;
-}
-
-.toc-item:hover {
-    background-color: var(--border-color);
-}
-
-.toc-item.active {
-    background-color: var(--primary-color);
-    color: white;
-    font-weight: bold;
-}
-
-.sidebar-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background-color: rgba(0,0,0,0.4);
-    z-index: 1000;
-    opacity: 0;
-    transition: opacity 0.3s ease;
+    bottom: 0;
+    width: 50px;
     pointer-events: none;
+    transition: opacity 0.3s ease;
+    opacity: 0;
 }
 
-.sidebar-overlay.open {
+#book-container::before {
+    left: 0;
+    background: linear-gradient(to right, rgba(0,0,0,0.1), transparent);
+}
+
+#book-container::after {
+    right: 0;
+    background: linear-gradient(to left, rgba(0,0,0,0.1), transparent);
+}
+
+body.dark-mode #book-container::before {
+    background: linear-gradient(to right, rgba(255,255,255,0.05), transparent);
+}
+
+body.dark-mode #book-container::after {
+    background: linear-gradient(to left, rgba(255,255,255,0.05), transparent);
+}
+
+#book-container.hover-left::before, #book-container.hover-right::after {
     opacity: 1;
-    pointer-events: auto;
 }
 
-/* Focus Mode */
-.viewer-container.focus-mode .viewer-header {
-    display: none;
+.content-area {
+    /* The padding is now more important for content spacing within the page */
+    padding: 4% 6%;
+    overflow-y: hidden; /* Hide vertical scroll within a page */
+    height: 100%;
+    box-sizing: border-box;
+    transition: opacity 0.2s ease-in-out;
+}
+
+#book-navigation {
+    display: none; /* Hide the buttons as per new UX */
+}
+
+#page-indicator {
+    font-size: 0.9rem;
+    color: #555;
+    min-width: 50px;
+    text-align: center;
 }
