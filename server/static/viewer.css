@@ -134,3 +134,53 @@ body {
     max-width: 720px; /* Slightly narrower for better readability */
     margin: 0 auto;
 }
+
+/* Book-like UI Styles */
+body {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    background-color: var(--bg-color);
+}
+
+.viewer-container {
+    width: 100%;
+    max-width: 90vw;
+    height: 90vh;
+    display: flex;
+    flex-direction: column;
+}
+
+#book-container {
+    flex-grow: 1;
+    background: var(--card-bg);
+    box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+    border: 1px solid var(--border-color);
+    overflow: hidden; /* This is crucial for pagination */
+    position: relative; /* For absolute positioning of pages if needed */
+}
+
+.content-area {
+    /* The padding is now more important for content spacing within the page */
+    padding: 4% 6%;
+    overflow-y: hidden; /* Hide vertical scroll within a page */
+    height: 100%;
+    box-sizing: border-box;
+}
+
+#book-navigation {
+    flex-shrink: 0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 1rem;
+    gap: 1rem;
+}
+
+#page-indicator {
+    font-size: 0.9rem;
+    color: #555;
+    min-width: 50px;
+    text-align: center;
+}

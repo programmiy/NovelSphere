@@ -16,7 +16,14 @@
                 <button id="view-original-btn" class="btn">원문 보기</button>
             </div>
         </header>
-        <main id="content-area" class="content-area"></main>
+        <main id="book-container">
+            <div id="content-area" class="content-area"></div>
+        </main>
+        <div id="book-navigation">
+            <button id="prev-page-btn" class="btn">&lt; 이전</button>
+            <span id="page-indicator"></span>
+            <button id="next-page-btn" class="btn">다음 &gt;</button>
+        </div>
     </div>
     <script src="/static/viewer.js"></script>
     <script>
