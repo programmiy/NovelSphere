@@ -196,12 +196,51 @@ body {
     right: 15px;
 }
 
+body.dark-mode .nav-arrow {
+    color: #e0e0e0;
+    background-color: rgba(0, 0, 0, 0.5);
+}
+
+#book-container::before, #book-container::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 50px;
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+    opacity: 0;
+}
+
+#book-container::before {
+    left: 0;
+    background: linear-gradient(to right, rgba(0,0,0,0.1), transparent);
+}
+
+#book-container::after {
+    right: 0;
+    background: linear-gradient(to left, rgba(0,0,0,0.1), transparent);
+}
+
+body.dark-mode #book-container::before {
+    background: linear-gradient(to right, rgba(255,255,255,0.05), transparent);
+}
+
+body.dark-mode #book-container::after {
+    background: linear-gradient(to left, rgba(255,255,255,0.05), transparent);
+}
+
+#book-container.hover-left::before, #book-container.hover-right::after {
+    opacity: 1;
+}
+
 .content-area {
     /* The padding is now more important for content spacing within the page */
     padding: 4% 6%;
     overflow-y: hidden; /* Hide vertical scroll within a page */
     height: 100%;
     box-sizing: border-box;
+    transition: opacity 0.2s ease-in-out;
 }
 
 #book-navigation {

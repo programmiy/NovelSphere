@@ -97,7 +97,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 }
             }
 
-            renderPage(startingPage);
+            renderPage(startingPage, true); // Pass true for initial load
 
         } catch (error) {
             console.error('Error loading book:', error);
@@ -147,18 +147,28 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
-    function renderPage(pageIndex) {
+    function renderPage(pageIndex, isInitialLoad = false) {
         if (pageIndex < 0 || pageIndex >= pages.length) return;
 
-        currentPage = pageIndex;
-        const pageItems = pages[currentPage];
-        
-        if (!pageItems) return;
+        const updateContent = () => {
+            currentPage = pageIndex;
+            const pageItems = pages[currentPage];
+            
+            if (!pageItems) return;
 
-        contentArea.innerHTML = pageItems.map(createItemHtml).join('');
-        pageIndicator.textContent = `${currentPage + 1} / ${pages.length}`;
+            contentArea.innerHTML = pageItems.map(createItemHtml).join('');
+            pageIndicator.textContent = `${currentPage + 1} / ${pages.length}`;
+            contentArea.style.opacity = '1';
 
-        saveLastReadPosition();
+            saveLastReadPosition();
+        };
+
+        if (isInitialLoad) {
+            updateContent();
+        } else {
+            contentArea.style.opacity = '0';
+            setTimeout(updateContent, 200); // Match CSS transition duration
+        }
     }
 
     function createItemHtml(item) {
@@ -234,18 +244,24 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (hoverArea < 0.3) {
             navArrowLeft.style.opacity = '1';
             navArrowRight.style.opacity = '0';
+            bookContainer.classList.add('hover-left');
+            bookContainer.classList.remove('hover-right');
         } else if (hoverArea > 0.7) {
             navArrowLeft.style.opacity = '0';
             navArrowRight.style.opacity = '1';
+            bookContainer.classList.remove('hover-left');
+            bookContainer.classList.add('hover-right');
         } else {
             navArrowLeft.style.opacity = '0';
             navArrowRight.style.opacity = '0';
+            bookContainer.classList.remove('hover-left', 'hover-right');
         }
     }
 
     function handleBookMouseLeave() {
         navArrowLeft.style.opacity = '0';
         navArrowRight.style.opacity = '0';
+        bookContainer.classList.remove('hover-left', 'hover-right');
     }
 
     function toggleFocusMode() {
