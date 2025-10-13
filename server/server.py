@@ -270,7 +270,9 @@ def translate_texts(req: TranslateRequest):
         ]}
 
     api_key = get_api_key()
+    # 절대 2.5 버전을 사용하도록 강제합니다.
     api_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
+    # don't change model version above!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     
     api_input_json = json.dumps([{"id": item.id, "text": item.text} for item in items_to_translate], ensure_ascii=False)
 
@@ -702,13 +704,13 @@ def find_replace_all(req: FindReplaceRequest):
     """모든 번역 기록의 번역된 텍스트에 대해 찾아 바꾸기를 수행합니다."""
     conn = sqlite3.connect(DATABASE_FILE, timeout=15)
     cursor = conn.cursor()
-    query = "UPDATE translations SET translated = REPLACE(translated, ?, ?)"
-    cursor.execute(query, (req.find_text, req.replace_text))
+    # Only update rows where the text to be replaced actually exists.
+    query = "UPDATE translations SET translated = REPLACE(translated, ?, ?) WHERE translated LIKE ?"
+    cursor.execute(query, (req.find_text, req.replace_text, f'%{req.find_text}%'))
     updated_count = cursor.rowcount
     conn.commit()
     conn.close()
     return {"message": f"{updated_count}개의 항목에서 내용을 교체했습니다."}
-
 
 @app.get("/excluded_sentences")
 def get_excluded_sentences(url: str):
