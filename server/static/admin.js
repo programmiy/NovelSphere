@@ -714,22 +714,34 @@ function escapeHtml(text) {
 }
 
 function showToast(message, type = 'success') {
-    const existing = document.querySelector('.toast');
-    if (existing) existing.remove();
+    let container = document.getElementById('toast-container');
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'toast-container';
+        document.body.appendChild(container);
+    }
+
     const toast = document.createElement('div');
     toast.className = `toast ${type}`;
     toast.textContent = message;
 
-    document.body.appendChild(toast);
+    container.prepend(toast);
 
     setTimeout(() => {
         toast.classList.add('show');
-    }, 100);
+    }, 10); // A small delay to allow the element to be in the DOM for the transition
 
     setTimeout(() => {
         toast.classList.remove('show');
-        setTimeout(() => toast.remove(), 300);
-    }, 3000);
+        // Remove the element after the transition is complete
+        toast.addEventListener('transitionend', () => {
+            toast.remove();
+            // If the container is empty, remove it as well
+            if (container.children.length === 0) {
+                container.remove();
+            }
+        });
+    }, 5000); // Keep the toast for 5 seconds
 }
 
 function toggleDarkMode() {
