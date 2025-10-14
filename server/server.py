@@ -1102,6 +1102,59 @@ def get_book_urls(folder_name: str):
     return urls
 
 
+@app.get("/api/books/{folder_name}/chapters")
+def get_book_chapters(folder_name: str):
+    """책(폴더)의 챕터(고유 title) 목록을 시간순으로 정렬하여 반환합니다."""
+    decoded_folder_name = unquote(folder_name)
+    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
+    cursor = conn.cursor()
+
+    # folderName을 기준으로 그룹화하고, 각 그룹 내에서 가장 오래된 timestamp를 기준으로 챕터 순서를 정렬합니다.
+    query = """
+        SELECT title 
+        FROM translations 
+        WHERE folderName = ? AND title IS NOT NULL
+        GROUP BY title 
+        ORDER BY MIN(timestamp) ASC
+    """
+    params = [decoded_folder_name]
+    if decoded_folder_name == "미분류":
+        query = """
+            SELECT title 
+            FROM translations 
+            WHERE folderName IS NULL AND title IS NOT NULL
+            GROUP BY title 
+            ORDER BY MIN(timestamp) ASC
+        """
+        params = []
+
+    cursor.execute(query, tuple(params))
+    # fetchall() returns a list of tuples, e.g., [('Chapter 1',), ('Chapter 2',)]
+    chapters = [row[0] for row in cursor.fetchall()]
+    conn.close()
+    return chapters
+
+@app.get("/api/books/{folder_name}/chapter")
+def get_chapter_content(folder_name: str, title: str):
+    """특정 챕터(title)에 속한 모든 번역 기록을 반환합니다."""
+    decoded_folder_name = unquote(folder_name)
+    decoded_title = unquote(title)
+    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
+    conn.row_factory = dict_factory
+    cursor = conn.cursor()
+
+    query = "SELECT * FROM translations WHERE folderName = ? AND title = ? ORDER BY timestamp ASC"
+    params = [decoded_folder_name, decoded_title]
+    if decoded_folder_name == "미분류":
+        query = "SELECT * FROM translations WHERE folderName IS NULL AND title = ? ORDER BY timestamp ASC"
+        params = [decoded_title]
+
+    cursor.execute(query, tuple(params))
+    content = cursor.fetchall()
+    conn.close()
+    return content
+
+
 # --- Tag Management APIs ---
 
 class Tag(BaseModel):

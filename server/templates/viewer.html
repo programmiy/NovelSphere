@@ -12,8 +12,8 @@
             <a href="/" class="back-link">&larr; 서재로 돌아가기</a>
             <h1 id="book-title">로딩 중...</h1>
             <div class="viewer-settings">
+                <button id="toc-btn" class="btn">목차</button>
                 <button id="focus-mode-btn" class="btn">집중 모드</button>
-                <button id="view-original-btn" class="btn">원문 보기</button>
                 <button id="night-mode-btn" class="btn">야간 모드</button>
             </div>
         </header>
@@ -22,12 +22,23 @@
             <div class="nav-arrow left" id="nav-arrow-left">&lt;</div>
             <div class="nav-arrow right" id="nav-arrow-right">&gt;</div>
         </main>
+        <div id="toc-sidebar" class="sidebar">
+            <div class="sidebar-header">
+                <h2>목차</h2>
+                <button id="close-sidebar-btn" class="btn">&times;</button>
+            </div>
+            <div id="toc-list" class="toc-list"></div>
+            <div class="sidebar-footer">
+                <button id="view-original-btn" class="btn">원문 보기</button>
+            </div>
+        </div>
         <div id="book-navigation">
             <button id="prev-page-btn" class="btn">&lt; 이전</button>
             <span id="page-indicator"></span>
             <button id="next-page-btn" class="btn">다음 &gt;</button>
         </div>
     </div>
+    <div id="overlay" class="overlay"></div>
     <script src="/static/viewer.js"></script>
     <script>
         if ('serviceWorker' in navigator) {
