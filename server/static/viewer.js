@@ -6,8 +6,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     const nightModeBtn = document.getElementById('night-mode-btn');
     const viewerContainer = document.querySelector('.viewer-container');
     const bookContainer = document.getElementById('book-container');
-    const navArrowLeft = document.getElementById('nav-arrow-left');
-    const navArrowRight = document.getElementById('nav-arrow-right');
     const pageIndicator = document.getElementById('page-indicator'); // Re-using for chapter pages
 
     // Sidebar Elements
@@ -57,18 +55,45 @@ document.addEventListener('DOMContentLoaded', async () => {
     overlay.addEventListener('click', closeSidebar);
     viewOriginalBtn.addEventListener('click', toggleOriginalView);
 
-    // --- Mobile Navigation Setting --- 
+    // --- Mobile Navigation Setting & UI Mode Management ---
     function updateUIMode() {
+        // 1. Remove existing arrows to ensure a clean state
+        const existingLeft = document.getElementById('nav-arrow-left');
+        const existingRight = document.getElementById('nav-arrow-right');
+        if (existingLeft) existingLeft.remove();
+        if (existingRight) existingRight.remove();
+
+        // Determine if touch controls should be active
+        const touchEnabled = !isMobile || mobileNavMode === 'tap' || mobileNavMode === 'both';
+
+        if (touchEnabled) {
+            // 2. Create and append new arrow elements
+            const leftArrow = document.createElement('div');
+            leftArrow.id = 'nav-arrow-left';
+            leftArrow.className = 'nav-arrow left';
+            leftArrow.innerHTML = '&lt;';
+
+            const rightArrow = document.createElement('div');
+            rightArrow.id = 'nav-arrow-right';
+            rightArrow.className = 'nav-arrow right';
+            rightArrow.innerHTML = '&gt;';
+
+            bookContainer.appendChild(leftArrow);
+            bookContainer.appendChild(rightArrow);
+        }
+        
+        // Hide header in swipe-only mode
         if (isMobile && mobileNavMode === 'swipe') {
-            document.body.classList.add('swipe-active');
+            document.body.classList.add('swipe-only-mode');
         } else {
-            document.body.classList.remove('swipe-active');
+            document.body.classList.remove('swipe-only-mode');
         }
     }
 
     const mobileNavSetting = document.getElementById('mobile-nav-setting');
     if (!isMobile) {
         mobileNavSetting.style.display = 'none';
+        updateUIMode(); // Apply desktop mode
     } else {
         const savedNavMode = localStorage.getItem('mobileNavMode') || 'both';
         mobileNavMode = savedNavMode;
@@ -228,16 +253,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     function renderPage(pageIndex, isInitialLoad = false) {
         if (pageIndex < 0 || pageIndex >= pages.length) return;
 
-        // Reset arrows on page turn
-        navArrowLeft.style.opacity = '0';
-        navArrowRight.style.opacity = '0';
+        // Reset arrows on page turn, only if they exist
+        const navArrowLeft = document.getElementById('nav-arrow-left');
+        const navArrowRight = document.getElementById('nav-arrow-right');
+        if (navArrowLeft) navArrowLeft.style.opacity = '0';
+        if (navArrowRight) navArrowRight.style.opacity = '0';
 
         const updateContent = () => {
             currentPageInChapter = pageIndex;
             const pageItems = pages[currentPageInChapter];
                             if (!pageItems) return;
                     
-                            contentArea.innerHTML = pageItems.map(createItemHtml).join('');            pageIndicator.textContent = `${currentPageInChapter + 1} / ${pages.length}`;
+                            contentArea.innerHTML = pageItems.map(createItemHtml).join('');
+            pageIndicator.textContent = `${currentPageInChapter + 1} / ${pages.length}`;
             contentArea.style.opacity = '1';
 
             saveLastReadPosition();
@@ -388,7 +416,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     function handleBookClick(e) {
-        if (isMobile && (mobileNavMode === 'swipe')) return;
+        if (!document.body.classList.contains('touch-mode-enabled')) return;
 
         // If the user is editing or has selected text, don't turn the page.
         if (e.target.closest('.editing') || !window.getSelection().isCollapsed) {
@@ -407,7 +435,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     function handleBookMouseMove(e) {
-        if (isMobile && mobileNavMode === 'swipe') return;
+        const navArrowLeft = document.getElementById('nav-arrow-left');
+        const navArrowRight = document.getElementById('nav-arrow-right');
+        if (!navArrowLeft || !navArrowRight) return; // Arrows don't exist, do nothing.
 
         const rect = bookContainer.getBoundingClientRect();
         const hoverX = e.clientX - rect.left;
@@ -425,8 +455,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     function handleBookMouseLeave() {
-        navArrowLeft.style.opacity = '0';
-        navArrowRight.style.opacity = '0';
+        const navArrowLeft = document.getElementById('nav-arrow-left');
+        const navArrowRight = document.getElementById('nav-arrow-right');
+        if (navArrowLeft) navArrowLeft.style.opacity = '0';
+        if (navArrowRight) navArrowRight.style.opacity = '0';
     }
 
     function handleTouchStart(e) {
@@ -435,6 +467,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     function handleTouchMove(e) {
+        // If swipe is not enabled, do nothing.
+        if (!document.body.classList.contains('swipe-mode-enabled')) return;
+        
         // If swipe is more horizontal than vertical, prevent vertical scroll
         if (Math.abs(e.touches[0].clientX - touchStartX) > Math.abs(e.touches[0].clientY - touchStartY)) {
             e.preventDefault();
@@ -442,7 +477,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     function handleTouchEnd(e) {
-        if (mobileNavMode === 'tap') return;
+        // If swipe is not enabled, do nothing.
+        if (!document.body.classList.contains('swipe-mode-enabled')) return;
 
         const touchEndX = e.changedTouches[0].clientX;
         const touchEndY = e.changedTouches[0].clientY;

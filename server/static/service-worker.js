@@ -1,4 +1,4 @@
-const CACHE_NAME = 'lanovel-cache-v1';
+const CACHE_NAME = 'lanovel-cache-__GIT_HASH__';
 // App Shell: Core files needed for the app to run offline
 const APP_SHELL_URLS = [
     '/', // This should map to the root, which is library.html

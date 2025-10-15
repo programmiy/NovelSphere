@@ -6,7 +6,8 @@ import os
 import asyncio
 import re
 import shutil
-from fastapi import FastAPI, HTTPException, BackgroundTasks, Request
+import subprocess
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Request, Response
 from contextlib import asynccontextmanager 
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -211,6 +212,36 @@ app = FastAPI(lifespan=lifespan)
 # 정적 파일 및 템플릿 설정
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
 templates = Jinja2Templates(directory=templates_dir)
+
+def get_git_commit_hash():
+    """Gets the short hash of the current git commit."""
+    try:
+        project_dir = os.path.dirname(script_dir) 
+        commit_hash = subprocess.check_output(
+            ['git', 'rev-parse', '--short', 'HEAD'],
+            cwd=project_dir,
+            encoding='utf-8'
+        ).strip()
+        return commit_hash
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return datetime.now().strftime("%Y%m%d%H%M%S")
+
+@app.get("/service-worker.js")
+async def serve_service_worker():
+    """
+    Serves the service-worker.js file dynamically, injecting the current git hash
+    as the cache version to enable automatic cache busting on new commits.
+    """
+    try:
+        with open(os.path.join(static_dir, "service-worker.js"), "r", encoding="utf-8") as f:
+            content = f.read()
+        
+        git_hash = get_git_commit_hash()
+        content = content.replace("__GIT_HASH__", git_hash)
+        
+        return Response(content=content, media_type="application/javascript")
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="service-worker.js not found.")
 
 
 # CORS 미들웨어 설정

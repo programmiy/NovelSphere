@@ -189,8 +189,17 @@ body.dark-mode .original-text {
     opacity: 0.2;
 }
 
-#book-container:hover .nav-arrow:hover {
+.touch-mode-enabled #book-container:hover .nav-arrow:hover {
     opacity: 0.6;
+}
+
+/* Swipe-only Mode on Mobile */
+.swipe-only-mode .viewer-header {
+    display: none;
+}
+
+.swipe-only-mode #book-container {
+    height: 100vh;
 }
 
 /* Focus Mode */
@@ -207,6 +216,16 @@ body.dark-mode .original-text {
 
 .viewer-container.focus-mode #page-indicator {
     display: none;
+}
+
+/* Swipe-only Mode on Mobile */
+/* In swipe-only mode, hide header and use full height */
+.swipe-mode-enabled:not(.touch-mode-enabled) .viewer-header {
+    display: none;
+}
+
+.swipe-mode-enabled:not(.touch-mode-enabled) #book-container {
+    height: 100vh;
 }
 
 /* Sidebar Styles */
