@@ -58,6 +58,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     viewOriginalBtn.addEventListener('click', toggleOriginalView);
 
     // --- Mobile Navigation Setting --- 
+    function updateUIMode() {
+        if (isMobile && mobileNavMode === 'swipe') {
+            document.body.classList.add('swipe-active');
+        } else {
+            document.body.classList.remove('swipe-active');
+        }
+    }
+
     const mobileNavSetting = document.getElementById('mobile-nav-setting');
     if (!isMobile) {
         mobileNavSetting.style.display = 'none';
@@ -68,11 +76,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (currentRadio) {
             currentRadio.checked = true;
         }
+        updateUIMode(); // Call on initial load
 
         mobileNavSetting.addEventListener('change', (e) => {
             if (e.target.name === 'mobile-nav') {
                 mobileNavMode = e.target.value;
                 localStorage.setItem('mobileNavMode', mobileNavMode);
+                updateUIMode(); // Call on change
             }
         });
     }
@@ -397,6 +407,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     function handleBookMouseMove(e) {
+        if (isMobile && mobileNavMode === 'swipe') return;
+
         const rect = bookContainer.getBoundingClientRect();
         const hoverX = e.clientX - rect.left;
         const hoverArea = hoverX / rect.width;

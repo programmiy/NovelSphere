@@ -359,6 +359,16 @@ body.dark-mode .original-text {
 }
 #book-container::before, #book-container::after { display: none; }
 
+/* Swipe-only Mode on Mobile */
+.swipe-active .viewer-header,
+.swipe-active .nav-arrow {
+    display: none;
+}
+
+.swipe-active #book-container {
+    height: 100vh; /* Use full screen height in swipe mode */
+}
+
 /* Editing Styles */
 .translation-item.editing {
     position: relative;
