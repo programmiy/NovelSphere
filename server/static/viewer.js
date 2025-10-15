@@ -620,13 +620,4 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (text === null || text === undefined) return '';
         return text.toString().replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
     }
-    
-    function applyInitialTheme() {
-        const isNightMode = localStorage.getItem('nightMode') === 'true';
-        if (isNightMode) {
-            document.body.classList.add('dark-mode');
-            nightModeBtn.textContent = '주간 모드';
-            nightModeBtn.classList.add('active');
-        }
-    }
 });
