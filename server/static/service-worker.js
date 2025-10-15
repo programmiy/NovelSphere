@@ -51,59 +51,44 @@ self.addEventListener('activate', event => {
 self.addEventListener('fetch', event => {
     const url = new URL(event.request.url);
 
-    // For navigation (HTML pages), use Network falling back to Cache
-    if (event.request.mode === 'navigate') {
-        event.respondWith(
-            fetch(event.request)
-            .then(response => {
-                // If the network is available, cache the new page
-                return caches.open(CACHE_NAME).then(cache => {
-                    cache.put(event.request, response.clone());
-                    return response;
-                });
-            })
-            .catch(() => {
-                // If the network fails, serve from cache
-                return caches.match(event.request).then(response => {
-                    return response || caches.match('/'); // Fallback to root if specific page isn't cached
-                });
-            })
-        );
+    // Ignore non-GET requests and requests to external domains
+    if (event.request.method !== 'GET' || url.origin !== self.location.origin) {
         return;
     }
 
-    // For API calls to the local server
-    if (url.origin === self.location.origin && url.pathname.startsWith('/stream')) {
+    // Strategy for API data (e.g., book content, folders, etc.)
+    // Cache first, then network. This makes the app feel fast and work offline.
+    if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/translations') || url.pathname.startsWith('/stream') || url.pathname.startsWith('/folders')) {
         event.respondWith(
             caches.open(CACHE_NAME).then(cache => {
-                return fetch(event.request).then(networkResponse => {
-                    console.log('Service Worker: Caching stream data for', url.search);
-                    cache.put(event.request, networkResponse.clone());
-                    return networkResponse;
-                }).catch(() => {
-                    console.log('Service Worker: Serving stream data from cache for', url.search);
-                    return cache.match(event.request);
+                return cache.match(event.request).then(cachedResponse => {
+                    const networkFetch = fetch(event.request).then(networkResponse => {
+                        // Update the cache with the new response
+                        cache.put(event.request, networkResponse.clone());
+                        return networkResponse;
+                    });
+
+                    // Return cached response immediately if available, otherwise wait for network
+                    return cachedResponse || networkFetch;
                 });
             })
         );
         return;
     }
 
-    // For other API calls, always go to the network.
-    if (url.origin === self.location.origin && (url.pathname.startsWith('/api/') || url.pathname.startsWith('/translations'))) {
-        event.respondWith(fetch(event.request));
-        return;
-    }
-
-    // For other requests (CSS, JS), use Cache falling back to Network
+    // Strategy for App Shell and other assets (CSS, JS, HTML)
+    // Stale-While-Revalidate. Serve from cache immediately, then update in the background.
     event.respondWith(
-        caches.match(event.request).then(cachedResponse => {
-            return cachedResponse || fetch(event.request).then(networkResponse => {
-                // Cache the new asset for future use
-                return caches.open(CACHE_NAME).then(cache => {
+        caches.open(CACHE_NAME).then(cache => {
+            return cache.match(event.request).then(cachedResponse => {
+                const networkFetch = fetch(event.request).then(networkResponse => {
                     cache.put(event.request, networkResponse.clone());
                     return networkResponse;
+                }).catch(err => {
+                    console.error('Service Worker: Fetch failed.', err);
                 });
+
+                return cachedResponse || networkFetch;
             });
         })
     );
