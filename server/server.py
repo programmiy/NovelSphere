@@ -541,7 +541,7 @@ def migrate_data():
     }
 
 
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, HTMLResponse
 
 def dict_factory(cursor, row):
     """쿼리 결과를 사전 형태로 변환합니다."""
@@ -1225,6 +1225,61 @@ def get_chapter_content(folder_name: str, title: str):
     content = cursor.fetchall()
     conn.close()
     return content
+
+
+@app.get("/api/books/{folder_name}/export")
+async def export_book_as_html(folder_name: str):
+    """
+    Generates a single, self-contained HTML file for a book/folder for offline viewing.
+    """
+    decoded_folder_name = unquote(folder_name)
+    
+    # 1. Fetch book data from DB
+    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
+    conn.row_factory = dict_factory
+    cursor = conn.cursor()
+
+    order_by_clause = "ORDER BY CASE WHEN lower(pid) LIKE 'p%' OR lower(pid) LIKE 'l%' THEN CAST(SUBSTR(pid, 2) AS INTEGER) ELSE 999999 END ASC, timestamp ASC"
+    
+    query = f"SELECT * FROM translations WHERE folderName = ? {order_by_clause}"
+    params = [decoded_folder_name]
+    if decoded_folder_name == "미분류":
+        query = f"SELECT * FROM translations WHERE folderName IS NULL {order_by_clause}"
+        params = []
+
+    cursor.execute(query, tuple(params))
+    book_data = cursor.fetchall()
+    conn.close()
+
+    if not book_data:
+        raise HTTPException(status_code=404, detail="Book not found or has no content.")
+
+    # 2. Read CSS and JS content
+    try:
+        with open(os.path.join(static_dir, "viewer.css"), "r", encoding="utf-8") as f:
+            viewer_css = f.read()
+        with open(os.path.join(static_dir, "viewer.js"), "r", encoding="utf-8") as f:
+            viewer_js = f.read()
+    except FileNotFoundError:
+        raise HTTPException(status_code=500, detail="Viewer assets (CSS/JS) not found.")
+
+    # 3. Render the template with inlined data
+    template_context = {
+        "request": None,
+        "book_name": decoded_folder_name,
+        "viewer_css": viewer_css,
+        "book_data_json": json.dumps(book_data, ensure_ascii=False),
+        "viewer_js": viewer_js
+    }
+    
+    html_content = templates.get_template("export_template.html").render(template_context)
+    
+    # 4. Return as a downloadable HTML file
+    safe_filename = "".join(c for c in decoded_folder_name if c.isalnum() or c in (' ', '_')).rstrip()
+    headers = {
+        'Content-Disposition': f'attachment; filename="{safe_filename}.html"'
+    }
+    return HTMLResponse(content=html_content, headers=headers)
 
 
 # --- Tag Management APIs ---
