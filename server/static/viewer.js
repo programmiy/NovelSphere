@@ -30,6 +30,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     let showOriginal = localStorage.getItem('showOriginalText') === 'true';
     let saveTimeout;
+    let touchStartX = 0;
+    let touchStartY = 0;
+    const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+    let mobileNavMode = 'both'; // 'both', 'tap', 'swipe'
 
     // --- Initialization ---
     applyInitialTheme();
@@ -37,16 +41,41 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (showOriginal) viewOriginalBtn.classList.add('active');
 
     // --- Event Listeners ---
+    contentArea.addEventListener('mouseup', handleTextSelection);
     focusModeBtn.addEventListener('click', toggleFocusMode);
     nightModeBtn.addEventListener('click', toggleNightMode);
     document.addEventListener('keydown', handleKeyPress);
     bookContainer.addEventListener('click', handleBookClick);
     bookContainer.addEventListener('mousemove', handleBookMouseMove);
     bookContainer.addEventListener('mouseleave', handleBookMouseLeave);
+    bookContainer.addEventListener('touchstart', handleTouchStart, { passive: true });
+    bookContainer.addEventListener('touchmove', handleTouchMove, { passive: false });
+    bookContainer.addEventListener('touchend', handleTouchEnd, { passive: true });
+
     tocBtn.addEventListener('click', openSidebar);
     closeSidebarBtn.addEventListener('click', closeSidebar);
     overlay.addEventListener('click', closeSidebar);
     viewOriginalBtn.addEventListener('click', toggleOriginalView);
+
+    // --- Mobile Navigation Setting --- 
+    const mobileNavSetting = document.getElementById('mobile-nav-setting');
+    if (!isMobile) {
+        mobileNavSetting.style.display = 'none';
+    } else {
+        const savedNavMode = localStorage.getItem('mobileNavMode') || 'both';
+        mobileNavMode = savedNavMode;
+        const currentRadio = document.getElementById(`nav-${savedNavMode}`);
+        if (currentRadio) {
+            currentRadio.checked = true;
+        }
+
+        mobileNavSetting.addEventListener('change', (e) => {
+            if (e.target.name === 'mobile-nav') {
+                mobileNavMode = e.target.value;
+                localStorage.setItem('mobileNavMode', mobileNavMode);
+            }
+        });
+    }
 
     // --- Main Execution ---
     await loadBook();
@@ -59,6 +88,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             return;
         }
         try {
+            // 1. Fetch activity data first to know where to start
+            const activityResponse = await fetch(`/api/books/${encodeURIComponent(bookName)}/activity`);
+            const activityData = activityResponse.ok ? await activityResponse.json() : {};
+
+            // 2. Fetch the list of all chapters
             const chaptersResponse = await fetch(`/api/books/${encodeURIComponent(bookName)}/chapters`);
             if (!chaptersResponse.ok) throw new Error(`챕터 목록을 불러오지 못했습니다: ${chaptersResponse.status}`);
             
@@ -71,8 +105,20 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             populateToc();
             
-            // TODO: Restore last-read chapter functionality later
-            await loadChapter(0, 'first');
+            // 3. Determine starting chapter and PID
+            let startChapterIndex = 0;
+            let startPid = null;
+
+            if (activityData.last_read_chapter_title) {
+                const foundIndex = chapterTitles.findIndex(title => title === activityData.last_read_chapter_title);
+                if (foundIndex !== -1) {
+                    startChapterIndex = foundIndex;
+                    startPid = activityData.last_read_pid;
+                }
+            }
+            
+            // 4. Load the chapter, passing the specific PID to start on
+            await loadChapter(startChapterIndex, 'first', startPid);
 
         } catch (error) {
             console.error('Error loading book:', error);
@@ -80,7 +126,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
-    async function loadChapter(chapterIndex, pagePosition = 'first') {
+    async function loadChapter(chapterIndex, pagePosition = 'first', startPid = null) {
         if (chapterIndex < 0 || chapterIndex >= chapterTitles.length) return;
 
         currentChapterIndex = chapterIndex;
@@ -102,7 +148,12 @@ document.addEventListener('DOMContentLoaded', async () => {
             await paginate();
 
             let pageIndexToShow = 0;
-            if (pagePosition === 'last') {
+            if (startPid) {
+                const foundPage = pages.findIndex(page => page.some(item => item.pid === startPid));
+                if (foundPage !== -1) {
+                    pageIndexToShow = foundPage;
+                }
+            } else if (pagePosition === 'last') {
                 pageIndexToShow = pages.length - 1;
             }
 
@@ -167,13 +218,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     function renderPage(pageIndex, isInitialLoad = false) {
         if (pageIndex < 0 || pageIndex >= pages.length) return;
 
+        // Reset arrows on page turn
+        navArrowLeft.style.opacity = '0';
+        navArrowRight.style.opacity = '0';
+
         const updateContent = () => {
             currentPageInChapter = pageIndex;
             const pageItems = pages[currentPageInChapter];
-            if (!pageItems) return;
-
-            contentArea.innerHTML = pageItems.map(createItemHtml).join('');
-            pageIndicator.textContent = `${currentPageInChapter + 1} / ${pages.length}`;
+                            if (!pageItems) return;
+                    
+                            contentArea.innerHTML = pageItems.map(createItemHtml).join('');            pageIndicator.textContent = `${currentPageInChapter + 1} / ${pages.length}`;
             contentArea.style.opacity = '1';
 
             saveLastReadPosition();
@@ -234,13 +288,33 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
-    function toggleOriginalView() {
+    async function toggleOriginalView() {
+        // 1. Toggle state
         showOriginal = !showOriginal;
         localStorage.setItem('showOriginalText', showOriginal);
         viewOriginalBtn.classList.toggle('active', showOriginal);
-        if (pages.length > 0) {
-            renderPage(currentPageInChapter, true); // Re-render current page instantly
+
+        // 2. Repaginate and render
+        await repaginateAndRender();
+    }
+
+    let resizeTimeout;
+    window.addEventListener('resize', () => {
+        clearTimeout(resizeTimeout);
+        resizeTimeout = setTimeout(() => repaginateAndRender(), 250);
+    });
+
+    async function repaginateAndRender() {
+        const topItemPid = pages[currentPageInChapter]?.[0]?.pid;
+        await paginate();
+        let newPageIndex = 0;
+        if (topItemPid) {
+            const foundPage = pages.findIndex(page => page.some(item => item.pid === topItemPid));
+            if (foundPage !== -1) {
+                newPageIndex = foundPage;
+            }
         }
+        renderPage(newPageIndex, true);
     }
 
     function openSidebar() {
@@ -256,7 +330,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // --- Helper Functions ---
 
     function createItemHtml(item) {
-        let itemHtml = `<div class="translation-item" data-id="${item.id}" data-pid="${item.pid}">`;
+        let itemHtml = `<div class="translation-item" data-id="${item.id}" data-pid="${item.pid}" data-original="${escapeHtml(item.original)}">`;
         if (showOriginal) {
             itemHtml += `<p class="original-text">${escapeHtml(item.original)}</p>`;
         }
@@ -266,34 +340,60 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     function saveLastReadPosition() {
         clearTimeout(saveTimeout);
-        saveTimeout = setTimeout(() => {
-            const firstItemOnPage = pages[currentPageInChapter]?.[0];
-            if (!firstItemOnPage || !bookName) return;
+        saveTimeout = setTimeout(() => commitPosition(false), 1500);
+    }
 
-            const payload = {
-                last_read_pid: firstItemOnPage.pid,
-                last_read_timestamp: Math.floor(Date.now() / 1000)
-            };
+    window.addEventListener('pagehide', () => commitPosition(true));
 
-            fetch(`/api/books/${encodeURIComponent(bookName)}/activity`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            }).catch(error => console.error('Failed to save last read position:', error));
-        }, 1500);
+    function commitPosition(useKeepalive) {
+        const firstItemOnPage = pages[currentPageInChapter]?.[0];
+        if (!firstItemOnPage || !bookName) return;
+
+        const payload = {
+            last_read_pid: firstItemOnPage.pid,
+            last_read_timestamp: Math.floor(Date.now() / 1000)
+        };
+
+        const headers = { type: 'application/json' };
+        const blob = new Blob([JSON.stringify(payload)], headers);
+        
+        // Use sendBeacon for reliability on exit, but it only sends POST
+        // The endpoint must accept POST. For now, we use fetch with keepalive.
+        fetch(`/api/books/${encodeURIComponent(bookName)}/activity`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+            keepalive: useKeepalive
+        }).catch(error => console.error('Failed to save last read position:', error));
     }
 
     function handleKeyPress(e) {
+        // If the user is editing text, don't turn the page with arrow keys.
+        if (e.target.isContentEditable) {
+            return;
+        }
+
         if (e.key === 'ArrowLeft') showPrevPage();
         else if (e.key === 'ArrowRight') showNextPage();
     }
 
     function handleBookClick(e) {
+        if (isMobile && (mobileNavMode === 'swipe')) return;
+
+        // If the user is editing or has selected text, don't turn the page.
+        if (e.target.closest('.editing') || !window.getSelection().isCollapsed) {
+            return;
+        }
+
         const rect = bookContainer.getBoundingClientRect();
         const clickX = e.clientX - rect.left;
         const clickArea = clickX / rect.width;
-        if (clickArea < 0.3) showPrevPage();
-        else if (clickArea > 0.7) showNextPage();
+
+        if (clickArea < 0.3) {
+            showPrevPage();
+        } else if (clickArea > 0.7) {
+            showNextPage();
+        }
     }
 
     function handleBookMouseMove(e) {
@@ -317,16 +417,162 @@ document.addEventListener('DOMContentLoaded', async () => {
         navArrowRight.style.opacity = '0';
     }
 
+    function handleTouchStart(e) {
+        touchStartX = e.touches[0].clientX;
+        touchStartY = e.touches[0].clientY;
+    }
+
+    function handleTouchMove(e) {
+        // If swipe is more horizontal than vertical, prevent vertical scroll
+        if (Math.abs(e.touches[0].clientX - touchStartX) > Math.abs(e.touches[0].clientY - touchStartY)) {
+            e.preventDefault();
+        }
+    }
+
+    function handleTouchEnd(e) {
+        if (mobileNavMode === 'tap') return;
+
+        const touchEndX = e.changedTouches[0].clientX;
+        const touchEndY = e.changedTouches[0].clientY;
+        const deltaX = touchEndX - touchStartX;
+        const deltaY = touchEndY - touchStartY;
+        const swipeThreshold = 50; // Minimum distance for a swipe
+
+        // Check for a horizontal swipe and not a vertical scroll
+        if (Math.abs(deltaX) > swipeThreshold && Math.abs(deltaY) < swipeThreshold) {
+            if (deltaX > 0) { // Swiped right
+                showPrevPage();
+            } else { // Swiped left
+                showNextPage();
+            }
+        }
+    }
+
+    const ICON_MAXIMIZE = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path></svg>';
+    const ICON_MINIMIZE = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"></path></svg>';
+    const ICON_SUN = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>';
+    const ICON_MOON = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>';
+
+    function updateFocusModeButton() {
+        if (viewerContainer.classList.contains('focus-mode')) {
+            focusModeBtn.innerHTML = ICON_MINIMIZE;
+            focusModeBtn.title = '집중 모드 종료';
+        } else {
+            focusModeBtn.innerHTML = ICON_MAXIMIZE;
+            focusModeBtn.title = '집중 모드';
+        }
+    }
+
     function toggleFocusMode() {
         viewerContainer.classList.toggle('focus-mode');
-        focusModeBtn.textContent = viewerContainer.classList.contains('focus-mode') ? '집중 모드 종료' : '집중 모드';
+        updateFocusModeButton();
+    }
+
+    function updateNightModeButton() {
+        const isNightMode = document.body.classList.contains('dark-mode');
+        if (isNightMode) {
+            nightModeBtn.innerHTML = ICON_SUN;
+            nightModeBtn.title = '주간 모드';
+        } else {
+            nightModeBtn.innerHTML = ICON_MOON;
+            nightModeBtn.title = '야간 모드';
+        }
+        nightModeBtn.classList.toggle('active', isNightMode);
     }
 
     function toggleNightMode() {
-        const isNightMode = document.body.classList.toggle('dark-mode');
-        localStorage.setItem('nightMode', isNightMode);
-        nightModeBtn.textContent = isNightMode ? '주간 모드' : '야간 모드';
-        nightModeBtn.classList.toggle('active', isNightMode);
+        document.body.classList.toggle('dark-mode');
+        localStorage.setItem('nightMode', document.body.classList.contains('dark-mode'));
+        updateNightModeButton();
+    }
+
+    function applyInitialTheme() {
+        const isNightMode = localStorage.getItem('nightMode') === 'true';
+        if (isNightMode) {
+            document.body.classList.add('dark-mode');
+        }
+        updateNightModeButton();
+    }
+
+    function handleTextSelection(e) {
+        const selection = window.getSelection();
+        if (!selection.isCollapsed && selection.toString().trim()) {
+            const target = selection.anchorNode.parentElement;
+            const translationItem = target.closest('.translation-item');
+            if (translationItem) {
+                enableEditing(translationItem);
+            }
+        }
+    }
+
+    function enableEditing(translationItem) {
+        // Disable other editing items
+        document.querySelectorAll('.editing').forEach(item => {
+            if (item !== translationItem) disableEditing(item);
+        });
+
+        if (translationItem.classList.contains('editing')) return;
+
+        translationItem.classList.add('editing');
+        const translatedTextElement = translationItem.querySelector('.translated-text');
+        translatedTextElement.contentEditable = 'true';
+        translatedTextElement.focus();
+
+        const saveBtn = document.createElement('button');
+        saveBtn.textContent = '저장';
+        saveBtn.className = 'btn btn-save';
+        saveBtn.onclick = () => saveChanges(translationItem);
+
+        translationItem.appendChild(saveBtn);
+    }
+
+    function disableEditing(translationItem) {
+        translationItem.classList.remove('editing');
+        const translatedTextElement = translationItem.querySelector('.translated-text');
+        translatedTextElement.contentEditable = 'false';
+        const saveBtn = translationItem.querySelector('.btn-save');
+        if (saveBtn) saveBtn.remove();
+    }
+
+    async function saveChanges(translationItem) {
+        const translatedTextElement = translationItem.querySelector('.translated-text');
+        const newTranslatedText = translatedTextElement.textContent;
+
+        const itemData = {
+            url: currentChapterItems[0].url, // Assuming all items in a chapter share the same URL
+            pid: translationItem.dataset.pid,
+            original: translationItem.dataset.original,
+            translated: newTranslatedText,
+            timestamp: Math.floor(Date.now() / 1000),
+            title: currentChapterItems[0].title
+        };
+
+        try {
+            const response = await fetch('/translations/upsert', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify([itemData])
+            });
+            if (!response.ok) throw new Error('Failed to save changes.');
+
+            disableEditing(translationItem);
+            
+            // Visually indicate success
+            translatedTextElement.style.transition = 'background-color 0.5s';
+            translatedTextElement.style.backgroundColor = '#e6ffed';
+            setTimeout(() => {
+                translatedTextElement.style.backgroundColor = '';
+            }, 1500);
+            
+            // Update the item in the local state to prevent stale data
+            const itemId = parseInt(translationItem.dataset.id);
+            const sourceItem = currentChapterItems.find(i => i.id === itemId);
+            if(sourceItem) sourceItem.translated = newTranslatedText;
+
+        } catch (error) {
+            console.error('Error saving changes:', error);
+            alert('저장에 실패했습니다.');
+        }
     }
 
     function escapeHtml(text) {
