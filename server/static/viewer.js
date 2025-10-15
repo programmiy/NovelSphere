@@ -55,7 +55,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     overlay.addEventListener('click', closeSidebar);
     viewOriginalBtn.addEventListener('click', toggleOriginalView);
 
-    // --- Mobile Navigation Setting & UI Mode Management ---
     function updateUIMode() {
         // 1. Remove existing arrows to ensure a clean state
         const existingLeft = document.getElementById('nav-arrow-left');
@@ -80,13 +79,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             bookContainer.appendChild(leftArrow);
             bookContainer.appendChild(rightArrow);
-        }
-        
-        // Hide header in swipe-only mode
-        if (isMobile && mobileNavMode === 'swipe') {
-            document.body.classList.add('swipe-only-mode');
-        } else {
-            document.body.classList.remove('swipe-only-mode');
         }
     }
 
@@ -416,7 +408,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     function handleBookClick(e) {
-        if (!document.body.classList.contains('touch-mode-enabled')) return;
+        // In swipe-only mode, tap navigation is disabled.
+        if (isMobile && mobileNavMode === 'swipe') return;
 
         // If the user is editing or has selected text, don't turn the page.
         if (e.target.closest('.editing') || !window.getSelection().isCollapsed) {
@@ -468,7 +461,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     function handleTouchMove(e) {
         // If swipe is not enabled, do nothing.
-        if (!document.body.classList.contains('swipe-mode-enabled')) return;
+        if (mobileNavMode === 'tap') return;
         
         // If swipe is more horizontal than vertical, prevent vertical scroll
         if (Math.abs(e.touches[0].clientX - touchStartX) > Math.abs(e.touches[0].clientY - touchStartY)) {
@@ -478,7 +471,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     function handleTouchEnd(e) {
         // If swipe is not enabled, do nothing.
-        if (!document.body.classList.contains('swipe-mode-enabled')) return;
+        if (mobileNavMode === 'tap') return;
 
         const touchEndX = e.changedTouches[0].clientX;
         const touchEndY = e.changedTouches[0].clientY;
