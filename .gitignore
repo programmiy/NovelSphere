@@ -9,3 +9,4 @@ todo.md
 __pycache__/
 model_training/venv/
 *.pyc
+/server/backups/

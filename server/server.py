@@ -5,6 +5,7 @@ import time
 import os
 import asyncio
 import re
+import shutil
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Request
 from contextlib import asynccontextmanager 
 from fastapi.middleware.cors import CORSMiddleware
@@ -23,6 +24,45 @@ API_KEY_FILE = "api_key.txt"
 script_dir = os.path.dirname(os.path.abspath(__file__))
 static_dir = os.path.join(script_dir, "server/static")
 templates_dir = os.path.join(script_dir, "server/templates")
+# --- Backup and Metadata Logic ---
+def _update_runtime_metadata():
+    """Saves the current SERVER_METADATA to the metadata file."""
+    try:
+        with open(METADATA_FILE, "w") as f:
+            json.dump(SERVER_METADATA, f)
+    except Exception as e:
+        print(f"Error saving metadata: {e}")
+
+async def backup_check_task():
+    """Periodically checks if a backup is needed based on cumulative runtime."""
+    while True:
+        await asyncio.sleep(600)  # Check every 10 minutes
+
+        if not APP_START_TIME:
+            continue
+
+        session_duration = time.time() - APP_START_TIME
+        current_total_runtime = SERVER_METADATA.get("cumulative_runtime_seconds", 0) + session_duration
+
+        if current_total_runtime > BACKUP_THRESHOLD_SECONDS:
+            print("Backup threshold exceeded. Performing backup...")
+            
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            backup_filename = f"translations_backup_{timestamp}.db"
+            backup_path = os.path.join(BACKUP_DIR, backup_filename)
+
+            try:
+                shutil.copy2(DATABASE_FILE, backup_path)
+                print(f"Successfully created backup: {backup_path}")
+                
+                # Reset counter and save immediately
+                SERVER_METADATA["cumulative_runtime_seconds"] = 0
+                _update_runtime_metadata()
+                
+            except Exception as e:
+                print(f"Error during backup: {e}")
+
+
 def get_api_key():
     """api_key.txt 파일에서 API 키를 읽어옵니다."""
     try:
@@ -123,6 +163,16 @@ def init_db():
 
 # 스크립트 디렉토리 기준 절대 경로 설정
 script_dir = os.path.dirname(os.path.abspath(__file__))
+
+# --- Constants for Backup ---
+METADATA_FILE = os.path.join(script_dir, "server_meta.json")
+BACKUP_DIR = os.path.join(script_dir, "backups")
+BACKUP_THRESHOLD_SECONDS = 24 * 3600  # 24 hours
+
+# --- App state for Backup ---
+APP_START_TIME = None
+SERVER_METADATA = {}
+
 static_dir = os.path.join(script_dir, "static")
 templates_dir = os.path.join(script_dir, "templates")
 
@@ -130,10 +180,32 @@ templates_dir = os.path.join(script_dir, "templates")
 # app = FastAPI()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # 서버 시작 시 실행
+    global APP_START_TIME, SERVER_METADATA
+    
+    # Load metadata on startup
+    try:
+        with open(METADATA_FILE, "r") as f:
+            SERVER_METADATA = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        SERVER_METADATA = {"cumulative_runtime_seconds": 0}
+
+    APP_START_TIME = time.time()
+    
+    # Start background task
+    asyncio.create_task(backup_check_task())
+
+    # DB initialization
     init_db()
+    
+    print("Server startup complete. Runtime tracking and backup task started.")
     yield
-    # 서버 종료 시 실행 (필요 시 코드 추가)
+    
+    # Shutdown logic
+    if APP_START_TIME:
+        session_duration = time.time() - APP_START_TIME
+        SERVER_METADATA["cumulative_runtime_seconds"] += session_duration
+        _update_runtime_metadata()
+        print("Server shutting down. Updated cumulative runtime.")
 
 app = FastAPI(lifespan=lifespan)
 # 정적 파일 및 템플릿 설정
