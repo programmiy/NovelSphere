@@ -146,7 +146,7 @@ templates = Jinja2Templates(directory=templates_dir)
 # 로컬 개발 환경과 브라우저 확장 프로그램의 출처를 명시적으로 허용합니다.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost", "http://localhost:8001", "http://1227.0.0.1", "http://127.0.0.1:8001", "https://novel18.syosetu.com", "https://kakuyomu.jp"],
+    allow_origins=["http://localhost", "http://localhost:8001", "http://1227.0.0.1", "http://127.0.0.1:8001", "https://novel18.syosetu.com", "https://kakuyomu.jp", "http://192.168.219.100", "http://192.168.219.100:8001"],
     allow_origin_regex="chrome-extension://.*",
     allow_credentials=True,
     allow_methods=["*"],
@@ -245,12 +245,12 @@ def call_gemini_api_with_retry(api_url: str, prompt: str):
     return response.json()
 
 def process_repeated_chars(text: str) -> str:
-    """4번 이상 반복되는 문자를 '(반복)'으로 대체합니다."""
+    """6번 이상 반복되는 문자를 '(반복)'으로 대체합니다."""
     if not text:
         return text
-    # (.)는 모든 문자와 일치, \1은 첫 번째 캡처 그룹(즉, 그 문자)을 참조, {3,}는 3번 이상 반복을 의미합니다.
-    # 따라서 총 4번 이상 반복되는 문자를 찾습니다.
-    return re.sub(r'(.)\1{3,}', '(반복)', text)
+    # (.)는 모든 문자와 일치, \1은 첫 번째 캡처 그룹(즉, 그 문자)을 참조, {5,}는 5번 이상 반복을 의미합니다.
+    # 따라서 총 6번 이상 반복되는 문자를 찾습니다.
+    return re.sub(r'(.)\1{5,}', '(반복)', text)
 
 @app.post("/translate")
 def translate_texts(req: TranslateRequest):
@@ -1109,27 +1109,24 @@ def get_book_chapters(folder_name: str):
     conn = sqlite3.connect(DATABASE_FILE, timeout=15)
     cursor = conn.cursor()
 
-    # folderName을 기준으로 그룹화하고, 각 그룹 내에서 가장 오래된 timestamp를 기준으로 챕터 순서를 정렬합니다.
-    query = """
-        SELECT title 
-        FROM translations 
-        WHERE folderName = ? AND title IS NOT NULL
-        GROUP BY title 
-        ORDER BY MIN(timestamp) ASC
-    """
-    params = [decoded_folder_name]
+    base_order_by = "ORDER BY MIN(url) ASC, MIN(CASE WHEN lower(pid) LIKE 'p%' OR lower(pid) LIKE 'l%' THEN CAST(SUBSTR(pid, 2) AS INTEGER) ELSE 999999 END) ASC"
+
     if decoded_folder_name == "미분류":
-        query = """
-            SELECT title 
-            FROM translations 
-            WHERE folderName IS NULL AND title IS NOT NULL
-            GROUP BY title 
-            ORDER BY MIN(timestamp) ASC
-        """
+        query = f"""SELECT title 
+                   FROM translations 
+                   WHERE folderName IS NULL AND title IS NOT NULL
+                   GROUP BY title 
+                   {base_order_by}"""
         params = []
+    else:
+        query = f"""SELECT title 
+                   FROM translations 
+                   WHERE folderName = ? AND title IS NOT NULL
+                   GROUP BY title 
+                   {base_order_by}"""
+        params = [decoded_folder_name]
 
     cursor.execute(query, tuple(params))
-    # fetchall() returns a list of tuples, e.g., [('Chapter 1',), ('Chapter 2',)]
     chapters = [row[0] for row in cursor.fetchall()]
     conn.close()
     return chapters
@@ -1143,10 +1140,13 @@ def get_chapter_content(folder_name: str, title: str):
     conn.row_factory = dict_factory
     cursor = conn.cursor()
 
-    query = "SELECT * FROM translations WHERE folderName = ? AND title = ? ORDER BY timestamp ASC"
+    # pid가 'p' 또는 'l'로 시작하는 경우를 모두 고려하여 자연스러운 순서를 보장합니다.
+    order_by_clause = "ORDER BY CASE WHEN lower(pid) LIKE 'p%' OR lower(pid) LIKE 'l%' THEN CAST(SUBSTR(pid, 2) AS INTEGER) ELSE 999999 END ASC, timestamp ASC"
+
+    query = f"SELECT * FROM translations WHERE folderName = ? AND title = ? {order_by_clause}"
     params = [decoded_folder_name, decoded_title]
     if decoded_folder_name == "미분류":
-        query = "SELECT * FROM translations WHERE folderName IS NULL AND title = ? ORDER BY timestamp ASC"
+        query = f"SELECT * FROM translations WHERE folderName IS NULL AND title = ? {order_by_clause}"
         params = [decoded_title]
 
     cursor.execute(query, tuple(params))
@@ -1260,6 +1260,14 @@ def get_book_activity(folder_name: str):
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM book_activity WHERE folderName = ?", (decoded_folder_name,))
     activity = cursor.fetchone()
+
+    if activity and activity.get('last_read_pid'):
+        cursor.execute("SELECT title FROM translations WHERE folderName = ? AND pid = ? LIMIT 1", 
+                       (decoded_folder_name, activity['last_read_pid']))
+        title_result = cursor.fetchone()
+        if title_result:
+            activity['last_read_chapter_title'] = title_result['title']
+
     conn.close()
     if not activity:
         return {"folderName": decoded_folder_name, "last_read_pid": None}
