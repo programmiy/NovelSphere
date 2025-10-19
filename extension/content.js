@@ -451,6 +451,11 @@ async function translateAllPTags() {
                     throw new Error('Malformed response from background script');
                 }
             } catch (error) {
+                if (error.message.includes('The message channel closed')) {
+                    console.warn('Message channel closed, likely due to page reload. Translation chunk cancelled.');
+                    return; // Stop retrying, the page is gone.
+                }
+
                 console.warn(`Chunk translation failed (attempt ${attempt + 1}/${MAX_MESSAGE_RETRIES}):`, error.message);
 
                 if (attempt < MAX_MESSAGE_RETRIES - 1) {
@@ -539,6 +544,10 @@ async function translateAllPTags() {
             }
 
         } catch (error) {
+            if (error.message.includes('The message channel closed')) {
+                console.warn('Message channel closed during sentence splitting. Translation cancelled.');
+                return; // Stop, the page is gone.
+            }
             console.error(`Sentence splitting retry also failed for item ${originalItem.id}:`, error);
             const pid = originalItem.id;
             const finalResult = {
