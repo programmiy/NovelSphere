@@ -666,7 +666,7 @@ async function deleteSelectedTranslations() {
     
     const idsToDelete = checkedItems.map(item => parseInt(item.dataset.id));
     await fetch('http://127.0.0.1:8001/translations/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: idsToDelete }) });
-    showToast(`${idsToDelete.length}개의 항목이 삭제되었습니다.`, 'success');
+    showToast(`${idsToDelete.length}개의 항목이 삭제되었습니다.', 'success');
     loadAndRenderGrouped();
 }
 
@@ -682,7 +682,7 @@ async function moveSelectedTranslationsToFolder(event) {
     if (!confirm(`${idsToMove.length}개의 항목을 '${newFolderName}' 폴더로 이동하시겠습니까?`)) return;
 
     await fetch('http://127.0.0.1:8001/translations/move', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: idsToMove, folder_name: folderForAPI }) });
-    showToast(`${idsToMove.length}개의 항목이 이동되었습니다.`, 'success');
+    showToast(`${idsToMove.length}개의 항목이 이동되었습니다.', 'success');
     loadAndRenderGrouped();
 }
 
@@ -768,3 +768,33 @@ async function fetchAllTitles() {
         showToast('제목 가져오기 작업을 시작하지 못했습니다.', 'error');
     }
 }
+// --- Connection Status ---
+(function() {
+    function showConnectionStatus(isOnline) {
+        let toast = document.getElementById('connection-toast');
+        if (!toast) {
+            toast = document.createElement('div');
+            toast.id = 'connection-toast';
+            document.body.appendChild(toast);
+        }
+
+        if (isOnline) {
+            toast.textContent = '온라인 상태입니다.';
+            toast.className = 'online';
+        } else {
+            toast.textContent = '오프라인 상태입니다. 일부 기능이 제한될 수 있습니다.';
+            toast.className = 'offline';
+        }
+
+        // Show the toast
+        toast.classList.add('show');
+
+        // Hide after 3 seconds
+        setTimeout(() => {
+            toast.classList.remove('show');
+        }, 3000);
+    }
+
+    window.addEventListener('online', () => showConnectionStatus(true));
+    window.addEventListener('offline', () => showConnectionStatus(false));
+})();
