@@ -437,34 +437,3 @@ body.dark-mode .original-text {
         width: 15%;
     }
 }
-
-/* Connection Status Toast */
-#connection-toast {
-    position: fixed;
-    bottom: 20px;
-    left: 50%;
-    transform: translateX(-50%);
-    padding: 10px 20px;
-    border-radius: 8px;
-    color: white;
-    font-size: 14px;
-    font-weight: 500;
-    z-index: 2000;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-    opacity: 0;
-    transition: opacity 0.5s, transform 0.5s;
-    transform: translate(-50%, 10px);
-}
-
-#connection-toast.show {
-    opacity: 1;
-    transform: translate(-50%, 0);
-}
-
-#connection-toast.online {
-    background-color: #48bb78; /* Green */
-}
-
-#connection-toast.offline {
-    background-color: #718096; /* Gray */
-}

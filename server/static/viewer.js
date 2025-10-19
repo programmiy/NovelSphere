@@ -622,33 +622,3 @@ document.addEventListener('DOMContentLoaded', async () => {
         return text.toString().replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
     }
 });
-// --- Connection Status ---
-(function() {
-    function showConnectionStatus(isOnline) {
-        let toast = document.getElementById('connection-toast');
-        if (!toast) {
-            toast = document.createElement('div');
-            toast.id = 'connection-toast';
-            document.body.appendChild(toast);
-        }
-
-        if (isOnline) {
-            toast.textContent = '온라인 상태입니다.';
-            toast.className = 'online';
-        } else {
-            toast.textContent = '오프라인 상태입니다. 일부 기능이 제한될 수 있습니다.';
-            toast.className = 'offline';
-        }
-
-        // Show the toast
-        toast.classList.add('show');
-
-        // Hide after 3 seconds
-        setTimeout(() => {
-            toast.classList.remove('show');
-        }, 3000);
-    }
-
-    window.addEventListener('online', () => showConnectionStatus(true));
-    window.addEventListener('offline', () => showConnectionStatus(false));
-})();
