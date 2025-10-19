@@ -43,6 +43,21 @@ if (document.readyState === 'loading') {
 
 async function init() {
     try {
+        // 0. Check if the current origin is allowed
+        const response = await fetch('http://127.0.0.1:8001/api/allowed_origins');
+        if (!response.ok) {
+            console.warn('Could not fetch allowed origins from server. Stopping initialization.');
+            return;
+        }
+        const allowedOrigins = await response.json();
+        const currentUrl = window.location.href;
+        const isAllowed = allowedOrigins.some(origin => currentUrl.startsWith(origin));
+
+        if (!isAllowed) {
+            console.log(`Translator extension disabled: Current URL (${currentUrl}) is not in the allowed origins list.`);
+            return; // Stop execution if the origin is not allowed
+        }
+
         console.log("Translator extension initializing...");
 
         injectSidebar();

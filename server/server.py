@@ -247,14 +247,21 @@ async def serve_service_worker():
 # CORS 미들웨어 설정
 # allow_credentials=True 일 때 allow_origins=["*"을 사용할 수 없으므로,
 # 로컬 개발 환경과 브라우저 확장 프로그램의 출처를 명시적으로 허용합니다.
+allowed_origins_list = ["http://localhost", "http://localhost:8001", "http://1227.0.0.1", "http://127.0.0.1:8001", "https://novel18.syosetu.com", "https://kakuyomu.jp", "http://192.168.219.100", "http://192.168.219.100:8001"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost", "http://localhost:8001", "http://1227.0.0.1", "http://127.0.0.1:8001", "https://novel18.syosetu.com", "https://kakuyomu.jp", "http://192.168.219.100", "http://192.168.219.100:8001"],
+    allow_origins=allowed_origins_list,
     allow_origin_regex="chrome-extension://.*",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.get("/api/allowed_origins")
+def get_allowed_origins():
+    """CORS에 허용된 출처 목록을 반환합니다."""
+    return allowed_origins_list
 
 # --- Web UI Endpoint --
 @app.get("/book")
