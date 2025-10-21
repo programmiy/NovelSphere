@@ -4,15 +4,100 @@ import os
 import uvicorn
 import webview
 import sys # Import sys for exit
+import platform # Import platform to detect OS
+import json # Import json to read settings
 
 # Get the directory where main.py is located
 # This will be the root of the packaged application
 APP_ROOT = os.path.dirname(os.path.abspath(__file__))
 SERVER_DIR = os.path.join(APP_ROOT, "server") # Assuming server.py is in a 'server' subdirectory
 
+# Path to the settings file
+SETTINGS_FILE = os.path.join(SERVER_DIR, "settings.json")
+
 # Ensure the logs directory exists within the packaged app's root
 LOG_DIR = os.path.join(APP_ROOT, "logs")
 os.makedirs(LOG_DIR, exist_ok=True)
+
+def load_autostart_setting():
+    """Loads the autostart setting from settings.json."""
+    try:
+        with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
+            settings = json.load(f)
+            return settings.get("autostart", False)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return False
+
+def enable_autostart():
+    """Enables the application to start automatically on system startup."""
+    current_os = platform.system()
+    app_name = "LANOVEL"
+    app_path = os.path.abspath(sys.argv[0]) # Path to the executable
+
+    if current_os == "Windows":
+        try:
+            # Create a VBScript to run the executable silently
+            vbs_path = os.path.join(os.getenv("APPDATA"), "Microsoft\\Windows\\Start Menu\\Programs\\Startup", f"{app_name}.vbs")
+            with open(vbs_path, "w") as vbs_file:
+                vbs_file.write(f'Set WshShell = CreateObject("WScript.Shell")\n')
+                vbs_file.write(f'WshShell.Run chr(34) & "{app_path}" & chr(34) & " -minimized", 0\n')
+                vbs_file.write(f'Set WshShell = Nothing\n')
+            print(f"Windows autostart enabled: {vbs_path}")
+        except Exception as e:
+            print(f"Error enabling Windows autostart: {e}")
+    elif current_os == "Darwin": # macOS
+        try:
+            plist_content = f"""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.lanovel.autostart</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>{app_path}</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <false/>
+</dict>
+</plist>"""
+            plist_path = os.path.join(os.path.expanduser("~/Library/LaunchAgents"), "com.lanovel.autostart.plist")
+            with open(plist_path, "w") as plist_file:
+                plist_file.write(plist_content)
+            # Load the LaunchAgent
+            os.system(f"launchctl load {plist_path}")
+            print(f"macOS autostart enabled: {plist_path}")
+        except Exception as e:
+            print(f"Error enabling macOS autostart: {e}")
+    else:
+        print(f"Autostart not supported on {current_os}")
+
+def disable_autostart():
+    """Disables the application from starting automatically on system startup."""
+    current_os = platform.system()
+    app_name = "LANOVEL"
+
+    if current_os == "Windows":
+        try:
+            vbs_path = os.path.join(os.getenv("APPDATA"), "Microsoft\\Windows\\Start Menu\\Programs\\Startup", f"{app_name}.vbs")
+            if os.path.exists(vbs_path):
+                os.remove(vbs_path)
+                print(f"Windows autostart disabled: {vbs_path}")
+        except Exception as e:
+            print(f"Error disabling Windows autostart: {e}")
+    elif current_os == "Darwin": # macOS
+        try:
+            plist_path = os.path.join(os.path.expanduser("~/Library/LaunchAgents"), "com.lanovel.autostart.plist")
+            if os.path.exists(plist_path):
+                os.system(f"launchctl unload {plist_path}")
+                os.remove(plist_path)
+                print(f"macOS autostart disabled: {plist_path}")
+        except Exception as e:
+            print(f"Error disabling macOS autostart: {e}")
+    else:
+        print(f"Autostart not supported on {current_os}")
 
 # Function to run the FastAPI server
 def start_server():
@@ -73,6 +158,12 @@ def start_webview():
     webview.start()
 
 if __name__ == "__main__":
+    # Apply autostart setting on application launch
+    if load_autostart_setting():
+        enable_autostart()
+    else:
+        disable_autostart()
+
     # Start the FastAPI server in a separate thread
     server_thread = threading.Thread(target=start_server, daemon=True)
     server_thread.start()
