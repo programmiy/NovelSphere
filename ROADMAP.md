@@ -17,6 +17,7 @@
     - [x] 웹 UI에서 로그를 확인할 수 있는 뷰어 페이지 개발
         - [x] 로그 뷰어 백엔드 API 엔드포인트 개발 (`/api/logs`)
         - [x] `log_viewer.html` 템플릿 생성
+        - [x] `log_viewer.css` 파일 생성
 
 - [ ] **1단계: 독립적인 데스크톱 앱으로 패키징**
     - [ ] `pywebview` 및 `PyInstaller` 라이브러리 설정
