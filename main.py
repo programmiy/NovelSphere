@@ -100,6 +100,13 @@ def disable_autostart():
     else:
         print(f"Autostart not supported on {current_os}")
 
+def send_notification(title, message):
+    """Sends a native OS notification."""
+    try:
+        webview.windows[0].show_notification(title, message)
+    except Exception as e:
+        print(f"Error sending notification: {e}")
+
 # Function to run the FastAPI server
 def start_server():
     # Change current working directory to the server directory
@@ -115,13 +122,6 @@ def on_tray_menu_select(window, item):
     elif item == "Exit":
         window.destroy()
         sys.exit() # Ensure the application fully exits
-
-# Function to open the webview window to the library URL
-def open_library(window):
-    if not window.is_shown():
-        window.show()
-    window.load_url("http://127.0.0.1:8001/library")
-    window.set_focus()
 
 # Function to open the webview window to the library URL
 def open_library(window):
@@ -146,6 +146,8 @@ def update_progress_bar(window):
             # For now, we'll update the title as a simple feedback mechanism.
             # If a more advanced progress bar is needed, it would require more complex JS injection.
         else:
+            if progress_data["task"] == "fetch_titles" and progress_data["percentage"] == 100:
+                send_notification("LANOVEL", "제목 가져오기 작업이 완료되었습니다.")
             window.set_title("LANOVEL") # Reset title
     except requests.exceptions.RequestException as e:
         print(f"Error fetching progress: {e}")
