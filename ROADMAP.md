@@ -19,6 +19,7 @@
         - [x] `log_viewer.html` 템플릿 생성
         - [x] `log_viewer.css` 파일 생성
         - [x] `log_viewer.js` 파일 생성
+        - [x] `log_viewer.html`을 제공하는 FastAPI 엔드포인트 추가 (`/logs`)
 
 - [ ] **1단계: 독립적인 데스크톱 앱으로 패키징**
     - [ ] `pywebview` 및 `PyInstaller` 라이브러리 설정
