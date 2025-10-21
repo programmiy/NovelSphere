@@ -7,9 +7,25 @@ import asyncio
 import re
 import shutil
 import subprocess
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Request, Response
+from contextlib import asynccontextmanager 
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
+from starlette.responses import StreamingResponse
+from datetime import datetime
+from pydantic import BaseModel
+from typing import List, Optional
+from collections import defaultdict
+from urllib.parse import unquote
+from tenacity import retry, stop_after_attempt, wait_exponential, RetryError
+
+DATABASE_FILE = "translations.db"
+API_KEY_FILE = "api_key.txt"
+script_dir = os.path.dirname(os.path.abspath(__file__))
+
 import logging
 from logging.handlers import TimedRotatingFileHandler
-from fastapi import FastAPI, HTTPException, BackgroundTasks, Request, Response
 
 # --- Logging Configuration ---
 LOG_DIR = os.path.join(script_dir, "logs")
@@ -37,21 +53,7 @@ logger.addHandler(handler)
 console_handler = logging.StreamHandler()
 console_handler.setFormatter(formatter)
 logger.addHandler(console_handler)
-from contextlib import asynccontextmanager 
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
-from starlette.responses import StreamingResponse
-from datetime import datetime
-from pydantic import BaseModel
-from typing import List, Optional
-from collections import defaultdict
-from urllib.parse import unquote
-from tenacity import retry, stop_after_attempt, wait_exponential, RetryError
 
-DATABASE_FILE = "translations.db"
-API_KEY_FILE = "api_key.txt"
-script_dir = os.path.dirname(os.path.abspath(__file__))
 static_dir = os.path.join(script_dir, "server/static")
 templates_dir = os.path.join(script_dir, "server/templates")
 # --- Backup and Metadata Logic ---
