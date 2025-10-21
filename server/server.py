@@ -211,6 +211,9 @@ SETTINGS_FILE = os.path.join(script_dir, "settings.json")
 # --- App state for Settings ---
 SETTINGS = {}
 
+# --- App state for Progress Tracking ---
+PROGRESS_STATUS = {"task": "none", "current": 0, "total": 0, "percentage": 0}
+
 def load_settings():
     global SETTINGS
     try:
@@ -1080,6 +1083,10 @@ def set_autostart_setting(settings_update: AutoStartSettings):
     save_settings()
     return {"message": "Auto-start setting updated successfully."}
 
+@app.get("/api/progress")
+def get_progress_status():
+    """Retrieves the current progress status of background tasks."""
+    return PROGRESS_STATUS
 
 def _fetch_and_update_title_worker(url: str):
     """Internal worker to fetch a single title. Returns True if title is valid and updated."""
@@ -1123,11 +1130,17 @@ def _fetch_and_update_title_worker(url: str):
 
 def process_urls_in_background(urls: List[str]):
     """Loops through URLs with a delay and fetches titles."""
-    logger.info(f"Starting background task to process {len(urls)} URLs.")
+    global PROGRESS_STATUS
+    total_urls = len(urls)
+    PROGRESS_STATUS = {"task": "fetch_titles", "current": 0, "total": total_urls, "percentage": 0}
+    logger.info(f"Starting background task to process {total_urls} URLs.")
     for i, url in enumerate(urls):
-        logger.info(f"Processing URL {i+1}/{len(urls)}: {url}")
+        PROGRESS_STATUS["current"] = i + 1
+        PROGRESS_STATUS["percentage"] = int(((i + 1) / total_urls) * 100)
+        logger.info(f"Processing URL {i+1}/{total_urls}: {url} (Progress: {PROGRESS_STATUS['percentage']}%)")
         _fetch_and_update_title_worker(url)
         time.sleep(1)
+    PROGRESS_STATUS = {"task": "none", "current": 0, "total": 0, "percentage": 100} # Reset on completion
     logger.info("Finished background task for fetching titles.")
 
 

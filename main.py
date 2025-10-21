@@ -6,6 +6,7 @@ import webview
 import sys # Import sys for exit
 import platform # Import platform to detect OS
 import json # Import json to read settings
+import requests # Import requests for API calls
 
 # Get the directory where main.py is located
 # This will be the root of the packaged application
@@ -122,6 +123,36 @@ def open_library(window):
     window.load_url("http://127.0.0.1:8001/library")
     window.set_focus()
 
+# Function to open the webview window to the library URL
+def open_library(window):
+    if not window.is_shown():
+        window.show()
+    window.load_url("http://127.0.0.1:8001/library")
+    window.set_focus()
+
+# Function to update the progress bar
+def update_progress_bar(window):
+    try:
+        response = requests.get("http://127.0.0.1:8001/api/progress")
+        response.raise_for_status()
+        progress_data = response.json()
+
+        if progress_data["task"] == "fetch_titles" and progress_data["total"] > 0:
+            percentage = progress_data["percentage"]
+            window.set_title(f"LANOVEL - Fetching Titles ({percentage}%)")
+            # pywebview doesn't have a direct progress bar API for the window itself.
+            # This would typically involve injecting JS into the webview to update a custom progress bar,
+            # or using OS-specific APIs if pywebview exposed them.
+            # For now, we'll update the title as a simple feedback mechanism.
+            # If a more advanced progress bar is needed, it would require more complex JS injection.
+        else:
+            window.set_title("LANOVEL") # Reset title
+    except requests.exceptions.RequestException as e:
+        print(f"Error fetching progress: {e}")
+    finally:
+        # Schedule the next update
+        threading.Timer(2, update_progress_bar, args=(window,)).start()
+
 # Function to create and open the webview window
 def start_webview():
     # Wait for the server to start
@@ -156,6 +187,8 @@ def start_webview():
         )
     )
     webview.start()
+    # Start the progress bar update loop
+    threading.Timer(2, update_progress_bar, args=(window,)).start()
 
 if __name__ == "__main__":
     # Apply autostart setting on application launch
