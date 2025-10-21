@@ -310,6 +310,12 @@ async def read_admin_ui(request: Request):
     return templates.TemplateResponse("admin.html", {"request": request})
 
 
+@app.get("/logs")
+async def read_logs_ui(request: Request):
+    """로그 뷰어 웹페이지를 렌더링합니다."""
+    return templates.TemplateResponse("log_viewer.html", {"request": request})
+
+
 @app.get("/library")
 async def read_library_ui_alias(request: Request):
     """'서재' UI 웹페이지를 렌더링합니다. (루트의 별칭)"""
