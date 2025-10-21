@@ -205,6 +205,28 @@ BACKUP_THRESHOLD_SECONDS = 24 * 3600  # 24 hours
 APP_START_TIME = None
 SERVER_METADATA = {}
 
+# --- Constants for Settings ---
+SETTINGS_FILE = os.path.join(script_dir, "settings.json")
+
+# --- App state for Settings ---
+SETTINGS = {}
+
+def load_settings():
+    global SETTINGS
+    try:
+        with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
+            SETTINGS = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        SETTINGS = {"autostart": False} # Default setting
+    logger.info(f"Loaded settings: {SETTINGS}")
+
+def save_settings():
+    try:
+        with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
+            json.dump(SETTINGS, f, ensure_ascii=False, indent=4)
+    except Exception as e:
+        logger.error(f"Error saving settings: {e}")
+
 static_dir = os.path.join(script_dir, "static")
 templates_dir = os.path.join(script_dir, "templates")
 
@@ -225,6 +247,9 @@ async def lifespan(app: FastAPI):
     
     # Start background task
     asyncio.create_task(backup_check_task())
+
+    # Load settings
+    load_settings()
 
     # DB initialization
     init_db()
@@ -1037,6 +1062,23 @@ async def get_logs(request: Request):
     except Exception as e:
         logger.error(f"Error reading log files: {e}")
         raise HTTPException(status_code=500, detail=f"Error reading log files: {e}")
+
+
+class AutoStartSettings(BaseModel):
+    autostart: bool
+
+@app.get("/api/settings/autostart")
+def get_autostart_setting():
+    """Retrieves the current auto-start setting."""
+    return {"autostart": SETTINGS.get("autostart", False)}
+
+@app.post("/api/settings/autostart")
+def set_autostart_setting(settings_update: AutoStartSettings):
+    """Updates the auto-start setting."""
+    global SETTINGS
+    SETTINGS["autostart"] = settings_update.autostart
+    save_settings()
+    return {"message": "Auto-start setting updated successfully."}
 
 
 def _fetch_and_update_title_worker(url: str):
