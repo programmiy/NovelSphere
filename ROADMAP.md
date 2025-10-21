@@ -23,7 +23,7 @@
         - [x] `admin.html`에 로그 뷰어 링크 추가
 
 - [ ] **1단계: 독립적인 데스크톱 앱으로 패키징**
-    - [ ] `pywebview` 및 `PyInstaller` 라이브러리 설정
+    - [x] `pywebview` 및 `PyInstaller` 라이브러리 설정
     - [ ] FastAPI 서버를 백그라운드 스레드로 실행하는 `main.py` 진입점 작성
     - [ ] 모든 의존성을 포함한 단일 `.exe` 파일 생성
 
