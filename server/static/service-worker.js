@@ -5,6 +5,9 @@ const APP_SHELL_URLS = [
     '/book', // Endpoint for book_ui.html
     '/viewer',
     '/admin',
+    '/logs',
+    '/static/manifest.json',
+    '/service-worker.js',
     '/static/admin.css',
     '/static/admin.js',
     '/static/book_ui.css',

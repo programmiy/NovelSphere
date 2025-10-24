@@ -3,3 +3,5 @@ uvicorn[standard]
 fastapi-cors
 requests
 tenacity
+pyinstaller
+pywebview

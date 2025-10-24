@@ -23,6 +23,46 @@ from tenacity import retry, stop_after_attempt, wait_exponential, RetryError
 DATABASE_FILE = "translations.db"
 API_KEY_FILE = "api_key.txt"
 script_dir = os.path.dirname(os.path.abspath(__file__))
+
+import logging
+from logging.handlers import TimedRotatingFileHandler
+
+# --- Logging Configuration ---
+LOG_DIR = os.path.join(script_dir, "logs")
+os.makedirs(LOG_DIR, exist_ok=True)
+
+log_file_path = os.path.join(LOG_DIR, "app.log")
+
+# Configure logging
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
+# Create a rotating file handler
+handler = TimedRotatingFileHandler(
+    log_file_path,
+    when="midnight",  # Rotate daily
+    interval=1,
+    backupCount=7,    # Keep 7 days of logs
+    encoding="utf-8"
+)
+formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+handler.setFormatter(formatter)
+logger.addHandler(handler)
+
+# If you also want to log to console (optional, good for development)
+console_handler = logging.StreamHandler()
+console_handler.setFormatter(formatter)
+logger.addHandler(console_handler)
+
+# --- Configure Uvicorn Access Logger ---
+uvicorn_access_logger = logging.getLogger("uvicorn.access")
+uvicorn_access_logger.setLevel(logging.INFO)
+uvicorn_access_logger.propagate = False # Prevent messages from going to root logger if it has other handlers
+
+# Add the same handlers to uvicorn.access logger
+uvicorn_access_logger.addHandler(handler) # File handler
+uvicorn_access_logger.addHandler(console_handler) # Console handler
+
 static_dir = os.path.join(script_dir, "server/static")
 templates_dir = os.path.join(script_dir, "server/templates")
 # --- Backup and Metadata Logic ---
@@ -32,7 +72,7 @@ def _update_runtime_metadata():
         with open(METADATA_FILE, "w") as f:
             json.dump(SERVER_METADATA, f)
     except Exception as e:
-        print(f"Error saving metadata: {e}")
+        logger.error(f"Error saving metadata: {e}")
 
 async def backup_check_task():
     """Periodically checks if a backup is needed based on cumulative runtime."""
@@ -46,7 +86,7 @@ async def backup_check_task():
         current_total_runtime = SERVER_METADATA.get("cumulative_runtime_seconds", 0) + session_duration
 
         if current_total_runtime > BACKUP_THRESHOLD_SECONDS:
-            print("Backup threshold exceeded. Performing backup...")
+            logger.info("Backup threshold exceeded. Performing backup...")
             
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             backup_filename = f"translations_backup_{timestamp}.db"
@@ -54,14 +94,14 @@ async def backup_check_task():
 
             try:
                 shutil.copy2(DATABASE_FILE, backup_path)
-                print(f"Successfully created backup: {backup_path}")
+                logger.info(f"Successfully created backup: {backup_path}")
                 
                 # Reset counter and save immediately
                 SERVER_METADATA["cumulative_runtime_seconds"] = 0
                 _update_runtime_metadata()
                 
             except Exception as e:
-                print(f"Error during backup: {e}")
+                logger.error(f"Error during backup: {e}")
 
 
 def get_api_key():
@@ -174,6 +214,31 @@ BACKUP_THRESHOLD_SECONDS = 24 * 3600  # 24 hours
 APP_START_TIME = None
 SERVER_METADATA = {}
 
+# --- Constants for Settings ---
+SETTINGS_FILE = os.path.join(script_dir, "settings.json")
+
+# --- App state for Settings ---
+SETTINGS = {}
+
+# --- App state for Progress Tracking ---
+PROGRESS_STATUS = {"task": "none", "current": 0, "total": 0, "percentage": 0}
+
+def load_settings():
+    global SETTINGS
+    try:
+        with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
+            SETTINGS = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        SETTINGS = {"autostart": False} # Default setting
+    logger.info(f"Loaded settings: {SETTINGS}")
+
+def save_settings():
+    try:
+        with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
+            json.dump(SETTINGS, f, ensure_ascii=False, indent=4)
+    except Exception as e:
+        logger.error(f"Error saving settings: {e}")
+
 static_dir = os.path.join(script_dir, "static")
 templates_dir = os.path.join(script_dir, "templates")
 
@@ -195,10 +260,13 @@ async def lifespan(app: FastAPI):
     # Start background task
     asyncio.create_task(backup_check_task())
 
+    # Load settings
+    load_settings()
+
     # DB initialization
     init_db()
     
-    print("Server startup complete. Runtime tracking and backup task started.")
+    logger.info("Server startup complete. Runtime tracking and backup task started.")
     yield
     
     # Shutdown logic
@@ -206,7 +274,7 @@ async def lifespan(app: FastAPI):
         session_duration = time.time() - APP_START_TIME
         SERVER_METADATA["cumulative_runtime_seconds"] += session_duration
         _update_runtime_metadata()
-        print("Server shutting down. Updated cumulative runtime.")
+        logger.info("Server shutting down. Updated cumulative runtime.")
 
 app = FastAPI(lifespan=lifespan)
 # 정적 파일 및 템플릿 설정
@@ -243,11 +311,19 @@ async def serve_service_worker():
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="service-worker.js not found.")
 
+@app.get("/service-worker")
+async def redirect_service_worker():
+    """
+    Redirects requests for /service-worker to /service-worker.js.
+    This handles cases where browsers or extensions might request the service worker without the .js extension.
+    """
+    return RedirectResponse(url="/service-worker.js")
+
 
 # CORS 미들웨어 설정
 # allow_credentials=True 일 때 allow_origins=["*"을 사용할 수 없으므로,
 # 로컬 개발 환경과 브라우저 확장 프로그램의 출처를 명시적으로 허용합니다.
-allowed_origins_list = ["http://localhost", "http://localhost:8001", "http://1227.0.0.1", "http://127.0.0.1:8001", "https://novel18.syosetu.com", "https://kakuyomu.jp", "http://192.168.219.100", "http://192.168.219.100:8001"]
+allowed_origins_list = ["http://localhost", "http://localhost:8001", "http://1227.0.0.1", "http://127.0.0.1:8001", "https://novel18.syosetu.com", "https://kakuyomu.jp", "http://192.168.219.100", "http://192.168.219.100:8001", "http://172.31.176.1", "http://172.31.176.1:8001"]
 
 app.add_middleware(
     CORSMiddleware,
@@ -279,6 +355,12 @@ async def read_viewer_ui(request: Request, book: Optional[str] = None):
 async def read_admin_ui(request: Request):
     """관리자 UI 웹페이지를 렌더링합니다."""
     return templates.TemplateResponse("admin.html", {"request": request})
+
+
+@app.get("/logs")
+async def read_logs_ui(request: Request):
+    """로그 뷰어 웹페이지를 렌더링합니다."""
+    return templates.TemplateResponse("log_viewer.html", {"request": request})
 
 
 @app.get("/library")
@@ -343,6 +425,9 @@ def call_gemini_api_with_retry(api_url: str, prompt: str):
     """
     payload = {
         "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {
+            "response_mime_type": "application/json",
+        },
         "safetySettings": [
             {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
             {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
@@ -350,9 +435,17 @@ def call_gemini_api_with_retry(api_url: str, prompt: str):
             {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"}
         ]
     }
-    response = requests.post(api_url, json=payload, timeout=180)
-    response.raise_for_status()
-    return response.json()
+    logger.info(f"Gemini API Payload (first 500 chars): {json.dumps(payload, ensure_ascii=False)[:500]}...")
+    try:
+        response = requests.post(api_url, json=payload, timeout=180)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.HTTPError as e:
+        logger.error(f"Gemini API HTTP error: {e.response.status_code} - {e.response.text}")
+        raise
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Gemini API request error: {e}")
+        raise
 
 def process_repeated_chars(text: str) -> str:
     """6번 이상 반복되는 문자를 '(반복)'으로 대체합니다."""
@@ -385,6 +478,21 @@ def translate_texts(req: TranslateRequest):
     # don't change model version above!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     
     api_input_json = json.dumps([{"id": item.id, "text": item.text} for item in items_to_translate], ensure_ascii=False)
+    logger.info(f"API Input JSON: {api_input_json}")
+
+    prompt = f"""You are a JSON-only translation API. You will receive a JSON array of objects, each with an 'id' and a 'text' field.
+Your task is to translate the 'text' from Japanese to Korean.
+Your response MUST be a single, valid JSON array of objects. Each object in your response must contain the original 'id' and the translated text in a 'translated' field.
+Preserve the original quotation marks (like 「...」 and 『...』) in the translated text.
+Do not add any other explanations, formatting, or markdown code fences. Your entire output must be only the JSON data.
+Example response format: [{{"id": "p1", "translated": "번역된 텍스트"}}]
+
+---START OF JSON DATA---\r\n{api_input_json}\r\n---END OF JSON DATA---
+
+"""
+
+    logger.info(f"Gemini API URL: {api_url}")
+    logger.info(f"Gemini API Prompt (first 500 chars): {prompt[:500]}...")
 
     # 참고: 아래의 큰따옴표 이스케이프 관련 지시사항은 Gemini의 안전 필터에 의해
     # 'prohibited' 응답을 유발하는 것으로 확인되어 제거되었습니다.
@@ -399,9 +507,9 @@ Your response MUST be a single, valid JSON array of objects. Each object in your
 Preserve the original quotation marks (like 「...」 and 『...』) in the translated text.
 Do not add any other explanations, formatting, or markdown code fences. Your entire output must be only the JSON data.
 Example response format: [{{"id": "p1", "translated": "번역된 텍스트"}}]
----START OF JSON DATA---
-{api_input_json}
----END OF JSON DATA---
+
+---START OF JSON DATA---\r\n{api_input_json}\r\n---END OF JSON DATA---
+
 """
 
     try:
@@ -565,7 +673,7 @@ def migrate_data():
         except sqlite3.IntegrityError:
             skipped_count += 1
         except Exception as e:
-            print(f"레코드 처리 중 오류 발생: {record}, 오류: {e}")
+            logger.error(f"레코드 처리 중 오류 발생: {record}, 오류: {e}")
             skipped_count += 1
 
     conn.commit()
@@ -983,6 +1091,46 @@ def get_apply_status(url: str):
     return {"applied": is_applied}
 
 
+@app.get("/api/logs")
+async def get_logs(request: Request):
+    """Reads and returns the content of the latest log file."""
+    try:
+        log_files = sorted([f for f in os.listdir(LOG_DIR) if f.startswith("app.log")], reverse=True)
+        if not log_files:
+            return {"message": "No log files found.", "logs": []}
+
+        latest_log_file = os.path.join(LOG_DIR, log_files[0])
+        
+        with open(latest_log_file, "r", encoding="utf-8") as f:
+            logs = f.readlines()
+        
+        return {"message": "Success", "logs": logs}
+    except Exception as e:
+        logger.error(f"Error reading log files: {e}")
+        raise HTTPException(status_code=500, detail=f"Error reading log files: {e}")
+
+
+class AutoStartSettings(BaseModel):
+    autostart: bool
+
+@app.get("/api/settings/autostart")
+def get_autostart_setting():
+    """Retrieves the current auto-start setting."""
+    return {"autostart": SETTINGS.get("autostart", False)}
+
+@app.post("/api/settings/autostart")
+def set_autostart_setting(settings_update: AutoStartSettings):
+    """Updates the auto-start setting."""
+    global SETTINGS
+    SETTINGS["autostart"] = settings_update.autostart
+    save_settings()
+    return {"message": "Auto-start setting updated successfully."}
+
+@app.get("/api/progress")
+def get_progress_status():
+    """Retrieves the current progress status of background tasks."""
+    return PROGRESS_STATUS
+
 def _fetch_and_update_title_worker(url: str):
     """Internal worker to fetch a single title. Returns True if title is valid and updated."""
     try:
@@ -1004,33 +1152,39 @@ def _fetch_and_update_title_worker(url: str):
             title = title_match.group(1).strip()
             invalid_titles = ["年齢確認", "Just a moment...", "Log in"]
             if not title or any(invalid in title for invalid in invalid_titles):
-                print(f"Skipping invalid title for {url}: {title}")
+                logger.warning(f"Skipping invalid title for {url}: {title}")
                 return False
             conn = sqlite3.connect(DATABASE_FILE, timeout=15)
             cursor = conn.cursor()
             cursor.execute("UPDATE translations SET title = ? WHERE url = ?", (title, url))
             conn.commit()
             conn.close()
-            print(f"Updated title for {url}: {title}")
+            logger.info(f"Updated title for {url}: {title}")
             return True
         else:
-            print(f"Could not find title for {url}")
+            logger.warning(f"Could not find title for {url}")
             return False
     except requests.exceptions.RequestException as e:
-        print(f"Failed to fetch {url}: {e}")
+        logger.error(f"Failed to fetch {url}: {e}")
         return False
     except Exception as e:
-        print(f"An error occurred while processing {url}: {e}")
+        logger.error(f"An error occurred while processing {url}: {e}")
         return False
 
 def process_urls_in_background(urls: List[str]):
     """Loops through URLs with a delay and fetches titles."""
-    print(f"Starting background task to process {len(urls)} URLs.")
+    global PROGRESS_STATUS
+    total_urls = len(urls)
+    PROGRESS_STATUS = {"task": "fetch_titles", "current": 0, "total": total_urls, "percentage": 0}
+    logger.info(f"Starting background task to process {total_urls} URLs.")
     for i, url in enumerate(urls):
-        print(f"Processing URL {i+1}/{len(urls)}: {url}")
+        PROGRESS_STATUS["current"] = i + 1
+        PROGRESS_STATUS["percentage"] = int(((i + 1) / total_urls) * 100)
+        logger.info(f"Processing URL {i+1}/{total_urls}: {url} (Progress: {PROGRESS_STATUS['percentage']}%)")
         _fetch_and_update_title_worker(url)
         time.sleep(1)
-    print("Finished background task for fetching titles.")
+    PROGRESS_STATUS = {"task": "none", "current": 0, "total": 0, "percentage": 100} # Reset on completion
+    logger.info("Finished background task for fetching titles.")
 
 
 @app.post("/fetch_missing_titles")
@@ -1475,14 +1629,14 @@ def _crawl_and_update_summary_worker(folder_name: str, url: str):
             """, (folder_name, summary))
             conn.commit()
             conn.close()
-            print(f"Successfully updated summary for {folder_name}.")
+            logger.info(f"Successfully updated summary for {folder_name}.")
             return True
         else:
-            print(f"Could not find summary for URL: {url}")
+            logger.warning(f"Could not find summary for URL: {url}")
             return False
 
     except Exception as e:
-        print(f"Failed to crawl or update summary for {url}. Error: {e}")
+        logger.error(f"Failed to crawl or update summary for {url}. Error: {e}")
         return False
 
 @app.post("/api/books/{folder_name}/crawl-summary")
@@ -1536,3 +1690,8 @@ def cleanup_pids():
     return {"message": f"총 {deleted_count}개의 기록을 제외 처리했습니다. (새롭게 제외 목록에 추가된 항목: {excluded_count}개)"}
 
 # uvicorn server:app --reload --port 8001
+
+@app.get("/health")
+async def health_check():
+    """Simple health check endpoint."""
+    return {"status": "ok"}

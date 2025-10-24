@@ -11,3 +11,9 @@ __pycache__/
 model_training/venv/
 *.pyc
 /server/backups/
+server/settings.json
+server/logs/
+
+# Build and Distribution directories
+build/
+dist/

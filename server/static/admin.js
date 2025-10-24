@@ -42,6 +42,7 @@ function cacheDOMElements() {
     createFolderButton = document.getElementById('createFolderButton');
     newFolderNameInput = document.getElementById('newFolderNameInput');
     findEmptyBtn = document.getElementById('findEmptyBtn');
+    autoStartCheckbox = document.getElementById('autoStartCheckbox'); // Cache the auto-start checkbox
 }
 
 async function loadAndRenderGrouped() {
@@ -54,8 +55,8 @@ async function loadAndRenderGrouped() {
     try {
         // Fetch all data from the server
         const [translationsRes, foldersRes] = await Promise.all([
-            fetch(`http://127.0.0.1:8001/translations_by_folder?t=${Date.now()}`),
-            fetch(`http://127.0.0.1:8001/folders?t=${Date.now()}`)
+            fetch(`/translations_by_folder?t=${Date.now()}`),
+            fetch(`/folders?t=${Date.now()}`)
         ]);
 
         showToast('Data fetched, processing...', 'info'); // DEBUG
@@ -70,6 +71,15 @@ async function loadAndRenderGrouped() {
         appliedUrlsSet = new Set(responseData._applied_urls || []);
         delete responseData._applied_urls; // Clean up the metadata key
         groupedTranslations = responseData; // Assign clean data to global
+
+        // Load auto-start setting
+        const autoStartRes = await fetch('/api/settings/autostart');
+        if (autoStartRes.ok) {
+            const autoStartData = await autoStartRes.json();
+            autoStartCheckbox.checked = autoStartData.autostart;
+        } else {
+            console.error("Failed to load auto-start setting.");
+        }
 
         // NOTE: translationStatuses logic is removed
         translationStatuses = {};
@@ -114,8 +124,7 @@ function updateStatistics(groupedData) {
     document.getElementById('totalCount').textContent = totalCount;
     document.getElementById('todayCount').textContent = todayCount;
     document.getElementById('avgLength').textContent = avgLength;
-}
-
+}
 function populateFolderDropdowns(folders) {
     const folderFilterDropdown = document.getElementById('folderFilterDropdown');
 
@@ -310,6 +319,7 @@ function setupEventListeners() {
     cancelFindReplaceBtn.addEventListener('click', closeFindReplaceModal);
     executeFindReplaceBtn.addEventListener('click', executeGlobalFindReplace);
     createFolderButton.addEventListener('click', createFolder);
+    autoStartCheckbox.addEventListener('change', saveAutoStartState); // Add event listener for auto-start checkbox
 }
 
 function toggleFindEmpty() {
@@ -375,7 +385,7 @@ async function executeGlobalFindReplace() {
     }
 
     try {
-        const response = await fetch('http://127.0.0.1:8001/translations/find_replace', {
+        const response = await fetch('/translations/find_replace', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ find_text: findText, replace_text: replaceText })
@@ -421,7 +431,7 @@ async function createFolder() {
         newFolderNameInput.value = '';
         
         // Fetch the updated folder list and repopulate the dropdown.
-        const foldersRes = await fetch(`http://127.0.0.1:8001/folders?t=${Date.now()}`);
+        const foldersRes = await fetch(`/folders?t=${Date.now()}`);
         if (foldersRes.ok) {
             const allFolders = await foldersRes.json();
             populateFolderDropdowns(allFolders);
@@ -505,7 +515,7 @@ async function handleHistoryClick(e) {
                 const count = countMatch ? countMatch[0] : '';
                 titleElement.textContent = `${newTitle} (${count}`;
                 try {
-                    await fetch('http://127.0.0.1:8001/translations/url_title', {
+                    await fetch('/translations/url_title', {
                         method: 'PUT',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ url: url, title: newTitle })
@@ -541,13 +551,13 @@ async function handleHistoryClick(e) {
         const id = parseInt(itemRow.dataset.id);
         if (target.classList.contains('delete-btn')) {
             if (!confirm('이 번역을 삭제하시겠습니까?')) return;
-            await fetch(`http://127.0.0.1:8001/translations/delete`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: [id] }) });
+            await fetch(`/translations/delete`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: [id] }) });
             itemRow.remove();
             showToast('삭제되었습니다.');
         } else if (target.classList.contains('exclude-btn')) {
             if (!confirm('이 문장을 번역에서 영구적으로 제외하시겠습니까?')) return;
             try {
-                const response = await fetch(`http://127.0.0.1:8001/translations/exclude`, {
+                const response = await fetch(`/translations/exclude`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ ids: [id] })
@@ -573,7 +583,7 @@ async function handleHistoryClick(e) {
             };
             delete updatedItemPayload.id;
             try {
-                const response = await fetch('http://127.0.0.1:8001/translations/upsert', {
+                const response = await fetch('/translations/upsert', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify([updatedItemPayload])
@@ -665,7 +675,7 @@ async function deleteSelectedTranslations() {
     if (checkedItems.length === 0 || !confirm(`정말로 ${checkedItems.length}개의 번역을 삭제하시겠습니까?`)) return;
     
     const idsToDelete = checkedItems.map(item => parseInt(item.dataset.id));
-    await fetch('http://127.0.0.1:8001/translations/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: idsToDelete }) });
+    await fetch(`/translations/delete`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: idsToDelete }) });
     showToast(`${idsToDelete.length}개의 항목이 삭제되었습니다.`, 'success');
     loadAndRenderGrouped();
 }
@@ -681,7 +691,7 @@ async function moveSelectedTranslationsToFolder(event) {
 
     if (!confirm(`${idsToMove.length}개의 항목을 '${newFolderName}' 폴더로 이동하시겠습니까?`)) return;
 
-    await fetch('http://127.0.0.1:8001/translations/move', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: idsToMove, folder_name: folderForAPI }) });
+    await fetch('/translations/move', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: idsToMove, folder_name: folderForAPI }) });
     showToast(`${idsToMove.length}개의 항목이 이동되었습니다.`, 'success');
     loadAndRenderGrouped();
 }
@@ -705,6 +715,28 @@ async function renameFolder(oldName, newName) {
     } catch (error) {
         console.error("Failed to rename folder:", error);
         showToast(`폴더 이름 변경 실패: ${error.message}`, 'error');
+    }
+}
+
+async function saveAutoStartState() {
+    const isChecked = autoStartCheckbox.checked;
+    try {
+        const response = await fetch('/api/settings/autostart', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ autostart: isChecked })
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.detail || `Server error: ${response.status}`);
+        }
+
+        showToast(`자동 실행 설정이 ${isChecked ? '활성화' : '비활성화'}되었습니다.`, 'success');
+    } catch (error) {
+        console.error("Failed to save auto-start setting:", error);
+        showToast(`자동 실행 설정 저장 실패: ${error.message}`, 'error');
+        autoStartCheckbox.checked = !isChecked; // Revert checkbox state on error
     }
 }
 
@@ -759,7 +791,7 @@ async function fetchAllTitles() {
     if (!confirm('제목이 없는 모든 항목의 제목을 가져오시겠습니까? 이 작업은 시간이 오래 걸릴 수 있습니다.')) return;
     showToast('백그라운드에서 제목 가져오기를 시작합니다...', 'info');
     try {
-        const response = await fetch('http://127.0.0.1:8001/fetch_missing_titles', { method: 'POST' });
+        const response = await fetch('/fetch_missing_titles', { method: 'POST' });
         if (!response.ok) throw new Error(`Server error: ${response.statusText}`);
         const result = await response.json();
         showToast(result.message, 'success');
