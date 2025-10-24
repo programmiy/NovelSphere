@@ -6,7 +6,9 @@ name: 'Auto-Create Pull Request'
 on:
   push:
     branches: [ extra ]
-
+permissions:
+  pull-requests: write  # PR을 생성(write)할 수 있는 권한
+  contents: read      # 코드를 체크아웃(read)할 수 있는 권한
 jobs:
   create-pull-request:
     runs-on: ubuntu-latest
