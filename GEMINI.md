@@ -39,17 +39,7 @@
 7. **마무리:** (git push main extra:extragit push main extra (로컬 extra를 원격 EXTRA에 푸시)
 8. 자동화된 병합 워크플로우 (MCP/GitHub Actions)
 
-   7번 항목(`git push main extra:extra`)을 실행하여 '원격 `extra` 브랜치'로 코드를 푸시하면, MCP 서버(GitHub Actions)가 다음을 자동으로 수행합니다.
-
-   1. **자동 PR 생성 및 테스트 실행**
-
-      * `auto-pr.yml` 워크플로우가 푸시를 감지하여 `extra` → `main`으로의 **PR을 자동으로 생성**합니다.
-      * PR이 생성되면, `ci-pipeline.yml` 워크플로우가 이를 감지하여 **자동으로 테스트를 실행**합니다. (3번 항목 기능 확인, 6번 항목 문서화 분기 검사 등)
-   2. **병합 (Merge)** 
-
-      * 모든 자동 테스트가 통과하면(초록색 체크 확인), GitHub 웹사이트에서 **[Merge Pull Request] 버튼**을 클릭하여 `main`에 병합합니다.
-      * *(권장: `Rebase and Merge` 옵션을 사용하여 `main` 브랜치의 커밋 히스토리를 깔끔하게 유지합니다.)*
-   3. **작업 브랜치로 복귀** (기존 8-4)
+   1. **main pull 이후 작업 브랜치로 복귀**
 
       * `main` 브랜치가 최신화되었으므로, 로컬 `extra` 브랜치도 최신 `main`을 반영합니다.
         ```shell
