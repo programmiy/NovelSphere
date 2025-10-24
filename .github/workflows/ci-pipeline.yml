@@ -6,8 +6,6 @@ name: 'CI Pipeline (Test & Doc Check)'
 # 1. 'extra' 브랜치로 푸시할 때 (git push main extra:extra)
 # 2. 'main' 브랜치로 Pull Request를 열 때
 on:
-  push:
-    branches: [ extra ]
   pull_request:
     branches: [ main ]
 
