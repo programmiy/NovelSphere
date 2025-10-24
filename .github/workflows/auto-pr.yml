@@ -31,7 +31,7 @@ jobs:
             echo "exists=false" >> $GITHUB_OUTPUT
           fi
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }} # GitHub이 자동으로 제공하는 토큰
+             GH_TOKEN: ${{ secrets.GH_PAT }}
 
       # 3. PR 생성 (PR이 없을 때만 실행)
       - name: 'Create Pull Request'
@@ -46,4 +46,4 @@ jobs:
             --title "$LATEST_COMMIT_MSG" \
             --body "자동화된 PR입니다. CI 테스트 결과를 확인하세요."
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+             GH_TOKEN: ${{ secrets.GH_PAT }}
