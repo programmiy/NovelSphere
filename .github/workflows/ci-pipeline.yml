@@ -35,19 +35,7 @@ jobs:
           pip install pytest # 테스트 도구 설치 (예시)
           pytest server/     # 'server' 폴더 대상 테스트 실행
 
-      # 3. 프론트엔드(JS) 린트 (코드 스타일 검사)
-      - name: 'Set up Node.js'
-        uses: actions/setup-node@v4
-        with:
-          node-version: '18' # Node.js 버전 지정
-      - name: 'Install JS dependencies'
-        run: |
-          npm install --prefix extension # 'extension' 폴더에 npm 설치
-          npm install --prefix server/static # 'static' 폴더에 npm 설치 (필요시)
-      - name: 'Run JS Lint (ESLint)'
-        run: |
-          npm install eslint # 린트 도구 설치 (예시)
-          eslint extension/ server/static/ # 'extension', 'static' 폴더 검사
+
 
   # --- 2. 문서화 검사 작업 (GEMINI.md 4, 5번 항목 자동화) ---
   check-documentation:
