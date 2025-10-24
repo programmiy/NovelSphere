@@ -36,14 +36,29 @@ jobs:
       # 3. PR 생성 (PR이 없을 때만 실행)
       - name: 'Create Pull Request'
         if: steps.check_pr.outputs.exists == 'false'
+        id: create_pr # <-- 'id'를 추가
         run: |
-          # GEMINI.md 5번 규칙(커밋 메시지)을 PR 제목으로 사용
           LATEST_COMMIT_MSG=$(git log -1 --pretty=%s)
           
-          gh pr create \
+          # PR을 생성하고, 생성된 PR의 URL을 'pr_url'이라는 출력 변수에 저장합니다.
+          PR_URL=$(gh pr create \
             --base main \
             --head extra \
             --title "$LATEST_COMMIT_MSG" \
-            --body "자동화된 PR입니다. CI 테스트 결과를 확인하세요."
+            --body "자동화된 PR입니다. CI 테스트가 완료되면 자동 병합됩니다.")
+          
+          echo "pr_url=$PR_URL" >> $GITHUB_OUTPUT
         env:
-             GH_TOKEN: ${{ secrets.GH_PAT }}
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+
+      - name: 'Enable Auto-Merge'
+        # 'Create Pull Request' 단계에서 PR이 성공적으로 생성되었을 때만 실행
+        if: steps.create_pr.outputs.pr_url
+        run: |
+          echo "Enabling auto-merge for PR: ${{ steps.create_pr.outputs.pr_url }}"
+          
+          # 'Rebase and Merge' 방식으로 자동 병합을 활성화합니다.
+          # (일반 Merge를 원하면 --squash 대신 --merge를 사용)
+          gh pr merge "${{ steps.create_pr.outputs.pr_url }}" --auto --rebase
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
