@@ -139,19 +139,52 @@
     </div>
 
     <div class="edit-modal" id="findReplaceModal">
-        <div class="modal-content">
+        <div class="modal-content" style="max-width: 600px;">
             <div class="modal-header">
                 <div class="modal-title">전체 찾아 바꾸기</div>
                 <button class="close-btn" id="closeFindReplaceModal">×</button>
             </div>
+
             <div class="form-group">
-                <label class="form-label">찾을 내용</label>
-                <input type="text" class="form-input" style="width: 100%" id="findText">
+                <label class="form-label" for="findText">찾을 내용</label>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <input type="text" class="form-input" style="width: 100%" id="findText">
+                    <span id="findCount" style="font-size: 14px; color: var(--text-muted); white-space: nowrap;">(0개)</span>
+                </div>
             </div>
+
             <div class="form-group">
-                <label class="form-label">바꿀 내용</label>
+                <label class="form-label" for="replaceText">바꿀 내용</label>
                 <input type="text" class="form-input" style="width: 100%" id="replaceText">
             </div>
+
+            <hr style="border-color: var(--border-color); margin: 16px 0;">
+
+            <div class="form-group">
+                <label class="form-label" for="conditionText">조건: 원문에 다음 단어 포함 시</label>
+                <input type="text" class="form-input" style="width: 100%" id="conditionText" placeholder="예: '소설' (비워두면 모든 항목 대상)">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label" for="folderScope">범위</label>
+                <select id="folderScope" class="form-select" style="width: 100%;">
+                    <option value="__all__">모든 폴더</option>
+                </select>
+            </div>
+
+            <div class="form-group" style="display: flex; gap: 20px; align-items: center; margin-top: 16px;">
+                <label class="checkbox-container" style="font-weight: normal;">
+                    <input type="checkbox" id="useRegex">
+                    <span class="checkmark"></span>
+                    정규식 사용
+                </label>
+                <label class="checkbox-container" style="font-weight: normal;">
+                    <input type="checkbox" id="caseSensitive">
+                    <span class="checkmark"></span>
+                    대소문자 구분
+                </label>
+            </div>
+
             <div class="modal-actions">
                 <button class="btn btn-outline" id="cancelFindReplace">취소</button>
                 <button class="btn btn-primary" id="executeFindReplace">실행</button>

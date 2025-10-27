@@ -10,10 +10,11 @@ let translationStatuses = {}; // Holds the apply-status for each URL
 let appliedUrlsSet = new Set();
 
 // DOM element cache
-let historyContainer, emptyState, searchBox, darkModeToggle, fetchAllTitlesBtn, bulkActionsPanel, selectionCount, deleteSelectedBtn, moveSelectedToFolderDropdown, findReplaceModal, closeFindReplaceModalBtn, cancelFindReplaceBtn, executeFindReplaceBtn, openGlobalFindReplaceBtn, createFolderButton, newFolderNameInput, findEmptyBtn;
+let historyContainer, emptyState, searchBox, darkModeToggle, fetchAllTitlesBtn, bulkActionsPanel, selectionCount, deleteSelectedToFolderDropdown, findReplaceModal, closeFindReplaceModalBtn, cancelFindReplaceBtn, executeFindReplaceBtn, openGlobalFindReplaceBtn, createFolderButton, newFolderNameInput, findEmptyBtn, findText, replaceText, findCount, conditionText, folderScope, useRegex, caseSensitive;
 
 // Debounce timer
 let searchTimeout;
+let findReplaceCountTimeout;
 
 // Main initialization
 document.addEventListener('DOMContentLoaded', () => {
@@ -39,6 +40,13 @@ function cacheDOMElements() {
     cancelFindReplaceBtn = document.getElementById('cancelFindReplace');
     executeFindReplaceBtn = document.getElementById('executeFindReplace');
     openGlobalFindReplaceBtn = document.getElementById('openGlobalFindReplaceBtn');
+    findText = document.getElementById('findText');
+    replaceText = document.getElementById('replaceText');
+    findCount = document.getElementById('findCount');
+    conditionText = document.getElementById('conditionText');
+    folderScope = document.getElementById('folderScope');
+    useRegex = document.getElementById('useRegex');
+    caseSensitive = document.getElementById('caseSensitive');
     createFolderButton = document.getElementById('createFolderButton');
     newFolderNameInput = document.getElementById('newFolderNameInput');
     findEmptyBtn = document.getElementById('findEmptyBtn');
@@ -318,6 +326,21 @@ function setupEventListeners() {
     closeFindReplaceModalBtn.addEventListener('click', closeFindReplaceModal);
     cancelFindReplaceBtn.addEventListener('click', closeFindReplaceModal);
     executeFindReplaceBtn.addEventListener('click', executeGlobalFindReplace);
+
+    // Live count for find & replace
+    [findText, conditionText, useRegex, caseSensitive, folderScope].forEach(element => {
+        element.addEventListener('input', () => {
+            clearTimeout(findReplaceCountTimeout);
+            findReplaceCountTimeout = setTimeout(countOccurrences, 300);
+        });
+        if (element.type === 'checkbox') { // Also trigger on change for checkboxes
+             element.addEventListener('change', () => {
+                clearTimeout(findReplaceCountTimeout);
+                findReplaceCountTimeout = setTimeout(countOccurrences, 300);
+            });
+        }
+    });
+
     createFolderButton.addEventListener('click', createFolder);
     autoStartCheckbox.addEventListener('change', saveAutoStartState); // Add event listener for auto-start checkbox
 }
@@ -360,27 +383,99 @@ function toggleFindEmpty() {
 
 function openFindReplaceModal() {
     if (!findReplaceModal) return;
-    document.getElementById('findText').value = '';
-    document.getElementById('replaceText').value = '';
+
+    // Reset form
+    findText.value = '';
+    replaceText.value = '';
+    conditionText.value = '';
+    useRegex.checked = false;
+    caseSensitive.checked = false;
+    findCount.textContent = '(0개)';
+
+    // Populate folder scope dropdown
+    folderScope.innerHTML = '<option value="__all__">모든 폴더</option>';
+    allFolders.forEach(folder => {
+        const option = document.createElement('option');
+        option.value = folder.name;
+        option.textContent = folder.name;
+        folderScope.appendChild(option);
+    });
+
     findReplaceModal.style.display = 'flex';
-    document.getElementById('findText').focus();
+    findText.focus();
 }
 
-function closeFindReplaceModal() {
-    if (!findReplaceModal) return;
-    findReplaceModal.style.display = 'none';
+function countOccurrences() {
+    const findTextValue = findText.value;
+    const conditionTextValue = conditionText.value;
+    const selectedFolder = folderScope.value;
+    const useRegexValue = useRegex.checked;
+    const caseSensitiveValue = caseSensitive.checked;
+
+    if (!findTextValue) {
+        findCount.textContent = '(0개)';
+        return;
+    }
+
+    let count = 0;
+    const flags = caseSensitiveValue ? 'g' : 'gi';
+    let findRegex;
+    try {
+        findRegex = new RegExp(useRegexValue ? findTextValue : escapeRegExp(findTextValue), flags);
+    } catch (e) {
+        // Invalid regex, do not count
+        findCount.textContent = '(유효하지 않은 정규식)';
+        return;
+    }
+
+    for (const folderName in groupedTranslations) {
+        if (selectedFolder !== '__all__' && folderName !== selectedFolder) {
+            continue;
+        }
+
+        for (const url in groupedTranslations[folderName]) {
+            for (const item of groupedTranslations[folderName][url]) {
+                // Check conditionText in original
+                if (conditionTextValue) {
+                    const originalContent = caseSensitiveValue ? item.original : item.original.toLowerCase();
+                    const conditionContent = caseSensitiveValue ? conditionTextValue : conditionTextValue.toLowerCase();
+                    if (!originalContent.includes(conditionContent)) {
+                        continue;
+                    }
+                }
+
+                // Check findText in translated
+                if (item.translated) {
+                    const matches = item.translated.match(findRegex);
+                    if (matches) {
+                        count += matches.length;
+                    }
+                }
+            }
+        }
+    }
+    findCount.textContent = `(${count}개)`;
+}
+
+// Helper function to escape special characters for regex
+function escapeRegExp(string) {
+    return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // $& means the whole matched string
 }
 
 async function executeGlobalFindReplace() {
-    const findText = document.getElementById('findText').value;
-    const replaceText = document.getElementById('replaceText').value;
+    const findTextValue = findText.value;
+    const replaceTextValue = replaceText.value;
+    const conditionTextValue = conditionText.value;
+    const selectedFolder = folderScope.value;
+    const useRegexValue = useRegex.checked;
+    const caseSensitiveValue = caseSensitive.checked;
 
-    if (!findText) {
+    if (!findTextValue) {
         showToast('찾을 내용을 입력하세요.', 'error');
         return;
     }
 
-    if (!confirm(`모든 번역 기록에서 "${findText}"을(를) "${replaceText}"(으)로 바꾸시겠습니까? 이 작업은 되돌릴 수 없습니다.`)) {
+    if (!confirm(`선택된 조건에 따라 번역 기록에서 "${findTextValue}"을(를) "${replaceTextValue}"(으)로 바꾸시겠습니까? 이 작업은 되돌릴 수 없습니다.`)) {
         return;
     }
 
@@ -388,7 +483,14 @@ async function executeGlobalFindReplace() {
         const response = await fetch('/translations/find_replace', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ find_text: findText, replace_text: replaceText })
+            body: JSON.stringify({
+                find_text: findTextValue,
+                replace_text: replaceTextValue,
+                condition_text: conditionTextValue,
+                folder_scope: selectedFolder,
+                use_regex: useRegexValue,
+                case_sensitive: caseSensitiveValue
+            })
         });
 
         if (!response.ok) {
