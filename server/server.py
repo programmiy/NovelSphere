@@ -458,24 +458,30 @@ def process_repeated_chars(text: str) -> str:
 @app.post("/translate")
 def translate_texts(req: TranslateRequest):
     """Gemini API를 호출하여 텍스트를 번역합니다. ID 기반 매칭과 재시도 로직으로 안정성을 높였습니다."""
-    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
-    cursor = conn.cursor()
+    
+    translatable_items = [item for item in req.items if item.id != 'tagCount']
+    
+    # Process translatable items
+    if translatable_items:
+        conn = sqlite3.connect(DATABASE_FILE, timeout=15)
+        cursor = conn.cursor()
 
-    cursor.execute("SELECT original FROM excluded_sentences WHERE url = ?", (req.url,))
-    excluded_originals = {row[0] for row in cursor.fetchall()}
-    conn.close()
+        cursor.execute("SELECT original FROM excluded_sentences WHERE url = ?", (req.url,))
+        excluded_originals = {row[0] for row in cursor.fetchall()}
+        conn.close()
 
-    items_to_translate = [item for item in req.items if item.text not in excluded_originals]
+        items_to_translate = [item for item in translatable_items if item.text not in excluded_originals]
+    else:
+        items_to_translate = []
 
     if not items_to_translate:
+        # Nothing to translate, just return original texts for all
         return {"translations": [
             {"id": item.id, "original": item.text, "translated": item.text} for item in req.items
         ]}
 
     api_key = get_api_key()
-    # 절대 2.5 버전을 사용하도록 강제합니다.
     api_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
-    # don't change model version above!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     
     api_input_json = json.dumps([{"id": item.id, "text": item.text} for item in items_to_translate], ensure_ascii=False)
     logger.info(f"API Input JSON: {api_input_json}")
@@ -494,13 +500,6 @@ Example response format: [{{"id": "p1", "translated": "번역된 텍스트"}}]
     logger.info(f"Gemini API URL: {api_url}")
     logger.info(f"Gemini API Prompt (first 500 chars): {prompt[:500]}...")
 
-    # 참고: 아래의 큰따옴표 이스케이프 관련 지시사항은 Gemini의 안전 필터에 의해
-    # 'prohibited' 응답을 유발하는 것으로 확인되어 제거되었습니다.
-    # 향후 유사 기능 구현 시 참고용으로 주석 처리하여 남겨둡니다.
-    #
-    # If the translated text itself contains double quotes ("), you MUST escape them
-    # with a backslash (\). For example, a value should look like
-    # "이것은 \"인용된\" 텍스트입니다."
     prompt = f"""You are a JSON-only translation API. You will receive a JSON array of objects, each with an 'id' and a 'text' field.
 Your task is to translate the 'text' from Japanese to Korean.
 Your response MUST be a single, valid JSON array of objects. Each object in your response must contain the original 'id' and the translated text in a 'translated' field.
@@ -515,13 +514,11 @@ Example response format: [{{"id": "p1", "translated": "번역된 텍스트"}}]
     try:
         data = call_gemini_api_with_retry(api_url, prompt)
 
-        # Explicitly check for top-level feedback block for content blocking
         feedback = data.get('promptFeedback')
         if feedback and feedback.get('blockReason'):
             error_detail = f"API가 콘텐츠를 차단했습니다. 이유: {feedback.get('blockReason')}"
             raise HTTPException(status_code=500, detail=error_detail)
 
-        # Safely parse the API response for translated text
         raw_text = None
         if data.get('candidates') and isinstance(data['candidates'], list) and data['candidates']:
             candidate = data['candidates'][0]
@@ -535,11 +532,9 @@ Example response format: [{{"id": "p1", "translated": "번역된 텍스트"}}]
                 raw_text = candidate['content']['parts'][0].get('text')
 
         if raw_text is None:
-            # Fallback for any other unexpected response structure
             error_detail = f"API 응답에서 번역된 텍스트를 추출할 수 없습니다. 응답: {data}"
             raise HTTPException(status_code=500, detail=error_detail)
         
-        # Extract the clean JSON array from the raw text response
         start_index = raw_text.find('[')
         end_index = raw_text.rfind(']')
         
@@ -579,19 +574,29 @@ Example response format: [{{"id": "p1", "translated": "번역된 텍스트"}}]
             except Exception:
                 continue
 
-        final_translations = []
-        for item in req.items:
+        translated_results = {}
+        for item in items_to_translate:
             translated_text = translated_map.get(item.id)
             if translated_text is None:
                 translated_text = item.text
             else:
                 translated_text = process_repeated_chars(translated_text)
-
-            final_translations.append({
+            translated_results[item.id] = {
                 "id": item.id,
                 "original": item.text,
                 "translated": translated_text
-            })
+            }
+
+        final_translations = []
+        for item in req.items:
+            if item.id in translated_results:
+                final_translations.append(translated_results[item.id])
+            else:
+                final_translations.append({
+                    "id": item.id,
+                    "original": item.text,
+                    "translated": item.text
+                })
 
         return {"translations": final_translations}
     

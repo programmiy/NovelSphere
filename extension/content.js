@@ -203,6 +203,11 @@ function injectSidebar() {
     `;
     document.body.appendChild(sidebar);
 
+    const toggleButton = document.createElement('button');
+    toggleButton.id = 'jp-translator-toggle-btn';
+    toggleButton.innerHTML = '文';
+    document.body.appendChild(toggleButton);
+
     const style = document.createElement('style');
     style.textContent = `
         #jp-translator-sidebar { position: fixed; top: 0; right: 0; width: 450px; max-width: 90vw; min-width: 300px; height: 100%; background-color: #f8f9fa; border-left: 1px solid #dee2e6; box-shadow: -2px 0 8px rgba(0,0,0,0.1); z-index: 9999; transform: translateX(100%); transition: transform 0.3s ease-in-out; display: flex; flex-direction: column; }
@@ -228,6 +233,7 @@ function injectSidebar() {
         #translation-table .save-btn { background-color: #4CAF50; color: white; border: none; padding: 5px 8px; border-radius: 4px; cursor: pointer; font-size: 11px; }
         #translation-table .save-btn:hover { background-color: #45a049; }
         #translation-table .save-btn:disabled { background-color: #cccccc; }
+        #jp-translator-toggle-btn { position: fixed; top: 50%; left: 0; transform: translateY(-50%); background-color: #667eea; color: white; border: none; border-top-right-radius: 5px; border-bottom-right-radius: 5px; padding: 10px 5px; cursor: pointer; z-index: 9998; font-size: 18px; writing-mode: vertical-rl; }
     `;
     document.head.appendChild(style);
 }
@@ -246,6 +252,15 @@ function hideSidebar() {
     document.getElementById('jp-translator-sidebar').classList.remove('visible');
 }
 
+function toggleSidebar() {
+    const sidebar = document.getElementById('jp-translator-sidebar');
+    if (sidebar.classList.contains('visible')) {
+        hideSidebar();
+    } else {
+        showSidebar();
+    }
+}
+
 function updateEmptyState() {
     const tableBody = document.getElementById('translation-table-body');
     const emptyState = document.getElementById('sidebar-empty-state');
@@ -258,6 +273,7 @@ function updateEmptyState() {
 
 function setupEventListeners() {
     document.getElementById('sidebar-close-btn').addEventListener('click', hideSidebar);
+    document.getElementById('jp-translator-toggle-btn').addEventListener('click', toggleSidebar);
     
     document.getElementById('stop-translation-btn').addEventListener('click', () => {
         isTranslationCancelled = true;
