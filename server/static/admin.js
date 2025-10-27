@@ -328,7 +328,9 @@ function setupEventListeners() {
     executeFindReplaceBtn.addEventListener('click', executeGlobalFindReplace);
 
     // Live count for find & replace
-    [findText, conditionText, useRegex, caseSensitive, folderScope].forEach(element => {
+    findText.addEventListener('input', countOccurrences); // No debounce for immediate feedback
+
+    [conditionText, useRegex, caseSensitive, folderScope].forEach(element => {
         element.addEventListener('input', () => {
             clearTimeout(findReplaceCountTimeout);
             findReplaceCountTimeout = setTimeout(countOccurrences, 300);
@@ -405,6 +407,11 @@ function openFindReplaceModal() {
     findText.focus();
 }
 
+function closeFindReplaceModal() {
+    if (!findReplaceModal) return;
+    findReplaceModal.style.display = 'none';
+}
+
 function countOccurrences() {
     const findTextValue = findText.value;
     const conditionTextValue = conditionText.value;
@@ -423,7 +430,6 @@ function countOccurrences() {
     try {
         findRegex = new RegExp(useRegexValue ? findTextValue : escapeRegExp(findTextValue), flags);
     } catch (e) {
-        // Invalid regex, do not count
         findCount.textContent = '(유효하지 않은 정규식)';
         return;
     }
