@@ -51,6 +51,7 @@ function cacheDOMElements() {
     newFolderNameInput = document.getElementById('newFolderNameInput');
     findEmptyBtn = document.getElementById('findEmptyBtn');
     autoStartCheckbox = document.getElementById('autoStartCheckbox'); // Cache the auto-start checkbox
+    autoStartCheckbox = document.getElementById('autoStartCheckbox'); // Cache the auto-start checkbox
 }
 
 async function loadAndRenderGrouped() {
@@ -79,6 +80,15 @@ async function loadAndRenderGrouped() {
         appliedUrlsSet = new Set(responseData._applied_urls || []);
         delete responseData._applied_urls; // Clean up the metadata key
         groupedTranslations = responseData; // Assign clean data to global
+
+        // Load auto-start setting
+        const autoStartRes = await fetch('/api/settings/autostart');
+        if (autoStartRes.ok) {
+            const autoStartData = await autoStartRes.json();
+            autoStartCheckbox.checked = autoStartData.autostart;
+        } else {
+            console.error("Failed to load auto-start setting.");
+        }
 
         // Load auto-start setting
         const autoStartRes = await fetch('/api/settings/autostart');
@@ -132,7 +142,8 @@ function updateStatistics(groupedData) {
     document.getElementById('totalCount').textContent = totalCount;
     document.getElementById('todayCount').textContent = todayCount;
     document.getElementById('avgLength').textContent = avgLength;
-}
+}
+
 function populateFolderDropdowns(folders) {
     const folderFilterDropdown = document.getElementById('folderFilterDropdown');
 
@@ -344,6 +355,7 @@ function setupEventListeners() {
     });
 
     createFolderButton.addEventListener('click', createFolder);
+    autoStartCheckbox.addEventListener('change', saveAutoStartState); // Add event listener for auto-start checkbox
     autoStartCheckbox.addEventListener('change', saveAutoStartState); // Add event listener for auto-start checkbox
 }
 
@@ -823,6 +835,28 @@ async function renameFolder(oldName, newName) {
     } catch (error) {
         console.error("Failed to rename folder:", error);
         showToast(`폴더 이름 변경 실패: ${error.message}`, 'error');
+    }
+}
+
+async function saveAutoStartState() {
+    const isChecked = autoStartCheckbox.checked;
+    try {
+        const response = await fetch('/api/settings/autostart', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ autostart: isChecked })
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.detail || `Server error: ${response.status}`);
+        }
+
+        showToast(`자동 실행 설정이 ${isChecked ? '활성화' : '비활성화'}되었습니다.`, 'success');
+    } catch (error) {
+        console.error("Failed to save auto-start setting:", error);
+        showToast(`자동 실행 설정 저장 실패: ${error.message}`, 'error');
+        autoStartCheckbox.checked = !isChecked; // Revert checkbox state on error
     }
 }
 

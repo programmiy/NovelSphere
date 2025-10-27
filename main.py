@@ -20,6 +20,9 @@ SERVER_DIR = os.path.join(APP_ROOT, "server") # Assuming server.py is in a 'serv
 # Path to the settings file
 SETTINGS_FILE = os.path.join(SERVER_DIR, "settings.json")
 
+# Path to the settings file
+SETTINGS_FILE = os.path.join(SERVER_DIR, "settings.json")
+
 # Ensure the logs directory exists within the packaged app's root
 
 LOG_DIR = os.path.join(APP_ROOT, "logs")
