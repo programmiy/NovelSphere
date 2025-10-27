@@ -30,13 +30,12 @@
      * ```shell
        git status
        ```
-
        를 통해 스테이징되지 않은 파일들을 추가로 파악후, 스테이징되지 않은 파일이 있다면 해당 파일의 변경사항도 작성했던 문서에 작성
      * `7. **마무리**` 단계로 바로 이동합니다.
    * **ELSE (질문결과 : 푸시 미승인):**
      * 사용자의 추가 명령을 기다립니다.
      * 필요에따라 1단계부터 다시 수행합니다.
-7. **마무리:** (git push main extra:extragit push main extra (로컬 extra를 원격 EXTRA에 푸시)
+7. **마무리:** (git push main extra:main (로컬 extra를 원격 EXTRA에 푸시)
 8. 자동화된 병합 워크플로우 (MCP/GitHub Actions)
 
    1. **main pull 이후 작업 브랜치로 복귀**
