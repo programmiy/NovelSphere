@@ -16,8 +16,13 @@ SERVER_DIR = os.path.join(APP_ROOT, "server") # Assuming server.py is in a 'serv
 # Path to the settings file
 SETTINGS_FILE = os.path.join(SERVER_DIR, "settings.json")
 
+# Path to the settings file
+SETTINGS_FILE = os.path.join(SERVER_DIR, "settings.json")
+
 # Ensure the logs directory exists within the packaged app's root
+
 LOG_DIR = os.path.join(APP_ROOT, "logs")
+
 os.makedirs(LOG_DIR, exist_ok=True)
 
 def load_autostart_setting():
@@ -205,3 +210,5 @@ if __name__ == "__main__":
 
     # Start the webview window
     start_webview()
+    # Explicitly exit the application after webview closes
+    sys.exit(0)

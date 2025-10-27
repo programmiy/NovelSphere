@@ -275,6 +275,125 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    async function handleDownloadOffline(bookName, buttonElement) {
+        const statusSpan = document.getElementById(`download-status-${encodeURIComponent(bookName)}`);
+        buttonElement.disabled = true;
+        statusSpan.textContent = '다운로드 중...';
+        statusSpan.style.color = 'orange';
+
+        try {
+            // 1. Fetch all URLs for the book
+            const urlsResponse = await fetch(`/api/books/${encodeURIComponent(bookName)}/urls`);
+            if (!urlsResponse.ok) throw new Error(`URL 목록 가져오기 실패: ${urlsResponse.statusText}`);
+            const urls = await urlsResponse.json();
+
+            if (urls.length === 0) {
+                statusSpan.textContent = '다운로드할 콘텐츠 없음';
+                statusSpan.style.color = 'gray';
+                buttonElement.disabled = false;
+                return;
+            }
+
+            let downloadedCount = 0;
+            const totalUrls = urls.length;
+
+            // 2. For each URL, fetch its chapter content to trigger service worker caching
+            for (const urlInfo of urls) {
+                const chapterResponse = await fetch(`/api/books/${encodeURIComponent(bookName)}/chapter?title=${encodeURIComponent(urlInfo.title || urlInfo.url)}`);
+                if (!chapterResponse.ok) {
+                    console.warn(`챕터 다운로드 실패: ${urlInfo.title || urlInfo.url} - ${chapterResponse.statusText}`);
+                    // Continue to next, but don't increment downloadedCount for failed ones
+                } else {
+                    downloadedCount++;
+                }
+                statusSpan.textContent = `다운로드 중... (${downloadedCount}/${totalUrls})`;
+            }
+
+            statusSpan.textContent = `다운로드 완료 (${downloadedCount}/${totalUrls})`;
+            statusSpan.style.color = 'green';
+        } catch (error) {
+            console.error('오프라인 다운로드 실패:', error);
+            statusSpan.textContent = `다운로드 실패: ${error.message}`;
+            statusSpan.style.color = 'red';
+        } finally {
+            buttonElement.disabled = false;
+        }
+    }
+
+    async function handleDownloadAllOffline() {
+        const globalStatusSpan = document.getElementById('global-download-status');
+        const downloadAllBtn = document.getElementById('download-all-offline-btn');
+
+        downloadAllBtn.disabled = true;
+        globalStatusSpan.textContent = '모든 책 다운로드 중...';
+        globalStatusSpan.style.color = 'orange';
+
+        try {
+            const response = await fetch('/api/books');
+            if (!response.ok) throw new Error(`책 목록 가져오기 실패: ${response.statusText}`);
+            const books = await response.json();
+
+            let overallDownloadedCount = 0;
+            let overallTotalCount = 0;
+
+            for (const book of books) {
+                const bookName = book.name;
+                const bookStatusSpan = document.getElementById(`download-status-${encodeURIComponent(bookName)}`);
+                const bookDownloadBtn = document.querySelector(`[data-book-name-download="${bookName}"]`);
+
+                if (bookStatusSpan) {
+                    bookStatusSpan.textContent = '다운로드 중...';
+                    bookStatusSpan.style.color = 'orange';
+                }
+                if (bookDownloadBtn) {
+                    bookDownloadBtn.disabled = true;
+                }
+
+                try {
+                    const urlsResponse = await fetch(`/api/books/${encodeURIComponent(bookName)}/urls`);
+                    if (!urlsResponse.ok) throw new Error(`URL 목록 가져오기 실패: ${urlsResponse.statusText}`);
+                    const urls = await urlsResponse.json();
+
+                    overallTotalCount += urls.length;
+
+                    for (const urlInfo of urls) {
+                        const chapterResponse = await fetch(`/api/books/${encodeURIComponent(bookName)}/chapter?title=${encodeURIComponent(urlInfo.title || urlInfo.url)}`);
+                        if (!chapterResponse.ok) {
+                            console.warn(`챕터 다운로드 실패: ${urlInfo.title || urlInfo.url} - ${chapterResponse.statusText}`);
+                        } else {
+                            overallDownloadedCount++;
+                        }
+                        globalStatusSpan.textContent = `모든 책 다운로드 중... (${overallDownloadedCount}/${overallTotalCount})`;
+                    }
+                    if (bookStatusSpan) {
+                        bookStatusSpan.textContent = '다운로드 완료';
+                        bookStatusSpan.style.color = 'green';
+                    }
+                } catch (bookError) {
+                    console.error(`책 '${bookName}' 다운로드 실패:`, bookError);
+                    if (bookStatusSpan) {
+                        bookStatusSpan.textContent = `다운로드 실패: ${bookError.message}`;
+                        bookStatusSpan.style.color = 'red';
+                    }
+                } finally {
+                    if (bookDownloadBtn) {
+                        bookDownloadBtn.disabled = false;
+                    }
+                }
+            }
+
+            globalStatusSpan.textContent = `모든 책 다운로드 완료 (${overallDownloadedCount}/${overallTotalCount})`;
+            globalStatusSpan.style.color = 'green';
+
+        } catch (error) {
+            console.error('모든 책 오프라인 다운로드 실패:', error);
+            globalStatusSpan.textContent = `다운로드 실패: ${error.message}`;
+            globalStatusSpan.style.color = 'red';
+        } finally {
+            downloadAllBtn.disabled = false;
+        }
+    }
+
     async function openUrlListModal(bookName) {
         urlListTitle.textContent = `${bookName} - URL 목록`;
         urlListBody.innerHTML = '<p>로딩 중...</p>';
@@ -432,6 +551,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     newTagForm.addEventListener('submit', handleAddNewTag);
     crawlSummaryBtn.addEventListener('click', handleCrawlSummary);
+
+    const downloadAllBtn = document.getElementById('download-all-offline-btn');
+    if (downloadAllBtn) {
+        downloadAllBtn.addEventListener('click', handleDownloadAllOffline);
+    }
 
     // Initial Load
     fetchBooks();

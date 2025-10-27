@@ -1,0 +1,21 @@
+{
+    "name": "LANOVEL",
+    "short_name": "LANOVEL",
+    "description": "Local Novel Translation Viewer",
+    "start_url": "/library",
+    "display": "standalone",
+    "background_color": "#ffffff",
+    "theme_color": "#007bff",
+    "icons": [
+        {
+            "src": "/static/icon-192x192.svg",
+            "sizes": "any",
+            "type": "image/svg+xml"
+        },
+        {
+            "src": "/static/icon-512x512.png",
+            "sizes": "512x512",
+            "type": "image/png"
+        }
+    ]
+}

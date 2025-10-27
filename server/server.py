@@ -54,6 +54,15 @@ console_handler = logging.StreamHandler()
 console_handler.setFormatter(formatter)
 logger.addHandler(console_handler)
 
+# --- Configure Uvicorn Access Logger ---
+uvicorn_access_logger = logging.getLogger("uvicorn.access")
+uvicorn_access_logger.setLevel(logging.INFO)
+uvicorn_access_logger.propagate = False # Prevent messages from going to root logger if it has other handlers
+
+# Add the same handlers to uvicorn.access logger
+uvicorn_access_logger.addHandler(handler) # File handler
+uvicorn_access_logger.addHandler(console_handler) # Console handler
+
 static_dir = os.path.join(script_dir, "server/static")
 templates_dir = os.path.join(script_dir, "server/templates")
 # --- Backup and Metadata Logic ---
@@ -302,11 +311,19 @@ async def serve_service_worker():
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="service-worker.js not found.")
 
+@app.get("/service-worker")
+async def redirect_service_worker():
+    """
+    Redirects requests for /service-worker to /service-worker.js.
+    This handles cases where browsers or extensions might request the service worker without the .js extension.
+    """
+    return RedirectResponse(url="/service-worker.js")
+
 
 # CORS 미들웨어 설정
 # allow_credentials=True 일 때 allow_origins=["*"을 사용할 수 없으므로,
 # 로컬 개발 환경과 브라우저 확장 프로그램의 출처를 명시적으로 허용합니다.
-allowed_origins_list = ["http://localhost", "http://localhost:8001", "http://1227.0.0.1", "http://127.0.0.1:8001", "https://novel18.syosetu.com", "https://kakuyomu.jp", "http://192.168.219.100", "http://192.168.219.100:8001"]
+allowed_origins_list = ["http://localhost", "http://localhost:8001", "http://1227.0.0.1", "http://127.0.0.1:8001", "https://novel18.syosetu.com", "https://kakuyomu.jp", "http://192.168.219.100", "http://192.168.219.100:8001", "http://172.31.176.1", "http://172.31.176.1:8001"]
 
 app.add_middleware(
     CORSMiddleware,
@@ -408,6 +425,9 @@ def call_gemini_api_with_retry(api_url: str, prompt: str):
     """
     payload = {
         "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {
+            "response_mime_type": "application/json",
+        },
         "safetySettings": [
             {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
             {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
@@ -415,9 +435,17 @@ def call_gemini_api_with_retry(api_url: str, prompt: str):
             {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"}
         ]
     }
-    response = requests.post(api_url, json=payload, timeout=180)
-    response.raise_for_status()
-    return response.json()
+    logger.info(f"Gemini API Payload (first 500 chars): {json.dumps(payload, ensure_ascii=False)[:500]}...")
+    try:
+        response = requests.post(api_url, json=payload, timeout=180)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.HTTPError as e:
+        logger.error(f"Gemini API HTTP error: {e.response.status_code} - {e.response.text}")
+        raise
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Gemini API request error: {e}")
+        raise
 
 def process_repeated_chars(text: str) -> str:
     """6번 이상 반복되는 문자를 '(반복)'으로 대체합니다."""
@@ -450,6 +478,21 @@ def translate_texts(req: TranslateRequest):
     # don't change model version above!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     
     api_input_json = json.dumps([{"id": item.id, "text": item.text} for item in items_to_translate], ensure_ascii=False)
+    logger.info(f"API Input JSON: {api_input_json}")
+
+    prompt = f"""You are a JSON-only translation API. You will receive a JSON array of objects, each with an 'id' and a 'text' field.
+Your task is to translate the 'text' from Japanese to Korean.
+Your response MUST be a single, valid JSON array of objects. Each object in your response must contain the original 'id' and the translated text in a 'translated' field.
+Preserve the original quotation marks (like 「...」 and 『...』) in the translated text.
+Do not add any other explanations, formatting, or markdown code fences. Your entire output must be only the JSON data.
+Example response format: [{{"id": "p1", "translated": "번역된 텍스트"}}]
+
+---START OF JSON DATA---\r\n{api_input_json}\r\n---END OF JSON DATA---
+
+"""
+
+    logger.info(f"Gemini API URL: {api_url}")
+    logger.info(f"Gemini API Prompt (first 500 chars): {prompt[:500]}...")
 
     # 참고: 아래의 큰따옴표 이스케이프 관련 지시사항은 Gemini의 안전 필터에 의해
     # 'prohibited' 응답을 유발하는 것으로 확인되어 제거되었습니다.
@@ -464,9 +507,9 @@ Your response MUST be a single, valid JSON array of objects. Each object in your
 Preserve the original quotation marks (like 「...」 and 『...』) in the translated text.
 Do not add any other explanations, formatting, or markdown code fences. Your entire output must be only the JSON data.
 Example response format: [{{"id": "p1", "translated": "번역된 텍스트"}}]
----START OF JSON DATA---
-{api_input_json}
----END OF JSON DATA---
+
+---START OF JSON DATA---\r\n{api_input_json}\r\n---END OF JSON DATA---
+
 """
 
     try:
@@ -1647,3 +1690,8 @@ def cleanup_pids():
     return {"message": f"총 {deleted_count}개의 기록을 제외 처리했습니다. (새롭게 제외 목록에 추가된 항목: {excluded_count}개)"}
 
 # uvicorn server:app --reload --port 8001
+
+@app.get("/health")
+async def health_check():
+    """Simple health check endpoint."""
+    return {"status": "ok"}

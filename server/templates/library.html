@@ -3,7 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>서재</title>
+    <link rel="manifest" href="/static/manifest.json">
+    <title>LANOVEL Library</title>
     <link rel="stylesheet" href="/static/library.css">
 </head>
 <body>
@@ -11,6 +12,8 @@
         <header class="library-header">
             <h1>나의 서재</h1>
             <div class="header-controls">
+                <button id="download-all-offline-btn" class="btn-primary">모든 책 오프라인 다운로드</button>
+                <span id="global-download-status" class="download-status"></span>
                 <a href="/admin" class="admin-link">번역 관리</a>
             </div>
         </header>
