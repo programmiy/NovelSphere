@@ -20,9 +20,9 @@ from collections import defaultdict
 from urllib.parse import unquote
 from tenacity import retry, stop_after_attempt, wait_exponential, RetryError
 
-DATABASE_FILE = "translations.db"
-API_KEY_FILE = "api_key.txt"
 script_dir = os.path.dirname(os.path.abspath(__file__))
+DATABASE_FILE = os.path.join(script_dir, "translations.db")
+API_KEY_FILE = os.path.join(script_dir, "api_key.txt")
 
 import logging
 from logging.handlers import TimedRotatingFileHandler
