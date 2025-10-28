@@ -5,3 +5,5 @@ requests
 tenacity
 pyinstaller
 pywebview
+pystray
+Pillow
