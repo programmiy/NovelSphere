@@ -386,28 +386,37 @@ async function translateAllPTags() {
 
     const paragraphs = getTargetParagraphs();
     const textsToTranslate = [];
+    let skipTranslation = false;
+
     paragraphs.forEach(p => {
-        // Check against the cache first. If it's already translated, skip.
+        const text = p.innerHTML.replace(/<br\s*\/?>/gi, " ").replace(/<[^>]*>/g, "").trim();
+
+        if (skipTranslation) {
+            return;
+        }
+
+        if (/^[\s—]+$/.test(text)) {
+            skipTranslation = true;
+            logToSidebar("구분선(——)을 만나 이후의 번역을 중단합니다.");
+            return;
+        }
+
         if (translationCache.has(p.id)) {
             return;
         }
 
-        // Exclude PIDs starting with 'la' or 'lp' followed by numbers
         if (/^(la|lp)\d+$/i.test(p.id)) {
             return;
         }
 
-        const text = p.innerHTML.replace(/<br\s*\/?>/gi, " ").replace(/<[^>]*>/g, "")
-            .replace(/([あアいイうウえエおオ])\1{2,}/g, '$1ー')
-            .trim();
+        const cleanedText = text.replace(/([あアいイうウえエおオ])\1{2,}/g, '$1ー');
 
-        // Check if the text is in the exclusion list
-        if (exclusionSet.has(text)) {
+        if (exclusionSet.has(cleanedText)) {
             return;
         }
 
-        if (text && JAPANESE_REGEX.test(text)) {
-            textsToTranslate.push({ id: p.id, text: text });
+        if (cleanedText && JAPANESE_REGEX.test(cleanedText)) {
+            textsToTranslate.push({ id: p.id, text: cleanedText });
         }
     });
 
