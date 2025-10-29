@@ -16,6 +16,9 @@ let historyContainer, emptyState, searchBox, darkModeToggle, fetchAllTitlesBtn, 
 let searchTimeout;
 let findReplaceCountTimeout;
 
+// SortableJS instances
+let sortableInstances = [];
+
 // Main initialization
 document.addEventListener('DOMContentLoaded', () => {
     cacheDOMElements();
@@ -51,6 +54,7 @@ function cacheDOMElements() {
     newFolderNameInput = document.getElementById('newFolderNameInput');
     findEmptyBtn = document.getElementById('findEmptyBtn');
     autoStartCheckbox = document.getElementById('autoStartCheckbox'); // Cache the auto-start checkbox
+    enableDragDropCheckbox = document.getElementById('enableDragDropCheckbox');
 }
 
 async function loadAndRenderGrouped() {
@@ -160,6 +164,7 @@ function populateFolderDropdowns(folders) {
 
 function renderGroupedHistory() {
     historyContainer.innerHTML = '';
+    sortableInstances = []; // Clear instances on re-render
     
     const folderNames = allFolders.map(f => f.name).sort();
 
@@ -250,13 +255,14 @@ function renderGroupedHistory() {
         // Initialize SortableJS for each folder's content
         const folderContentElement = folderContainer.querySelector('.folder-group-content');
         if (folderContentElement) {
-            new Sortable(folderContentElement, {
+            const sortable = new Sortable(folderContentElement, {
                 animation: 150,
                 ghostClass: 'sortable-ghost',
                 scroll: true, // Enable auto-scrolling within the folder content
                 scrollSensitivity: 20, // px (Decreased sensitivity)
                 scrollSpeed: 50, // px (Adjusted speed to a moderate value)
                 forceFallback: true, // Use SortableJS's own drag-and-drop implementation
+                disabled: !enableDragDropCheckbox.checked, // Disable based on checkbox
                 onEnd: async function (evt) {
                     const newOrder = Array.from(evt.to.children).map((item, index) => ({
                         url: item.dataset.url,
@@ -285,6 +291,7 @@ function renderGroupedHistory() {
                     }
                 }
             });
+            sortableInstances.push(sortable);
         }
     }
 }
@@ -359,6 +366,15 @@ function setupEventListeners() {
 
     createFolderButton.addEventListener('click', createFolder);
     autoStartCheckbox.addEventListener('change', saveAutoStartState); // Add event listener for auto-start checkbox
+    enableDragDropCheckbox.addEventListener('change', toggleDragAndDrop);
+}
+
+function toggleDragAndDrop() {
+    const enabled = enableDragDropCheckbox.checked;
+    sortableInstances.forEach(instance => {
+        instance.option('disabled', !enabled);
+    });
+    showToast(`드래그앤 드롭 순서 변경이 ${enabled ? '활성화' : '비활성화'}되었습니다.`, 'info');
 }
 
 function toggleFindEmpty() {
