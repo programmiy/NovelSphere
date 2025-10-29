@@ -391,13 +391,17 @@ async function translateAllPTags() {
     paragraphs.forEach(p => {
         const text = p.innerHTML.replace(/<br\s*\/?>/gi, " ").replace(/<[^>]*>/g, "").trim();
 
+        if (p.id === 'tagCount') {
+            return; 
+        }
+
         if (skipTranslation) {
             return;
         }
 
-        if (/^[\s—]+$/.test(text)) {
+        if (/^[\s—]+$/.test(text) || text.includes('----------')) {
             skipTranslation = true;
-            logToSidebar("구분선(——)을 만나 이후의 번역을 중단합니다.");
+            logToSidebar("구분선을 만나 이후의 번역을 중단합니다.");
             return;
         }
 
