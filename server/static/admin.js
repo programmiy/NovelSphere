@@ -156,34 +156,7 @@ function populateFolderDropdowns(folders) {
     }
 }
 
-function sortUrlsNumerically(urls) {
-    const getUrlParts = (url) => {
-        const match = url.match(/(.*\/)(\d+)\/?$/); // Regex needs double backslashes in Python string for literal backslashes in JS
-        if (match && match[1] && match[2]) {
-            return { base: match[1], episode: parseInt(match[2], 10) };
-        }
-        // Fallback for URLs that don't match the pattern
-        return { base: url, episode: null };
-    };
 
-    return urls.sort((a, b) => {
-        const partsA = getUrlParts(a);
-        const partsB = getUrlParts(b);
-
-        if (partsA.base !== partsB.base) {
-            return partsA.base.localeCompare(partsB.base);
-        }
-
-        if (partsA.episode !== null && partsB.episode !== null) {
-            return partsA.episode - partsB.episode;
-        }
-        
-        if (partsA.episode !== null) return -1;
-        if (partsB.episode !== null) return 1;
-
-        return a.localeCompare(b);
-    });
-}
 
 function renderGroupedHistory() {
     historyContainer.innerHTML = '';
@@ -191,16 +164,18 @@ function renderGroupedHistory() {
     const folderNames = allFolders.map(f => f.name).sort();
 
     for (const folderName of folderNames) {
-        const urlGroups = groupedTranslations[folderName] || {};
+        const urlGroups = groupedTranslations[folderName] || []; // This is now an array of urlGroup objects
         const folderContainer = document.createElement('div');
         folderContainer.className = 'history-folder-group';
 
         let urlGroupsHtml = '';
         let totalTranslationsInFolder = 0;
-        const sortedUrls = sortUrlsNumerically(Object.keys(urlGroups));
 
-        for (const url of sortedUrls) {
-            const translations = urlGroups[url];
+        for (const urlGroup of urlGroups) {
+            const url = urlGroup.url;
+            const translations = urlGroup.items;
+            const sortOrder = urlGroup.sort_order;
+
             let filteredTranslations = translations.filter(t => 
                 !currentSearch || 
                 t.original.toLowerCase().includes(currentSearch) || 
@@ -221,7 +196,6 @@ function renderGroupedHistory() {
             
             const isApplied = appliedUrlsSet.has(url.split('#')[0].replace(/\/$/, ''));
 
-            // When filtering, expand the URL groups that have results.
             const isUrlGroupCollapsed = isFindingEmpty ? false : true;
 
             urlGroupsHtml += `
@@ -230,6 +204,7 @@ function renderGroupedHistory() {
                         <span class="list-group-toggle ${isUrlGroupCollapsed ? 'collapsed' : ''} material-icons">chevron_right</span>
                         <a href="${url}" target="_blank" class="list-group-title-link"><h3 class="list-group-title">${escapeHtml(title)} (${filteredTranslations.length})</h3></a>
                         <div class="list-group-actions">
+
                             <button class="btn btn-outline btn-icon edit-title-btn" data-url="${url}" title="제목 수정">✏️</button>
                             <button class="btn btn-secondary btn-apply ${isApplied ? 'applied' : ''}" data-url="${url}">🔄️ ${isApplied ? '해제' : '적용'}</button>
                             <label class="btn"><input type="checkbox" class="group-select-all-checkbox"> 전체 선택</label>
@@ -253,12 +228,10 @@ function renderGroupedHistory() {
             `;
         }
 
-        // When filtering, hide folders that have no results.
         if (isFindingEmpty && totalTranslationsInFolder === 0) {
             continue;
         }
 
-        // By default, collapse all folders unless the filter is active and there are results.
         const isFolderCollapsed = isFindingEmpty ? (totalTranslationsInFolder === 0) : true;
 
         folderContainer.innerHTML = `
@@ -270,9 +243,49 @@ function renderGroupedHistory() {
                     <button class="btn btn-outline btn-icon edit-folder-name-btn" data-folder-name="${escapeHtml(folderName)}" title="폴더 이름 수정">✏️</button>
                 </div>
             </div>
-            <div class="folder-group-content ${isFolderCollapsed ? 'collapsed' : ''}">${urlGroupsHtml}</div>
+            <div class="folder-group-content ${isFolderCollapsed ? 'collapsed' : ''}" id="folder-content-${folderName.replace(/\s/g, '-')}">${urlGroupsHtml}</div>
         `;
         historyContainer.appendChild(folderContainer);
+
+        // Initialize SortableJS for each folder's content
+        const folderContentElement = folderContainer.querySelector('.folder-group-content');
+        if (folderContentElement) {
+            new Sortable(folderContentElement, {
+                animation: 150,
+                ghostClass: 'sortable-ghost',
+                scroll: true, // Enable auto-scrolling within the folder content
+                scrollSensitivity: 20, // px (Decreased sensitivity)
+                scrollSpeed: 50, // px (Adjusted speed to a moderate value)
+                forceFallback: true, // Use SortableJS's own drag-and-drop implementation
+                onEnd: async function (evt) {
+                    const newOrder = Array.from(evt.to.children).map((item, index) => ({
+                        url: item.dataset.url,
+                        sort_order: index // Use the new index as the sort_order
+                    }));
+
+                    try {
+                        const response = await fetch('/api/url_metadata/batch', {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ updates: newOrder })
+                        });
+
+                        if (!response.ok) {
+                            const errorData = await response.json();
+                            throw new Error(errorData.detail || `Server error: ${response.status}`);
+                        }
+
+                        showToast('URL 그룹 순서가 업데이트되었습니다.', 'success');
+                        // Re-render to ensure consistency, especially if other sorting logic exists
+                        loadAndRenderGrouped();
+                    } catch (error) {
+                        console.error("Failed to update URL group order:", error);
+                        showToast(`URL 그룹 순서 업데이트 실패: ${error.message}`, 'error');
+                        loadAndRenderGrouped(); // Revert to previous state on error
+                    }
+                }
+            });
+        }
     }
 }
 

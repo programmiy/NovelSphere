@@ -199,6 +199,14 @@ def init_db():
     if 'summary_source_url' not in columns:
         cursor.execute("ALTER TABLE book_activity ADD COLUMN summary_source_url TEXT")
 
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS url_metadata (
+        url TEXT PRIMARY KEY,
+        sort_order INTEGER
+    );
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_url_metadata_sort_order ON url_metadata (sort_order);");
+
     conn.commit()
     conn.close()
 
@@ -1092,7 +1100,56 @@ def toggle_apply_url(req: ApplyUrlRequest):
 
     conn.commit()
     conn.close()
-    return {"message": f"Apply status for {req.url} set to {req.apply}"}
+class UrlMetadataUpdate(BaseModel):
+    url: str
+    sort_order: Optional[int] = None
+
+class UrlMetadataBatchUpdate(BaseModel):
+    updates: List[UrlMetadataUpdate]
+
+@app.put("/api/url_metadata")
+def update_url_metadata(req: UrlMetadataUpdate):
+    """
+    Updates the sort_order for a given URL in the url_metadata table.
+    """
+    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "INSERT OR REPLACE INTO url_metadata (url, sort_order) VALUES (?, ?)",
+            (req.url, req.sort_order)
+        )
+        conn.commit()
+        return {"message": f"Successfully updated metadata for {req.url}."}
+    except Exception as e:
+        conn.rollback()
+        logger.error(f"Error updating url_metadata for {req.url}: {e}")
+        raise HTTPException(status_code=500, detail=f"An error occurred: {e}")
+    finally:
+        conn.close()
+
+
+@app.put("/api/url_metadata/batch")
+def update_url_metadata_batch(req: UrlMetadataBatchUpdate):
+    """
+    Performs a batch update of sort_order for multiple URLs in the url_metadata table.
+    """
+    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
+    cursor = conn.cursor()
+    try:
+        for update_item in req.updates:
+            cursor.execute(
+                "INSERT OR REPLACE INTO url_metadata (url, sort_order) VALUES (?, ?)",
+                (update_item.url, update_item.sort_order)
+            )
+        conn.commit()
+        return {"message": f"Successfully batch updated {len(req.updates)} URL metadata entries."}
+    except Exception as e:
+        conn.rollback()
+        logger.error(f"Error during batch update of url_metadata: {e}")
+        raise HTTPException(status_code=500, detail=f"An error occurred during batch update: {e}")
+    finally:
+        conn.close()
 
 
 @app.get("/translations_by_folder")
@@ -1107,17 +1164,56 @@ def get_translations_by_folder():
     cursor.execute("SELECT url FROM applied_urls")
     applied_urls_set = {row['url'] for row in cursor.fetchall()}
 
-    translations = cursor.execute("SELECT * FROM translations ORDER BY folderName, url").fetchall()
+    # Get all url_metadata
+    cursor.execute("SELECT url, sort_order FROM url_metadata")
+    url_metadata = {row['url']: row for row in cursor.fetchall()}
+
+    translations = cursor.execute("SELECT * FROM translations").fetchall()
     conn.close()
     
-    grouped_translations = defaultdict(lambda: defaultdict(list))
+    # Group translations by folder and then by URL
+    grouped_by_folder = defaultdict(lambda: defaultdict(list))
     for t in translations:
         folder_name = t.get("folderName") or "폴더 추가 대기 상태"
         url = t.get("url")
         if url:
-            grouped_translations[folder_name][url].append(t)
+            grouped_by_folder[folder_name][url].append(t)
+
+    # Create the final response, sorting the URL groups within each folder
+    final_response = {}
+    for folder_name, url_groups in grouped_by_folder.items():
+        
+        url_group_list = []
+        for url, items in url_groups.items():
+            metadata = url_metadata.get(url)
+            sort_order = metadata.get('sort_order') if metadata else None
             
-    final_response = dict(grouped_translations)
+            numeric_url_part = None
+            try:
+                clean_url = url.rstrip('/\\')
+                last_part = clean_url.split('/')[-1]
+                if last_part.isdigit():
+                    numeric_url_part = int(last_part)
+            except:
+                pass
+
+            url_group_list.append({
+                "url": url,
+                "items": items,
+                "sort_order": sort_order,
+                "numeric_url_part": numeric_url_part
+            })
+
+        url_group_list.sort(key=lambda x: (
+            x['sort_order'] is None, 
+            x['sort_order'], 
+            x['numeric_url_part'] is None,
+            x['numeric_url_part'],
+            x['url']
+        ))
+
+        final_response[folder_name] = url_group_list
+            
     final_response["_applied_urls"] = list(applied_urls_set)
 
     headers = {

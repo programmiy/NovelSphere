@@ -133,6 +133,8 @@
         }
         .folder-group-content {
             padding: 16px;
+            overflow-y: auto; /* Make folder content scrollable */
+            max-height: calc(100vh - 350px); /* Dynamic max-height based on viewport height */
         }
         .folder-group-content.collapsed {
             display: none;
