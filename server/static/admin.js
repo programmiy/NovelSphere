@@ -119,8 +119,10 @@ function updateStatistics(groupedData) {
     const twentyFourHoursAgo = Date.now() - (24 * 60 * 60 * 1000);
 
     for (const folderName in groupedData) {
-        for (const url in groupedData[folderName]) {
-            for (const item of groupedData[folderName][url]) {
+        const urlGroups = groupedData[folderName]; // This is an array of urlGroup objects
+        for (const urlGroup of urlGroups) {
+            const items = urlGroup.items; // This is the array of translation items
+            for (const item of items) {
                 totalCount++;
                 totalLength += item.translated ? item.translated.length : 0;
                 
