@@ -384,8 +384,14 @@ function toggleFindEmpty() {
     if (!isFindingEmpty) {
         let hasEmpty = false;
         for (const folderName in groupedTranslations) {
-            for (const url in groupedTranslations[folderName]) {
-                if (groupedTranslations[folderName][url].some(t => !t.translated || t.translated.trim() === '')) {
+            const urlGroups = groupedTranslations[folderName];
+            if (!Array.isArray(urlGroups)) continue;
+
+            for (const urlGroup of urlGroups) {
+                const items = urlGroup.items;
+                if (!Array.isArray(items)) continue;
+
+                if (items.some(t => !t.translated || t.translated.trim() === '')) {
                     hasEmpty = true;
                     break;
                 }
@@ -471,8 +477,14 @@ function countOccurrences() {
             continue;
         }
 
-        for (const url in groupedTranslations[folderName]) {
-            for (const item of groupedTranslations[folderName][url]) {
+        const urlGroups = groupedTranslations[folderName]; // This is an array of urlGroup objects
+        if (!Array.isArray(urlGroups)) continue; // Safety check
+
+        for (const urlGroup of urlGroups) {
+            const items = urlGroup.items; // This is the array of translation items
+            if (!Array.isArray(items)) continue; // Safety check
+
+            for (const item of items) {
                 // Check conditionText in original
                 if (conditionTextValue) {
                     const originalContent = caseSensitiveValue ? item.original : item.original.toLowerCase();
@@ -616,8 +628,14 @@ function handleCheckboxChange(e) {
 
 function findTranslationById(id) {
     for (const folderName in groupedTranslations) {
-        for (const url in groupedTranslations[folderName]) {
-            const item = groupedTranslations[folderName][url].find(t => t.id === id);
+        const urlGroups = groupedTranslations[folderName];
+        if (!Array.isArray(urlGroups)) continue;
+
+        for (const urlGroup of urlGroups) {
+            const items = urlGroup.items;
+            if (!Array.isArray(items)) continue;
+
+            const item = items.find(t => t.id === id);
             if (item) return item;
         }
     }
