@@ -618,13 +618,34 @@ async function translateAllPTags() {
     // Then, process normal texts in batches
     if (!isTranslationCancelled && normalTexts.length > 0) {
         logToSidebar(`${normalTexts.length}개의 일반 문장을 묶음으로 번역합니다.`);
-        const totalSize = normalTexts.length;
-        const idealChunks = 10;
-        let initialChunkSize = Math.ceil(totalSize / idealChunks);
-        initialChunkSize = Math.max(5, initialChunkSize);
-        initialChunkSize = Math.min(20, initialChunkSize);
+        
+        const totalSentences = textsToTranslate.length; // Use total count for the main condition
+        let initialChunkSize;
 
-        logToSidebar(`초기 묶음 크기를 ${initialChunkSize}(으)로 설정합니다.`);
+        if (totalSentences > 80) {
+            // "Aggressive" splitting for many sentences
+            const idealChunks = 10;
+            initialChunkSize = Math.ceil(normalTexts.length / idealChunks);
+            initialChunkSize = Math.max(5, initialChunkSize);
+            initialChunkSize = Math.min(20, initialChunkSize);
+            logToSidebar(`총 문장 수(${totalSentences})가 80개를 초과하여, 묶음 크기를 ${initialChunkSize}(으)로 공격적으로 설정합니다.`);
+        } else {
+            // New "stepped" splitting for fewer sentences
+            const normalSentenceCount = normalTexts.length;
+            let numGroups;
+            if (normalSentenceCount <= 20) {
+                numGroups = 2;
+            } else {
+                // For 21-30 -> 3 groups, 31-40 -> 4 groups, etc.
+                numGroups = Math.ceil(normalSentenceCount / 10);
+            }
+            // Ensure at least 1 group if count is very low.
+            numGroups = Math.max(1, numGroups); 
+
+            initialChunkSize = Math.ceil(normalSentenceCount / numGroups);
+            logToSidebar(`총 문장 수(${totalSentences})가 80개 이하이므로, ${numGroups}개의 그룹으로 나누어(묶음 크기: ${initialChunkSize}) 번역합니다.`);
+        }
+
         const chunks = chunkArray(normalTexts, initialChunkSize);
         let progress = 0;
 
