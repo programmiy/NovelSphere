@@ -469,12 +469,7 @@ def migrate_data():
 
 from fastapi.responses import JSONResponse, HTMLResponse
 
-def dict_factory(cursor, row):
-    """쿼리 결과를 사전 형태로 변환합니다."""
-    d = {}
-    for idx, col in enumerate(cursor.description):
-        d[col[0]] = row[idx]
-    return d
+
 
 @app.get("/debug/urls_by_folder")
 def debug_get_urls_by_folder(folder_name: str):
@@ -487,87 +482,7 @@ def debug_get_urls_by_folder(folder_name: str):
     return {"folder_name": folder_name, "urls": urls}
 
 
-@app.get("/translations")
-def get_translations(skip: int = 0, limit: int = 100, folder: Optional[str] = None, search: Optional[str] = None, url: Optional[str] = None):
-    """데이터베이스에서 번역 기록을 조회합니다."""
-    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
-    conn.text_factory = str
-    conn.row_factory = dict_factory
-    cursor = conn.cursor()
 
-    # 기본 쿼리
-    base_query = "FROM translations"
-    count_query = "SELECT COUNT(*) as total_count " + base_query
-    data_query = "SELECT * " + base_query
-
-    # 조건절 및 파라미터
-    conditions = []
-    params = []
-
-    if folder:
-        if folder == '폴더 없음':
-            conditions.append("folderName IS NULL")
-        else:
-            conditions.append("folderName = ?")
-            params.append(folder)
-    
-    if search:
-        conditions.append("(original LIKE ? OR translated LIKE ?)")
-        params.extend([f'%{search}%', f'%{search}%'])
-    
-    if url:
-        # Generate variations of the URL to handle http/https, www, and trailing slashes
-        urls_to_check = set()
-        
-        # 1. Add original URL with and without slash
-        urls_to_check.add(url.rstrip('/'))
-        urls_to_check.add(url.rstrip('/') + '/')
-
-        # 2. Strip protocol and add http/https variations
-        no_protocol_url = re.sub(r'^https?://', '', url).rstrip('/')
-        urls_to_check.add('http://' + no_protocol_url)
-        urls_to_check.add('http://' + no_protocol_url + '/')
-        urls_to_check.add('https://' + no_protocol_url)
-        urls_to_check.add('https://' + no_protocol_url + '/')
-
-        # 3. Handle www variations
-        if no_protocol_url.startswith('www.'):
-            no_www_url = no_protocol_url.replace('www.', '', 1)
-            urls_to_check.add('http://' + no_www_url)
-            urls_to_check.add('http://' + no_www_url + '/')
-            urls_to_check.add('https://' + no_www_url)
-            urls_to_check.add('https://' + no_www_url + '/')
-        else:
-            with_www_url = 'www.' + no_protocol_url
-            urls_to_check.add('http://' + with_www_url)
-            urls_to_check.add('http://' + with_www_url + '/')
-            urls_to_check.add('https://' + with_www_url)
-            urls_to_check.add('https://' + with_www_url + '/')
-
-        url_list = list(urls_to_check)
-        placeholders = ', '.join('?' * len(url_list))
-        conditions.append(f"url IN ({placeholders})")
-        params.extend(url_list)
-    if conditions:
-        where_clause = " WHERE " + " AND ".join(conditions)
-        count_query += where_clause
-        data_query += where_clause
-
-    # 전체 개수 조회
-    total_count = cursor.execute(count_query, tuple(params)).fetchone()['total_count']
-
-    # 데이터 조회 (정렬 및 페이지네이션 포함)
-    data_query += " ORDER BY timestamp DESC LIMIT ? OFFSET ?"
-    params.extend([limit, skip])
-    
-    translations = cursor.execute(data_query, tuple(params)).fetchall()
-
-    conn.close()
-
-    return JSONResponse(content={
-        "total_count": total_count,
-        "translations": translations
-    })
 
 @app.get("/paged_translations")
 def get_paged_translations(page: int = 1, per_page: int = 20):
@@ -594,103 +509,8 @@ def get_paged_translations(page: int = 1, per_page: int = 20):
     }
 
 
-class TranslationItem(BaseModel):
-    url: str
-    pid: Optional[str] = None
-    original: str
-    translated: str
-    timestamp: int
-    folderName: Optional[str] = None
-    title: Optional[str] = None # Add title field
 
-@app.post("/translations/upsert")
-def upsert_translations(items: List[TranslationItem]):
-    """번역 기록을 데이터베이스에 추가하거나 업데이트합니다."""
-    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
-    cursor = conn.cursor()
-    
-    updated_count = 0
-    inserted_count = 0
 
-    for item in items:
-        # URL과 PID로 기존 레코드를 조회하여 ID와 폴더 이름을 가져옵니다.
-        cursor.execute("SELECT id, folderName FROM translations WHERE url = ? AND pid = ?", (item.url, item.pid))
-        result = cursor.fetchone()
-        
-        if result:
-            # UPDATE: 기존 항목이 존재할 경우
-            existing_id, existing_folder = result
-            
-            # 요청에 folderName이 명시적으로 제공되지 않았다면(null), 기존 폴더 값을 유지합니다.
-            folder_name_to_use = item.folderName if item.folderName is not None else existing_folder
-            
-            # 제목 필드도 선택적으로 업데이트합니다.
-            if item.title:
-                cursor.execute("""
-                UPDATE translations 
-                SET translated = ?, timestamp = ?, folderName = ?, title = ?
-                WHERE id = ?
-                """, (item.translated, item.timestamp, folder_name_to_use, item.title, existing_id))
-            else:
-                cursor.execute("""
-                UPDATE translations 
-                SET translated = ?, timestamp = ?, folderName = ?
-                WHERE id = ?
-                """, (item.translated, item.timestamp, folder_name_to_use, existing_id))
-            updated_count += 1
-        else:
-            # INSERT: 새 항목일 경우
-            folder_name_to_use = item.folderName
-            # 폴더 이름이 null이면, 동일 URL의 다른 항목에서 폴더를 상속받으려 시도합니다.
-            if folder_name_to_use is None:
-                cursor.execute("SELECT folderName FROM translations WHERE url = ? AND folderName IS NOT NULL LIMIT 1", (item.url,))
-                existing_folder_res = cursor.fetchone()
-                if existing_folder_res:
-                    folder_name_to_use = existing_folder_res[0]
-
-            cursor.execute("""
-            INSERT INTO translations (url, pid, original, translated, timestamp, folderName, title)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            """, (item.url, item.pid, item.original, item.translated, item.timestamp, folder_name_to_use, item.title))
-            inserted_count += 1
-
-    conn.commit()
-    conn.close()
-    return {"inserted": inserted_count, "updated": updated_count}
-
-class MoveRequest(BaseModel):
-    ids: List[int]
-    folder_name: Optional[str]
-
-class DeleteRequest(BaseModel):
-    ids: List[int]
-
-@app.put("/translations/move")
-def move_translations(req: MoveRequest):
-    """지정된 ID의 번역 기록들을 새 폴더로 이동합니다."""
-    placeholders = ', '.join('?' * len(req.ids))
-    query = f"UPDATE translations SET folderName = ? WHERE id IN ({placeholders})"
-    params = [req.folder_name] + req.ids
-    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
-    cursor = conn.cursor()
-    cursor.execute(query, params)
-    updated_count = cursor.rowcount
-    conn.commit()
-    conn.close()
-    return {"message": f"{updated_count}개의 항목이 이동되었습니다."}
-
-@app.post("/translations/delete")
-def delete_translations(req: DeleteRequest):
-    """지정된 ID의 번역 기록들을 삭제합니다."""
-    placeholders = ', '.join('?' * len(req.ids))
-    query = f"DELETE FROM translations WHERE id IN ({placeholders})"
-    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
-    cursor = conn.cursor()
-    cursor.execute(query, req.ids)
-    deleted_count = cursor.rowcount
-    conn.commit()
-    conn.close()
-    return {"message": f"{deleted_count}개의 항목이 삭제되었습니다."}
 
 
 class FindReplaceRequest(BaseModel):
@@ -1604,9 +1424,10 @@ async def crawl_summary_endpoint(folder_name: str, background_tasks: BackgroundT
     background_tasks.add_task(_crawl_and_update_summary_worker, decoded_folder_name, source_url)
     
     return {"message": "Summary crawling started in the background."}
-from server.routers import ui, translation
+from server.routers import ui, translation, data_crud
 app.include_router(ui.router)
 app.include_router(translation.router)
+app.include_router(data_crud.router)
 
 # --- Root and Admin Endpoints ---
 
