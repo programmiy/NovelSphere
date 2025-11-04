@@ -347,34 +347,7 @@ def get_allowed_origins():
     """CORS에 허용된 출처 목록을 반환합니다."""
     return allowed_origins_list
 
-# --- Web UI Endpoint --
-@app.get("/book")
-async def read_book_ui(request: Request):
-    """책 UI 웹페이지를 렌더링합니다."""
-    return templates.TemplateResponse("book_ui.html", {"request": request})
 
-@app.get("/viewer")
-async def read_viewer_ui(request: Request, book: Optional[str] = None):
-    """로컬 뷰어 웹페이지를 렌더링합니다."""
-    return templates.TemplateResponse("viewer.html", {"request": request, "book_name": book})
-
-
-@app.get("/admin")
-async def read_admin_ui(request: Request):
-    """관리자 UI 웹페이지를 렌더링합니다."""
-    return templates.TemplateResponse("admin.html", {"request": request})
-
-
-@app.get("/logs")
-async def read_logs_ui(request: Request):
-    """로그 뷰어 웹페이지를 렌더링합니다."""
-    return templates.TemplateResponse("log_viewer.html", {"request": request})
-
-
-@app.get("/library")
-async def read_library_ui_alias(request: Request):
-    """'서재' UI 웹페이지를 렌더링합니다. (루트의 별칭)"""
-    return templates.TemplateResponse("library.html", {"request": request})
 
 
 async def stream_translations(book: Optional[str] = None):
@@ -1837,11 +1810,10 @@ async def crawl_summary_endpoint(folder_name: str, background_tasks: BackgroundT
     background_tasks.add_task(_crawl_and_update_summary_worker, decoded_folder_name, source_url)
     
     return {"message": "Summary crawling started in the background."}
+from server.routers import ui
+app.include_router(ui.router)
+
 # --- Root and Admin Endpoints ---
-@app.get("/")
-async def read_root(request: Request):
-    """'서재' UI 웹페이지를 렌더링합니다."""
-    return templates.TemplateResponse("library.html", {"request": request})
 
 @app.post("/admin/cleanup_pids")
 def cleanup_pids():
