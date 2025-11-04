@@ -7,3 +7,5 @@ pyinstaller
 pywebview
 pystray
 Pillow
+pytest
+httpx
