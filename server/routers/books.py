@@ -15,11 +15,7 @@ from fastapi.templating import Jinja2Templates
 
 router = APIRouter()
 
-# Constants
-script_dir = os.path.dirname(os.path.abspath(__file__))
-DATABASE_FILE = os.path.join(script_dir, "..", "translations.db")
-STATIC_DIR = os.path.join(script_dir, "..", "static")
-TEMPLATES_DIR = os.path.join(script_dir, "..", "templates")
+from server.config import DATABASE_FILE, STATIC_DIR, TEMPLATES_DIR
 
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
