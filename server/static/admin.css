@@ -432,3 +432,12 @@
     border-width: 0 2px 2px 0;
     transform: rotate(45deg);
 }
+
+/* Style for multi-drag selected items */
+.list-group.selected-drag {
+    background-color: #dbe4ff; /* A light blue background */
+}
+
+body.dark-mode .list-group.selected-drag {
+    background-color: #4a5568; /* A darker blue-gray for dark mode */
+}
