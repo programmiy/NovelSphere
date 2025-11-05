@@ -12,8 +12,7 @@ from tenacity import retry, stop_after_attempt, wait_exponential, RetryError
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-from server.config import DATABASE_FILE
-API_KEY_FILE = os.path.join(script_dir, "..", "api_key.txt")
+from server.config import DATABASE_FILE, API_KEY_FILE
 
 # Pydantic Models
 class TranslationItemInput(BaseModel):

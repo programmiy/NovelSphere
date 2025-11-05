@@ -103,15 +103,6 @@ async def backup_check_task():
             except Exception as e:
                 logger.error(f"Error during backup: {e}")
 
-
-def get_api_key():
-    """api_key.txt 파일에서 API 키를 읽어옵니다."""
-    try:
-        with open(API_KEY_FILE, "r") as f:
-            return f.read().strip()
-    except FileNotFoundError:
-        raise HTTPException(status_code=500, detail=f"{API_KEY_FILE} 파일을 찾을 수 없습니다. API 키를 파일에 저장해주세요.")
-
 def init_db():
     """데이터베이스를 초기화하고 테이블을 생성합니다."""
     conn = sqlite3.connect(DATABASE_FILE, timeout=15)
