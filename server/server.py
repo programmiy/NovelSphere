@@ -20,15 +20,15 @@ from collections import defaultdict
 from urllib.parse import unquote
 from tenacity import retry, stop_after_attempt, wait_exponential, RetryError
 
+from server.config import DATABASE_FILE, allowed_origins_list, LOG_DIR
+
 script_dir = os.path.dirname(os.path.abspath(__file__))
-DATABASE_FILE = os.path.join(script_dir, "translations.db")
 API_KEY_FILE = os.path.join(script_dir, "api_key.txt")
 
 import logging
 from logging.handlers import TimedRotatingFileHandler
 
 # --- Logging Configuration ---
-LOG_DIR = os.path.join(script_dir, "logs")
 os.makedirs(LOG_DIR, exist_ok=True)
 
 log_file_path = os.path.join(LOG_DIR, "app.log")
@@ -328,10 +328,6 @@ async def redirect_service_worker():
     return RedirectResponse(url="/service-worker.js")
 
 
-# CORS 미들웨어 설정
-# allow_credentials=True 일 때 allow_origins=["*"을 사용할 수 없으므로,
-# 로컬 개발 환경과 브라우저 확장 프로그램의 출처를 명시적으로 허용합니다.
-allowed_origins_list = ["http://localhost", "http://localhost:8001", "http://1227.0.0.1", "http://127.0.0.1:8001", "https://novel18.syosetu.com", "https://kakuyomu.jp", "http://192.168.219.100", "http://192.168.219.100:8001", "http://172.31.176.1", "http://172.31.176.1:8001"]
 
 app.add_middleware(
     CORSMiddleware,
@@ -342,10 +338,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-@app.get("/api/allowed_origins")
-def get_allowed_origins():
-    """CORS에 허용된 출처 목록을 반환합니다."""
-    return allowed_origins_list
+
 
 
 
@@ -361,15 +354,6 @@ from fastapi.responses import JSONResponse, HTMLResponse
 
 
 
-@app.get("/debug/urls_by_folder")
-def debug_get_urls_by_folder(folder_name: str):
-    """Temporary debug endpoint to get distinct URLs for a folder."""
-    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
-    cursor = conn.cursor()
-    cursor.execute("SELECT DISTINCT url FROM translations WHERE folderName = ? LIMIT 10", (folder_name,))
-    urls = [row[0] for row in cursor.fetchall()]
-    conn.close()
-    return {"folder_name": folder_name, "urls": urls}
 
 
 
@@ -387,175 +371,20 @@ def debug_get_urls_by_folder(folder_name: str):
 
 
 
-class ApplyUrlRequest(BaseModel):
-    url: str
-    apply: bool
 
-@app.post("/api/urls/apply")
-def toggle_apply_url(req: ApplyUrlRequest):
-    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
-    cursor = conn.cursor()
-    clean_url = req.url.split('#')[0].rstrip('/')
-    
-    if req.apply:
-        # To be safe, we can insert the version without slash, and the server-side matching logic will handle variations.
-        cursor.execute("INSERT OR IGNORE INTO applied_urls (url) VALUES (?)", (clean_url,))
-    else:
-        # When deleting, we should remove all possible variations to be thorough.
-        # This reuses the logic from get_translations to find all variants.
-        urls_to_delete = set()
-        urls_to_delete.add(clean_url)
-        urls_to_delete.add(clean_url + '/')
-        no_protocol_url = re.sub(r'^https?://', '', clean_url)
-        urls_to_delete.add('http://' + no_protocol_url)
-        urls_to_delete.add('https://' + no_protocol_url)
-        urls_to_delete.add('http://' + no_protocol_url + '/')
-        urls_to_delete.add('https://' + no_protocol_url + '/')
-        
-        placeholders = ', '.join('?' * len(urls_to_delete))
-        cursor.execute(f"DELETE FROM applied_urls WHERE url IN ({placeholders})", list(urls_to_delete))
-
-    conn.commit()
-    conn.close()
-class UrlMetadataUpdate(BaseModel):
-    url: str
-    sort_order: Optional[int] = None
-
-class UrlMetadataBatchUpdate(BaseModel):
-    updates: List[UrlMetadataUpdate]
-
-@app.put("/api/url_metadata")
-def update_url_metadata(req: UrlMetadataUpdate):
-    """
-    Updates the sort_order for a given URL in the url_metadata table.
-    """
-    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
-    cursor = conn.cursor()
-    try:
-        cursor.execute(
-            "INSERT OR REPLACE INTO url_metadata (url, sort_order) VALUES (?, ?)",
-            (req.url, req.sort_order)
-        )
-        conn.commit()
-        return {"message": f"Successfully updated metadata for {req.url}."}
-    except Exception as e:
-        conn.rollback()
-        logger.error(f"Error updating url_metadata for {req.url}: {e}")
-        raise HTTPException(status_code=500, detail=f"An error occurred: {e}")
-    finally:
-        conn.close()
-
-
-@app.put("/api/url_metadata/batch")
-def update_url_metadata_batch(req: UrlMetadataBatchUpdate):
-    """
-    Performs a batch update of sort_order for multiple URLs in the url_metadata table.
-    """
-    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
-    cursor = conn.cursor()
-    try:
-        for update_item in req.updates:
-            cursor.execute(
-                "INSERT OR REPLACE INTO url_metadata (url, sort_order) VALUES (?, ?)",
-                (update_item.url, update_item.sort_order)
-            )
-        conn.commit()
-        return {"message": f"Successfully batch updated {len(req.updates)} URL metadata entries."}
-    except Exception as e:
-        conn.rollback()
-        logger.error(f"Error during batch update of url_metadata: {e}")
-        raise HTTPException(status_code=500, detail=f"An error occurred during batch update: {e}")
-    finally:
-        conn.close()
-
-
-
-
-@app.get("/api/urls/apply_status")
-def get_apply_status(url: str):
-    """Checks if a URL is marked as 'applied' using robust matching."""
-    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
-    cursor = conn.cursor()
-
-    # Robust URL matching logic
-    urls_to_check = set()
-    clean_url = url.split('#')[0]
-    urls_to_check.add(clean_url.rstrip('/'))
-    urls_to_check.add(clean_url.rstrip('/') + '/')
-    no_protocol_url = re.sub(r'^https?://', '', clean_url).rstrip('/')
-    urls_to_check.add('http://' + no_protocol_url)
-    urls_to_check.add('http://' + no_protocol_url + '/')
-    urls_to_check.add('https://' + no_protocol_url)
-    urls_to_check.add('https://' + no_protocol_url + '/')
-    if no_protocol_url.startswith('www.'):
-        no_www_url = no_protocol_url.replace('www.', '', 1)
-        urls_to_check.add('http://' + no_www_url)
-        urls_to_check.add('http://' + no_www_url + '/')
-        urls_to_check.add('https://' + no_www_url)
-        urls_to_check.add('https://' + no_www_url + '/')
-    else:
-        with_www_url = 'www.' + no_protocol_url
-        urls_to_check.add('http://' + with_www_url)
-        urls_to_check.add('http://' + with_www_url + '/')
-        urls_to_check.add('https://' + with_www_url)
-        urls_to_check.add('https://' + with_www_url + '/')
-    if 'kakuyomu.jp/works/' in clean_url:
-        match = re.match(r'(https?://kakuyomu.jp/works/\d+)', clean_url)
-        if match:
-            work_url = match.group(1)
-            urls_to_check.add(work_url)
-            urls_to_check.add(work_url + '/')
-
-    url_list = list(urls_to_check)
-    placeholders = ', '.join('?' * len(url_list))
-    
-    query = f"SELECT 1 FROM applied_urls WHERE url IN ({placeholders}) LIMIT 1"
-    cursor.execute(query, url_list)
-    
-    is_applied = cursor.fetchone() is not None
-    conn.close()
-    return {"applied": is_applied}
-
-
-
-
-
-
-
-from server.routers import ui, translation, data_crud, books, system, tasks
+from server.routers import ui, translation, data_crud, books, system, tasks, admin, url_config
 app.include_router(ui.router)
 app.include_router(translation.router)
 app.include_router(data_crud.router)
 app.include_router(books.router)
 app.include_router(system.router)
 app.include_router(tasks.router)
+app.include_router(admin.router)
+app.include_router(url_config.router)
 
 # --- Root and Admin Endpoints ---
 
-@app.post("/admin/cleanup_pids")
-def cleanup_pids():
-    """'la' 또는 'lp'로 시작하는 PID를 가진 기록을 제외 처리합니다."""
-    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
-    cursor = conn.cursor()
-    cursor.execute("SELECT id, url, original FROM translations WHERE lower(pid) GLOB 'la[0-9]*' OR lower(pid) GLOB 'lp[0-9]*'")
-    records_to_exclude = cursor.fetchall()
-    if not records_to_exclude:
-        conn.close()
-        return {"message": "제외할 'la' 또는 'lp' PID를 가진 기록이 없습니다."}
-    excluded_count = 0
-    for record_id, url, original in records_to_exclude:
-        try:
-            cursor.execute("INSERT OR IGNORE INTO excluded_sentences (url, original) VALUES (?, ?)", (url, original))
-            excluded_count += cursor.rowcount
-        except sqlite3.IntegrityError:
-            pass
-    ids_to_delete = [record[0] for record in records_to_exclude]
-    placeholders = ', '.join('?' * len(ids_to_delete))
-    cursor.execute(f"DELETE FROM translations WHERE id IN ({placeholders})", ids_to_delete)
-    deleted_count = cursor.rowcount
-    conn.commit()
-    conn.close()
-    return {"message": f"총 {deleted_count}개의 기록을 제외 처리했습니다. (새롭게 제외 목록에 추가된 항목: {excluded_count}개)"}
+
 
 # uvicorn server:app --reload --port 8001
 

@@ -1,3 +1,6 @@
+import Sortable, { MultiDrag } from "https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.6/Sortable.esm.js";
+Sortable.mount(new MultiDrag());
+
 // Global state
 let groupedTranslations = {};
 let allFolders = [];
@@ -18,9 +21,6 @@ let findReplaceCountTimeout;
 
 // SortableJS instances
 let sortableInstances = [];
-
-// Mount the MultiDrag plugin
-Sortable.mount(new MultiDrag());
 
 // Main initialization
 document.addEventListener('DOMContentLoaded', () => {
@@ -270,6 +270,7 @@ function renderGroupedHistory() {
                 disabled: !enableDragDropCheckbox.checked, // Disable based on checkbox
                 multiDrag: true, // Enable multi-drag
                 selectedClass: 'selected-drag', // Class name for selected items
+                multiDragKey: 'ctrl', // Use Ctrl key for multi-selection
                 onEnd: async function (evt) {
                     const newOrder = Array.from(evt.to.children).map((item, index) => ({
                         url: item.dataset.url,
@@ -700,17 +701,10 @@ async function handleHistoryClick(e) {
 
         // If no specific action button in the url-header was clicked, treat it as a toggle
         if (!target.closest('.list-group-actions') && !target.closest('a')) {
-            // Toggle selection for multi-drag
-            const listGroup = urlHeader.closest('.list-group');
-            if (enableDragDropCheckbox.checked && listGroup) {
-                listGroup.classList.toggle('selected-drag');
-            } else {
-                // Original collapse/expand functionality
-                urlHeader.nextElementSibling.classList.toggle('collapsed');
-                const icon = urlHeader.querySelector('.list-group-toggle');
-                icon.classList.toggle('collapsed');
-                icon.textContent = icon.classList.contains('collapsed') ? 'chevron_right' : 'expand_more';
-            }
+            urlHeader.nextElementSibling.classList.toggle('collapsed');
+            const icon = urlHeader.querySelector('.list-group-toggle');
+            icon.classList.toggle('collapsed');
+            icon.textContent = icon.classList.contains('collapsed') ? 'chevron_right' : 'expand_more';
         }
         return;
     }

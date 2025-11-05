@@ -1,8 +1,10 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from server.server import SETTINGS, save_settings, PROGRESS_STATUS, LOG_DIR
+from server.server import SETTINGS, save_settings, PROGRESS_STATUS
+from server.config import DATABASE_FILE, allowed_origins_list, LOG_DIR
 import os
 import logging
+import sqlite3
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -49,3 +51,18 @@ async def get_logs():
     except Exception as e:
         logger.error(f"Error reading log files: {e}")
         raise HTTPException(status_code=500, detail=f"Error reading log files: {e}")
+
+@router.get("/api/allowed_origins")
+def get_allowed_origins():
+    """CORS에 허용된 출처 목록을 반환합니다."""
+    return allowed_origins_list
+
+@router.get("/debug/urls_by_folder", tags=["debug"])
+def debug_get_urls_by_folder(folder_name: str):
+    """Temporary debug endpoint to get distinct URLs for a folder."""
+    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
+    cursor = conn.cursor()
+    cursor.execute("SELECT DISTINCT url FROM translations WHERE folderName = ? LIMIT 10", (folder_name,))
+    urls = [row[0] for row in cursor.fetchall()]
+    conn.close()
+    return {"folder_name": folder_name, "urls": urls}

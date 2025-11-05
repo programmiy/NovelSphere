@@ -12,9 +12,7 @@ from tenacity import retry, stop_after_attempt, wait_exponential, RetryError
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-# Constants - It's better to move these to a central config file later
-script_dir = os.path.dirname(os.path.abspath(__file__))
-DATABASE_FILE = os.path.join(script_dir, "..", "translations.db")
+from server.config import DATABASE_FILE
 API_KEY_FILE = os.path.join(script_dir, "..", "api_key.txt")
 
 # Pydantic Models

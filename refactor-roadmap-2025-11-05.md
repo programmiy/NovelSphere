@@ -13,7 +13,11 @@
     - [x] `tasks.py`: 백그라운드 작업 엔드포인트 (`fetch_missing_titles`) 분리 완료.
     - [x] `translation.py`: 번역 관련 엔드포인트 (`excluded_sentences`, `find_replace` 등) 분리 완료.
     - [x] `data_crud.py`: 데이터 CRUD 엔드포인트 (`paged_translations`, `translations_by_folder`, `stream`, `migrate` 등) 분리 완료.
-    - [ ] `server.py`에 남은 엔드포인트들 추가 분리 작업 진행 예정.
+    - [x] `server.py`에 남은 엔드포인트들 추가 분리 작업 완료.
+        - `admin.py`: 관리자 기능 엔드포인트 분리.
+        - `url_config.py`: URL 설정 관련 엔드포인트 분리.
+        - `system.py`: 기존 `system` 라우터에 CORS, 디버그 엔드포인트 추가.
+        - `config.py`: 공통 설정을 중앙화하여 순환 참조 문제 해결.
 
 ## 2. 테스트 자동화 도입 (단기 - 최우선)
 

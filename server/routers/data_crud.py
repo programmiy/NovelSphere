@@ -12,9 +12,7 @@ from collections import defaultdict
 
 router = APIRouter()
 
-# Constants
-script_dir = os.path.dirname(os.path.abspath(__file__))
-DATABASE_FILE = os.path.join(script_dir, "..", "translations.db")
+from server.config import DATABASE_FILE
 
 # Pydantic Models
 class TranslationItem(BaseModel):
