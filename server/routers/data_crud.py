@@ -146,11 +146,6 @@ def upsert_translations(items: List[TranslationItem]):
             updated_count += 1
         else:
             folder_name_to_use = item.folderName
-            if folder_name_to_use is None:
-                cursor.execute("SELECT folderName FROM translations WHERE url = ? AND folderName IS NOT NULL LIMIT 1", (item.url,))
-                existing_folder_res = cursor.fetchone()
-                if existing_folder_res:
-                    folder_name_to_use = existing_folder_res[0]
 
             cursor.execute("""
             INSERT INTO translations (url, pid, original, translated, timestamp, folderName, title)
