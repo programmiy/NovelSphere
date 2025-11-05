@@ -122,16 +122,7 @@ def translate_texts(req: TranslateRequest):
     api_input_json = json.dumps([{"id": item.id, "text": item.text} for item in items_to_translate], ensure_ascii=False)
     logger.info(f"API Input JSON: {api_input_json}")
 
-    prompt = f"""You are a JSON-only translation API. You will receive a JSON array of objects, each with an 'id' and a 'text' field.
-Your task is to translate the 'text' from Japanese to Korean.
-Your response MUST be a single, valid JSON array of objects. Each object in your response must contain the original 'id' and the translated text in a 'translated' field.
-Preserve the original quotation marks (like 「...」 and 『...』) in the translated text.
-Do not add any other explanations, formatting, or markdown code fences. Your entire output must be only the JSON data.
-Example response format: [{{"id": "p1", "translated": "번역된 텍스트"}}]
-
----START OF JSON DATA---\r\n{api_input_json}\r\n---END OF JSON DATA---
-
-"""
+    prompt = f"""Translate the 'text' in the following JSON from Japanese to Korean. Your response must be a valid JSON array with the 'id' and the translated 'text' in a 'translated' field.\n\n{api_input_json}"""
 
     logger.info(f"Gemini API URL: {api_url}")
     logger.info(f"Gemini API Prompt (first 500 chars): {prompt[:500]}...")
@@ -160,44 +151,33 @@ Example response format: [{{"id": "p1", "translated": "번역된 텍스트"}}]
             error_detail = f"API 응답에서 번역된 텍스트를 추출할 수 없습니다. 응답: {data}"
             raise HTTPException(status_code=500, detail=error_detail)
         
-        start_index = raw_text.find('[')
-        end_index = raw_text.rfind(']')
-        
-        if start_index != -1 and end_index != -1 and end_index > start_index:
-            clean_json_text = raw_text[start_index:end_index+1]
-        else:
-            json_match = re.search(r'```(json)?(.*)```', raw_text, re.DOTALL)
-            if json_match:
-                clean_json_text = json_match.group(2).strip()
-            else:
-                clean_json_text = raw_text.strip()
+        clean_json_text = raw_text.strip()
+        # Handle potential markdown code fences
+        if clean_json_text.startswith("```json"):
+            clean_json_text = clean_json_text[7:-3].strip()
+        elif clean_json_text.startswith("```"):
+            clean_json_text = clean_json_text[3:-3].strip()
 
-        translated_map = {}
-        object_strings = re.findall(r'\{{[^\{\}]*\}}', clean_json_text)
-
-        for obj_str in object_strings:
-            try:
-                id_match = re.search(r'"id"\s*:\s*"(.*?)"', obj_str)
-                if not id_match:
-                    continue
-                obj_id = id_match.group(1)
-
-                trans_key_match = re.search(r'"translated"\s*:\s*"', obj_str)
-                if not trans_key_match:
-                    continue
-                
-                content_start_index = trans_key_match.end()
-                content_end_index = obj_str.rfind('"', content_start_index)
-                
-                if content_end_index == -1:
-                    continue
-
-                translated_text = obj_str[content_start_index:content_end_index]
-                translated_text = translated_text.replace('\\"', '"')
-
-                translated_map[obj_id] = translated_text
-            except Exception:
-                continue
+        try:
+            # The API is instructed to return a JSON array of objects
+            translated_data = json.loads(clean_json_text)
+            if not isinstance(translated_data, list):
+                logger.warning(f"Expected a JSON array, but got {type(translated_data)}. Data: {clean_json_text}")
+                # Attempt to handle if it's a single dictionary
+                if isinstance(translated_data, dict):
+                    translated_data = [translated_data]
+                else:
+                    raise json.JSONDecodeError("Expected a JSON array.", clean_json_text, 0)
+            
+            translated_map = {
+                str(item['id']): item['translated']
+                for item in translated_data
+                if 'id' in item and 'translated' in item
+            }
+        except json.JSONDecodeError as e:
+            error_detail = f"API 응답의 JSON 파싱에 실패했습니다: {e}. 원본 응답: '{raw_text}'"
+            logger.error(error_detail)
+            raise HTTPException(status_code=500, detail=error_detail)
 
         translated_results = {}
         for item in items_to_translate:
