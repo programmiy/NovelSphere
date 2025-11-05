@@ -399,7 +399,7 @@ async function translateAllPTags() {
             return;
         }
 
-        if (/^[\s—]+$/.test(text) || text.includes('----------')) {
+        if (/^[\s—]+$/.test(text) || text.includes('----------') || text.includes('◎◎◎')) {
             skipTranslation = true;
             logToSidebar("구분선을 만나 이후의 번역을 중단합니다.");
             return;
