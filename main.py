@@ -9,6 +9,10 @@ import json
 import requests
 from PIL import Image
 import pystray
+import multiprocessing
+import subprocess
+
+import subprocess
 
 # Get the directory where main.py is located
 APP_ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -22,6 +26,7 @@ LOG_DIR = os.path.join(APP_ROOT, "logs")
 os.makedirs(LOG_DIR, exist_ok=True)
 
 window = None
+server_process = None
 
 def load_autostart_setting():
     """Loads the autostart setting from settings.json."""
@@ -111,16 +116,28 @@ def send_notification(title, message):
             print(f"Error sending notification: {e}")
 
 def start_server():
-    """Function to run the FastAPI server."""
-    uvicorn.run("server.server:app", host="127.0.0.1", port=8001, log_level="info")
+    """Function to run the FastAPI server as a subprocess."""
+    global server_process
+    os.chdir(APP_ROOT)
+    command = [
+        sys.executable,  # Use the same python interpreter
+        "-m", "uvicorn",
+        "server.server:app",
+        "--host", "127.0.0.1",
+        "--port", "8001",
+        "--reload"
+    ]
+    server_process = subprocess.Popen(command)
 
 def on_tray_menu_select(icon, item):
     """Function to handle tray menu selections."""
-    global window
+    global window, server_process
     if str(item) == "Open Library":
         if window:
             window.show()
     elif str(item) == "Exit":
+        if server_process:
+            server_process.terminate()
         if window:
             window.destroy()
         icon.stop()
@@ -179,8 +196,7 @@ if __name__ == "__main__":
     else:
         disable_autostart()
 
-    server_thread = threading.Thread(target=start_server, daemon=True)
-    server_thread.start()
+    start_server()
 
     image = Image.new('RGB', (64, 64), 'white')
     menu = (pystray.MenuItem('Open Library', on_tray_menu_select), pystray.MenuItem('Exit', on_tray_menu_select))
@@ -190,4 +206,7 @@ if __name__ == "__main__":
     tray_thread.start()
 
     start_webview()
+
+    if server_process:
+        server_process.terminate()
     sys.exit(0)

@@ -1,5 +1,5 @@
-import Sortable, { MultiDrag } from "https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.6/Sortable.esm.js";
-Sortable.mount(new MultiDrag());
+// import Sortable, { MultiDrag } from "https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.esm.js";
+// Sortable.mount(new MultiDrag());
 
 // Global state
 let groupedTranslations = {};
@@ -13,7 +13,7 @@ let translationStatuses = {}; // Holds the apply-status for each URL
 let appliedUrlsSet = new Set();
 
 // DOM element cache
-let historyContainer, emptyState, searchBox, darkModeToggle, fetchAllTitlesBtn, bulkActionsPanel, selectionCount, deleteSelectedToFolderDropdown, findReplaceModal, closeFindReplaceModalBtn, cancelFindReplaceBtn, executeFindReplaceBtn, openGlobalFindReplaceBtn, createFolderButton, newFolderNameInput, findEmptyBtn, findText, replaceText, findCount, conditionText, folderScope, useRegex, caseSensitive;
+let historyContainer, emptyState, searchBox, darkModeToggle, fetchAllTitlesBtn, bulkActionsPanel, selectionCount, deleteSelectedBtn, moveSelectedToFolderDropdown, findReplaceModal, closeFindReplaceModalBtn, cancelFindReplaceBtn, executeFindReplaceBtn, openGlobalFindReplaceBtn, createFolderButton, newFolderNameInput, findEmptyBtn, findText, replaceText, findCount, conditionText, folderScope, useRegex, caseSensitive;
 
 // Debounce timer
 let searchTimeout;
@@ -257,50 +257,7 @@ function renderGroupedHistory() {
         `;
         historyContainer.appendChild(folderContainer);
 
-        // Initialize SortableJS for each folder's content
-        const folderContentElement = folderContainer.querySelector('.folder-group-content');
-        if (folderContentElement) {
-            const sortable = new Sortable(folderContentElement, {
-                animation: 150,
-                ghostClass: 'sortable-ghost',
-                scroll: true, // Enable auto-scrolling within the folder content
-                scrollSensitivity: 20, // px (Decreased sensitivity)
-                scrollSpeed: 50, // px (Adjusted speed to a moderate value)
-                forceFallback: true, // Use SortableJS's own drag-and-drop implementation
-                disabled: !enableDragDropCheckbox.checked, // Disable based on checkbox
-                multiDrag: true, // Enable multi-drag
-                selectedClass: 'selected-drag', // Class name for selected items
-                multiDragKey: 'ctrl', // Use Ctrl key for multi-selection
-                onEnd: async function (evt) {
-                    const newOrder = Array.from(evt.to.children).map((item, index) => ({
-                        url: item.dataset.url,
-                        sort_order: index // Use the new index as the sort_order
-                    }));
 
-                    try {
-                        const response = await fetch('/api/url_metadata/batch', {
-                            method: 'PUT',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ updates: newOrder })
-                        });
-
-                        if (!response.ok) {
-                            const errorData = await response.json();
-                            throw new Error(errorData.detail || `Server error: ${response.status}`);
-                        }
-
-                        showToast('URL 그룹 순서가 업데이트되었습니다.', 'success');
-                        // Re-render to ensure consistency, especially if other sorting logic exists
-                        loadAndRenderGrouped();
-                    } catch (error) {
-                        console.error("Failed to update URL group order:", error);
-                        showToast(`URL 그룹 순서 업데이트 실패: ${error.message}`, 'error');
-                        loadAndRenderGrouped(); // Revert to previous state on error
-                    }
-                }
-            });
-            sortableInstances.push(sortable);
-        }
     }
 }
 
@@ -374,16 +331,9 @@ function setupEventListeners() {
 
     createFolderButton.addEventListener('click', createFolder);
     autoStartCheckbox.addEventListener('change', saveAutoStartState); // Add event listener for auto-start checkbox
-    enableDragDropCheckbox.addEventListener('change', toggleDragAndDrop);
 }
 
-function toggleDragAndDrop() {
-    const enabled = enableDragDropCheckbox.checked;
-    sortableInstances.forEach(instance => {
-        instance.option('disabled', !enabled);
-    });
-    showToast(`드래그앤 드롭 순서 변경이 ${enabled ? '활성화' : '비활성화'}되었습니다.`, 'info');
-}
+
 
 function toggleFindEmpty() {
     // If we are turning the filter ON, first check if there are any results
