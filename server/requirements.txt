@@ -9,3 +9,5 @@ pystray
 Pillow
 pytest
 httpx
+sqlalchemy
+alembic

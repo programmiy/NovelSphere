@@ -1,4 +1,4 @@
-import sqlite3
+
 import json
 import requests
 import time
@@ -21,6 +21,8 @@ from urllib.parse import unquote
 from tenacity import retry, stop_after_attempt, wait_exponential, RetryError
 
 from server.config import DATABASE_FILE, allowed_origins_list, LOG_DIR
+from server.database import engine
+from server.models import Base
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
 API_KEY_FILE = os.path.join(script_dir, "api_key.txt")
@@ -103,103 +105,7 @@ async def backup_check_task():
             except Exception as e:
                 logger.error(f"Error during backup: {e}")
 
-def init_db():
-    """데이터베이스를 초기화하고 테이블을 생성합니다."""
-    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
-    cursor = conn.cursor()
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS translations (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        url TEXT NOT NULL,
-        pid TEXT,
-        original TEXT NOT NULL,
-        translated TEXT,
-        timestamp INTEGER NOT NULL,
-        folderName TEXT,
-        UNIQUE(url, pid, original) -- 중복 방지
-    );
-    """
-    )
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_url ON translations (url);");
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_folderName ON translations (folderName);");
 
-    cursor.execute("PRAGMA table_info(translations)")
-    columns = [column[1] for column in cursor.fetchall()]
-    if 'title' not in columns:
-        cursor.execute("ALTER TABLE translations ADD COLUMN title TEXT")
-
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS excluded_sentences (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        url TEXT NOT NULL,
-        original TEXT NOT NULL,
-        UNIQUE(url, original)
-    );
-    """
-    )
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_excluded_url_original ON excluded_sentences (url, original);")
-
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS pinned_books (
-        folderName TEXT PRIMARY KEY
-    );
-    """
-    )
-
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS tags (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL UNIQUE
-    );
-    """
-    )
-
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS book_tags (
-        book_folderName TEXT NOT NULL,
-        tag_id INTEGER NOT NULL,
-        PRIMARY KEY (book_folderName, tag_id),
-        FOREIGN KEY (tag_id) REFERENCES tags (id) ON DELETE CASCADE
-    );
-    """
-    )
-
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS book_activity (
-        folderName TEXT PRIMARY KEY,
-        last_read_timestamp INTEGER,
-        last_read_pid TEXT,
-        is_bookmarked INTEGER DEFAULT 0,
-        notes TEXT
-    );
-    """
-    )
-
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS applied_urls (
-        url TEXT PRIMARY KEY
-    );
-    """
-    )
-    
-    # Safely add new columns for summary
-    cursor.execute("PRAGMA table_info(book_activity)")
-    columns = [column[1] for column in cursor.fetchall()]
-    if 'summary' not in columns:
-        cursor.execute("ALTER TABLE book_activity ADD COLUMN summary TEXT")
-    if 'summary_source_url' not in columns:
-        cursor.execute("ALTER TABLE book_activity ADD COLUMN summary_source_url TEXT")
-
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS url_metadata (
-        url TEXT PRIMARY KEY,
-        sort_order INTEGER
-    );
-    """)
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_url_metadata_sort_order ON url_metadata (sort_order);");
-
-    conn.commit()
-    conn.close()
 
 # 스크립트 디렉토리 기준 절대 경로 설정
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -262,8 +168,9 @@ async def lifespan(app: FastAPI):
     # Load settings
     load_settings()
 
-    # DB initialization
-    init_db()
+    # Create DB tables if they don't exist
+    # Alembic handles migrations, but this is for initial setup.
+    Base.metadata.create_all(bind=engine)
     
     logger.info("Server startup complete. Runtime tracking and backup task started.")
     yield
@@ -363,7 +270,7 @@ from fastapi.responses import JSONResponse, HTMLResponse
 
 
 
-from server.routers import ui, translation, data_crud, books, system, tasks, admin, url_config
+from server.routers import ui, translation, data_crud, books, system, tasks, admin, url_config, db_editor
 app.include_router(ui.router)
 app.include_router(translation.router)
 app.include_router(data_crud.router)
@@ -372,6 +279,7 @@ app.include_router(system.router)
 app.include_router(tasks.router)
 app.include_router(admin.router)
 app.include_router(url_config.router)
+app.include_router(db_editor.router)
 
 # --- Root and Admin Endpoints ---
 

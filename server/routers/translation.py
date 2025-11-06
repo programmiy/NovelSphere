@@ -119,8 +119,16 @@ def translate_texts(req: TranslateRequest):
     api_input_json = json.dumps([{"id": item.id, "text": item.text} for item in items_to_translate], ensure_ascii=False)
     logger.info(f"API Input JSON: {api_input_json}")
 
-    prompt = f"""Translate the 'text' in the following JSON from Japanese to Korean. Your response must be a valid JSON array with the 'id' and the translated 'text' in a 'translated' field.\n\n{api_input_json}"""
+    prompt = f"""You are a JSON-only translation API. You will receive a JSON array of objects, each with an 'id' and a 'text' field.
+Your task is to translate the 'text' from Japanese to Korean.
+Your response MUST be a single, valid JSON array of objects. Each object in your response must contain the original 'id' and the translated text in a 'translated' field.
+Preserve the original quotation marks (like 「...」 and 『...』) in the translated text.
+Do not add any other explanations, formatting, or markdown code fences. Your entire output must be only the JSON data.
+Example response format: [{{"id": "p1", "translated": "번역된 텍스트"}}]
 
+---START OF JSON DATA---\r\n{api_input_json}\r\n---END OF JSON DATA---
+
+"""
     logger.info(f"Gemini API URL: {api_url}")
     logger.info(f"Gemini API Prompt (first 500 chars): {prompt[:500]}...")
 

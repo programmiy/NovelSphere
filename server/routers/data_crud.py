@@ -112,47 +112,66 @@ def get_translations(skip: int = 0, limit: int = 100, folder: Optional[str] = No
         "translations": translations
     })
 
+from fastapi import APIRouter, HTTPException, Depends
+from sqlalchemy.orm import Session
+from server.database import get_db
+from server.models import Translation, UrlMetadata, AppliedUrl
+import time
+
+# ... (기존 Pydantic 모델들)
+
 @router.post("/translations/upsert")
-def upsert_translations(items: List[TranslationItem]):
-    """번역 기록을 데이터베이스에 추가하거나 업데이트합니다."""
-    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
-    cursor = conn.cursor()
-    
+def upsert_translations(items: List[TranslationItem], db: Session = Depends(get_db)):
+    """번역 기록을 데이터베이스에 추가하거나 업데이트하고, URL 최초 접근 시간을 기록합니다."""
     updated_count = 0
     inserted_count = 0
 
+    # 처리할 모든 URL을 한 번에 수집
+    urls_in_batch = {item.url for item in items}
+
+    # 데이터베이스에 이미 있는 URL 메타데이터를 한 번에 조회
+    existing_metadata = db.query(UrlMetadata).filter(UrlMetadata.url.in_(urls_in_batch)).all()
+    existing_metadata_urls = {meta.url for meta in existing_metadata}
+
+    # 새 URL 메타데이터를 저장할 리스트
+    new_metadata_list = []
+
+    for url in urls_in_batch:
+        if url not in existing_metadata_urls:
+            new_metadata_list.append(UrlMetadata(url=url, first_accessed_at=int(time.time())))
+    
+    # 새 메타데이터를 한 번에 DB에 추가
+    if new_metadata_list:
+        db.add_all(new_metadata_list)
+        db.commit()
+
     for item in items:
-        cursor.execute("SELECT id, folderName FROM translations WHERE url = ? AND pid = ?", (item.url, item.pid))
-        result = cursor.fetchone()
-        
-        if result:
-            existing_id, existing_folder = result
-            folder_name_to_use = item.folderName if item.folderName is not None else existing_folder
-            
+        # 기존 번역 데이터 조회
+        existing_translation = db.query(Translation).filter_by(url=item.url, pid=item.pid).first()
+
+        if existing_translation:
+            # 데이터 업데이트
+            existing_translation.translated = item.translated
+            existing_translation.timestamp = item.timestamp
+            existing_translation.folderName = item.folderName if item.folderName is not None else existing_translation.folderName
             if item.title:
-                cursor.execute("""
-                UPDATE translations 
-                SET translated = ?, timestamp = ?, folderName = ?, title = ?
-                WHERE id = ?
-                """, (item.translated, item.timestamp, folder_name_to_use, item.title, existing_id))
-            else:
-                cursor.execute("""
-                UPDATE translations 
-                SET translated = ?, timestamp = ?, folderName = ?
-                WHERE id = ?
-                """, (item.translated, item.timestamp, folder_name_to_use, existing_id))
+                existing_translation.title = item.title
             updated_count += 1
         else:
-            folder_name_to_use = item.folderName
-
-            cursor.execute("""
-            INSERT INTO translations (url, pid, original, translated, timestamp, folderName, title)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            """, (item.url, item.pid, item.original, item.translated, item.timestamp, folder_name_to_use, item.title))
+            # 새 데이터 삽입
+            new_translation = Translation(
+                url=item.url,
+                pid=item.pid,
+                original=item.original,
+                translated=item.translated,
+                timestamp=item.timestamp,
+                folderName=item.folderName,
+                title=item.title
+            )
+            db.add(new_translation)
             inserted_count += 1
 
-    conn.commit()
-    conn.close()
+    db.commit()
     return {"inserted": inserted_count, "updated": updated_count}
 
 @router.put("/translations/move")
@@ -207,64 +226,45 @@ def get_paged_translations(page: int = 1, per_page: int = 20):
     }
 
 @router.get("/translations_by_folder")
-def get_translations_by_folder():
-    """데이터베이스에서 모든 번역 기록을 폴더와 URL별로 그룹화하여 조회합니다."""
-    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
-    conn.text_factory = str
-    conn.row_factory = dict_factory
-    cursor = conn.cursor()
-
-    # Get all applied URLs first
-    cursor.execute("SELECT url FROM applied_urls")
-    applied_urls_set = {row['url'] for row in cursor.fetchall()}
-
-    # Get all url_metadata
-    cursor.execute("SELECT url, sort_order FROM url_metadata")
-    url_metadata = {row['url']: row for row in cursor.fetchall()}
-
-    translations = cursor.execute("SELECT * FROM translations").fetchall()
-    conn.close()
+def get_translations_by_folder(db: Session = Depends(get_db)):
+    """데이터베이스에서 모든 번역 기록을 폴더와 URL별로 그룹화하고, URL은 최초 접근 시간 순으로 정렬하여 조회합니다."""
     
-    # Group translations by folder and then by URL
+    # 모든 데이터를 한 번에 조회
+    applied_urls_set = {row.url for row in db.query(AppliedUrl).all()}
+    url_metadata = {meta.url: meta for meta in db.query(UrlMetadata).all()}
+    translations = db.query(Translation).all()
+
+    # 폴더 및 URL별로 그룹화
     grouped_by_folder = defaultdict(lambda: defaultdict(list))
     for t in translations:
-        folder_name = t.get("folderName") or "폴더 추가 대기 상태"
-        url = t.get("url")
-        if url:
-            grouped_by_folder[folder_name][url].append(t)
+        folder_name = t.folderName or "폴더 추가 대기 상태"
+        if t.url:
+            # Translation 객체를 직렬화 가능한 dict로 변환
+            grouped_by_folder[folder_name][t.url].append({
+                "id": t.id,
+                "url": t.url,
+                "pid": t.pid,
+                "original": t.original,
+                "translated": t.translated,
+                "timestamp": t.timestamp,
+                "folderName": t.folderName,
+                "title": t.title
+            })
 
-    # Create the final response, sorting the URL groups within each folder
+    # 최종 응답 생성 및 정렬
     final_response = {}
     for folder_name, url_groups in grouped_by_folder.items():
-        
         url_group_list = []
         for url, items in url_groups.items():
             metadata = url_metadata.get(url)
-            sort_order = metadata.get('sort_order') if metadata else None
-            
-            numeric_url_part = None
-            try:
-                clean_url = url.rstrip('/')
-                last_part = clean_url.split('/')[-1]
-                if last_part.isdigit():
-                    numeric_url_part = int(last_part)
-            except:
-                pass
-
             url_group_list.append({
                 "url": url,
                 "items": items,
-                "sort_order": sort_order,
-                "numeric_url_part": numeric_url_part
+                "first_accessed_at": metadata.first_accessed_at if metadata else None
             })
 
-        url_group_list.sort(key=lambda x: (
-            x['sort_order'] is None, 
-            x['sort_order'], 
-            x['numeric_url_part'] is None,
-            x['numeric_url_part'],
-            x['url']
-        ))
+        # 정렬: first_accessed_at을 기준으로 오름차순 정렬. 없는 경우 맨 뒤로 보냄.
+        url_group_list.sort(key=lambda x: (x['first_accessed_at'] is None, x['first_accessed_at']))
 
         final_response[folder_name] = url_group_list
             
