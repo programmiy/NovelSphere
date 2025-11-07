@@ -270,7 +270,7 @@ from fastapi.responses import JSONResponse, HTMLResponse
 
 
 
-from server.routers import ui, translation, data_crud, books, system, tasks, admin, url_config, db_editor
+from server.routers import ui, translation, data_crud, books, system, tasks, admin, url_config, db_editor, toc_importer
 app.include_router(ui.router)
 app.include_router(translation.router)
 app.include_router(data_crud.router)
@@ -280,6 +280,7 @@ app.include_router(tasks.router)
 app.include_router(admin.router)
 app.include_router(url_config.router)
 app.include_router(db_editor.router)
+app.include_router(toc_importer.router)
 
 # --- Root and Admin Endpoints ---
 

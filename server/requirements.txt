@@ -11,3 +11,6 @@ pytest
 httpx
 sqlalchemy
 alembic
+beautifulsoup4
+selenium
+webdriver-manager

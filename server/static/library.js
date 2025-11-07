@@ -22,6 +22,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const urlListBody = document.getElementById('url-list-body');
     const urlListTitle = document.getElementById('url-list-title');
     const urlListCloseBtn = document.getElementById('url-list-close');
+    const importTocBtn = document.getElementById('import-toc-btn');
 
     // --- Core Functions ---
     async function fetchBooks() {
@@ -404,8 +405,6 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!response.ok) throw new Error(`Server error`);
             const urls = await response.json();
 
-            urls.sort(naturalSort);
-
             if (urls.length > 0) {
                 urlListBody.innerHTML = `
                     <ul>
@@ -478,25 +477,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function escapeHtml(text) {
         if (!text) return '';
         const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' };
-        return text.replace(/[&<>"'']/g, m => map[m]);
-    }
-
-    function naturalSort(a, b) {
-        const re = /(\d+)/g;
-        const aParts = a.url.split(re);
-        const bParts = b.url.split(re);
-        for (let i = 0; i < Math.min(aParts.length, bParts.length); i++) {
-            const aPart = aParts[i];
-            const bPart = bParts[i];
-            if (i % 2) { // It's a number
-                const aNum = parseInt(aPart, 10);
-                const bNum = parseInt(bPart, 10);
-                if (aNum !== bNum) return aNum - bNum;
-            } else { // It's a string
-                if (aPart !== bPart) return aPart.localeCompare(bPart);
-            }
-        }
-        return a.url.length - b.url.length;
+        return text.replace(/[&<>\"\']/g, m => map[m]);
     }
 
     // --- Event Listeners ---
@@ -551,6 +532,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     newTagForm.addEventListener('submit', handleAddNewTag);
     crawlSummaryBtn.addEventListener('click', handleCrawlSummary);
+    importTocBtn.addEventListener('click', handleImportToc);
 
     const downloadAllBtn = document.getElementById('download-all-offline-btn');
     if (downloadAllBtn) {
@@ -590,4 +572,51 @@ document.addEventListener('DOMContentLoaded', () => {
         window.addEventListener('online', () => showConnectionStatus(true));
         window.addEventListener('offline', () => showConnectionStatus(false));
     })();
+
+    async function handleImportToc() {
+        const bookName = urlListTitle.textContent.split(' - ')[0];
+        if (!bookName) {
+            alert('책 이름을 확인할 수 없습니다.');
+            return;
+        }
+
+        const tocUrl = prompt('목차(TOC) URL을 입력하세요:');
+        if (!tocUrl) return;
+
+        urlListBody.innerHTML = '<p>목차를 가져와 순서를 적용하는 중...</p>';
+
+        try {
+            // 1. Fetch the sorted list of chapters from the TOC URL
+            const tocResponse = await fetch('/api/import-toc', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ toc_url: tocUrl }),
+            });
+
+            if (!tocResponse.ok) {
+                const errorData = await tocResponse.json();
+                throw new Error(errorData.detail || 'TOC를 가져오는 데 실패했습니다.');
+            }
+
+            const tocUrls = await tocResponse.json();
+
+            // 2. Send this list to the backend to update the sort order in the database
+            const updateResponse = await fetch(`/api/books/${encodeURIComponent(bookName)}/urls`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ urls: tocUrls }),
+            });
+
+            if (!updateResponse.ok) {
+                const errorData = await updateResponse.json();
+                throw new Error(errorData.detail || '순서 업데이트에 실패했습니다.');
+            }
+
+            // 3. Refresh the modal to show the newly sorted list
+            await openUrlListModal(bookName);
+
+        } catch (error) {
+            urlListBody.innerHTML = `<p style="color: red;">오류가 발생했습니다: ${error.message}</p>`;
+        }
+    }
 });

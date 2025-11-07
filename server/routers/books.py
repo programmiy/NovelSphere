@@ -47,7 +47,46 @@ class BookActivityUpdate(BaseModel):
     summary: Optional[str] = None
     summary_source_url: Optional[str] = None
 
+class TocUrlItem(BaseModel):
+    title: str
+    url: str
+
+class TocUrlUpdate(BaseModel):
+    urls: List[TocUrlItem]
+
 # Endpoints
+@router.put("/api/books/{folder_name}/urls")
+def update_book_urls_order(folder_name: str, req: TocUrlUpdate):
+    decoded_folder_name = unquote(folder_name)
+    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
+    cursor = conn.cursor()
+    updated_count = 0
+
+    try:
+        # Reset existing sort orders for this book
+        cursor.execute("UPDATE translations SET toc_sort_order = NULL WHERE folderName = ?", (decoded_folder_name,))
+
+        # Update with new sort order
+        for i, item in enumerate(req.urls):
+            # Normalize URL by removing trailing slash for more robust matching
+            normalized_url = item.url.rstrip('/')
+            
+            cursor.execute(
+                "UPDATE translations SET toc_sort_order = ?, title = ? WHERE folderName = ? AND RTRIM(url, '/') = ?",
+                (i, item.title, decoded_folder_name, normalized_url)
+            )
+            if cursor.rowcount > 0:
+                updated_count += 1
+
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=f"데이터베이스 오류: {e}")
+    finally:
+        conn.close()
+
+    return {"message": f"'{decoded_folder_name}'의 순서 업데이트 완료. 총 {len(req.urls)}개 중 {updated_count}개가 일치했습니다."}
+
 @router.get("/folders")
 def get_folders():
     conn = sqlite3.connect(DATABASE_FILE, timeout=15)
@@ -168,16 +207,29 @@ def get_book_urls(folder_name: str):
     conn.row_factory = dict_factory
     cursor = conn.cursor()
 
-    query = "SELECT url, title, COUNT(*) as count FROM translations WHERE folderName = ? GROUP BY url, title ORDER BY MAX(timestamp) DESC"
-    params = [decoded_folder_name]
+    base_query = """SELECT url, title, COUNT(*) as count, MIN(toc_sort_order) as toc_sort_order
+                  FROM translations
+                  WHERE {folder_clause}
+                  GROUP BY url, title
+                  ORDER BY toc_sort_order IS NULL, toc_sort_order ASC"""
+
     if decoded_folder_name == "미분류":
-        query = "SELECT url, title, COUNT(*) as count FROM translations WHERE folderName IS NULL GROUP BY url, title ORDER BY MAX(timestamp) DESC"
+        query = base_query.format(folder_clause="folderName IS NULL")
         params = []
+    else:
+        query = base_query.format(folder_clause="folderName = ?")
+        params = [decoded_folder_name]
 
     cursor.execute(query, tuple(params))
     urls = cursor.fetchall()
     conn.close()
-    return urls
+    
+    headers = {
+        "Cache-Control": "no-cache, no-store, must-revalidate",
+        "Pragma": "no-cache",
+        "Expires": "0",
+    }
+    return JSONResponse(content=urls, headers=headers)
 
 @router.get("/api/books/{folder_name}/chapters")
 def get_book_chapters(folder_name: str):

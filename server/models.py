@@ -16,6 +16,7 @@ class Translation(Base):
     timestamp = Column(Integer, nullable=False)
     folderName = Column(Text)
     title = Column(Text)
+    toc_sort_order = Column(Integer, nullable=True)
 
     __table_args__ = (
         UniqueConstraint('url', 'pid', 'original', name='_url_pid_original_uc'),

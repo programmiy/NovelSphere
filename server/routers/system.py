@@ -9,6 +9,12 @@ import sqlite3
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
+def dict_factory(cursor, row):
+    d = {}
+    for idx, col in enumerate(cursor.description):
+        d[col[0]] = row[idx]
+    return d
+
 class AutoStartSettings(BaseModel):
     autostart: bool
 
@@ -66,3 +72,25 @@ def debug_get_urls_by_folder(folder_name: str):
     urls = [row[0] for row in cursor.fetchall()]
     conn.close()
     return {"folder_name": folder_name, "urls": urls}
+
+@router.get("/api/debug/find_translation", tags=["debug"])
+def find_translation_by_query(q: str):
+    """Finds translation records by a query string matching in URL, title, or original text."""
+    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
+    conn.row_factory = dict_factory
+    cursor = conn.cursor()
+    
+    search_term = f"%{q}%"
+    
+    cursor.execute(
+        "SELECT id, url, title, pid, toc_sort_order, original FROM translations WHERE url LIKE ? OR title LIKE ? OR original LIKE ?",
+        (search_term, search_term, search_term)
+    )
+    
+    results = cursor.fetchall()
+    conn.close()
+    
+    if not results:
+        raise HTTPException(status_code=404, detail="No matching translations found.")
+        
+    return results

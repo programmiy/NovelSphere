@@ -248,7 +248,8 @@ def get_translations_by_folder(db: Session = Depends(get_db)):
                 "translated": t.translated,
                 "timestamp": t.timestamp,
                 "folderName": t.folderName,
-                "title": t.title
+                "title": t.title,
+                "toc_sort_order": t.toc_sort_order
             })
 
     # 최종 응답 생성 및 정렬
@@ -256,15 +257,18 @@ def get_translations_by_folder(db: Session = Depends(get_db)):
     for folder_name, url_groups in grouped_by_folder.items():
         url_group_list = []
         for url, items in url_groups.items():
-            metadata = url_metadata.get(url)
+            # 그룹의 toc_sort_order를 첫 번째 아이템에서 가져옵니다.
+            # 동일 URL 그룹 내 모든 아이템은 같은 값을 가집니다.
+            sort_order = items[0]['toc_sort_order'] if items and items[0]['toc_sort_order'] is not None else None
+
             url_group_list.append({
                 "url": url,
                 "items": items,
-                "first_accessed_at": metadata.first_accessed_at if metadata else None
+                "toc_sort_order": sort_order
             })
 
-        # 정렬: first_accessed_at을 기준으로 오름차순 정렬. 없는 경우 맨 뒤로 보냄.
-        url_group_list.sort(key=lambda x: (x['first_accessed_at'] is None, x['first_accessed_at']))
+        # 정렬: toc_sort_order를 기준으로 오름차순 정렬. 없는 경우 맨 뒤로 보냄.
+        url_group_list.sort(key=lambda x: (x['toc_sort_order'] is None, x['toc_sort_order']))
 
         final_response[folder_name] = url_group_list
             
