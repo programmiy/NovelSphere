@@ -117,7 +117,16 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             } catch (error) {
                 console.error("Error in background script, sending error response:", error.message);
                 try {
-                    sendResponse({ error: error.message });
+                    if (error.status === 429) {
+                        // Special handling for API rate limit
+                        sendResponse({ 
+                            notification: "API 요청 한도를 초과했습니다. 번역을 중지합니다.", 
+                            stop: true 
+                        });
+                    } else {
+                        // Generic error for other issues
+                        sendResponse({ error: error.message });
+                    }
                 } catch (e) {
                     if (e.message.includes(channelClosedMessage)) {
                         console.log("Failed to send error response: Channel was closed by the client.");
