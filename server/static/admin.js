@@ -2,6 +2,7 @@
 // Sortable.mount(new MultiDrag());
 
 // Global state
+const JAPANESE_REGEX = /[\u3000-\u303f\u3040-\u309f\u30a0-\u30ff\uff00-\uff9f\u4e00-\u9faf\u3400-\u4dbf]/;
 let groupedTranslations = {};
 let allFolders = [];
 
@@ -193,7 +194,7 @@ function renderGroupedHistory() {
             );
 
             if (isFindingEmpty) {
-                filteredTranslations = filteredTranslations.filter(t => !t.translated || t.translated.trim() === '');
+                filteredTranslations = filteredTranslations.filter(t => !t.translated || t.translated.trim() === '' || JAPANESE_REGEX.test(t.translated));
             }
 
             if (filteredTranslations.length === 0) continue;
@@ -338,7 +339,7 @@ function setupEventListeners() {
 function toggleFindEmpty() {
     // If we are turning the filter ON, first check if there are any results
     if (!isFindingEmpty) {
-        let hasEmpty = false;
+        let hasAbnormal = false;
         for (const folderName in groupedTranslations) {
             const urlGroups = groupedTranslations[folderName];
             if (!Array.isArray(urlGroups)) continue;
@@ -347,19 +348,19 @@ function toggleFindEmpty() {
                 const items = urlGroup.items;
                 if (!Array.isArray(items)) continue;
 
-                if (items.some(t => !t.translated || t.translated.trim() === '')) {
-                    hasEmpty = true;
+                if (items.some(t => !t.translated || t.translated.trim() === '' || JAPANESE_REGEX.test(t.translated))) {
+                    hasAbnormal = true;
                     break;
                 }
             }
-            if (hasEmpty) {
+            if (hasAbnormal) {
                 break;
             }
         }
 
-        // If no empty translations were found, show a message and abort
-        if (!hasEmpty) {
-            showToast("빈 번역 기록이 없습니다.", "info");
+        // If no abnormal translations were found, show a message and abort
+        if (!hasAbnormal) {
+            showToast("이상 번역 기록이 없습니다.", "info");
             console.log("모든 번역기록이 정상입니다");
             return;
         }
