@@ -561,6 +561,17 @@ async function translateAllPTags() {
                 items: subItemsForApi
             });
 
+            // Handle stop signals from background script (e.g., on 429 error)
+            if (response && response.notification) {
+                logToSidebar(response.notification, 'log-error');
+                if (response.stop) {
+                    isTranslationCancelled = true;
+                    document.getElementById('stop-translation-btn').style.display = 'none';
+                    updateSidebarWithCancelled();
+                }
+                return; // Stop further processing for this item
+            }
+
             if (response && response.translations) {
                 const hasFailedPart = response.translations.some(t => t.translated === null);
                 let combinedTranslation = null;
