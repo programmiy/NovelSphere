@@ -4,15 +4,32 @@ import re
 import asyncio
 import json
 from datetime import datetime
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 from typing import List, Optional
+from sqlalchemy.orm import Session
 from collections import defaultdict
+from urllib.parse import urlparse
+
+from server.settings import settings
+from server.database import get_db
+from server.models import Translation, UrlMetadata, AppliedUrl
+import time
 
 router = APIRouter()
 
-from server.config import DATABASE_FILE
+# --- Helper to get DB path from URL ---
+def get_db_path():
+    # sqlite:///C:\path\to\db.db -> C:\path\to\db.db
+    # Assumes the path is absolute after the third slash
+    parsed_url = urlparse(settings.database_url)
+    # On Windows, urlparse might add an extra leading slash if the path starts with a drive letter.
+    # e.g., sqlite:///C:/... becomes /C:/...
+    path = parsed_url.path
+    if os.name == 'nt' and path.startswith('/'):
+        path = path[1:]
+    return path
 
 # Pydantic Models
 class TranslationItem(BaseModel):
@@ -43,7 +60,7 @@ def dict_factory(cursor, row):
 @router.get("/translations")
 def get_translations(skip: int = 0, limit: int = 100, folder: Optional[str] = None, search: Optional[str] = None, url: Optional[str] = None):
     """데이터베이스에서 번역 기록을 조회합니다."""
-    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
+    conn = sqlite3.connect(get_db_path(), timeout=15)
     conn.text_factory = str
     conn.row_factory = dict_factory
     cursor = conn.cursor()
@@ -112,14 +129,6 @@ def get_translations(skip: int = 0, limit: int = 100, folder: Optional[str] = No
         "translations": translations
     })
 
-from fastapi import APIRouter, HTTPException, Depends
-from sqlalchemy.orm import Session
-from server.database import get_db
-from server.models import Translation, UrlMetadata, AppliedUrl
-import time
-
-# ... (기존 Pydantic 모델들)
-
 @router.post("/translations/upsert")
 def upsert_translations(items: List[TranslationItem], db: Session = Depends(get_db)):
     """번역 기록을 데이터베이스에 추가하거나 업데이트하고, URL 최초 접근 시간을 기록합니다."""
@@ -180,7 +189,7 @@ def move_translations(req: MoveRequest):
     placeholders = ', '.join('?' * len(req.ids))
     query = f"UPDATE translations SET folderName = ? WHERE id IN ({placeholders})"
     params = [req.folder_name] + req.ids
-    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
+    conn = sqlite3.connect(get_db_path(), timeout=15)
     cursor = conn.cursor()
     cursor.execute(query, params)
     updated_count = cursor.rowcount
@@ -193,7 +202,7 @@ def delete_translations(req: DeleteRequest):
     """지정된 ID의 번역 기록들을 삭제합니다."""
     placeholders = ', '.join('?' * len(req.ids))
     query = f"DELETE FROM translations WHERE id IN ({placeholders})"
-    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
+    conn = sqlite3.connect(get_db_path(), timeout=15)
     cursor = conn.cursor()
     cursor.execute(query, req.ids)
     deleted_count = cursor.rowcount
@@ -204,7 +213,7 @@ def delete_translations(req: DeleteRequest):
 @router.get("/paged_translations")
 def get_paged_translations(page: int = 1, per_page: int = 20):
     """페이지네이션을 지원하는 번역 기록 조회 엔드포인트입니다."""
-    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
+    conn = sqlite3.connect(get_db_path(), timeout=15)
     conn.text_factory = str
     conn.row_factory = dict_factory
     cursor = conn.cursor()
@@ -283,7 +292,7 @@ def get_translations_by_folder(db: Session = Depends(get_db)):
 
 async def stream_translations(book: Optional[str] = None):
     """DB에서 번역 데이터를 스트리밍합니다. '미분류' 폴더를 지원합니다."""
-    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
+    conn = sqlite3.connect(get_db_path(), timeout=15)
     conn.row_factory = dict_factory
     cursor = conn.cursor()
     
@@ -325,7 +334,7 @@ def migrate_data():
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="migration_data.json 파일을 찾을 수 없습니다.")
 
-    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
+    conn = sqlite3.connect(get_db_path(), timeout=15)
     cursor = conn.cursor()
     
     migrated_count = 0

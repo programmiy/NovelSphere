@@ -8,13 +8,26 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import List, Optional
 from tenacity import retry, stop_after_attempt, wait_exponential, RetryError
+from urllib.parse import urlparse
+
+from server.settings import settings
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-from server.config import DATABASE_FILE, API_KEY_FILE
+# --- Helper to get DB path from URL ---
+def get_db_path():
+    # sqlite:///C:\path\to\db.db -> C:\path\to\db.db
+    # Assumes the path is absolute after the third slash
+    parsed_url = urlparse(settings.database_url)
+    # On Windows, urlparse might add an extra leading slash if the path starts with a drive letter.
+    # e.g., sqlite:///C:/... becomes /C:/...
+    path = parsed_url.path
+    if os.name == 'nt' and path.startswith('/'):
+        path = path[1:]
+    return path
 
-# Pydantic Models
+# --- Pydantic Models ---
 class TranslationItemInput(BaseModel):
     id: str
     text: str
@@ -38,18 +51,10 @@ class UpdateTitleRequest(BaseModel):
     url: str
     title: str
 
-# Helper functions
-def get_api_key():
-    """api_key.txt 파일에서 API 키를 읽어옵니다."""
-    try:
-        with open(API_KEY_FILE, "r") as f:
-            return f.read().strip()
-    except FileNotFoundError:
-        raise HTTPException(status_code=500, detail=f"{API_KEY_FILE} 파일을 찾을 수 없습니다. API 키를 파일에 저장해주세요.")
-
+# --- Helper Functions ---
 def _get_excluded_sentences_for_url(url: str) -> set:
     """Helper function to retrieve excluded sentences for a given URL."""
-    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
+    conn = sqlite3.connect(get_db_path(), timeout=15)
     cursor = conn.cursor()
     cursor.execute("SELECT original FROM excluded_sentences WHERE url = ?", (url,))
     excluded_originals = {row[0] for row in cursor.fetchall()}
@@ -95,7 +100,7 @@ def process_repeated_chars(text: str) -> str:
         return text
     return re.sub(r'(.)\1{5,}', '(반복)', text)
 
-# API Endpoint
+# --- API Endpoints ---
 @router.post("/translate")
 def translate_texts(req: TranslateRequest):
     """Gemini API를 호출하여 텍스트를 번역합니다. ID 기반 매칭과 재시도 로직으로 안정성을 높였습니다."""
@@ -113,8 +118,10 @@ def translate_texts(req: TranslateRequest):
             {"id": item.id, "original": item.text, "translated": item.text} for item in req.items
         ]}
 
-    api_key = get_api_key()
-    api_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
+    if not settings.gemini_api_key or "YOUR_GEMINI_API_KEY_HERE" in settings.gemini_api_key:
+        raise HTTPException(status_code=500, detail="Gemini API 키가 설정되지 않았습니다. .env 파일을 확인해주세요.")
+
+    api_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={settings.gemini_api_key}"
     
     api_input_json = json.dumps([{"id": item.id, "text": item.text} for item in items_to_translate], ensure_ascii=False)
     logger.info(f"API Input JSON: {api_input_json}")
@@ -157,18 +164,15 @@ Example response format: [{{"id": "p1", "translated": "번역된 텍스트"}}]
             raise HTTPException(status_code=500, detail=error_detail)
         
         clean_json_text = raw_text.strip()
-        # Handle potential markdown code fences
         if clean_json_text.startswith("```json"):
             clean_json_text = clean_json_text[7:-3].strip()
         elif clean_json_text.startswith("```"):
             clean_json_text = clean_json_text[3:-3].strip()
 
         try:
-            # The API is instructed to return a JSON array of objects
             translated_data = json.loads(clean_json_text)
             if not isinstance(translated_data, list):
                 logger.warning(f"Expected a JSON array, but got {type(translated_data)}. Data: {clean_json_text}")
-                # Attempt to handle if it's a single dictionary
                 if isinstance(translated_data, dict):
                     translated_data = [translated_data]
                 else:
@@ -232,7 +236,7 @@ def get_excluded_sentences(url: str):
 @router.post("/translations/exclude")
 def exclude_translations(req: ExcludeRequest):
     """지정된 ID의 번역 기록을 제외 목록에 추가하고 원본을 삭제합니다."""
-    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
+    conn = sqlite3.connect(get_db_path(), timeout=15)
     cursor = conn.cursor()
     excluded_count = 0
     for translation_id in req.ids:
@@ -250,7 +254,7 @@ def exclude_translations(req: ExcludeRequest):
 @router.post("/translations/find_replace")
 def find_replace_all(req: FindReplaceRequest):
     """모든 번역 기록의 번역된 텍스트에 대해 찾아 바꾸기를 수행합니다."""
-    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
+    conn = sqlite3.connect(get_db_path(), timeout=15)
     cursor = conn.cursor()
     
     updated_count = 0
@@ -268,7 +272,6 @@ def find_replace_all(req: FindReplaceRequest):
     
     # 2. 원문 조건 필터링
     if req.condition_text:
-        # 대소문자 구분 여부에 따라 쿼리 조정
         if req.case_sensitive:
             query_conditions.append("original LIKE ?")
             query_params.append(f"%{req.condition_text}%")
@@ -277,12 +280,7 @@ def find_replace_all(req: FindReplaceRequest):
             query_params.append(f"%{req.condition_text.lower()}%")
 
     # 3. 찾아바꿀 텍스트가 포함된 항목만 대상으로 함
-    if req.use_regex:
-        # 정규식 사용 시, SQLite의 REGEXP 함수를 사용해야 하지만, 기본적으로 SQLite는 REGEXP를 지원하지 않음.
-        # 따라서 모든 항목을 가져와 Python에서 처리해야 함.
-        pass # 아래에서 모든 항목을 가져와 Python에서 처리할 것임
-    else:
-        # 정규식이 아닌 경우, SQLite의 LIKE와 REPLACE를 활용
+    if not req.use_regex:
         if req.case_sensitive:
             query_conditions.append("translated LIKE ?")
             query_params.append(f"%{req.find_text}%")
@@ -290,7 +288,6 @@ def find_replace_all(req: FindReplaceRequest):
             query_conditions.append("lower(translated) LIKE ?")
             query_params.append(f"%{req.find_text.lower()}%")
 
-    # 4. 최종 쿼리 구성
     base_query = "SELECT id, translated FROM translations"
     if query_conditions:
         base_query += " WHERE " + " AND ".join(query_conditions)
@@ -298,34 +295,21 @@ def find_replace_all(req: FindReplaceRequest):
     cursor.execute(base_query, tuple(query_params))
     records_to_update = cursor.fetchall()
 
-    # 5. Python에서 찾아바꾸기 로직 수행
     for record_id, old_translated_text in records_to_update:
         new_translated_text = old_translated_text
-        if old_translated_text is None: # translated 필드가 NULL인 경우 처리
+        if old_translated_text is None:
             continue
 
         if req.use_regex:
-            flags = 0
-            if not req.case_sensitive:
-                flags |= re.IGNORECASE
+            flags = re.IGNORECASE if not req.case_sensitive else 0
             try:
                 new_translated_text = re.sub(req.find_text, req.replace_text, old_translated_text, flags=flags)
             except re.error as e:
                 conn.close()
                 raise HTTPException(status_code=400, detail=f"유효하지 않은 정규식: {e}")
         else:
-            # 대소문자 구분 여부에 따라 일반 문자열 replace
-            if req.case_sensitive:
-                new_translated_text = old_translated_text.replace(req.find_text, req.replace_text)
-            else:
-                # 대소문자 구분 없이 바꾸려면, 직접 구현해야 함 (Python의 replace는 대소문자 구분)
-                # 여기서는 간단히 lower()로 비교 후, 원본에서 찾아서 바꾸는 방식으로 처리
-                # 더 복잡한 로직이 필요하면 re.sub(re.escape(find_text), replace_text, text, re.IGNORECASE) 사용
-                # 현재는 find_text가 translated에 포함되어 있다는 전제하에 진행
-                if req.find_text.lower() in old_translated_text.lower():
-                    # 이 부분은 정확한 대소문자 구분 없는 replace를 위해 re.sub를 사용하는 것이 더 안전함
-                    flags = re.IGNORECASE if not req.case_sensitive else 0
-                    new_translated_text = re.sub(re.escape(req.find_text), req.replace_text, old_translated_text, flags=flags)
+            flags = re.IGNORECASE if not req.case_sensitive else 0
+            new_translated_text = re.sub(re.escape(req.find_text), req.replace_text, old_translated_text, flags=flags)
 
         if new_translated_text != old_translated_text:
             cursor.execute("UPDATE translations SET translated = ? WHERE id = ?", (new_translated_text, record_id))
@@ -338,7 +322,7 @@ def find_replace_all(req: FindReplaceRequest):
 @router.put("/translations/url_title")
 def update_title_for_url(req: UpdateTitleRequest):
     """Updates the title for all entries with a given URL."""
-    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
+    conn = sqlite3.connect(get_db_path(), timeout=15)
     cursor = conn.cursor()
     cursor.execute("UPDATE translations SET title = ? WHERE url = ?", (req.title, req.url))
     updated_count = cursor.rowcount

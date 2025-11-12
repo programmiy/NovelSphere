@@ -1,10 +1,11 @@
 
 from celery import Celery
+from server.settings import settings
 
 celery_app = Celery(
     'tasks',
-    broker='redis://localhost:6379/0',
-    backend='redis://localhost:6379/0',
+    broker=settings.redis_url,
+    backend=settings.redis_url,
     include=['server.routers.tasks']
 )
 

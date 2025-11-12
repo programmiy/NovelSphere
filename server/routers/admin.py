@@ -1,15 +1,22 @@
 import sqlite3
 import os
 from fastapi import APIRouter, HTTPException
+from urllib.parse import urlparse
+from server.settings import settings
 
 router = APIRouter()
 
-from server.config import DATABASE_FILE
+def get_db_path():
+    parsed_url = urlparse(settings.database_url)
+    path = parsed_url.path
+    if os.name == 'nt' and path.startswith('/'):
+        path = path[1:]
+    return path
 
 @router.post("/admin/cleanup_urls")
 def cleanup_url_fragments():
     """Removes URL fragments (e.g., #end) from all relevant tables using atomic SQL updates."""
-    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
+    conn = sqlite3.connect(get_db_path(), timeout=15)
     cursor = conn.cursor()
     
     tables_to_clean = ['translations', 'url_metadata', 'applied_urls']
@@ -34,7 +41,7 @@ def cleanup_url_fragments():
 @router.post("/admin/cleanup_pids")
 def cleanup_pids():
     """'la' 또는 'lp'로 시작하는 PID를 가진 기록을 제외 처리합니다."""
-    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
+    conn = sqlite3.connect(get_db_path(), timeout=15)
     cursor = conn.cursor()
     cursor.execute("SELECT id, url, original FROM translations WHERE lower(pid) GLOB 'la[0-9]*' OR lower(pid) GLOB 'lp[0-9]*'")
     records_to_exclude = cursor.fetchall()
@@ -54,4 +61,4 @@ def cleanup_pids():
     deleted_count = cursor.rowcount
     conn.commit()
     conn.close()
-    return {"message": f"총 {deleted_count}개의 기록을 제외 처리했습니다. (새롭게 제외 목록에 추가된 항목: {excluded_count}개)"} 
+    return {"message": f"총 {deleted_count}개의 기록을 제외 처리했습니다. (새롭게 제외 목록에 추가된 항목: {excluded_count}개)"}

@@ -1,4 +1,3 @@
-
 import sqlite3
 import os
 import json
@@ -10,14 +9,21 @@ from fastapi.responses import JSONResponse, HTMLResponse
 from pydantic import BaseModel
 from typing import List, Optional
 from collections import defaultdict
-from urllib.parse import unquote
+from urllib.parse import unquote, urlparse
 from fastapi.templating import Jinja2Templates
+
+from server.settings import settings
 
 router = APIRouter()
 
-from server.config import DATABASE_FILE, STATIC_DIR, TEMPLATES_DIR
+templates = Jinja2Templates(directory=settings.templates_dir)
 
-templates = Jinja2Templates(directory=TEMPLATES_DIR)
+def get_db_path():
+    parsed_url = urlparse(settings.database_url)
+    path = parsed_url.path
+    if os.name == 'nt' and path.startswith('/'):
+        path = path[1:]
+    return path
 
 # Helper
 def dict_factory(cursor, row):
@@ -58,7 +64,7 @@ class TocUrlUpdate(BaseModel):
 @router.put("/api/books/{folder_name}/urls")
 def update_book_urls_order(folder_name: str, req: TocUrlUpdate):
     decoded_folder_name = unquote(folder_name)
-    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
+    conn = sqlite3.connect(get_db_path(), timeout=15)
     cursor = conn.cursor()
     updated_count = 0
 
@@ -89,7 +95,7 @@ def update_book_urls_order(folder_name: str, req: TocUrlUpdate):
 
 @router.get("/folders")
 def get_folders():
-    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
+    conn = sqlite3.connect(get_db_path(), timeout=15)
     conn.row_factory = dict_factory
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM book_activity")
@@ -135,7 +141,7 @@ def get_books():
 
 @router.post("/api/folders")
 def create_folder(req: FolderCreate):
-    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
+    conn = sqlite3.connect(get_db_path(), timeout=15)
     cursor = conn.cursor()
     try:
         cursor.execute("INSERT INTO book_activity (folderName) VALUES (?)", (req.folder_name,))
@@ -158,7 +164,7 @@ def update_folder_name(folder_name: str, req: FolderUpdate):
     if not new_name or old_name == new_name:
         raise HTTPException(status_code=400, detail="잘못된 폴더 이름입니다.")
 
-    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
+    conn = sqlite3.connect(get_db_path(), timeout=15)
     cursor = conn.cursor()
 
     try:
@@ -186,7 +192,7 @@ def update_folder_name(folder_name: str, req: FolderUpdate):
 
 @router.post("/api/books/pin")
 def toggle_pin_book(req: PinRequest):
-    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
+    conn = sqlite3.connect(get_db_path(), timeout=15)
     cursor = conn.cursor()
     cursor.execute("SELECT folderName FROM pinned_books WHERE folderName = ?", (req.folderName,))
     is_pinned = cursor.fetchone()
@@ -203,7 +209,7 @@ def toggle_pin_book(req: PinRequest):
 @router.get("/api/books/{folder_name}/urls")
 def get_book_urls(folder_name: str):
     decoded_folder_name = unquote(folder_name)
-    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
+    conn = sqlite3.connect(get_db_path(), timeout=15)
     conn.row_factory = dict_factory
     cursor = conn.cursor()
 
@@ -234,7 +240,7 @@ def get_book_urls(folder_name: str):
 @router.get("/api/books/{folder_name}/chapters")
 def get_book_chapters(folder_name: str):
     decoded_folder_name = unquote(folder_name)
-    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
+    conn = sqlite3.connect(get_db_path(), timeout=15)
     cursor = conn.cursor()
 
     base_order_by = "ORDER BY MIN(url) ASC, MIN(CASE WHEN lower(pid) LIKE 'p%' OR lower(pid) LIKE 'l%' THEN CAST(SUBSTR(pid, 2) AS INTEGER) ELSE 999999 END) ASC"
@@ -255,7 +261,7 @@ def get_book_chapters(folder_name: str):
 def get_chapter_content(folder_name: str, title: str):
     decoded_folder_name = unquote(folder_name)
     decoded_title = unquote(title)
-    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
+    conn = sqlite3.connect(get_db_path(), timeout=15)
     conn.row_factory = dict_factory
     cursor = conn.cursor()
 
@@ -276,7 +282,7 @@ def get_chapter_content(folder_name: str, title: str):
 async def export_book_as_html(folder_name: str):
     decoded_folder_name = unquote(folder_name)
     
-    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
+    conn = sqlite3.connect(get_db_path(), timeout=15)
     conn.row_factory = dict_factory
     cursor = conn.cursor()
 
@@ -296,9 +302,9 @@ async def export_book_as_html(folder_name: str):
         raise HTTPException(status_code=404, detail="Book not found or has no content.")
 
     try:
-        with open(os.path.join(STATIC_DIR, "viewer.css"), "r", encoding="utf-8") as f:
+        with open(os.path.join(settings.static_dir, "viewer.css"), "r", encoding="utf-8") as f:
             viewer_css = f.read()
-        with open(os.path.join(STATIC_DIR, "viewer.js"), "r", encoding="utf-8") as f:
+        with open(os.path.join(settings.static_dir, "viewer.js"), "r", encoding="utf-8") as f:
             viewer_js = f.read()
     except FileNotFoundError:
         raise HTTPException(status_code=500, detail="Viewer assets (CSS/JS) not found.")
@@ -322,7 +328,7 @@ async def export_book_as_html(folder_name: str):
 @router.put("/api/books/{folder_name}/tags")
 def update_book_tags(folder_name: str, req: BookTagUpdate):
     decoded_folder_name = unquote(folder_name)
-    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
+    conn = sqlite3.connect(get_db_path(), timeout=15)
     cursor = conn.cursor()
     try:
         cursor.execute("DELETE FROM book_tags WHERE book_folderName = ?", (decoded_folder_name,))
@@ -340,7 +346,7 @@ def update_book_tags(folder_name: str, req: BookTagUpdate):
 @router.put("/api/books/{folder_name}/activity")
 def update_book_activity(folder_name: str, req: BookActivityUpdate):
     decoded_folder_name = unquote(folder_name)
-    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
+    conn = sqlite3.connect(get_db_path(), timeout=15)
     conn.row_factory = dict_factory
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM book_activity WHERE folderName = ?", (decoded_folder_name,))
@@ -358,7 +364,7 @@ def update_book_activity(folder_name: str, req: BookActivityUpdate):
 @router.get("/api/books/{folder_name}/activity")
 def get_book_activity(folder_name: str):
     decoded_folder_name = unquote(folder_name)
-    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
+    conn = sqlite3.connect(get_db_path(), timeout=15)
     conn.row_factory = dict_factory
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM book_activity WHERE folderName = ?", (decoded_folder_name,))
@@ -403,7 +409,7 @@ def _crawl_and_update_summary_worker(folder_name: str, url: str):
                 summary = meta_match.group(1).strip()
 
         if summary:
-            conn = sqlite3.connect(DATABASE_FILE, timeout=15)
+            conn = sqlite3.connect(get_db_path(), timeout=15)
             cursor = conn.cursor()
             cursor.execute("""INSERT INTO book_activity (folderName, summary) VALUES (?, ?) ON CONFLICT(folderName) DO UPDATE SET summary = excluded.summary;""", (folder_name, summary))
             conn.commit()
@@ -420,7 +426,7 @@ def _crawl_and_update_summary_worker(folder_name: str, url: str):
 async def crawl_summary_endpoint(folder_name: str, background_tasks: BackgroundTasks):
     decoded_folder_name = unquote(folder_name)
 
-    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
+    conn = sqlite3.connect(get_db_path(), timeout=15)
     cursor = conn.cursor()
     cursor.execute("SELECT summary_source_url FROM book_activity WHERE folderName = ?", (decoded_folder_name,))
     result = cursor.fetchone()

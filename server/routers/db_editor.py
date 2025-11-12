@@ -6,9 +6,10 @@ from server.database import get_db
 from server.models import Translation, ExcludedSentence, PinnedBook, Tag, BookTag, BookActivity, AppliedUrl, UrlMetadata
 from typing import List, Optional, Union
 import json
+from server.settings import settings
 
 router = APIRouter()
-templates = Jinja2Templates(directory="server/templates")
+templates = Jinja2Templates(directory=settings.templates_dir)
 
 @router.get("/db_editor", response_class=HTMLResponse)
 async def db_editor_page(request: Request, db: Session = Depends(get_db), table_name: Optional[str] = None, jump_to_id: Optional[int] = None):

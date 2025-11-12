@@ -5,11 +5,18 @@ import logging
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import List, Optional
+from urllib.parse import urlparse
+from server.settings import settings
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-from server.config import DATABASE_FILE
+def get_db_path():
+    parsed_url = urlparse(settings.database_url)
+    path = parsed_url.path
+    if os.name == 'nt' and path.startswith('/'):
+        path = path[1:]
+    return path
 
 # Pydantic Models
 class ApplyUrlRequest(BaseModel):
@@ -26,7 +33,7 @@ class UrlMetadataBatchUpdate(BaseModel):
 # API Endpoints
 @router.post("/api/urls/apply")
 def toggle_apply_url(req: ApplyUrlRequest):
-    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
+    conn = sqlite3.connect(get_db_path(), timeout=15)
     cursor = conn.cursor()
     clean_url = req.url.split('#')[0].rstrip('/')
     
@@ -50,7 +57,7 @@ def toggle_apply_url(req: ApplyUrlRequest):
 
 @router.put("/api/url_metadata")
 def update_url_metadata(req: UrlMetadataUpdate):
-    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
+    conn = sqlite3.connect(get_db_path(), timeout=15)
     cursor = conn.cursor()
     try:
         cursor.execute(
@@ -68,7 +75,7 @@ def update_url_metadata(req: UrlMetadataUpdate):
 
 @router.put("/api/url_metadata/batch")
 def update_url_metadata_batch(req: UrlMetadataBatchUpdate):
-    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
+    conn = sqlite3.connect(get_db_path(), timeout=15)
     cursor = conn.cursor()
     try:
         for update_item in req.updates:
@@ -87,7 +94,7 @@ def update_url_metadata_batch(req: UrlMetadataBatchUpdate):
 
 @router.get("/api/urls/apply_status")
 def get_apply_status(url: str):
-    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
+    conn = sqlite3.connect(get_db_path(), timeout=15)
     cursor = conn.cursor()
 
     urls_to_check = set()

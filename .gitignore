@@ -17,3 +17,6 @@ server/logs/
 # Build and Distribution directories
 build/
 dist/
+
+# Environment variables
+.env

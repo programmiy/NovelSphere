@@ -1,3 +1,4 @@
+
 import sqlite3
 import re
 import requests
@@ -8,12 +9,18 @@ from fastapi import APIRouter, HTTPException
 from typing import List
 from server.celery_app import celery_app
 from celery.result import AsyncResult
+from urllib.parse import urlparse
+from server.settings import settings
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-script_dir = os.path.dirname(os.path.abspath(__file__))
-DATABASE_FILE = os.path.join(script_dir, "..", "translations.db")
+def get_db_path():
+    parsed_url = urlparse(settings.database_url)
+    path = parsed_url.path
+    if os.name == 'nt' and path.startswith('/'):
+        path = path[1:]
+    return path
 
 def _fetch_and_update_title_worker(url: str):
     """Internal worker to fetch a single title. Returns True if title is valid and updated."""
@@ -38,7 +45,7 @@ def _fetch_and_update_title_worker(url: str):
             if not title or any(invalid in title for invalid in invalid_titles):
                 logger.warning(f"Skipping invalid title for {url}: {title}")
                 return False
-            conn = sqlite3.connect(DATABASE_FILE, timeout=15)
+            conn = sqlite3.connect(get_db_path(), timeout=15)
             cursor = conn.cursor()
             cursor.execute("UPDATE translations SET title = ? WHERE url = ?", (title, url))
             conn.commit()
@@ -74,7 +81,7 @@ async def fetch_missing_titles_endpoint():
     Fetches titles for all entries in the database that do not have a title yet.
     This is a long-running background task using Celery.
     """
-    conn = sqlite3.connect(DATABASE_FILE, timeout=15)
+    conn = sqlite3.connect(get_db_path(), timeout=15)
     cursor = conn.cursor()
     invalid_titles_tuple = ('年齢確認', 'Just a moment...', 'Log in', '')
     placeholders = ', '.join('?' * len(invalid_titles_tuple))
