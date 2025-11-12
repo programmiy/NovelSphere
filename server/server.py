@@ -125,9 +125,6 @@ SETTINGS_FILE = os.path.join(script_dir, "settings.json")
 # --- App state for Settings ---
 SETTINGS = {}
 
-# --- App state for Progress Tracking ---
-PROGRESS_STATUS = {"task": "none", "current": 0, "total": 0, "percentage": 0}
-
 def load_settings():
     global SETTINGS
     try:

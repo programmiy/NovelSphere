@@ -27,6 +27,7 @@ os.makedirs(LOG_DIR, exist_ok=True)
 
 window = None
 server_process = None
+celery_process = None
 
 def load_autostart_setting():
     """Loads the autostart setting from settings.json."""
@@ -45,7 +46,7 @@ def enable_autostart():
 
     if current_os == "Windows":
         try:
-            vbs_path = os.path.join(os.getenv("APPDATA"), "Microsoft\\Windows\\Start Menu\\Programs\\Startup", f"{app_name}.vbs")
+            vbs_path = os.path.join(os.getenv("APPDATA"), "Microsoft\Windows\Start Menu\Programs\Startup", f"{app_name}.vbs")
             with open(vbs_path, "w") as vbs_file:
                 vbs_file.write(f'Set WshShell = CreateObject("WScript.Shell")\n')
                 vbs_file.write(f'WshShell.Run chr(34) & "{app_path}" & chr(34) & " -minimized", 0\n')
@@ -88,7 +89,7 @@ def disable_autostart():
 
     if current_os == "Windows":
         try:
-            vbs_path = os.path.join(os.getenv("APPDATA"), "Microsoft\\Windows\\Start Menu\\Programs\\Startup", f"{app_name}.vbs")
+            vbs_path = os.path.join(os.getenv("APPDATA"), "Microsoft\Windows\Start Menu\Programs\Startup", f"{app_name}.vbs")
             if os.path.exists(vbs_path):
                 os.remove(vbs_path)
                 print(f"Windows autostart disabled: {vbs_path}")
@@ -129,15 +130,31 @@ def start_server():
     ]
     server_process = subprocess.Popen(command)
 
+def start_celery_worker():
+    """Function to run the Celery worker as a subprocess."""
+    global celery_process
+    os.chdir(APP_ROOT)
+    command = [
+        sys.executable,  # Use the same python interpreter
+        "-m", "celery",
+        "-A", "server.celery_app",
+        "worker",
+        "--loglevel=info"
+    ]
+    celery_process = subprocess.Popen(command)
+
+
 def on_tray_menu_select(icon, item):
     """Function to handle tray menu selections."""
-    global window, server_process
+    global window, server_process, celery_process
     if str(item) == "Open Library":
         if window:
             window.show()
     elif str(item) == "Exit":
         if server_process:
             server_process.terminate()
+        if celery_process:
+            celery_process.terminate()
         if window:
             window.destroy()
         icon.stop()
@@ -152,28 +169,28 @@ def open_library():
         window.load_url("http://127.0.0.1:8001/library")
         window.set_focus()
 
-def update_progress_bar():
-    """Function to update the progress bar."""
-    global window
-    if not window:
-        return
+# def update_progress_bar():
+#     """Function to update the progress bar."""
+#     global window
+#     if not window:
+#         return
 
-    try:
-        response = requests.get("http://127.0.0.1:8001/api/progress")
-        response.raise_for_status()
-        progress_data = response.json()
+#     try:
+#         response = requests.get("http://127.0.0.1:8001/api/progress")
+#         response.raise_for_status()
+#         progress_data = response.json()
 
-        if progress_data["task"] == "fetch_titles" and progress_data["total"] > 0:
-            percentage = progress_data["percentage"]
-            window.set_title(f"LANOVEL - Fetching Titles ({percentage}%)")
-        else:
-            if progress_data["task"] == "fetch_titles" and progress_data["percentage"] == 100:
-                send_notification("LANOVEL", "제목 가져오기 작업이 완료되었습니다.")
-            window.set_title("LANOVEL")
-    except requests.exceptions.RequestException as e:
-        print(f"Error fetching progress: {e}")
-    finally:
-        threading.Timer(2, update_progress_bar).start()
+#         if progress_data["task"] == "fetch_titles" and progress_data["total"] > 0:
+#             percentage = progress_data["percentage"]
+#             window.set_title(f"LANOVEL - Fetching Titles ({percentage}%)")
+#         else:
+#             if progress_data["task"] == "fetch_titles" and progress_data["percentage"] == 100:
+#                 send_notification("LANOVEL", "제목 가져오기 작업이 완료되었습니다.")
+#             window.set_title("LANOVEL")
+#     except requests.exceptions.RequestException as e:
+#         print(f"Error fetching progress: {e}")
+#     finally:
+#         threading.Timer(2, update_progress_bar).start()
 
 def start_webview():
     """Function to create and open the webview window."""
@@ -185,7 +202,8 @@ def start_webview():
         width=1200,
         height=800,
     )
-    webview.start(update_progress_bar)
+    # webview.start(update_progress_bar)
+    webview.start()
 
 def setup_tray(icon):
     icon.run()
@@ -197,6 +215,7 @@ if __name__ == "__main__":
         disable_autostart()
 
     start_server()
+    start_celery_worker()
 
     image = Image.new('RGB', (64, 64), 'white')
     menu = (pystray.MenuItem('Open Library', on_tray_menu_select), pystray.MenuItem('Exit', on_tray_menu_select))
@@ -209,4 +228,6 @@ if __name__ == "__main__":
 
     if server_process:
         server_process.terminate()
+    if celery_process:
+        celery_process.terminate()
     sys.exit(0)

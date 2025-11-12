@@ -4,16 +4,16 @@ import requests
 import time
 import os
 import logging
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi import APIRouter, HTTPException
 from typing import List
+from server.celery_app import celery_app
+from celery.result import AsyncResult
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
 DATABASE_FILE = os.path.join(script_dir, "..", "translations.db")
-
-PROGRESS_STATUS = {"task": "none", "current": 0, "total": 0, "percentage": 0}
 
 def _fetch_and_update_title_worker(url: str):
     """Internal worker to fetch a single title. Returns True if title is valid and updated."""
@@ -55,26 +55,24 @@ def _fetch_and_update_title_worker(url: str):
         logger.error(f"An error occurred while processing {url}: {e}")
         return False
 
-def process_urls_in_background(urls: List[str]):
-    """Loops through URLs with a delay and fetches titles."""
-    global PROGRESS_STATUS
+@celery_app.task(bind=True)
+def process_urls_in_background_task(self, urls: List[str]):
+    """Celery task to loop through URLs with a delay and fetch titles."""
     total_urls = len(urls)
-    PROGRESS_STATUS = {"task": "fetch_titles", "current": 0, "total": total_urls, "percentage": 0}
-    logger.info(f"Starting background task to process {total_urls} URLs.")
+    logger.info(f"Starting Celery task {self.request.id} to process {total_urls} URLs.")
     for i, url in enumerate(urls):
-        PROGRESS_STATUS["current"] = i + 1
-        PROGRESS_STATUS["percentage"] = int(((i + 1) / total_urls) * 100)
-        logger.info(f"Processing URL {i+1}/{total_urls}: {url} (Progress: {PROGRESS_STATUS['percentage']}%)")
+        self.update_state(state='PROGRESS', meta={'current': i + 1, 'total': total_urls, 'percentage': int(((i + 1) / total_urls) * 100)})
+        logger.info(f"Processing URL {i+1}/{total_urls}: {url}")
         _fetch_and_update_title_worker(url)
         time.sleep(1)
-    PROGRESS_STATUS = {"task": "none", "current": 0, "total": 0, "percentage": 100} # Reset on completion
-    logger.info("Finished background task for fetching titles.")
+    logger.info(f"Finished Celery task {self.request.id}.")
+    return {'current': total_urls, 'total': total_urls, 'percentage': 100, 'status': 'Completed'}
 
 @router.post("/fetch_missing_titles")
-async def fetch_missing_titles_endpoint(background_tasks: BackgroundTasks):
+async def fetch_missing_titles_endpoint():
     """
     Fetches titles for all entries in the database that do not have a title yet.
-    This is a long-running background task.
+    This is a long-running background task using Celery.
     """
     conn = sqlite3.connect(DATABASE_FILE, timeout=15)
     cursor = conn.cursor()
@@ -86,5 +84,31 @@ async def fetch_missing_titles_endpoint(background_tasks: BackgroundTasks):
     urls = [row[0] for row in urls_to_fetch]
     if not urls:
         return {"message": "No missing titles to fetch."}
-    background_tasks.add_task(process_urls_in_background, urls)
-    return {"message": f"Started fetching titles for {len(urls)} URLs in the background. This will take time."}
+    
+    task = process_urls_in_background_task.apply_async(args=[urls])
+    return {"message": f"Started fetching titles for {len(urls)} URLs in the background.", "task_id": task.id}
+
+@router.get("/task_status/{task_id}")
+async def get_task_status(task_id: str):
+    """
+    Get the status of a Celery task.
+    """
+    task_result = AsyncResult(task_id, app=celery_app)
+    if task_result.state == 'PENDING':
+        response = {
+            'state': task_result.state,
+            'status': 'Pending...'
+        }
+    elif task_result.state != 'FAILURE':
+        response = {
+            'state': task_result.state,
+            'meta': task_result.info,
+        }
+        if 'status' in task_result.info:
+            response['status'] = task_result.info['status']
+    else:
+        response = {
+            'state': task_result.state,
+            'status': str(task_result.info),  # This is the exception raised
+        }
+    return response

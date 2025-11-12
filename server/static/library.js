@@ -23,6 +23,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const urlListTitle = document.getElementById('url-list-title');
     const urlListCloseBtn = document.getElementById('url-list-close');
     const importTocBtn = document.getElementById('import-toc-btn');
+    const fetchMissingTitlesBtn = document.getElementById('fetch-missing-titles-btn');
+    const progressContainer = document.getElementById('progress-container');
+    const progressBar = document.getElementById('progress-bar');
+    const progressText = document.getElementById('progress-text');
+    let taskPollInterval = null;
 
     // --- Core Functions ---
     async function fetchBooks() {
@@ -480,6 +485,88 @@ document.addEventListener('DOMContentLoaded', () => {
         return text.replace(/[&<>\"\']/g, m => map[m]);
     }
 
+    // --- Task Progress Functions ---
+    function pollTaskStatus(taskId) {
+        if (taskPollInterval) {
+            clearInterval(taskPollInterval);
+        }
+
+        taskPollInterval = setInterval(async () => {
+            try {
+                const response = await fetch(`/task_status/${taskId}`);
+                if (!response.ok) {
+                    throw new Error(`Server error: ${response.statusText}`);
+                }
+                const data = await response.json();
+
+                progressContainer.style.display = 'flex';
+
+                if (data.state === 'PROGRESS') {
+                    const percentage = data.meta.percentage || 0;
+                    progressBar.style.width = `${percentage}%`;
+                    progressBar.textContent = `${percentage}%`;
+                    progressText.textContent = `Processing: ${data.meta.current} / ${data.meta.total}`;
+                } else if (data.state === 'SUCCESS' || data.state === 'Completed') {
+                    clearInterval(taskPollInterval);
+                    taskPollInterval = null;
+                    progressBar.style.width = '100%';
+                    progressBar.textContent = '100%';
+                    progressText.textContent = 'Task completed successfully!';
+                    setTimeout(() => {
+                        progressContainer.style.display = 'none';
+                        fetchBooks(); // Refresh book list
+                    }, 3000);
+                } else if (data.state === 'FAILURE') {
+                    clearInterval(taskPollInterval);
+                    taskPollInterval = null;
+                    progressText.textContent = `Error: ${data.status}`;
+                    progressBar.style.backgroundColor = 'red';
+                } else if (data.state === 'PENDING') {
+                    progressText.textContent = 'Task is pending...';
+                }
+
+            } catch (error) {
+                console.error('Failed to get task status:', error);
+                progressText.textContent = 'Error fetching status.';
+                clearInterval(taskPollInterval);
+                taskPollInterval = null;
+            }
+        }, 2000);
+    }
+
+    async function handleFetchMissingTitles() {
+        fetchMissingTitlesBtn.disabled = true;
+        progressText.textContent = 'Starting task...';
+        progressContainer.style.display = 'flex';
+        progressBar.style.width = '0%';
+        progressBar.textContent = '';
+        progressBar.style.backgroundColor = '#007bff';
+
+
+        try {
+            const response = await fetch('/fetch_missing_titles', { method: 'POST' });
+            if (!response.ok) {
+                throw new Error(`Server error: ${response.statusText}`);
+            }
+            const data = await response.json();
+
+            if (data.task_id) {
+                pollTaskStatus(data.task_id);
+            } else {
+                progressText.textContent = data.message || 'No task started.';
+                 setTimeout(() => {
+                        progressContainer.style.display = 'none';
+                    }, 3000);
+            }
+
+        } catch (error) {
+            console.error('Failed to start fetch titles task:', error);
+            progressText.textContent = `Error: ${error.message}`;
+        } finally {
+            fetchMissingTitlesBtn.disabled = false;
+        }
+    }
+
     // --- Event Listeners ---
     bookShelf.addEventListener('mouseover', (e) => {
         const card = e.target.closest('.book-card');
@@ -533,6 +620,7 @@ document.addEventListener('DOMContentLoaded', () => {
     newTagForm.addEventListener('submit', handleAddNewTag);
     crawlSummaryBtn.addEventListener('click', handleCrawlSummary);
     importTocBtn.addEventListener('click', handleImportToc);
+    fetchMissingTitlesBtn.addEventListener('click', handleFetchMissingTitles);
 
     const downloadAllBtn = document.getElementById('download-all-offline-btn');
     if (downloadAllBtn) {

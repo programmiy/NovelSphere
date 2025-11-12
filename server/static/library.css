@@ -13,6 +13,7 @@ body {
 
 .library-header {
     display: flex;
+    flex-wrap: wrap;
     justify-content: space-between;
     align-items: center;
     border-bottom: 1px solid #ddd;
@@ -22,12 +23,16 @@ body {
 
 .library-header h1 {
     margin: 0;
+    flex-basis: 100%;
+    margin-bottom: 1rem;
 }
 
 .header-controls {
     display: flex;
     align-items: center;
     gap: 1rem;
+    width: 100%;
+    justify-content: space-between;
 }
 
 .header-controls label {
@@ -411,4 +416,31 @@ input:checked + .slider:before {
 
 #connection-toast.offline {
     background-color: #718096; /* Gray */
+}
+
+.progress-container {
+    width: 100%;
+    background-color: #e9ecef;
+    border-radius: .25rem;
+    margin-top: 1rem;
+    display: flex;
+    align-items: center;
+}
+
+.progress-bar {
+    height: 20px;
+    background-color: #007bff;
+    width: 0%;
+    border-radius: .25rem;
+    transition: width 0.3s ease-in-out;
+    text-align: center;
+    color: white;
+    line-height: 20px;
+    font-size: 0.8rem;
+}
+
+#progress-text {
+    padding-left: 10px;
+    font-size: 0.9rem;
+    color: #495057;
 }

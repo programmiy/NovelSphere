@@ -685,44 +685,52 @@ async function translateAllPTags() {
     logToSidebar("모든 번역 작업이 완료되었습니다.");
 
     if (!isTranslationCancelled) {
-        const scrollDelay = 10000; // 2-second delay before starting
-        logToSidebar(`번역 완료. ${scrollDelay / 1000}초 후 페이지 끝으로 자동 스크롤합니다.`);
+        const scrollDelay = 60000; // 60-second delay
 
-        setTimeout(() => {
-            // Do nothing if a new translation task has started during the delay
-            if (isTranslationCancelled) return;
+        const startAutoScroll = () => {
+            logToSidebar(`번역 완료. ${scrollDelay / 1000}초 후 페이지 끝으로 자동 스크롤합니다.`);
 
-            logToSidebar("페이지 끝으로 스크롤 후 'PageDown' 키를 누릅니다.");
+            setTimeout(() => {
+                if (isTranslationCancelled) return;
 
-            // Smoothly scroll to the bottom of the page.
-            window.scrollTo({
-                top: document.body.scrollHeight,
-                behavior: 'smooth'
-            });
+                logToSidebar("페이지 끝으로 스크롤 후 'PageDown' 키를 누릅니다.");
+                window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
 
-            // Check periodically to see if the scroll has reached the bottom.
-            const checkScrollEndInterval = setInterval(() => {
-                // Stop if a new translation task has started during the scroll
-                if (isTranslationCancelled) {
-                    clearInterval(checkScrollEndInterval);
-                    return;
+                const checkScrollEndInterval = setInterval(() => {
+                    if (isTranslationCancelled) {
+                        clearInterval(checkScrollEndInterval);
+                        return;
+                    }
+                    
+                    if ((window.innerHeight + window.scrollY) >= document.body.scrollHeight - 10) {
+                        clearInterval(checkScrollEndInterval);
+                        logToSidebar("페이지 끝에 도달하여 'PageDown' 키를 누릅니다.");
+                        setTimeout(() => {
+                            document.body.dispatchEvent(new KeyboardEvent('keydown', {
+                                key: 'PageDown',
+                                code: 'PageDown',
+                                bubbles: true,
+                                cancelable: true,
+                                keyCode: 34
+                            }));
+                        }, 4000);
+                    }
+                }, 100);
+            }, scrollDelay);
+        };
+
+        if (document.visibilityState === 'visible') {
+            startAutoScroll();
+        } else {
+            logToSidebar("페이지가 활성화되면 자동 스크롤을 시작합니다.");
+            const visibilityChangeHandler = () => {
+                if (document.visibilityState === 'visible') {
+                    startAutoScroll();
+                    document.removeEventListener('visibilitychange', visibilityChangeHandler);
                 }
-                
-                if ((window.innerHeight + window.scrollY) >= document.body.scrollHeight - 10) {
-                    clearInterval(checkScrollEndInterval);
-
-                    // Once at the bottom, press 'PageDown' once.
-                    logToSidebar("페이지 끝에 도달하여 'PageDown' 키를 누릅니다.");
-                    document.body.dispatchEvent(new KeyboardEvent('keydown', {
-                        key: 'PageDown',
-                        code: 'PageDown',
-                        bubbles: true,
-                        cancelable: true,
-                        keyCode: 34
-                    }));
-                }
-            }, 100);
-        }, scrollDelay);
+            };
+            document.addEventListener('visibilitychange', visibilityChangeHandler);
+        }
     }
 }
 
