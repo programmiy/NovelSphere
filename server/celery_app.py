@@ -15,6 +15,7 @@ celery_app.conf.update(
     result_serializer='json',
     timezone='Asia/Seoul',
     enable_utc=True,
+    task_always_eager=settings.celery_always_eager,
 )
 
 if __name__ == '__main__':

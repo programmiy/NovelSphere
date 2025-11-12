@@ -1,0 +1,177 @@
+2025-11-12 20:38:43,933 - server.server - INFO - Server startup complete. Runtime tracking and backup task started.
+2025-11-12 20:38:52,503 - uvicorn.access - INFO - 127.0.0.1:2654 - "GET /admin HTTP/1.1" 200
+2025-11-12 20:38:53,158 - uvicorn.access - INFO - 127.0.0.1:2654 - "GET /static/admin.js?v=1.1 HTTP/1.1" 304
+2025-11-12 20:38:53,183 - uvicorn.access - INFO - 127.0.0.1:2654 - "GET /api/allowed_origins HTTP/1.1" 200
+2025-11-12 20:38:53,186 - uvicorn.access - INFO - 127.0.0.1:7534 - "GET /folders?t=1762947533124 HTTP/1.1" 200
+2025-11-12 20:38:53,220 - uvicorn.access - INFO - 127.0.0.1:2654 - "GET /excluded_sentences?url=http%3A%2F%2F127.0.0.1%3A8001%2Fadmin HTTP/1.1" 200
+2025-11-12 20:38:53,221 - uvicorn.access - INFO - 127.0.0.1:7534 - "GET /translations?url=http%3A%2F%2F127.0.0.1%3A8001%2Fadmin&limit=5000 HTTP/1.1" 200
+2025-11-12 20:38:53,256 - uvicorn.access - INFO - 127.0.0.1:7534 - "GET /api/urls/apply_status?url=http%3A%2F%2F127.0.0.1%3A8001%2Fadmin HTTP/1.1" 200
+2025-11-12 20:38:55,502 - uvicorn.access - INFO - 127.0.0.1:7534 - "GET /service-worker.js HTTP/1.1" 200
+2025-11-12 20:38:55,505 - uvicorn.access - INFO - 127.0.0.1:10504 - "GET /translations_by_folder?t=1762947533124 HTTP/1.1" 200
+2025-11-12 20:38:55,527 - uvicorn.access - INFO - 127.0.0.1:7534 - "GET / HTTP/1.1" 200
+2025-11-12 20:38:55,529 - uvicorn.access - INFO - 127.0.0.1:2654 - "GET /book HTTP/1.1" 200
+2025-11-12 20:38:55,532 - uvicorn.access - INFO - 127.0.0.1:5284 - "GET /viewer HTTP/1.1" 200
+2025-11-12 20:38:55,533 - uvicorn.access - INFO - 127.0.0.1:2654 - "GET /admin HTTP/1.1" 200
+2025-11-12 20:38:55,539 - uvicorn.access - INFO - 127.0.0.1:2654 - "GET /logs HTTP/1.1" 200
+2025-11-12 20:38:55,585 - uvicorn.access - INFO - 127.0.0.1:5284 - "GET /service-worker.js HTTP/1.1" 200
+2025-11-12 20:38:55,587 - uvicorn.access - INFO - 127.0.0.1:2654 - "GET /static/admin.js HTTP/1.1" 304
+2025-11-12 20:38:55,588 - uvicorn.access - INFO - 127.0.0.1:7534 - "GET /static/library.js HTTP/1.1" 200
+2025-11-12 20:38:55,825 - uvicorn.access - INFO - 127.0.0.1:7534 - "GET /api/settings/autostart HTTP/1.1" 200
+2025-11-12 20:43:32,888 - server.server - INFO - Server shutting down. Updated cumulative runtime.
+2025-11-12 20:43:34,231 - server.server - INFO - Server startup complete. Runtime tracking and backup task started.
+2025-11-12 20:43:52,952 - server.server - INFO - Server shutting down. Updated cumulative runtime.
+2025-11-12 20:43:54,253 - server.server - INFO - Server startup complete. Runtime tracking and backup task started.
+2025-11-12 20:45:40,294 - server.server - INFO - Server shutting down. Updated cumulative runtime.
+2025-11-12 20:45:41,739 - server.server - INFO - Server startup complete. Runtime tracking and backup task started.
+2025-11-12 20:45:47,897 - server.server - INFO - Server shutting down. Updated cumulative runtime.
+2025-11-12 20:45:49,212 - server.server - INFO - Server startup complete. Runtime tracking and backup task started.
+2025-11-12 20:46:20,284 - server.server - INFO - Server shutting down. Updated cumulative runtime.
+2025-11-12 20:46:21,593 - server.server - INFO - Server startup complete. Runtime tracking and backup task started.
+2025-11-12 20:47:15,808 - server.server - INFO - Server shutting down. Updated cumulative runtime.
+2025-11-12 20:47:17,158 - server.server - INFO - Server startup complete. Runtime tracking and backup task started.
+2025-11-12 20:48:24,844 - server.server - INFO - Server shutting down. Updated cumulative runtime.
+2025-11-12 20:48:26,194 - server.server - INFO - Server startup complete. Runtime tracking and backup task started.
+2025-11-12 20:48:30,388 - server.server - INFO - Server shutting down. Updated cumulative runtime.
+2025-11-12 20:48:31,768 - server.server - INFO - Server startup complete. Runtime tracking and backup task started.
+2025-11-12 20:48:35,839 - server.server - INFO - Server shutting down. Updated cumulative runtime.
+2025-11-12 20:48:37,156 - server.server - INFO - Server startup complete. Runtime tracking and backup task started.
+2025-11-12 20:48:49,489 - server.server - INFO - Server shutting down. Updated cumulative runtime.
+2025-11-12 20:48:50,886 - server.server - INFO - Server startup complete. Runtime tracking and backup task started.
+2025-11-12 20:53:24,893 - server.server - INFO - Server shutting down. Updated cumulative runtime.
+2025-11-12 20:53:26,332 - server.server - INFO - Server startup complete. Runtime tracking and backup task started.
+2025-11-12 20:53:37,563 - server.server - INFO - Server shutting down. Updated cumulative runtime.
+2025-11-12 20:53:38,980 - server.server - INFO - Server startup complete. Runtime tracking and backup task started.
+2025-11-12 20:54:16,810 - server.server - INFO - Server shutting down. Updated cumulative runtime.
+2025-11-12 20:54:18,331 - server.server - INFO - Server startup complete. Runtime tracking and backup task started.
+2025-11-12 20:54:58,465 - server.server - INFO - Server shutting down. Updated cumulative runtime.
+2025-11-12 20:54:59,772 - server.server - INFO - Server startup complete. Runtime tracking and backup task started.
+2025-11-12 20:55:23,967 - server.server - INFO - Server shutting down. Updated cumulative runtime.
+2025-11-12 20:55:25,266 - server.server - INFO - Server startup complete. Runtime tracking and backup task started.
+2025-11-12 20:57:49,970 - server.server - INFO - Server shutting down. Updated cumulative runtime.
+2025-11-12 20:57:51,558 - server.server - INFO - Server startup complete. Runtime tracking and backup task started.
+2025-11-12 20:58:02,554 - server.server - INFO - Server shutting down. Updated cumulative runtime.
+2025-11-12 20:58:03,929 - server.server - INFO - Server startup complete. Runtime tracking and backup task started.
+2025-11-12 20:59:32,255 - server.server - INFO - Server shutting down. Updated cumulative runtime.
+2025-11-12 20:59:33,610 - server.server - INFO - Server startup complete. Runtime tracking and backup task started.
+2025-11-12 20:59:45,182 - server.server - INFO - Server shutting down. Updated cumulative runtime.
+2025-11-12 20:59:46,508 - server.server - INFO - Server startup complete. Runtime tracking and backup task started.
+2025-11-12 20:59:48,927 - server.server - INFO - Server shutting down. Updated cumulative runtime.
+2025-11-12 20:59:50,274 - server.server - INFO - Server startup complete. Runtime tracking and backup task started.
+2025-11-12 20:59:51,923 - server.server - INFO - Server shutting down. Updated cumulative runtime.
+2025-11-12 20:59:53,353 - server.server - INFO - Server startup complete. Runtime tracking and backup task started.
+2025-11-12 20:59:56,337 - server.server - INFO - Server shutting down. Updated cumulative runtime.
+2025-11-12 20:59:57,656 - server.server - INFO - Server startup complete. Runtime tracking and backup task started.
+2025-11-12 20:59:59,971 - server.server - INFO - Server shutting down. Updated cumulative runtime.
+2025-11-12 21:00:01,306 - server.server - INFO - Server startup complete. Runtime tracking and backup task started.
+2025-11-12 21:00:03,497 - server.server - INFO - Server shutting down. Updated cumulative runtime.
+2025-11-12 21:00:04,798 - server.server - INFO - Server startup complete. Runtime tracking and backup task started.
+2025-11-12 21:00:20,870 - server.server - INFO - Server shutting down. Updated cumulative runtime.
+2025-11-12 21:00:22,188 - server.server - INFO - Server startup complete. Runtime tracking and backup task started.
+2025-11-12 21:00:25,385 - server.server - INFO - Server shutting down. Updated cumulative runtime.
+2025-11-12 21:00:26,700 - server.server - INFO - Server startup complete. Runtime tracking and backup task started.
+2025-11-12 21:00:32,976 - server.server - INFO - Server shutting down. Updated cumulative runtime.
+2025-11-12 21:00:34,324 - server.server - INFO - Server startup complete. Runtime tracking and backup task started.
+2025-11-12 21:00:46,769 - server.server - INFO - Server shutting down. Updated cumulative runtime.
+2025-11-12 21:00:48,071 - server.server - INFO - Server startup complete. Runtime tracking and backup task started.
+2025-11-12 21:01:30,779 - server.server - INFO - Server shutting down. Updated cumulative runtime.
+2025-11-12 21:01:32,110 - server.server - INFO - Server startup complete. Runtime tracking and backup task started.
+2025-11-12 21:01:34,976 - server.server - INFO - Server shutting down. Updated cumulative runtime.
+2025-11-12 21:01:36,293 - server.server - INFO - Server startup complete. Runtime tracking and backup task started.
+2025-11-12 21:04:31,178 - server.server - INFO - Server shutting down. Updated cumulative runtime.
+2025-11-12 21:04:32,533 - server.server - INFO - Server startup complete. Runtime tracking and backup task started.
+2025-11-12 21:04:38,367 - server.server - INFO - Server shutting down. Updated cumulative runtime.
+2025-11-12 21:04:39,724 - server.server - INFO - Server startup complete. Runtime tracking and backup task started.
+2025-11-12 21:05:21,825 - server.server - INFO - Server shutting down. Updated cumulative runtime.
+2025-11-12 21:05:23,166 - server.server - INFO - Server startup complete. Runtime tracking and backup task started.
+2025-11-12 21:05:48,343 - server.server - INFO - Server shutting down. Updated cumulative runtime.
+2025-11-12 21:05:49,635 - server.server - INFO - Server startup complete. Runtime tracking and backup task started.
+2025-11-12 21:05:57,776 - server.server - INFO - Server shutting down. Updated cumulative runtime.
+2025-11-12 21:05:59,148 - server.server - INFO - Server startup complete. Runtime tracking and backup task started.
+2025-11-12 21:06:04,751 - server.server - INFO - Server shutting down. Updated cumulative runtime.
+2025-11-12 21:06:06,060 - server.server - INFO - Server startup complete. Runtime tracking and backup task started.
+2025-11-12 21:06:26,891 - server.server - INFO - Server shutting down. Updated cumulative runtime.
+2025-11-12 21:06:28,246 - server.server - INFO - Server startup complete. Runtime tracking and backup task started.
+2025-11-12 21:06:44,560 - server.server - INFO - Server shutting down. Updated cumulative runtime.
+2025-11-12 21:06:45,842 - server.server - INFO - Server startup complete. Runtime tracking and backup task started.
+2025-11-12 21:07:08,743 - server.server - INFO - Server shutting down. Updated cumulative runtime.
+2025-11-12 21:07:10,084 - server.server - INFO - Server startup complete. Runtime tracking and backup task started.
+2025-11-12 21:07:45,516 - server.server - INFO - Server shutting down. Updated cumulative runtime.
+2025-11-12 21:07:46,872 - server.server - INFO - Server startup complete. Runtime tracking and backup task started.
+2025-11-12 21:07:59,321 - server.server - INFO - Server shutting down. Updated cumulative runtime.
+2025-11-12 21:08:00,761 - server.server - INFO - Server startup complete. Runtime tracking and backup task started.
+2025-11-12 21:08:15,733 - server.server - INFO - Server shutting down. Updated cumulative runtime.
+2025-11-12 21:08:17,138 - server.server - INFO - Server startup complete. Runtime tracking and backup task started.
+2025-11-12 21:08:24,185 - server.server - INFO - Server shutting down. Updated cumulative runtime.
+2025-11-12 21:08:25,480 - server.server - INFO - Server startup complete. Runtime tracking and backup task started.
+2025-11-12 21:08:27,776 - server.server - INFO - Server shutting down. Updated cumulative runtime.
+2025-11-12 21:08:29,048 - server.server - INFO - Server startup complete. Runtime tracking and backup task started.
+2025-11-12 21:08:33,010 - server.server - INFO - Server shutting down. Updated cumulative runtime.
+2025-11-12 21:08:34,299 - server.server - INFO - Server startup complete. Runtime tracking and backup task started.
+2025-11-12 21:08:37,046 - server.server - INFO - Server shutting down. Updated cumulative runtime.
+2025-11-12 21:08:38,323 - server.server - INFO - Server startup complete. Runtime tracking and backup task started.
+2025-11-12 21:09:14,211 - server.server - INFO - Server shutting down. Updated cumulative runtime.
+2025-11-12 21:09:15,554 - server.server - INFO - Server startup complete. Runtime tracking and backup task started.
+2025-11-12 21:09:24,900 - server.server - INFO - Server shutting down. Updated cumulative runtime.
+2025-11-12 21:09:26,215 - server.server - INFO - Server startup complete. Runtime tracking and backup task started.
+2025-11-12 21:09:33,714 - server.server - INFO - Server shutting down. Updated cumulative runtime.
+2025-11-12 21:09:35,153 - server.server - INFO - Server startup complete. Runtime tracking and backup task started.
+2025-11-12 21:09:37,348 - server.server - INFO - Server shutting down. Updated cumulative runtime.
+2025-11-12 21:09:38,675 - server.server - INFO - Server startup complete. Runtime tracking and backup task started.
+2025-11-12 21:09:52,429 - server.server - INFO - Server shutting down. Updated cumulative runtime.
+2025-11-12 21:09:53,721 - server.server - INFO - Server startup complete. Runtime tracking and backup task started.
+2025-11-12 21:10:04,715 - server.server - INFO - Server shutting down. Updated cumulative runtime.
+2025-11-12 21:10:05,994 - server.server - INFO - Server startup complete. Runtime tracking and backup task started.
+2025-11-12 21:13:09,807 - server.server - INFO - Server shutting down. Updated cumulative runtime.
+2025-11-12 21:13:11,263 - server.server - INFO - Server startup complete. Runtime tracking and backup task started.
+2025-11-12 21:13:24,371 - server.server - INFO - Server shutting down. Updated cumulative runtime.
+2025-11-12 21:13:25,649 - server.server - INFO - Server startup complete. Runtime tracking and backup task started.
+2025-11-12 21:16:09,785 - server.server - INFO - Server shutting down. Updated cumulative runtime.
+2025-11-12 21:16:11,312 - server.server - INFO - Server startup complete. Runtime tracking and backup task started.
+2025-11-12 21:23:56,460 - server.server - INFO - Server shutting down. Updated cumulative runtime.
+2025-11-12 21:23:57,747 - server.server - INFO - Server startup complete. Runtime tracking and backup task started.
+2025-11-12 21:24:18,574 - server.server - INFO - Server shutting down. Updated cumulative runtime.
+2025-11-12 21:24:19,787 - server.server - INFO - Server startup complete. Runtime tracking and backup task started.
+2025-11-12 21:25:25,918 - server.server - INFO - Server shutting down. Updated cumulative runtime.
+2025-11-12 21:25:27,368 - server.server - INFO - Server startup complete. Runtime tracking and backup task started.
+2025-11-12 21:25:46,593 - server.server - INFO - Server shutting down. Updated cumulative runtime.
+2025-11-12 21:25:47,916 - server.server - INFO - Server startup complete. Runtime tracking and backup task started.
+2025-11-12 21:26:11,887 - server.server - INFO - Server shutting down. Updated cumulative runtime.
+2025-11-12 21:26:13,200 - server.server - INFO - Server startup complete. Runtime tracking and backup task started.
+2025-11-12 21:28:11,534 - server.server - INFO - Server shutting down. Updated cumulative runtime.
+2025-11-12 21:28:12,862 - server.server - INFO - Server startup complete. Runtime tracking and backup task started.
+2025-11-12 21:28:16,702 - server.server - INFO - Server shutting down. Updated cumulative runtime.
+2025-11-12 21:28:18,009 - server.server - INFO - Server startup complete. Runtime tracking and backup task started.
+2025-11-12 21:29:21,956 - server.server - INFO - Server shutting down. Updated cumulative runtime.
+2025-11-12 21:29:23,258 - server.server - INFO - Server startup complete. Runtime tracking and backup task started.
+2025-11-12 21:31:26,808 - server.server - INFO - Server shutting down. Updated cumulative runtime.
+2025-11-12 21:31:28,426 - server.server - INFO - Server startup complete. Runtime tracking and backup task started.
+2025-11-12 21:33:31,412 - server.server - INFO - Server shutting down. Updated cumulative runtime.
+2025-11-12 21:33:32,806 - server.server - INFO - Server startup complete. Runtime tracking and backup task started.
+2025-11-12 21:33:47,192 - server.server - INFO - Server startup complete. Runtime tracking and backup task started.
+2025-11-12 21:33:47,220 - server.server - INFO - Server shutting down. Updated cumulative runtime.
+2025-11-12 21:34:02,121 - server.server - INFO - Server shutting down. Updated cumulative runtime.
+2025-11-12 21:34:03,447 - server.server - INFO - Server startup complete. Runtime tracking and backup task started.
+2025-11-12 21:34:11,879 - server.server - INFO - Server startup complete. Runtime tracking and backup task started.
+2025-11-12 21:34:14,309 - server.server - INFO - Server shutting down. Updated cumulative runtime.
+2025-11-12 21:36:24,465 - server.server - INFO - Server shutting down. Updated cumulative runtime.
+2025-11-12 21:36:25,746 - server.server - INFO - Server startup complete. Runtime tracking and backup task started.
+2025-11-12 21:36:44,367 - server.server - INFO - Server shutting down. Updated cumulative runtime.
+2025-11-12 21:36:45,646 - server.server - INFO - Server startup complete. Runtime tracking and backup task started.
+2025-11-12 21:37:04,502 - server.server - INFO - Server startup complete. Runtime tracking and backup task started.
+2025-11-12 21:37:07,585 - server.server - INFO - Server shutting down. Updated cumulative runtime.
+2025-11-12 21:38:34,321 - server.server - INFO - Server shutting down. Updated cumulative runtime.
+2025-11-12 21:38:35,614 - server.server - INFO - Server startup complete. Runtime tracking and backup task started.
+2025-11-12 21:39:12,672 - server.server - INFO - Server startup complete. Runtime tracking and backup task started.
+2025-11-12 21:39:15,669 - server.server - INFO - Server shutting down. Updated cumulative runtime.
+2025-11-12 21:41:14,558 - server.server - INFO - Server shutting down. Updated cumulative runtime.
+2025-11-12 21:41:15,884 - server.server - INFO - Server startup complete. Runtime tracking and backup task started.
+2025-11-12 21:41:45,147 - server.server - INFO - Server startup complete. Runtime tracking and backup task started.
+2025-11-12 21:41:48,142 - server.server - INFO - Server shutting down. Updated cumulative runtime.
+2025-11-12 21:42:30,204 - server.server - INFO - Server shutting down. Updated cumulative runtime.
+2025-11-12 21:42:31,602 - server.server - INFO - Server startup complete. Runtime tracking and backup task started.
+2025-11-12 21:43:17,672 - server.server - INFO - Server startup complete. Runtime tracking and backup task started.
+2025-11-12 21:43:20,996 - server.server - INFO - Server shutting down. Updated cumulative runtime.
+2025-11-12 21:43:46,208 - server.server - INFO - Server shutting down. Updated cumulative runtime.
+2025-11-12 21:43:47,614 - server.server - INFO - Server startup complete. Runtime tracking and backup task started.
+2025-11-12 21:44:14,753 - server.server - INFO - Server startup complete. Runtime tracking and backup task started.
+2025-11-12 21:44:17,352 - server.server - INFO - Server shutting down. Updated cumulative runtime.

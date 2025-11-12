@@ -44,6 +44,7 @@ class Settings(BaseSettings):
 
     # --- Celery Settings ---
     redis_url: str = "redis://localhost:6379/0"
+    celery_always_eager: bool = Field(default=False, description="Celery 작업을 즉시 실행하여 테스트 환경에서 사용")
 
     # --- Path Settings ---
     log_dir: str = os.path.join(APP_ROOT, "logs")
