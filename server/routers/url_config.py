@@ -31,7 +31,12 @@ class UrlMetadataBatchUpdate(BaseModel):
     updates: List[UrlMetadataUpdate]
 
 # API Endpoints
-@router.post("/api/urls/apply")
+@router.post(
+    "/api/urls/apply",
+    tags=["URL Config"],
+    summary="URL 적용 상태 토글",
+    description="주어진 URL의 적용 상태를 토글합니다 (적용/미적용)."
+)
 def toggle_apply_url(req: ApplyUrlRequest):
     conn = sqlite3.connect(get_db_path(), timeout=15)
     cursor = conn.cursor()
@@ -55,7 +60,12 @@ def toggle_apply_url(req: ApplyUrlRequest):
     conn.commit()
     conn.close()
 
-@router.put("/api/url_metadata")
+@router.put(
+    "/api/url_metadata",
+    tags=["URL Config"],
+    summary="URL 메타데이터 업데이트",
+    description="단일 URL의 메타데이터(예: 정렬 순서)를 업데이트합니다."
+)
 def update_url_metadata(req: UrlMetadataUpdate):
     conn = sqlite3.connect(get_db_path(), timeout=15)
     cursor = conn.cursor()
@@ -73,7 +83,12 @@ def update_url_metadata(req: UrlMetadataUpdate):
     finally:
         conn.close()
 
-@router.put("/api/url_metadata/batch")
+@router.put(
+    "/api/url_metadata/batch",
+    tags=["URL Config"],
+    summary="URL 메타데이터 일괄 업데이트",
+    description="여러 URL의 메타데이터(예: 정렬 순서)를 일괄적으로 업데이트합니다."
+)
 def update_url_metadata_batch(req: UrlMetadataBatchUpdate):
     conn = sqlite3.connect(get_db_path(), timeout=15)
     cursor = conn.cursor()
@@ -92,7 +107,12 @@ def update_url_metadata_batch(req: UrlMetadataBatchUpdate):
     finally:
         conn.close()
 
-@router.get("/api/urls/apply_status")
+@router.get(
+    "/api/urls/apply_status",
+    tags=["URL Config"],
+    summary="URL 적용 상태 조회",
+    description="주어진 URL의 현재 적용 상태를 조회합니다."
+)
 def get_apply_status(url: str):
     conn = sqlite3.connect(get_db_path(), timeout=15)
     cursor = conn.cursor()

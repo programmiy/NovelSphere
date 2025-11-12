@@ -57,9 +57,13 @@ def dict_factory(cursor, row):
     return d
 
 # API Endpoints
-@router.get("/translations")
+@router.get(
+    "/translations",
+    tags=["Data CRUD"],
+    summary="번역 기록 조회",
+    description="데이터베이스에서 번역 기록을 조회합니다. 폴더, 검색어, URL로 필터링할 수 있습니다."
+)
 def get_translations(skip: int = 0, limit: int = 100, folder: Optional[str] = None, search: Optional[str] = None, url: Optional[str] = None):
-    """데이터베이스에서 번역 기록을 조회합니다."""
     conn = sqlite3.connect(get_db_path(), timeout=15)
     conn.text_factory = str
     conn.row_factory = dict_factory
@@ -129,9 +133,13 @@ def get_translations(skip: int = 0, limit: int = 100, folder: Optional[str] = No
         "translations": translations
     })
 
-@router.post("/translations/upsert")
+@router.post(
+    "/translations/upsert",
+    tags=["Data CRUD"],
+    summary="번역 기록 추가 또는 업데이트",
+    description="번역 기록을 데이터베이스에 추가하거나 업데이트하고, URL 최초 접근 시간을 기록합니다."
+)
 def upsert_translations(items: List[TranslationItem], db: Session = Depends(get_db)):
-    """번역 기록을 데이터베이스에 추가하거나 업데이트하고, URL 최초 접근 시간을 기록합니다."""
     updated_count = 0
     inserted_count = 0
 
@@ -183,9 +191,13 @@ def upsert_translations(items: List[TranslationItem], db: Session = Depends(get_
     db.commit()
     return {"inserted": inserted_count, "updated": updated_count}
 
-@router.put("/translations/move")
+@router.put(
+    "/translations/move",
+    tags=["Data CRUD"],
+    summary="번역 기록 이동",
+    description="지정된 ID의 번역 기록들을 새 폴더로 이동합니다."
+)
 def move_translations(req: MoveRequest):
-    """지정된 ID의 번역 기록들을 새 폴더로 이동합니다."""
     placeholders = ', '.join('?' * len(req.ids))
     query = f"UPDATE translations SET folderName = ? WHERE id IN ({placeholders})"
     params = [req.folder_name] + req.ids
@@ -197,9 +209,13 @@ def move_translations(req: MoveRequest):
     conn.close()
     return {"message": f"{updated_count}개의 항목이 이동되었습니다."}
 
-@router.post("/translations/delete")
+@router.post(
+    "/translations/delete",
+    tags=["Data CRUD"],
+    summary="번역 기록 삭제",
+    description="지정된 ID의 번역 기록들을 삭제합니다."
+)
 def delete_translations(req: DeleteRequest):
-    """지정된 ID의 번역 기록들을 삭제합니다."""
     placeholders = ', '.join('?' * len(req.ids))
     query = f"DELETE FROM translations WHERE id IN ({placeholders})"
     conn = sqlite3.connect(get_db_path(), timeout=15)
@@ -210,9 +226,13 @@ def delete_translations(req: DeleteRequest):
     conn.close()
     return {"message": f"{deleted_count}개의 항목이 삭제되었습니다."}
 
-@router.get("/paged_translations")
+@router.get(
+    "/paged_translations",
+    tags=["Data CRUD"],
+    summary="페이지별 번역 기록 조회",
+    description="페이지네이션을 지원하는 번역 기록 조회 엔드포인트입니다."
+)
 def get_paged_translations(page: int = 1, per_page: int = 20):
-    """페이지네이션을 지원하는 번역 기록 조회 엔드포인트입니다."""
     conn = sqlite3.connect(get_db_path(), timeout=15)
     conn.text_factory = str
     conn.row_factory = dict_factory
@@ -234,9 +254,13 @@ def get_paged_translations(page: int = 1, per_page: int = 20):
         "translations": translations
     }
 
-@router.get("/translations_by_folder")
+@router.get(
+    "/translations_by_folder",
+    tags=["Data CRUD"],
+    summary="폴더별 번역 기록 조회",
+    description="데이터베이스에서 모든 번역 기록을 폴더와 URL별로 그룹화하고, URL은 최초 접근 시간 순으로 정렬하여 조회합니다."
+)
 def get_translations_by_folder(db: Session = Depends(get_db)):
-    """데이터베이스에서 모든 번역 기록을 폴더와 URL별로 그룹화하고, URL은 최초 접근 시간 순으로 정렬하여 조회합니다."""
     
     # 모든 데이터를 한 번에 조회
     applied_urls_set = {row.url for row in db.query(AppliedUrl).all()}
@@ -320,14 +344,22 @@ async def stream_translations(book: Optional[str] = None):
     finally:
         conn.close()
 
-@router.get("/stream")
+@router.get(
+    "/stream",
+    tags=["Data CRUD"],
+    summary="번역 데이터 스트리밍",
+    description="번역 데이터를 SSE(Server-Sent Events)로 스트리밍하는 엔드포인트입니다. 특정 책(폴더)의 데이터만 스트리밍할 수 있습니다."
+)
 async def stream(book: Optional[str] = None):
-    """번역 데이터를 SSE로 스트리밍하는 엔드포인트입니다."""
     return StreamingResponse(stream_translations(book=book), media_type="text/event-stream")
 
-@router.post("/migrate")
+@router.post(
+    "/migrate",
+    tags=["Data CRUD"],
+    summary="데이터 마이그레이션",
+    description="`migration_data.json` 파일에서 데이터를 읽어 데이터베이스로 이전합니다."
+)
 def migrate_data():
-    """migration_data.json 파일에서 데이터를 읽어 DB로 이전합니다."""
     try:
         with open("migration_data.json", "r", encoding="utf-8") as f:
             data = json.load(f)

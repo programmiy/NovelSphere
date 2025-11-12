@@ -11,7 +11,13 @@ from server.settings import settings
 router = APIRouter()
 templates = Jinja2Templates(directory=settings.templates_dir)
 
-@router.get("/db_editor", response_class=HTMLResponse)
+@router.get(
+    "/db_editor",
+    response_class=HTMLResponse,
+    tags=["DB Editor"],
+    summary="DB 편집기 페이지 조회",
+    description="데이터베이스의 내용을 웹 인터페이스를 통해 조회하고 편집할 수 있는 페이지를 제공합니다."
+)
 async def db_editor_page(request: Request, db: Session = Depends(get_db), table_name: Optional[str] = None, jump_to_id: Optional[int] = None):
     tables = {}
     all_table_names = ["Translation", "ExcludedSentence", "PinnedBook", "Tag", "BookTag", "BookActivity", "AppliedUrl", "UrlMetadata"]
@@ -72,7 +78,12 @@ TABLE_MODELS = {
     "UrlMetadata": UrlMetadata,
 }
 
-@router.post("/api/db_editor/{table_name}")
+@router.post(
+    "/api/db_editor/{table_name}",
+    tags=["DB Editor"],
+    summary="DB 레코드 생성",
+    description="지정된 테이블에 새로운 레코드를 생성합니다."
+)
 async def create_record(table_name: str, record_data: dict, db: Session = Depends(get_db)):
     model = TABLE_MODELS.get(table_name)
     if not model:
@@ -88,7 +99,12 @@ async def create_record(table_name: str, record_data: dict, db: Session = Depend
         db.rollback()
         raise HTTPException(status_code=400, detail=str(e))
 
-@router.put("/api/db_editor/{table_name}/{record_id}")
+@router.put(
+    "/api/db_editor/{table_name}/{record_id}",
+    tags=["DB Editor"],
+    summary="DB 레코드 업데이트",
+    description="지정된 테이블의 특정 레코드를 업데이트합니다."
+)
 async def update_record(table_name: str, record_id: Union[int, str], record_data: dict, db: Session = Depends(get_db)):
     model = TABLE_MODELS.get(table_name)
     if not model:
@@ -121,7 +137,12 @@ async def update_record(table_name: str, record_id: Union[int, str], record_data
         db.rollback()
         raise HTTPException(status_code=400, detail=str(e))
 
-@router.delete("/api/db_editor/{table_name}/{record_id}")
+@router.delete(
+    "/api/db_editor/{table_name}/{record_id}",
+    tags=["DB Editor"],
+    summary="DB 레코드 삭제",
+    description="지정된 테이블의 특정 레코드를 삭제합니다."
+)
 async def delete_record(table_name: str, record_id: Union[int, str], db: Session = Depends(get_db)):
     model = TABLE_MODELS.get(table_name)
     if not model:

@@ -10,7 +10,12 @@ router = APIRouter()
 class TocUrl(BaseModel):
     toc_url: str
 
-@router.post("/api/import-toc")
+@router.post(
+    "/api/import-toc",
+    tags=["TOC Importer"],
+    summary="목차 가져오기",
+    description="Kakuyomu 또는 Syosetu URL에서 목차(Table of Contents)를 가져옵니다."
+)
 async def import_toc(item: TocUrl):
     toc_url = item.toc_url
     headers = {

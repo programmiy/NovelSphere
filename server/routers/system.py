@@ -26,22 +26,31 @@ def dict_factory(cursor, row):
 class AutoStartSettings(BaseModel):
     autostart: bool
 
-@router.get("/health")
+@router.get(
+    "/health",
+    tags=["System"],
+    summary="상태 확인",
+    description="API 서버의 상태를 확인합니다."
+)
 async def health_check():
-    """Simple health check endpoint."""
     return {"status": "ok"}
 
-@router.get("/api/settings/autostart")
+@router.get(
+    "/api/settings/autostart",
+    tags=["System"],
+    summary="자동 시작 설정 조회",
+    description="현재 자동 시작 설정을 조회합니다. 이 설정은 시작 시 읽히며 런타임에는 변경할 수 없습니다."
+)
 def get_autostart_setting():
-    """
-    Retrieves the current auto-start setting.
-    Note: This setting is read at startup and cannot be changed at runtime in the current version.
-    """
     return {"autostart": settings.autostart}
 
-@router.get("/api/logs")
+@router.get(
+    "/api/logs",
+    tags=["System"],
+    summary="최신 로그 조회",
+    description="최신 로그 파일의 내용을 읽어 반환합니다."
+)
 async def get_logs():
-    """Reads and returns the content of the latest log file."""
     try:
         log_files = sorted(
             [f for f in os.listdir(settings.log_dir) if f.startswith("app.log")], 
@@ -60,14 +69,22 @@ async def get_logs():
         logger.error(f"Error reading log files: {e}")
         raise HTTPException(status_code=500, detail=f"Error reading log files: {e}")
 
-@router.get("/api/allowed_origins")
+@router.get(
+    "/api/allowed_origins",
+    tags=["System"],
+    summary="허용된 CORS 출처 조회",
+    description="CORS(Cross-Origin Resource Sharing)에 허용된 출처 목록을 반환합니다."
+)
 def get_allowed_origins():
-    """CORS에 허용된 출처 목록을 반환합니다."""
     return settings.allowed_origins
 
-@router.get("/debug/urls_by_folder", tags=["debug"])
+@router.get(
+    "/debug/urls_by_folder",
+    tags=["Debug"],
+    summary="폴더별 URL 디버그 조회",
+    description="특정 폴더에 대한 고유 URL을 조회하는 임시 디버그 엔드포인트입니다."
+)
 def debug_get_urls_by_folder(folder_name: str):
-    """Temporary debug endpoint to get distinct URLs for a folder."""
     conn = sqlite3.connect(get_db_path(), timeout=15)
     cursor = conn.cursor()
     cursor.execute("SELECT DISTINCT url FROM translations WHERE folderName = ? LIMIT 10", (folder_name,))
@@ -75,9 +92,13 @@ def debug_get_urls_by_folder(folder_name: str):
     conn.close()
     return {"folder_name": folder_name, "urls": urls}
 
-@router.get("/api/debug/find_translation", tags=["debug"])
+@router.get(
+    "/api/debug/find_translation",
+    tags=["Debug"],
+    summary="쿼리로 번역 기록 찾기",
+    description="URL, 제목 또는 원문 텍스트에서 쿼리 문자열과 일치하는 번역 기록을 찾습니다."
+)
 def find_translation_by_query(q: str):
-    """Finds translation records by a query string matching in URL, title, or original text."""
     conn = sqlite3.connect(get_db_path(), timeout=15)
     conn.row_factory = dict_factory
     cursor = conn.cursor()

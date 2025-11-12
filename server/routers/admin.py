@@ -13,9 +13,13 @@ def get_db_path():
         path = path[1:]
     return path
 
-@router.post("/admin/cleanup_urls")
+@router.post(
+    "/admin/cleanup_urls",
+    tags=["Admin"],
+    summary="URL 조각 정리",
+    description="모든 관련 테이블에서 URL 조각(예: #end)을 제거합니다."
+)
 def cleanup_url_fragments():
-    """Removes URL fragments (e.g., #end) from all relevant tables using atomic SQL updates."""
     conn = sqlite3.connect(get_db_path(), timeout=15)
     cursor = conn.cursor()
     
@@ -38,9 +42,13 @@ def cleanup_url_fragments():
 
     return {"message": f"URL cleanup complete. {total_updated} records were updated."}
 
-@router.post("/admin/cleanup_pids")
+@router.post(
+    "/admin/cleanup_pids",
+    tags=["Admin"],
+    summary="PID 정리",
+    description="'la' 또는 'lp'로 시작하는 PID를 가진 기록을 제외 처리합니다."
+)
 def cleanup_pids():
-    """'la' 또는 'lp'로 시작하는 PID를 가진 기록을 제외 처리합니다."""
     conn = sqlite3.connect(get_db_path(), timeout=15)
     cursor = conn.cursor()
     cursor.execute("SELECT id, url, original FROM translations WHERE lower(pid) GLOB 'la[0-9]*' OR lower(pid) GLOB 'lp[0-9]*'")

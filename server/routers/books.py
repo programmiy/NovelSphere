@@ -61,7 +61,12 @@ class TocUrlUpdate(BaseModel):
     urls: List[TocUrlItem]
 
 # Endpoints
-@router.put("/api/books/{folder_name}/urls")
+@router.put(
+    "/api/books/{folder_name}/urls",
+    tags=["Books"],
+    summary="책 URL 순서 업데이트",
+    description="지정된 폴더(책) 내 URL들의 순서를 업데이트하고, 제목을 변경합니다."
+)
 def update_book_urls_order(folder_name: str, req: TocUrlUpdate):
     decoded_folder_name = unquote(folder_name)
     conn = sqlite3.connect(get_db_path(), timeout=15)
@@ -93,7 +98,12 @@ def update_book_urls_order(folder_name: str, req: TocUrlUpdate):
 
     return {"message": f"'{decoded_folder_name}'의 순서 업데이트 완료. 총 {len(req.urls)}개 중 {updated_count}개가 일치했습니다."}
 
-@router.get("/folders")
+@router.get(
+    "/folders",
+    tags=["Books"],
+    summary="모든 폴더(책) 목록 조회",
+    description="모든 폴더(책) 목록과 각 폴더의 고정 상태, 태그, 활동 정보를 조회합니다."
+)
 def get_folders():
     conn = sqlite3.connect(get_db_path(), timeout=15)
     conn.row_factory = dict_factory
@@ -135,11 +145,21 @@ def get_folders():
     }
     return JSONResponse(content=sorted_folders, headers=headers)
 
-@router.get("/api/books")
+@router.get(
+    "/api/books",
+    tags=["Books"],
+    summary="모든 책 목록 조회 (폴더와 동일)",
+    description="모든 책 목록을 조회합니다. 이는 /folders 엔드포인트와 동일한 기능을 제공합니다."
+)
 def get_books():
     return get_folders()
 
-@router.post("/api/folders")
+@router.post(
+    "/api/folders",
+    tags=["Books"],
+    summary="새 폴더(책) 생성",
+    description="새로운 폴더(책)를 생성합니다."
+)
 def create_folder(req: FolderCreate):
     conn = sqlite3.connect(get_db_path(), timeout=15)
     cursor = conn.cursor()
@@ -156,7 +176,12 @@ def create_folder(req: FolderCreate):
         conn.close()
     return {"message": f"폴더 ''{req.folder_name}''가 생성되었습니다."}
 
-@router.put("/api/folders/{folder_name}")
+@router.put(
+    "/api/folders/{folder_name}",
+    tags=["Books"],
+    summary="폴더(책) 이름 변경",
+    description="기존 폴더(책)의 이름을 변경합니다."
+)
 def update_folder_name(folder_name: str, req: FolderUpdate):
     old_name = unquote(folder_name)
     new_name = req.new_name
@@ -190,7 +215,12 @@ def update_folder_name(folder_name: str, req: FolderUpdate):
 
     return {"message": f"폴더 이름이 '{old_name}'에서 '{new_name}'(으)로 변경되었습니다."}
 
-@router.post("/api/books/pin")
+@router.post(
+    "/api/books/pin",
+    tags=["Books"],
+    summary="책 고정/고정 해제",
+    description="지정된 책(폴더)을 고정하거나 고정을 해제합니다."
+)
 def toggle_pin_book(req: PinRequest):
     conn = sqlite3.connect(get_db_path(), timeout=15)
     cursor = conn.cursor()
@@ -206,7 +236,12 @@ def toggle_pin_book(req: PinRequest):
     conn.close()
     return {"message": message}
 
-@router.get("/api/books/{folder_name}/urls")
+@router.get(
+    "/api/books/{folder_name}/urls",
+    tags=["Books"],
+    summary="책의 URL 목록 조회",
+    description="지정된 폴더(책)에 속한 URL 목록을 조회합니다."
+)
 def get_book_urls(folder_name: str):
     decoded_folder_name = unquote(folder_name)
     conn = sqlite3.connect(get_db_path(), timeout=15)
@@ -237,7 +272,12 @@ def get_book_urls(folder_name: str):
     }
     return JSONResponse(content=urls, headers=headers)
 
-@router.get("/api/books/{folder_name}/chapters")
+@router.get(
+    "/api/books/{folder_name}/chapters",
+    tags=["Books"],
+    summary="책의 챕터 목록 조회",
+    description="지정된 폴더(책)에 속한 챕터(제목) 목록을 조회합니다."
+)
 def get_book_chapters(folder_name: str):
     decoded_folder_name = unquote(folder_name)
     conn = sqlite3.connect(get_db_path(), timeout=15)
@@ -257,7 +297,12 @@ def get_book_chapters(folder_name: str):
     conn.close()
     return chapters
 
-@router.get("/api/books/{folder_name}/chapter")
+@router.get(
+    "/api/books/{folder_name}/chapter",
+    tags=["Books"],
+    summary="특정 챕터 내용 조회",
+    description="지정된 폴더(책)의 특정 챕터 내용을 조회합니다."
+)
 def get_chapter_content(folder_name: str, title: str):
     decoded_folder_name = unquote(folder_name)
     decoded_title = unquote(title)
@@ -278,7 +323,12 @@ def get_chapter_content(folder_name: str, title: str):
     conn.close()
     return content
 
-@router.get("/api/books/{folder_name}/export")
+@router.get(
+    "/api/books/{folder_name}/export",
+    tags=["Books"],
+    summary="책을 HTML로 내보내기",
+    description="지정된 폴더(책)의 내용을 HTML 파일로 내보냅니다."
+)
 async def export_book_as_html(folder_name: str):
     decoded_folder_name = unquote(folder_name)
     
@@ -325,7 +375,12 @@ async def export_book_as_html(folder_name: str):
     }
     return HTMLResponse(content=html_content, headers=headers)
 
-@router.put("/api/books/{folder_name}/tags")
+@router.put(
+    "/api/books/{folder_name}/tags",
+    tags=["Books"],
+    summary="책 태그 업데이트",
+    description="지정된 폴더(책)의 태그를 업데이트합니다."
+)
 def update_book_tags(folder_name: str, req: BookTagUpdate):
     decoded_folder_name = unquote(folder_name)
     conn = sqlite3.connect(get_db_path(), timeout=15)
@@ -343,7 +398,12 @@ def update_book_tags(folder_name: str, req: BookTagUpdate):
         conn.close()
     return {"message": f"Tags for '{decoded_folder_name}' updated successfully."}
 
-@router.put("/api/books/{folder_name}/activity")
+@router.put(
+    "/api/books/{folder_name}/activity",
+    tags=["Books"],
+    summary="책 활동 정보 업데이트",
+    description="지정된 폴더(책)의 마지막 읽은 시간, PID, 북마크 여부, 노트, 요약 등 활동 정보를 업데이트합니다."
+)
 def update_book_activity(folder_name: str, req: BookActivityUpdate):
     decoded_folder_name = unquote(folder_name)
     conn = sqlite3.connect(get_db_path(), timeout=15)
@@ -361,7 +421,12 @@ def update_book_activity(folder_name: str, req: BookActivityUpdate):
     conn.close()
     return {"message": f"Activity for '{decoded_folder_name}' updated."}
 
-@router.get("/api/books/{folder_name}/activity")
+@router.get(
+    "/api/books/{folder_name}/activity",
+    tags=["Books"],
+    summary="책 활동 정보 조회",
+    description="지정된 폴더(책)의 활동 정보를 조회합니다."
+)
 def get_book_activity(folder_name: str):
     decoded_folder_name = unquote(folder_name)
     conn = sqlite3.connect(get_db_path(), timeout=15)
@@ -422,7 +487,12 @@ def _crawl_and_update_summary_worker(folder_name: str, url: str):
         # Consider logging the error
         return False
 
-@router.post("/api/books/{folder_name}/crawl-summary")
+@router.post(
+    "/api/books/{folder_name}/crawl-summary",
+    tags=["Books"],
+    summary="책 요약 정보 크롤링 시작",
+    description="지정된 폴더(책)의 요약 정보를 백그라운드에서 크롤링합니다."
+)
 async def crawl_summary_endpoint(folder_name: str, background_tasks: BackgroundTasks):
     decoded_folder_name = unquote(folder_name)
 

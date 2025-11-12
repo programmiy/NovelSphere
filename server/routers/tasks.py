@@ -75,12 +75,13 @@ def process_urls_in_background_task(self, urls: List[str]):
     logger.info(f"Finished Celery task {self.request.id}.")
     return {'current': total_urls, 'total': total_urls, 'percentage': 100, 'status': 'Completed'}
 
-@router.post("/fetch_missing_titles")
+@router.post(
+    "/fetch_missing_titles",
+    tags=["Tasks"],
+    summary="누락된 제목 가져오기",
+    description="데이터베이스에서 제목이 없는 모든 항목의 제목을 가져옵니다. Celery를 사용하는 장기 백그라운드 작업입니다."
+)
 async def fetch_missing_titles_endpoint():
-    """
-    Fetches titles for all entries in the database that do not have a title yet.
-    This is a long-running background task using Celery.
-    """
     conn = sqlite3.connect(get_db_path(), timeout=15)
     cursor = conn.cursor()
     invalid_titles_tuple = ('年齢確認', 'Just a moment...', 'Log in', '')
@@ -95,11 +96,13 @@ async def fetch_missing_titles_endpoint():
     task = process_urls_in_background_task.apply_async(args=[urls])
     return {"message": f"Started fetching titles for {len(urls)} URLs in the background.", "task_id": task.id}
 
-@router.get("/task_status/{task_id}")
+@router.get(
+    "/task_status/{task_id}",
+    tags=["Tasks"],
+    summary="Celery 작업 상태 조회",
+    description="Celery 작업의 현재 상태를 조회합니다."
+)
 async def get_task_status(task_id: str):
-    """
-    Get the status of a Celery task.
-    """
     task_result = AsyncResult(task_id, app=celery_app)
     if task_result.state == 'PENDING':
         response = {

@@ -101,9 +101,13 @@ def process_repeated_chars(text: str) -> str:
     return re.sub(r'(.)\1{5,}', '(반복)', text)
 
 # --- API Endpoints ---
-@router.post("/translate")
+@router.post(
+    "/translate",
+    tags=["Translation"],
+    summary="텍스트 번역",
+    description="Gemini API를 호출하여 텍스트를 번역합니다. ID 기반 매칭과 재시도 로직으로 안정성을 높였습니다."
+)
 def translate_texts(req: TranslateRequest):
-    """Gemini API를 호출하여 텍스트를 번역합니다. ID 기반 매칭과 재시도 로직으로 안정성을 높였습니다."""
     
     translatable_items = [item for item in req.items if item.id != 'tagCount']
     
@@ -227,15 +231,23 @@ Example response format: [{{"id": "p1", "translated": "번역된 텍스트"}}]
         error_detail = f"API 응답 처리 오류: {e}. Original response: '{data.get('candidates', 'N/A') if 'data' in locals() else 'Response not available'}'"
         raise HTTPException(status_code=500, detail=error_detail)
 
-@router.get("/excluded_sentences")
+@router.get(
+    "/excluded_sentences",
+    tags=["Translation"],
+    summary="제외된 문장 조회",
+    description="특정 URL에 대해 제외된 모든 원문 텍스트 목록을 반환합니다."
+)
 def get_excluded_sentences(url: str):
-    """특정 URL에 대해 제외된 모든 원문 텍스트 목록을 반환합니다."""
     excluded_originals = _get_excluded_sentences_for_url(url)
     return {"excluded_texts": list(excluded_originals)}
 
-@router.post("/translations/exclude")
+@router.post(
+    "/translations/exclude",
+    tags=["Translation"],
+    summary="번역 기록 제외",
+    description="지정된 ID의 번역 기록을 제외 목록에 추가하고 원본을 삭제합니다."
+)
 def exclude_translations(req: ExcludeRequest):
-    """지정된 ID의 번역 기록을 제외 목록에 추가하고 원본을 삭제합니다."""
     conn = sqlite3.connect(get_db_path(), timeout=15)
     cursor = conn.cursor()
     excluded_count = 0
@@ -251,9 +263,13 @@ def exclude_translations(req: ExcludeRequest):
     conn.close()
     return {"message": f"{excluded_count}개의 항목이 제외 목록에 추가되었습니다."}
 
-@router.post("/translations/find_replace")
+@router.post(
+    "/translations/find_replace",
+    tags=["Translation"],
+    summary="찾아 바꾸기",
+    description="모든 번역 기록의 번역된 텍스트에 대해 찾아 바꾸기를 수행합니다."
+)
 def find_replace_all(req: FindReplaceRequest):
-    """모든 번역 기록의 번역된 텍스트에 대해 찾아 바꾸기를 수행합니다."""
     conn = sqlite3.connect(get_db_path(), timeout=15)
     cursor = conn.cursor()
     
@@ -319,9 +335,13 @@ def find_replace_all(req: FindReplaceRequest):
     conn.close()
     return {"message": f"{updated_count}개의 항목에서 내용을 교체했습니다."}
 
-@router.put("/translations/url_title")
+@router.put(
+    "/translations/url_title",
+    tags=["Translation"],
+    summary="URL에 대한 제목 업데이트",
+    description="주어진 URL을 가진 모든 항목의 제목을 업데이트합니다."
+)
 def update_title_for_url(req: UpdateTitleRequest):
-    """Updates the title for all entries with a given URL."""
     conn = sqlite3.connect(get_db_path(), timeout=15)
     cursor = conn.cursor()
     cursor.execute("UPDATE translations SET title = ? WHERE url = ?", (req.title, req.url))
