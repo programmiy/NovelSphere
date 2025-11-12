@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 from typing import List, Optional
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 from collections import defaultdict
 from urllib.parse import urlparse
 
@@ -305,6 +306,63 @@ def get_translations_by_folder(db: Session = Depends(get_db)):
 
         final_response[folder_name] = url_group_list
             
+    final_response["_applied_urls"] = list(applied_urls_set)
+
+    headers = {
+        "Cache-Control": "no-cache, no-store, must-revalidate",
+        "Pragma": "no-cache",
+        "Expires": "0",
+    }
+    return JSONResponse(content=final_response, headers=headers)
+
+@router.get(
+    "/translations/abnormal",
+    tags=["Data CRUD"],
+    summary="이상 번역 기록 조회",
+    description="비어 있거나, 공백으로만 이루어져 있거나, 일본어가 포함된 번역 기록을 조회합니다."
+)
+def get_abnormal_translations(db: Session = Depends(get_db)):
+    
+    # This regex now focuses on Japanese letters (Hiragana, Katakana, Kanji) 
+    # and excludes broader punctuation ranges.
+    JAPANESE_REGEX_PATTERN = r'[\u3040-\u309f\u30a0-\u30ff\u4e00-\u9faf\u3400-\u4dbf]'
+    
+    # Perform filtering directly in the database using the custom REGEXP function
+    query = text("""
+        SELECT * FROM translations
+        WHERE translated IS NULL
+           OR translated = ''
+           OR translated REGEXP :pattern
+    """)
+    
+    abnormal_translations = db.execute(query, {"pattern": JAPANESE_REGEX_PATTERN}).fetchall()
+
+    # Group by folder and URL (similar logic to /translations_by_folder)
+    grouped_by_folder = defaultdict(lambda: defaultdict(list))
+    for t in abnormal_translations:
+        # The result from a raw query is a Row object. Convert it to a dictionary.
+        t_dict = t._asdict()
+        folder_name = t_dict.get("folderName") or "폴더 추가 대기 상태"
+        url = t_dict.get("url")
+        if url:
+            grouped_by_folder[folder_name][url].append({
+                "id": t_dict.get("id"), "url": url, "pid": t_dict.get("pid"), "original": t_dict.get("original"),
+                "translated": t_dict.get("translated"), "timestamp": t_dict.get("timestamp"), "folderName": t_dict.get("folderName"),
+                "title": t_dict.get("title"), "toc_sort_order": t_dict.get("toc_sort_order")
+            })
+
+    final_response = {}
+    for folder_name, url_groups in grouped_by_folder.items():
+        url_group_list = []
+        for url, items in url_groups.items():
+            sort_order = items[0]['toc_sort_order'] if items and items[0]['toc_sort_order'] is not None else None
+            url_group_list.append({"url": url, "items": items, "toc_sort_order": sort_order})
+        
+        url_group_list.sort(key=lambda x: (x['toc_sort_order'] is None, x['toc_sort_order']))
+        final_response[folder_name] = url_group_list
+            
+    # Also include applied URLs in the response so the UI can render correctly
+    applied_urls_set = {row.url for row in db.query(AppliedUrl).all()}
     final_response["_applied_urls"] = list(applied_urls_set)
 
     headers = {

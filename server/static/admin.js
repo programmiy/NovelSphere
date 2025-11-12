@@ -101,7 +101,7 @@ async function loadAndRenderGrouped() {
         translationStatuses = {};
 
         showToast('Rendering history...', 'info'); // DEBUG
-        renderGroupedHistory(); // Uses global allFolders
+        renderGroupedHistory(groupedTranslations); // Pass data to render
         populateFolderDropdowns(allFolders);
         updateStatistics(groupedTranslations);
         
@@ -168,14 +168,15 @@ function populateFolderDropdowns(folders) {
 
 
 
-function renderGroupedHistory() {
+function renderGroupedHistory(dataToRender) {
     historyContainer.innerHTML = '';
+    const fragment = document.createDocumentFragment();
     sortableInstances = []; // Clear instances on re-render
     
     const folderNames = allFolders.map(f => f.name).sort();
 
     for (const folderName of folderNames) {
-        const urlGroups = groupedTranslations[folderName] || []; // This is now an array of urlGroup objects
+        const urlGroups = dataToRender[folderName] || []; // This is now an array of urlGroup objects
         const folderContainer = document.createElement('div');
         folderContainer.className = 'history-folder-group';
 
@@ -193,9 +194,10 @@ function renderGroupedHistory() {
                 (t.translated && t.translated.toLowerCase().includes(currentSearch))
             );
 
-            if (isFindingEmpty) {
-                filteredTranslations = filteredTranslations.filter(t => !t.translated || t.translated.trim() === '' || JAPANESE_REGEX.test(t.translated));
-            }
+            // This client-side filtering is now only for search, not for finding empty ones
+            // if (isFindingEmpty) {
+            //     filteredTranslations = filteredTranslations.filter(t => !t.translated || t.translated.trim() === '' || JAPANESE_REGEX.test(t.translated));
+            // }
 
             if (filteredTranslations.length === 0) continue;
 
@@ -256,10 +258,9 @@ function renderGroupedHistory() {
             </div>
             <div class="folder-group-content ${isFolderCollapsed ? 'collapsed' : ''}" id="folder-content-${folderName.replace(/\s/g, '-')}">${urlGroupsHtml}</div>
         `;
-        historyContainer.appendChild(folderContainer);
-
-
+        fragment.appendChild(folderContainer);
     }
+    historyContainer.appendChild(fragment);
 }
 
 function renderItem(t) {
@@ -294,7 +295,7 @@ function setupEventListeners() {
                 isFindingEmpty = false;
                 document.getElementById('findEmptyBtn').classList.remove('active');
             }
-            renderGroupedHistory();
+            renderGroupedHistory(groupedTranslations);
         }, 300);
     });
 
@@ -336,46 +337,52 @@ function setupEventListeners() {
 
 
 
-function toggleFindEmpty() {
-    // If we are turning the filter ON, first check if there are any results
-    if (!isFindingEmpty) {
-        let hasAbnormal = false;
-        for (const folderName in groupedTranslations) {
-            const urlGroups = groupedTranslations[folderName];
-            if (!Array.isArray(urlGroups)) continue;
+async function loadAndRenderAbnormal() {
+    if (isLoading) return;
+    isLoading = true;
+    showToast('이상 번역 기록을 불러오는 중...', 'info');
+    document.getElementById('loading-skeleton').style.display = 'block';
+    historyContainer.innerHTML = '';
 
-            for (const urlGroup of urlGroups) {
-                const items = urlGroup.items;
-                if (!Array.isArray(items)) continue;
-
-                if (items.some(t => !t.translated || t.translated.trim() === '' || JAPANESE_REGEX.test(t.translated))) {
-                    hasAbnormal = true;
-                    break;
-                }
-            }
-            if (hasAbnormal) {
-                break;
-            }
+    try {
+        const response = await fetch(`/translations/abnormal?t=${Date.now()}`);
+        if (!response.ok) {
+            throw new Error(`Server error: ${response.statusText}`);
         }
+        const abnormalData = await response.json();
+        
+        // Update the applied URLs set from the response
+        appliedUrlsSet = new Set(abnormalData._applied_urls || []);
+        delete abnormalData._applied_urls;
 
-        // If no abnormal translations were found, show a message and abort
-        if (!hasAbnormal) {
+        renderGroupedHistory(abnormalData); // Render the filtered data
+
+        if (Object.keys(abnormalData).length === 0) {
             showToast("이상 번역 기록이 없습니다.", "info");
-            console.log("모든 번역기록이 정상입니다");
-            return;
         }
-    }
 
+    } catch (error) {
+        console.error("Failed to load abnormal translations:", error);
+        showToast("이상 번역 기록 로딩 실패.", "error");
+    } finally {
+        isLoading = false;
+        document.getElementById('loading-skeleton').style.display = 'none';
+        // Do not hide emptyState here, as an empty result is valid for this view
+    }
+}
+
+function toggleFindEmpty() {
     isFindingEmpty = !isFindingEmpty;
     findEmptyBtn.classList.toggle('active', isFindingEmpty);
-    
-    // The search input should be cleared when using this filter
+    searchBox.value = '';
+    currentSearch = '';
+
     if (isFindingEmpty) {
-        currentSearch = ''; 
-        searchBox.value = '';
+        loadAndRenderAbnormal();
+    } else {
+        // When turning off, reload the full dataset
+        loadAndRenderGrouped();
     }
-    
-    renderGroupedHistory(); // Re-render with the new filter active
 }
 
 function openFindReplaceModal() {
