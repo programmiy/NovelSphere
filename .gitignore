@@ -13,6 +13,7 @@ model_training/venv/
 /server/backups/
 server/settings.json
 server/logs/
+logs/
 
 # Build and Distribution directories
 build/

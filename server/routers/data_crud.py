@@ -324,8 +324,9 @@ def get_translations_by_folder(db: Session = Depends(get_db)):
 def get_abnormal_translations(db: Session = Depends(get_db)):
     
     # This regex now focuses on Japanese letters (Hiragana, Katakana, Kanji) 
-    # and excludes broader punctuation ranges.
-    JAPANESE_REGEX_PATTERN = r'[\u3040-\u309f\u30a0-\u30ff\u4e00-\u9faf\u3400-\u4dbf]'
+    # and explicitly excludes the Katakana Middle Dot (・, U+30FB) and 
+    # Katakana-Hiragana Prolonged Sound Mark (ー, U+30FC).
+    JAPANESE_REGEX_PATTERN = r'[\u3040-\u309f\u30a0-\u30fa\u30fd-\u30ff\u4e00-\u9faf\u3400-\u4dbf]'
     
     # Perform filtering directly in the database using the custom REGEXP function
     query = text("""

@@ -20,7 +20,7 @@ def update_translations():
         for row in rows:
             row_id, translated_text = row
             if translated_text and ('해산' in translated_text or '우미야마' in translated_text or '카이야마' in translated_text):
-                new_translated_text = translated_text.replace('해산', '미야마').replace('우미야마', '미야마').replace('카이야마', '미야마')
+                new_translated_text = translated_text.replace('해산', '미야마').replace('우미야마', '미야마').replace('카이야마', '미야마').replace('카이잔', '미야마')
                 if new_translated_text != translated_text:
                     updates_to_make.append((new_translated_text, row_id))
 

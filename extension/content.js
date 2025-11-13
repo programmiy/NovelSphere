@@ -504,7 +504,7 @@ async function translateAllPTags() {
                 console.warn(`Chunk translation failed (attempt ${attempt + 1}/${MAX_MESSAGE_RETRIES}):`, error.message);
 
                 if (attempt < MAX_MESSAGE_RETRIES - 1) {
-                    const delay = 1000 * Math.pow(2, attempt);
+                    const delay = 60000; // 60초
                     logToSidebar(`통신 오류. ${delay / 1000}초 후 재시도... (${attempt + 1}/${MAX_MESSAGE_RETRIES})`, 'log-error');
                     await new Promise(resolve => setTimeout(resolve, delay));
                 } else {
@@ -624,7 +624,7 @@ async function translateAllPTags() {
         logToSidebar(`긴 문장 번역 중 (${index + 1}/${longTexts.length})...`);
         await translateChunk([item], 1);
                     if (index < longTexts.length - 1) {
-                        await new Promise(resolve => setTimeout(resolve, 2000)); 
+                        await new Promise(resolve => setTimeout(resolve, 10000)); // 10초 대기
                     }    }
 
     // Then, process normal texts in batches
@@ -661,10 +661,8 @@ async function translateAllPTags() {
         const chunks = chunkArray(normalTexts, initialChunkSize);
         let progress = 0;
 
-        let dynamicDelay = chunks.length * 200; // Increased multiplier
-        dynamicDelay = Math.max(10000, dynamicDelay); // Increased min
-        dynamicDelay = Math.min(10000, dynamicDelay); // Increased max
-        logToSidebar(`동적 딜레이를 ${dynamicDelay}ms로 설정합니다.`);
+        const dynamicDelay = 120000; // 120초 고정 대기
+        logToSidebar(`RPM 제한을 피하기 위해 묶음 간 대기 시간을 ${dynamicDelay / 1000}초로 설정합니다.`);
 
         for (const [index, chunk] of chunks.entries()) {
             if (isTranslationCancelled) break;

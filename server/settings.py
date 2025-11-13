@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     server_port: int = 8001
     
     # --- API Keys ---
-    gemini_api_key: str = Field(..., description="Gemini API 키")
+    gemini_api_key: str = Field(default="", description="Gemini API 키")
 
     # --- Database Settings ---
     database_url: str = f"sqlite:///{os.path.join(APP_ROOT, 'server', 'translations.db')}"
@@ -39,7 +39,13 @@ class Settings(BaseSettings):
         "http://localhost", 
         "http://localhost:8001", 
         "http://127.0.0.1", 
-        "http://127.0.0.1:8001"
+        "http://127.0.0.1:8001",
+        "https://kakuyomu.jp",
+        "http://kakuyomu.jp",
+        "https://novel18.syosetu.com",
+        "http://novel18.syosetu.com",
+        "https://syosetu.com",
+        "http://syosetu.com"
     ]
 
     # --- Celery Settings ---
