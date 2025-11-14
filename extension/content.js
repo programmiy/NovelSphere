@@ -639,7 +639,7 @@ async function translateAllPTags() {
             const idealChunks = 10;
             initialChunkSize = Math.ceil(normalTexts.length / idealChunks);
             initialChunkSize = Math.max(5, initialChunkSize);
-            initialChunkSize = Math.min(20, initialChunkSize);
+            initialChunkSize = Math.min(13, initialChunkSize);
             logToSidebar(`총 문장 수(${totalSentences})가 80개를 초과하여, 묶음 크기를 ${initialChunkSize}(으)로 공격적으로 설정합니다.`);
         } else {
             // New "stepped" splitting for fewer sentences
@@ -655,6 +655,7 @@ async function translateAllPTags() {
             numGroups = Math.max(1, numGroups); 
 
             initialChunkSize = Math.ceil(normalSentenceCount / numGroups);
+            initialChunkSize = Math.min(8, initialChunkSize); // Cap the chunk size at 8
             logToSidebar(`총 문장 수(${totalSentences})가 80개 이하이므로, ${numGroups}개의 그룹으로 나누어(묶음 크기: ${initialChunkSize}) 번역합니다.`);
         }
 
