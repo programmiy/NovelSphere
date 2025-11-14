@@ -125,7 +125,7 @@ def translate_texts(req: TranslateRequest):
     if not settings.gemini_api_key or "YOUR_GEMINI_API_KEY_HERE" in settings.gemini_api_key:
         raise HTTPException(status_code=500, detail="Gemini API 키가 설정되지 않았습니다. .env 파일을 확인해주세요.")
 
-    api_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={settings.gemini_api_key}"
+    api_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key={settings.gemini_api_key}"
     
     api_input_json = json.dumps([{"id": item.id, "text": item.text} for item in items_to_translate], ensure_ascii=False)
     logger.info(f"API Input JSON: {api_input_json}")
@@ -148,8 +148,79 @@ Example response format: [{{"id": "p1", "translated": "번역된 텍스트"}}]
 
         feedback = data.get('promptFeedback')
         if feedback and feedback.get('blockReason'):
-            error_detail = f"API가 콘텐츠를 차단했습니다. 이유: {feedback.get('blockReason')}"
-            raise HTTPException(status_code=500, detail=error_detail)
+            logger.warning(f"배치 번역이 차단되었습니다 ({feedback.get('blockReason')}). 개별 항목 번역으로 전환합니다.")
+            
+            translated_map = {}
+            for item in items_to_translate:
+                try:
+                    single_item_json = json.dumps([{"id": item.id, "text": item.text}], ensure_ascii=False)
+                    individual_prompt = f"""You are a JSON-only translation API. You will receive a JSON array of objects, each with an 'id' and a 'text' field.
+Your task is to translate the 'text' from Japanese to Korean.
+Your response MUST be a single, valid JSON array of objects. Each object in your response must contain the original 'id' and the translated text in a 'translated' field.
+Preserve the original quotation marks (like 「...」 and 『...』) in the translated text.
+Do not add any other explanations, formatting, or markdown code fences.
+Example response format: [{{"id": "p1", "translated": "번역된 텍스트"}}]
+
+---START OF JSON DATA---\r\n{single_item_json}\r\n---END OF JSON DATA---
+
+"""
+                    individual_data = call_gemini_api_with_retry(api_url, individual_prompt)
+
+                    individual_feedback = individual_data.get('promptFeedback')
+                    if individual_feedback and individual_feedback.get('blockReason'):
+                        reason = individual_feedback.get('blockReason')
+                        logger.error(f"개별 항목 {item.id}이 차단되었습니다: {reason}")
+                        translated_map[item.id] = f"번역 실패: {reason}"
+                        continue
+
+                    raw_text = None
+                    if individual_data.get('candidates') and isinstance(individual_data['candidates'], list) and individual_data['candidates']:
+                        candidate = individual_data['candidates'][0]
+                        if candidate.get('content') and candidate['content'].get('parts') and isinstance(candidate['content']['parts'], list) and candidate['content']['parts']:
+                            raw_text = candidate['content']['parts'][0].get('text')
+                    
+                    if not raw_text:
+                        translated_map[item.id] = item.text
+                        continue
+
+                    clean_json_text = raw_text.strip()
+                    if clean_json_text.startswith("```json"):
+                        clean_json_text = clean_json_text[7:-3].strip()
+                    elif clean_json_text.startswith("```"):
+                        clean_json_text = clean_json_text[3:-3].strip()
+                    
+                    translated_data = json.loads(clean_json_text)
+                    if translated_data and isinstance(translated_data, list) and 'translated' in translated_data[0]:
+                        translated_map[item.id] = translated_data[0]['translated']
+                    else:
+                        translated_map[item.id] = item.text
+
+                except Exception as e:
+                    logger.error(f"개별 항목 {item.id} 번역 중 오류 발생: {e}")
+                    translated_map[item.id] = f"번역 실패: {e}"
+
+            translated_results = {}
+            for item in items_to_translate:
+                translated_text = translated_map.get(item.id, item.text)
+                translated_text = process_repeated_chars(translated_text)
+                translated_results[item.id] = {
+                    "id": item.id,
+                    "original": item.text,
+                    "translated": translated_text
+                }
+
+            final_translations = []
+            for item in req.items:
+                if item.id in translated_results:
+                    final_translations.append(translated_results[item.id])
+                else:
+                    final_translations.append({
+                        "id": item.id,
+                        "original": item.text,
+                        "translated": item.text
+                    })
+
+            return {"translations": final_translations}
 
         raw_text = None
         if data.get('candidates') and isinstance(data['candidates'], list) and data['candidates']:
