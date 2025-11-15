@@ -400,7 +400,7 @@ async function translateAllPTags() {
             return;
         }
 
-        if (/^[\s—]+$/.test(text) || text.includes('----------') || text.includes('◎◎◎') || text.includes('＜あとがき＞')) {
+        if (/^[\s—]+$/.test(text) || text.includes('----------') || text.includes('◎◎◎') || text.includes('＜あとがき＞') || text.includes('&lt;あとがき&gt;')) {
             skipTranslation = true;
             logToSidebar("구분선을 만나 이후의 번역을 중단합니다.");
             return;
@@ -527,7 +527,7 @@ async function translateAllPTags() {
                 await translateChunk(subChunk, newChunkSize);
                 
                 if (index < subChunks.length - 1) {
-                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    await new Promise(resolve => setTimeout(resolve, 60000));
                 }
             }
         } else if (failedItems.length > 0) {
