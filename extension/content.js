@@ -400,11 +400,11 @@ async function translateAllPTags() {
             return;
         }
 
-        if (/^[\s—]+$/.test(text) || text.includes('----------') || text.includes('◎◎◎') || text.includes('＜あとがき＞') || text.includes('&lt;あとがき&gt;')) {
-            skipTranslation = true;
-            logToSidebar("구분선을 만나 이후의 번역을 중단합니다.");
-            return;
-        }
+if (/^[\s—]+$/.test(text) || text.includes('----------') || text.includes('◎◎◎') || text.includes('＜あとがき＞') || text.includes('&lt;あとがき&gt;') || text.includes('＜解説＞') || text.includes('【大事なお知らせ】')) {
+    skipTranslation = true;
+    logToSidebar("구분선을 만나 이후의 번역을 중단합니다.");
+    return;
+}
 
         if (translationCache.has(p.id)) {
             return;
@@ -445,7 +445,7 @@ async function translateAllPTags() {
     async function translateChunk(items, chunkSize) {
         if (isTranslationCancelled) return;
     
-        const MAX_MESSAGE_RETRIES = 3;
+        const MAX_MESSAGE_RETRIES = 2;
         for (let attempt = 0; attempt < MAX_MESSAGE_RETRIES; attempt++) {
             try {
                 const response = await chrome.runtime.sendMessage({
@@ -662,7 +662,7 @@ async function translateAllPTags() {
         const chunks = chunkArray(normalTexts, initialChunkSize);
         let progress = 0;
 
-        const dynamicDelay = 120000; // 120초 고정 대기
+        const dynamicDelay = 60000; // 60초 고정 대기
         logToSidebar(`RPM 제한을 피하기 위해 묶음 간 대기 시간을 ${dynamicDelay / 1000}초로 설정합니다.`);
 
         for (const [index, chunk] of chunks.entries()) {
