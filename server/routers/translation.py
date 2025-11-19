@@ -4,16 +4,21 @@ import requests
 import re
 import os
 import logging
+import datetime
+import time
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import List, Optional
-from tenacity import retry, stop_after_attempt, wait_exponential, RetryError
+from tenacity import RetryError
 from urllib.parse import urlparse
 
 from server.settings import settings
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+# --- Global State for 5 PM Stop Condition ---
+process_started_before_5pm = False
 
 # --- Helper to get DB path from URL ---
 def get_db_path():
@@ -61,14 +66,9 @@ def _get_excluded_sentences_for_url(url: str) -> set:
     conn.close()
     return excluded_originals
 
-@retry(
-    wait=wait_exponential(multiplier=1, min=80, max=420),
-    stop=stop_after_attempt(5),
-    reraise=True
-)
-def call_gemini_api_with_retry(api_url: str, prompt: str):
+def call_gemini_api(api_url: str, prompt: str):
     """
-    Calls the Gemini API with a retry mechanism.
+    Calls the Gemini API without a retry mechanism.
     """
     payload = {
         "contents": [{"parts": [{"text": prompt}]}],
@@ -83,16 +83,10 @@ def call_gemini_api_with_retry(api_url: str, prompt: str):
         ]
     }
     logger.info(f"Gemini API Payload (first 500 chars): {json.dumps(payload, ensure_ascii=False)[:500]}...")
-    try:
-        response = requests.post(api_url, json=payload, timeout=180)
-        response.raise_for_status()
-        return response.json()
-    except requests.exceptions.HTTPError as e:
-        logger.error(f"Gemini API HTTP error: {e.response.status_code} - {e.response.text}")
-        raise
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Gemini API request error: {e}")
-        raise
+    
+    response = requests.post(api_url, json=payload, timeout=180)
+    response.raise_for_status()
+    return response.json()
 
 def process_repeated_chars(text: str) -> str:
     """6번 이상 반복되는 문자를 '(반복)'으로 대체합니다."""
@@ -108,7 +102,27 @@ def process_repeated_chars(text: str) -> str:
     description="Gemini API를 호출하여 텍스트를 번역합니다. ID 기반 매칭과 재시도 로직으로 안정성을 높였습니다."
 )
 def translate_texts(req: TranslateRequest):
+    global process_started_before_5pm
+    now = datetime.datetime.now()
+
+    # --- 5 PM Boundary-Crossing Logic ---
+    # Reset the flag automatically on a new day (e.g., before the critical hour)
+    if now.hour < 16:
+        process_started_before_5pm = False
+
+    # If a request is made before 5 PM, mark that a process is active.
+    if now.hour < 17:
+        process_started_before_5pm = True
     
+    # THE STOP CONDITION:
+    # If a process was active before 5 PM AND it's now 5 PM or later, stop it once.
+    if process_started_before_5pm and now.hour >= 17:
+        # Reset the flag immediately. This makes the stop "one-time" for the process,
+        # allowing a new manual process to start after 5 PM.
+        process_started_before_5pm = False 
+        logger.critical("오후 5시가 되어, 5시 이전에 시작된 자동 번역 프로세스를 중지합니다.")
+        raise HTTPException(status_code=503, detail="오후 5시가 되어 자동 번역을 중지합니다. 새로고침 후 다시 시도해주세요.")
+
     translatable_items = [item for item in req.items if item.id != 'tagCount']
     
     if translatable_items:
@@ -143,9 +157,58 @@ Example response format: [{{"id": "p1", "translated": "번역된 텍스트"}}]
     logger.info(f"Gemini API URL: {api_url}")
     logger.info(f"Gemini API Prompt (first 500 chars): {prompt[:500]}...")
 
-    try:
-        data = call_gemini_api_with_retry(api_url, prompt)
+    # --- Manual Retry Logic for Batch Translation (for 503 errors) ---
+    data = None
+    last_exception = None
+    consecutive_503_errors = 0 # Local counter for the current translation bundle
+    max_attempts = 5
+    
+    for attempt in range(max_attempts):
+        try:
+            data = call_gemini_api(api_url, prompt)
+            consecutive_503_errors = 0 # 성공 시 리셋
+            break # 성공 시 루프 탈출
+        except requests.exceptions.HTTPError as e:
+            last_exception = e
+            if e.response.status_code == 503:
+                consecutive_503_errors += 1
+                logger.warning(f"503 Overload 에러 발생. 연속 {consecutive_503_errors}회. (시도 {attempt + 1}/{max_attempts})")
+                if consecutive_503_errors >= 3:
+                    logger.error("3회 이상 연속 503 에러가 발생하여 현재 요청을 실패 처리합니다.")
+                    raise HTTPException(status_code=503, detail="반복적인 API 과부하로 현재 요청을 처리할 수 없습니다. 잠시 후 다시 시도해주세요.")
+            else:
+                consecutive_503_errors = 0 # 다른 HTTP 에러 시 리셋
+                logger.error(f"HTTP 오류 발생 (시도 {attempt + 1}/{max_attempts}): {e}")
+            
+            if e.response.status_code == 429:
+                raise HTTPException(status_code=429, detail="API 요청 한도 초과. 잠시 후 다시 시도해주세요.")
+        
+        except requests.exceptions.RequestException as e:
+            last_exception = e
+            consecutive_503_errors = 0 # 연결 에러 시 리셋
+            logger.error(f"Gemini API 연결 오류 (시도 {attempt + 1}/{max_attempts}): {e}")
+            
+        except Exception as e:
+            last_exception = e
+            logger.error(f"예상치 못한 오류 발생 (시도 {attempt + 1}/{max_attempts}): {e}")
+            raise HTTPException(status_code=500, detail=f"API 호출 중 예상치 못한 오류 발생: {e}")
 
+        # 재시도 전 대기
+        if attempt < max_attempts - 1:
+            wait_time = 2 ** attempt
+            logger.info(f"API 오류. {wait_time}초 후 재시도합니다...")
+            time.sleep(wait_time)
+
+    # 모든 재시도 실패 시
+    if data is None:
+        if last_exception:
+            raise HTTPException(status_code=500, detail=f"Gemini API 요청 최종 실패 (재시도 후): {last_exception}")
+        else: #이론상 도달 불가
+            raise HTTPException(status_code=500, detail="알 수 없는 오류로 API 호출에 실패했습니다.")
+
+
+    # --- Process Response ---
+    try:
         feedback = data.get('promptFeedback')
         if feedback and feedback.get('blockReason'):
             logger.warning(f"배치 번역이 차단되었습니다 ({feedback.get('blockReason')}). 개별 항목 번역으로 전환합니다.")
@@ -164,7 +227,8 @@ Example response format: [{{"id": "p1", "translated": "번역된 텍스트"}}]
 ---START OF JSON DATA---\r\n{single_item_json}\r\n---END OF JSON DATA---
 
 """
-                    individual_data = call_gemini_api_with_retry(api_url, individual_prompt)
+                    # Using the non-retrying version here
+                    individual_data = call_gemini_api(api_url, individual_prompt)
 
                     individual_feedback = individual_data.get('promptFeedback')
                     if individual_feedback and individual_feedback.get('blockReason'):
@@ -289,15 +353,6 @@ Example response format: [{{"id": "p1", "translated": "번역된 텍스트"}}]
 
         return {"translations": final_translations}
     
-    except RetryError as e:
-        last_exception = e.last_attempt.exception()
-        if isinstance(last_exception, requests.exceptions.HTTPError):
-            if last_exception.response.status_code == 429:
-                raise HTTPException(status_code=429, detail="API 요청 한도 초과. 잠시 후 다시 시도해주세요.")
-        raise HTTPException(status_code=500, detail=f"Gemini API 요청 실패 (재시도 후): {last_exception}")
-
-    except requests.exceptions.RequestException as e:
-        raise HTTPException(status_code=500, detail=f"Gemini API 연결 실패: {e}")
     except (KeyError, IndexError, json.JSONDecodeError) as e:
         error_detail = f"API 응답 처리 오류: {e}. Original response: '{data.get('candidates', 'N/A') if 'data' in locals() else 'Response not available'}'"
         raise HTTPException(status_code=500, detail=error_detail)
