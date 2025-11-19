@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from typing import List, Optional
 from tenacity import RetryError
 from urllib.parse import urlparse
+from win10toast_persist import ToastNotifier
 
 from server.settings import settings
 
@@ -157,35 +158,37 @@ Example response format: [{{"id": "p1", "translated": "번역된 텍스트"}}]
     logger.info(f"Gemini API URL: {api_url}")
     logger.info(f"Gemini API Prompt (first 500 chars): {prompt[:500]}...")
 
-    # --- Manual Retry Logic for Batch Translation (for 503 errors) ---
+    # --- Manual Retry Logic ---
     data = None
     last_exception = None
-    consecutive_503_errors = 0 # Local counter for the current translation bundle
     max_attempts = 5
     
     for attempt in range(max_attempts):
         try:
             data = call_gemini_api(api_url, prompt)
-            consecutive_503_errors = 0 # 성공 시 리셋
-            break # 성공 시 루프 탈출
+            break # Success, exit loop
         except requests.exceptions.HTTPError as e:
             last_exception = e
             if e.response.status_code == 503:
-                consecutive_503_errors += 1
-                logger.warning(f"503 Overload 에러 발생. 연속 {consecutive_503_errors}회. (시도 {attempt + 1}/{max_attempts})")
-                if consecutive_503_errors >= 3:
-                    logger.error("3회 이상 연속 503 에러가 발생하여 현재 요청을 실패 처리합니다.")
-                    raise HTTPException(status_code=503, detail="반복적인 API 과부하로 현재 요청을 처리할 수 없습니다. 잠시 후 다시 시도해주세요.")
-            else:
-                consecutive_503_errors = 0 # 다른 HTTP 에러 시 리셋
-                logger.error(f"HTTP 오류 발생 (시도 {attempt + 1}/{max_attempts}): {e}")
+                logger.error("503 Overload 에러가 발생하여 재시도 없이 즉시 실패 처리합니다. (RPM 소모 방지)")
+                try:
+                    toaster = ToastNotifier()
+                    toaster.show_toast(
+                        "번역 API 과부하",
+                        "API 과부하(503)로 요청이 실패했습니다. RPM 한도를 확인하거나 잠시 후 다시 시도하세요.",
+                        duration=10,
+                        threaded=True
+                    )
+                except Exception as toast_error:
+                    logger.error(f"데스크톱 알림을 보내는 데 실패했습니다: {toast_error}")
+                raise HTTPException(status_code=503, detail="API 과부하(503) 에러입니다. RPM 소모 방지를 위해 재시도하지 않습니다.")
             
+            logger.warning(f"HTTP 오류 발생 (시도 {attempt + 1}/{max_attempts}): {e}")
             if e.response.status_code == 429:
                 raise HTTPException(status_code=429, detail="API 요청 한도 초과. 잠시 후 다시 시도해주세요.")
         
         except requests.exceptions.RequestException as e:
             last_exception = e
-            consecutive_503_errors = 0 # 연결 에러 시 리셋
             logger.error(f"Gemini API 연결 오류 (시도 {attempt + 1}/{max_attempts}): {e}")
             
         except Exception as e:
@@ -193,19 +196,18 @@ Example response format: [{{"id": "p1", "translated": "번역된 텍스트"}}]
             logger.error(f"예상치 못한 오류 발생 (시도 {attempt + 1}/{max_attempts}): {e}")
             raise HTTPException(status_code=500, detail=f"API 호출 중 예상치 못한 오류 발생: {e}")
 
-        # 재시도 전 대기
+        # Wait before retrying for non-503 errors
         if attempt < max_attempts - 1:
             wait_time = 2 ** attempt
             logger.info(f"API 오류. {wait_time}초 후 재시도합니다...")
             time.sleep(wait_time)
 
-    # 모든 재시도 실패 시
+    # All retries failed
     if data is None:
         if last_exception:
             raise HTTPException(status_code=500, detail=f"Gemini API 요청 최종 실패 (재시도 후): {last_exception}")
-        else: #이론상 도달 불가
+        else: # Should not be reachable
             raise HTTPException(status_code=500, detail="알 수 없는 오류로 API 호출에 실패했습니다.")
-
 
     # --- Process Response ---
     try:
