@@ -445,7 +445,7 @@ if (/^[\s—]+$/.test(text) || text.includes('----------') || text.includes('◎
     async function translateChunk(items, chunkSize) {
         if (isTranslationCancelled) return;
     
-        const MAX_MESSAGE_RETRIES = 2;
+        const MAX_MESSAGE_RETRIES = 5; // Increased retries
         for (let attempt = 0; attempt < MAX_MESSAGE_RETRIES; attempt++) {
             try {
                 const response = await chrome.runtime.sendMessage({
@@ -504,8 +504,8 @@ if (/^[\s—]+$/.test(text) || text.includes('----------') || text.includes('◎
                 console.warn(`Chunk translation failed (attempt ${attempt + 1}/${MAX_MESSAGE_RETRIES}):`, error.message);
 
                 if (attempt < MAX_MESSAGE_RETRIES - 1) {
-                    const delay = 60000; // 60초
-                    logToSidebar(`통신 오류. ${delay / 1000}초 후 재시도... (${attempt + 1}/${MAX_MESSAGE_RETRIES})`, 'log-error');
+                    const delay = Math.pow(2, attempt) * 1000 + Math.floor(Math.random() * 1000); // Exponential backoff with jitter
+                    logToSidebar(`통신 오류. ${Math.round(delay / 1000)}초 후 재시도... (${attempt + 1}/${MAX_MESSAGE_RETRIES})`, 'log-error');
                     await new Promise(resolve => setTimeout(resolve, delay));
                 } else {
                     console.error(`Chunk translation failed after all retries for ${items.length} items:`, error);
@@ -527,7 +527,7 @@ if (/^[\s—]+$/.test(text) || text.includes('----------') || text.includes('◎
                 await translateChunk(subChunk, newChunkSize);
                 
                 if (index < subChunks.length - 1) {
-                    await new Promise(resolve => setTimeout(resolve, 60000));
+                    await new Promise(resolve => setTimeout(resolve, 30000));
                 }
             }
         } else if (failedItems.length > 0) {
@@ -624,7 +624,7 @@ if (/^[\s—]+$/.test(text) || text.includes('----------') || text.includes('◎
         logToSidebar(`긴 문장 번역 중 (${index + 1}/${longTexts.length})...`);
         await translateChunk([item], 1);
                     if (index < longTexts.length - 1) {
-                        await new Promise(resolve => setTimeout(resolve, 15000)); // 15초 대기
+                        await new Promise(resolve => setTimeout(resolve, 2000)); // 2초 대기
                     }    }
 
     // Then, process normal texts in batches
@@ -662,7 +662,7 @@ if (/^[\s—]+$/.test(text) || text.includes('----------') || text.includes('◎
         const chunks = chunkArray(normalTexts, initialChunkSize);
         let progress = 0;
 
-        const dynamicDelay = 90000; // 90초 고정 대기
+        const dynamicDelay = 2000; // 2초 고정 대기
         logToSidebar(`RPM 제한을 피하기 위해 묶음 간 대기 시간을 ${dynamicDelay / 1000}초로 설정합니다.`);
 
         for (const [index, chunk] of chunks.entries()) {
