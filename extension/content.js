@@ -624,7 +624,7 @@ if (/^[\s—]+$/.test(text) || text.includes('----------') || text.includes('◎
         logToSidebar(`긴 문장 번역 중 (${index + 1}/${longTexts.length})...`);
         await translateChunk([item], 1);
                     if (index < longTexts.length - 1) {
-                        await new Promise(resolve => setTimeout(resolve, 10000)); // 10초 대기
+                        await new Promise(resolve => setTimeout(resolve, 15000)); // 15초 대기
                     }    }
 
     // Then, process normal texts in batches
@@ -662,7 +662,7 @@ if (/^[\s—]+$/.test(text) || text.includes('----------') || text.includes('◎
         const chunks = chunkArray(normalTexts, initialChunkSize);
         let progress = 0;
 
-        const dynamicDelay = 60000; // 60초 고정 대기
+        const dynamicDelay = 90000; // 90초 고정 대기
         logToSidebar(`RPM 제한을 피하기 위해 묶음 간 대기 시간을 ${dynamicDelay / 1000}초로 설정합니다.`);
 
         for (const [index, chunk] of chunks.entries()) {
