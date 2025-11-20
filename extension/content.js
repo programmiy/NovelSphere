@@ -504,7 +504,7 @@ if (/^[\s—]+$/.test(text) || text.includes('----------') || text.includes('◎
                 console.warn(`Chunk translation failed (attempt ${attempt + 1}/${MAX_MESSAGE_RETRIES}):`, error.message);
 
                 if (attempt < MAX_MESSAGE_RETRIES - 1) {
-                    const delay = Math.pow(2, attempt) * 1000 + Math.floor(Math.random() * 1000); // Exponential backoff with jitter
+                    const delay = (40 + Math.pow(2, attempt)) * 1000 + Math.floor(Math.random() * 1000); // Start with a 40s base + exponential backoff with jitter
                     logToSidebar(`통신 오류. ${Math.round(delay / 1000)}초 후 재시도... (${attempt + 1}/${MAX_MESSAGE_RETRIES})`, 'log-error');
                     await new Promise(resolve => setTimeout(resolve, delay));
                 } else {
