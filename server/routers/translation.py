@@ -1,4 +1,4 @@
-import sqlite3
+
 import json
 import requests
 import re
@@ -6,9 +6,12 @@ import os
 import logging
 import datetime
 import time
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import List, Optional
+from sqlalchemy.orm import Session # Add this import
+from server.database import get_db # Add this import
+from server.models import Translation, ExcludedSentence # Add these imports
 
 from urllib.parse import urlparse
 from win10toast_persist import ToastNotifier
@@ -21,17 +24,7 @@ logger = logging.getLogger(__name__)
 # --- Global State for 5 PM Stop Condition ---
 process_started_before_5pm = False
 
-# --- Helper to get DB path from URL ---
-def get_db_path():
-    # sqlite:///C:\path\to\db.db -> C:\path\to\db.db
-    # Assumes the path is absolute after the third slash
-    parsed_url = urlparse(settings.database_url)
-    # On Windows, urlparse might add an extra leading slash if the path starts with a drive letter.
-    # e.g., sqlite:///C:/... becomes /C:/...
-    path = parsed_url.path
-    if os.name == 'nt' and path.startswith('/'):
-        path = path[1:]
-    return path
+
 
 # --- Pydantic Models ---
 class TranslationItemInput(BaseModel):
@@ -58,13 +51,12 @@ class UpdateTitleRequest(BaseModel):
     title: str
 
 # --- Helper Functions ---
-def _get_excluded_sentences_for_url(url: str) -> set:
+def _get_excluded_sentences_for_url(url: str, db: Session) -> set:
     """Helper function to retrieve excluded sentences for a given URL."""
-    conn = sqlite3.connect(get_db_path(), timeout=15)
-    cursor = conn.cursor()
-    cursor.execute("SELECT original FROM excluded_sentences WHERE url = ?", (url,))
-    excluded_originals = {row[0] for row in cursor.fetchall()}
-    conn.close()
+    excluded_originals = {
+        item.original
+        for item in db.query(ExcludedSentence).filter(ExcludedSentence.url == url).all()
+    }
     return excluded_originals
 
 def call_gemini_api(api_url: str, prompt: str):
@@ -102,7 +94,7 @@ def process_repeated_chars(text: str) -> str:
     summary="텍스트 번역",
     description="Gemini API를 호출하여 텍스트를 번역합니다. ID 기반 매칭과 재시도 로직으로 안정성을 높였습니다."
 )
-def translate_texts(req: TranslateRequest):
+def translate_texts(req: TranslateRequest, db: Session = Depends(get_db)):
     global process_started_before_5pm
     now = datetime.datetime.now()
 
@@ -127,7 +119,7 @@ def translate_texts(req: TranslateRequest):
     translatable_items = [item for item in req.items if item.id != 'tagCount']
     
     if translatable_items:
-        excluded_originals = _get_excluded_sentences_for_url(req.url)
+        excluded_originals = _get_excluded_sentences_for_url(req.url, db)
         items_to_translate = [item for item in translatable_items if item.text not in excluded_originals]
     else:
         items_to_translate = []
@@ -365,7 +357,7 @@ Example response format: [{{"id": "p1", "translated": "번역된 텍스트"}}]
     summary="제외된 문장 조회",
     description="특정 URL에 대해 제외된 모든 원문 텍스트 목록을 반환합니다."
 )
-def get_excluded_sentences(url: str):
+def get_excluded_sentences(url: str, db: Session = Depends(get_db)):
     excluded_originals = _get_excluded_sentences_for_url(url)
     return {"excluded_texts": list(excluded_originals)}
 
@@ -375,20 +367,26 @@ def get_excluded_sentences(url: str):
     summary="번역 기록 제외",
     description="지정된 ID의 번역 기록을 제외 목록에 추가하고 원본을 삭제합니다."
 )
-def exclude_translations(req: ExcludeRequest):
-    conn = sqlite3.connect(get_db_path(), timeout=15)
-    cursor = conn.cursor()
+def exclude_translations(req: ExcludeRequest, db: Session = Depends(get_db)):
     excluded_count = 0
     for translation_id in req.ids:
-        cursor.execute("SELECT url, original FROM translations WHERE id = ?", (translation_id,))
-        result = cursor.fetchone()
-        if result:
-            url, original = result
-            cursor.execute("INSERT OR IGNORE INTO excluded_sentences (url, original) VALUES (?, ?)", (url, original))
-            cursor.execute("DELETE FROM translations WHERE id = ?", (translation_id,))
+        translation_to_exclude = db.query(Translation).filter(Translation.id == translation_id).first()
+        if translation_to_exclude:
+            # Add to excluded_sentences if not already there
+            existing_excluded = db.query(ExcludedSentence).filter(
+                ExcludedSentence.url == translation_to_exclude.url,
+                ExcludedSentence.original == translation_to_exclude.original
+            ).first()
+            if not existing_excluded:
+                new_excluded = ExcludedSentence(
+                    url=translation_to_exclude.url,
+                    original=translation_to_exclude.original
+                )
+                db.add(new_excluded)
+            
+            db.delete(translation_to_exclude)
             excluded_count += 1
-    conn.commit()
-    conn.close()
+    db.commit() # Commit once after the loop
     return {"message": f"{excluded_count}개의 항목이 제외 목록에 추가되었습니다."}
 
 @router.post(
@@ -397,49 +395,36 @@ def exclude_translations(req: ExcludeRequest):
     summary="찾아 바꾸기",
     description="모든 번역 기록의 번역된 텍스트에 대해 찾아 바꾸기를 수행합니다."
 )
-def find_replace_all(req: FindReplaceRequest):
-    conn = sqlite3.connect(get_db_path(), timeout=15)
-    cursor = conn.cursor()
-    
+def find_replace_all(req: FindReplaceRequest, db: Session = Depends(get_db)):
     updated_count = 0
 
-    # 1. 필터링 조건 설정
-    query_conditions = []
-    query_params = []
+    query = db.query(Translation)
 
+    # 1. 필터링 조건 설정
     if req.folder_scope and req.folder_scope != "__all__":
         if req.folder_scope == "폴더 추가 대기 상태":
-            query_conditions.append("folderName IS NULL")
+            query = query.filter(Translation.folderName.is_(None))
         else:
-            query_conditions.append("folderName = ?")
-            query_params.append(req.folder_scope)
+            query = query.filter(Translation.folderName == req.folder_scope)
     
     # 2. 원문 조건 필터링
     if req.condition_text:
         if req.case_sensitive:
-            query_conditions.append("original LIKE ?")
-            query_params.append(f"%{req.condition_text}%")
+            query = query.filter(Translation.original.like(f"%{req.condition_text}%"))
         else:
-            query_conditions.append("lower(original) LIKE ?")
-            query_params.append(f"%{req.condition_text.lower()}%")
+            query = query.filter(Translation.original.ilike(f"%{req.condition_text}%"))
 
     # 3. 찾아바꿀 텍스트가 포함된 항목만 대상으로 함
     if not req.use_regex:
         if req.case_sensitive:
-            query_conditions.append("translated LIKE ?")
-            query_params.append(f"%{req.find_text}%")
+            query = query.filter(Translation.translated.like(f"%{req.find_text}%"))
         else:
-            query_conditions.append("lower(translated) LIKE ?")
-            query_params.append(f"%{req.find_text.lower()}%")
+            query = query.filter(Translation.translated.ilike(f"%{req.find_text}%"))
 
-    base_query = "SELECT id, translated FROM translations"
-    if query_conditions:
-        base_query += " WHERE " + " AND ".join(query_conditions)
-    
-    cursor.execute(base_query, tuple(query_params))
-    records_to_update = cursor.fetchall()
+    records_to_update = query.all()
 
-    for record_id, old_translated_text in records_to_update:
+    for record in records_to_update:
+        old_translated_text = record.translated
         new_translated_text = old_translated_text
         if old_translated_text is None:
             continue
@@ -449,18 +434,17 @@ def find_replace_all(req: FindReplaceRequest):
             try:
                 new_translated_text = re.sub(req.find_text, req.replace_text, old_translated_text, flags=flags)
             except re.error as e:
-                conn.close()
+                db.rollback() # Rollback in case of regex error
                 raise HTTPException(status_code=400, detail=f"유효하지 않은 정규식: {e}")
         else:
             flags = re.IGNORECASE if not req.case_sensitive else 0
             new_translated_text = re.sub(re.escape(req.find_text), req.replace_text, old_translated_text, flags=flags)
 
         if new_translated_text != old_translated_text:
-            cursor.execute("UPDATE translations SET translated = ? WHERE id = ?", (new_translated_text, record_id))
+            record.translated = new_translated_text
             updated_count += 1
     
-    conn.commit()
-    conn.close()
+    db.commit()
     return {"message": f"{updated_count}개의 항목에서 내용을 교체했습니다."}
 
 @router.put(
@@ -469,11 +453,9 @@ def find_replace_all(req: FindReplaceRequest):
     summary="URL에 대한 제목 업데이트",
     description="주어진 URL을 가진 모든 항목의 제목을 업데이트합니다."
 )
-def update_title_for_url(req: UpdateTitleRequest):
-    conn = sqlite3.connect(get_db_path(), timeout=15)
-    cursor = conn.cursor()
-    cursor.execute("UPDATE translations SET title = ? WHERE url = ?", (req.title, req.url))
-    updated_count = cursor.rowcount
-    conn.commit()
-    conn.close()
+def update_title_for_url(req: UpdateTitleRequest, db: Session = Depends(get_db)):
+    updated_count = db.query(Translation).filter(Translation.url == req.url).update(
+        {Translation.title: req.title}, synchronize_session=False
+    )
+    db.commit()
     return {"message": f"Title updated for {updated_count} entries for URL {req.url}."}
