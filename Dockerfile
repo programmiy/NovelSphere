@@ -10,11 +10,7 @@ WORKDIR /app
 # Install build dependencies
 RUN pip install --upgrade pip
 
-# Copy and install requirements
-# A local dependency is present in requirements.txt, which will cause the build to fail.
-# The following command will comment out the line starting with '-e' to allow the build to proceed.
 COPY requirements.txt .
-RUN sed -i '/^-e/s/^/#/' requirements.txt
 RUN pip wheel --no-cache-dir --wheel-dir /app/wheels -r requirements.txt
 
 
@@ -39,4 +35,4 @@ EXPOSE 8000
 # Command to run the application
 # This assumes your FastAPI application instance is named "app" in the "main" module (main.py).
 # You might need to adjust this based on your actual application structure.
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "server.server:app", "--host", "0.0.0.0", "--port", "8000"]

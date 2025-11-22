@@ -19,10 +19,7 @@ services:
       dockerfile: Dockerfile
     ports:
       - "8000:8000"
-    volumes:
-      # Mount the entire project directory to allow for code changes without rebuilding.
-      # This is useful for development.
-      - .:/app
+
     environment:
       # Override settings from server/settings.py
       - REDIS_URL=redis://redis:6379/0
@@ -41,8 +38,7 @@ services:
       context: .
       dockerfile: Dockerfile
     command: celery -A server.celery_app worker --loglevel=info
-    volumes:
-      - .:/app
+
     environment:
       # Ensure the worker uses the same settings as the web server
       - REDIS_URL=redis://redis:6379/0

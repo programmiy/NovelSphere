@@ -1,0 +1,53 @@
+# Byte-code files
+*.pyc
+*.pyo
+*.pyd
+__pycache__/
+
+# Distribution / packaging
+.Python
+env/
+venv/
+*.egg-info/
+.cache
+.pytest_cache/
+.tox/
+.mypy_cache/
+.vscode/
+
+# Editors
+.idea/
+*.swp
+*~
+
+# VCS
+.git/
+.gitignore
+
+# Docker
+.dockerignore
+
+# Documentation
+docs/
+
+# Build artifacts
+build/
+dist/
+*.spec
+
+# Environment variables
+.env
+.flaskenv
+
+# Data and logs
+*.db
+logs/
+data/ # Assuming you might have a data directory not shown in the list
+
+# Jupyter Notebook files
+.ipynb_checkpoints
+
+# Specific project files
+_legacy/
+test_data_crud.db # Explicitly ignore the DB file
+*.md # Ignore all markdown files, including README and roadmap documents, for leaner image

@@ -8,7 +8,7 @@ engine = create_engine(
 )
 
 @event.listens_for(engine, "connect")
-def _db_connect(dbapi_connection, connection_record):
+def _db_connect(dbapi_connection, _connection_record):
     """
     Registers a custom REGEXP function for SQLite connections to enable regex searches in SQL.
     """
