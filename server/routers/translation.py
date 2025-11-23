@@ -358,7 +358,7 @@ Example response format: [{{"id": "p1", "translated": "번역된 텍스트"}}]
     description="특정 URL에 대해 제외된 모든 원문 텍스트 목록을 반환합니다."
 )
 def get_excluded_sentences(url: str, db: Session = Depends(get_db)):
-    excluded_originals = _get_excluded_sentences_for_url(url)
+    excluded_originals = _get_excluded_sentences_for_url(url, db)
     return {"excluded_texts": list(excluded_originals)}
 
 @router.post(
