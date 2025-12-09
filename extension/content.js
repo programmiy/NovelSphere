@@ -400,7 +400,7 @@ async function translateAllPTags() {
             return;
         }
 
-if (/^[\s—]+$/.test(text) || text.includes('----------') || text.includes('◎◎◎') || text.includes('＜あとがき＞') || text.includes('&lt;あとがき&gt;') || text.includes('＜解説＞') || text.includes('【大事なお知らせ】')) {
+if (/^[\s—]+$/.test(text) || text.includes('----------') || text.includes('◎◎◎') || text.includes('＜あとがき＞') || text.includes('&lt;あとがき&gt;') || text.includes('＜解説＞') || text.includes('【大事なお知らせ】') || text.includes('++') || text.includes('【宣伝】') || text.includes('お読み頂きありがとうございます！')) {
     skipTranslation = true;
     logToSidebar("구분선을 만나 이후의 번역을 중단합니다.");
     return;
@@ -624,7 +624,7 @@ if (/^[\s—]+$/.test(text) || text.includes('----------') || text.includes('◎
         logToSidebar(`긴 문장 번역 중 (${index + 1}/${longTexts.length})...`);
         await translateChunk([item], 1);
                     if (index < longTexts.length - 1) {
-                        await new Promise(resolve => setTimeout(resolve, 2000)); // 2초 대기
+                        await new Promise(resolve => setTimeout(resolve, 5000)); // 5초 대기
                     }    }
 
     // Then, process normal texts in batches
@@ -642,27 +642,30 @@ if (/^[\s—]+$/.test(text) || text.includes('----------') || text.includes('◎
             initialChunkSize = Math.min(13, initialChunkSize);
             logToSidebar(`총 문장 수(${totalSentences})가 80개를 초과하여, 묶음 크기를 ${initialChunkSize}(으)로 공격적으로 설정합니다.`);
         } else {
-            // New "stepped" splitting for fewer sentences
+            // More aggressive bundling for fewer sentences
             const normalSentenceCount = normalTexts.length;
             let numGroups;
-            if (normalSentenceCount <= 20) {
+            if (normalSentenceCount <= 15) {
+                numGroups = 1;
+            } else if (normalSentenceCount <= 30) {
                 numGroups = 2;
+            } else if (normalSentenceCount <= 50) {
+                numGroups = 3;
             } else {
-                // For 21-30 -> 3 groups, 31-40 -> 4 groups, etc.
-                numGroups = Math.ceil(normalSentenceCount / 10);
+                numGroups = 4;
             }
-            // Ensure at least 1 group if count is very low.
+            
             numGroups = Math.max(1, numGroups); 
 
             initialChunkSize = Math.ceil(normalSentenceCount / numGroups);
-            initialChunkSize = Math.min(8, initialChunkSize); // Cap the chunk size at 8
-            logToSidebar(`총 문장 수(${totalSentences})가 80개 이하이므로, ${numGroups}개의 그룹으로 나누어(묶음 크기: ${initialChunkSize}) 번역합니다.`);
+            initialChunkSize = Math.min(11, initialChunkSize); // Cap the chunk size at 11
+            logToSidebar(`총 문장 수(${totalSentences})가 80개 이하일 때, ${numGroups}개의 그룹(묶음 크기: ${initialChunkSize})으로 공격적으로 번역합니다. (최대 11)`);
         }
 
         const chunks = chunkArray(normalTexts, initialChunkSize);
         let progress = 0;
 
-        const dynamicDelay = 2000; // 2초 고정 대기
+        const dynamicDelay = 5000; // 5초 고정 대기
         logToSidebar(`RPM 제한을 피하기 위해 묶음 간 대기 시간을 ${dynamicDelay / 1000}초로 설정합니다.`);
 
         for (const [index, chunk] of chunks.entries()) {
