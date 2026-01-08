@@ -30,8 +30,7 @@ jobs:
         run: pip install -r server/requirements.txt #
       - name: 'Run Python tests (pytest)'
         run: |
-          pip install pytest # 테스트 도구 설치 (예시)
-          pytest     # 루트의 tests/ 폴더를 자동으로 찾아 실행하도록 수정
+          pytest
 
 
 

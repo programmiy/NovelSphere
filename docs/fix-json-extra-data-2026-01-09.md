@@ -12,6 +12,9 @@
     *   `pytest server/` 명령어가 테스트를 찾지 못하던 문제를 `pytest`로 수정하여 `tests/` 폴더의 테스트가 정상적으로 실행되도록 했습니다.
 *   **파일:** `tests/test_json_parsing.py`
     *   JSON 뒤에 데이터가 붙은 경우를 시뮬레이션하는 단위 테스트를 추가했습니다.
+*   **파일:** `server/requirements.txt`
+    *   CI 환경에서 테스트 실행에 필요한 누락된 의존성(`pydantic-settings`, `celery`, `python-dotenv`, `jinja2`)을 추가했습니다.
+
 
 
 ## 영향
