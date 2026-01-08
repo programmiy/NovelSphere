@@ -400,7 +400,7 @@ async function translateAllPTags() {
             return;
         }
 
-if (/^[\s—]+$/.test(text) || text.includes('----------') || text.includes('◎◎◎') || text.includes('＜あとがき＞') || text.includes('&lt;あとがき&gt;') || text.includes('＜解説＞') || text.includes('【大事なお知らせ】') || text.includes('++') || text.includes('【宣伝】') || text.includes('お読み頂きありがとうございます！')) {
+if (/^[\s—]+$/.test(text) || text.includes('----------') || text.includes('◎◎◎') || text.includes('＜あとがき＞') || text.includes('&lt;あとがき&gt;') || text.includes('＜解説＞') || text.includes('【大事なお知らせ】') || text.includes('++') || text.includes('【宣伝】') || text.includes('　☆☆☆☆☆') || text.includes('お読み頂きありがとうございます！')) {
     skipTranslation = true;
     logToSidebar("구분선을 만나 이후의 번역을 중단합니다.");
     return;

@@ -21,3 +21,4 @@ dist/
 
 # Environment variables
 .env
+venv/
