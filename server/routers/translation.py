@@ -303,7 +303,12 @@ Example response format: [{{"id": "p1", "translated": "번역된 텍스트"}}]
             clean_json_text = clean_json_text[3:-3].strip()
 
         try:
-            translated_data = json.loads(clean_json_text)
+            try:
+                translated_data = json.loads(clean_json_text)
+            except json.JSONDecodeError:
+                # Try raw_decode to handle extra data at the end (e.g. "}]" artifact)
+                translated_data, _ = json.JSONDecoder().raw_decode(clean_json_text)
+
             if not isinstance(translated_data, list):
                 logger.warning(f"Expected a JSON array, but got {type(translated_data)}. Data: {clean_json_text}")
                 if isinstance(translated_data, dict):
