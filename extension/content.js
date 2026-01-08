@@ -639,27 +639,23 @@ if (/^[\s—]+$/.test(text) || text.includes('----------') || text.includes('◎
             const idealChunks = 10;
             initialChunkSize = Math.ceil(normalTexts.length / idealChunks);
             initialChunkSize = Math.max(5, initialChunkSize);
-            initialChunkSize = Math.min(13, initialChunkSize);
+            initialChunkSize = Math.min(20, initialChunkSize);
             logToSidebar(`총 문장 수(${totalSentences})가 80개를 초과하여, 묶음 크기를 ${initialChunkSize}(으)로 공격적으로 설정합니다.`);
         } else {
-            // More aggressive bundling for fewer sentences
+            // New "stepped" splitting for fewer sentences
             const normalSentenceCount = normalTexts.length;
             let numGroups;
-            if (normalSentenceCount <= 15) {
-                numGroups = 1;
-            } else if (normalSentenceCount <= 30) {
+            if (normalSentenceCount <= 20) {
                 numGroups = 2;
-            } else if (normalSentenceCount <= 50) {
-                numGroups = 3;
             } else {
-                numGroups = 4;
+                // For 21-30 -> 3 groups, 31-40 -> 4 groups, etc.
+                numGroups = Math.ceil(normalSentenceCount / 10);
             }
-            
+            // Ensure at least 1 group if count is very low.
             numGroups = Math.max(1, numGroups); 
 
             initialChunkSize = Math.ceil(normalSentenceCount / numGroups);
-            initialChunkSize = Math.min(11, initialChunkSize); // Cap the chunk size at 11
-            logToSidebar(`총 문장 수(${totalSentences})가 80개 이하일 때, ${numGroups}개의 그룹(묶음 크기: ${initialChunkSize})으로 공격적으로 번역합니다. (최대 11)`);
+            logToSidebar(`총 문장 수(${totalSentences})가 80개 이하이므로, ${numGroups}개의 그룹으로 나누어(묶음 크기: ${initialChunkSize}) 번역합니다.`);
         }
 
         const chunks = chunkArray(normalTexts, initialChunkSize);
