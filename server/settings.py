@@ -62,6 +62,7 @@ class Settings(BaseSettings):
     # --- Application Logic Settings ---
     backup_threshold_seconds: int = 24 * 3600  # 24 hours
     autostart: bool = Field(default=False, description="애플리케이션 자동 시작 활성화")
+    gemini_api_delay_seconds: int = Field(default=20, description="Gemini API 호출 전 지연 시간 (초)")
 
 
 # 설정 객체 인스턴스화

@@ -684,6 +684,7 @@ if (/^[\s—]+$/.test(text) || text.includes('----------') || text.includes('◎
 
     if (!isTranslationCancelled) {
         const scrollDelay = 60000; // 60-second delay
+        const currentUrl = getCleanUrl(); // Get the current clean URL
 
         const startAutoScroll = () => {
             logToSidebar(`번역 완료. ${scrollDelay / 1000}초 후 페이지 끝으로 자동 스크롤합니다.`);
@@ -691,7 +692,7 @@ if (/^[\s—]+$/.test(text) || text.includes('----------') || text.includes('◎
             setTimeout(() => {
                 if (isTranslationCancelled) return;
 
-                logToSidebar("페이지 끝으로 스크롤 후 'PageDown' 키를 누릅니다.");
+                logToSidebar("페이지 끝으로 스크롤 후 다음 페이지 액션을 실행합니다.");
                 window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
 
                 const checkScrollEndInterval = setInterval(() => {
@@ -702,16 +703,39 @@ if (/^[\s—]+$/.test(text) || text.includes('----------') || text.includes('◎
                     
                     if ((window.innerHeight + window.scrollY) >= document.body.scrollHeight - 10) {
                         clearInterval(checkScrollEndInterval);
-                        logToSidebar("페이지 끝에 도달하여 'PageDown' 키를 누릅니다.");
-                        setTimeout(() => {
-                            document.body.dispatchEvent(new KeyboardEvent('keydown', {
-                                key: 'PageDown',
-                                code: 'PageDown',
-                                bubbles: true,
-                                cancelable: true,
-                                keyCode: 34
-                            }));
-                        }, 4000);
+                        
+                        if (currentUrl.includes('novel18.syosetu.com')) {
+                            logToSidebar("'novel18.syosetu.com'입니다. '次へ' 버튼을 찾아서 클릭합니다.");
+                            const nextButton = document.querySelector('a.c-pager__item.c-pager__item--next');
+                            if (nextButton && nextButton.href) {
+                                logToSidebar(`다음 페이지로 이동: ${nextButton.href}`);
+                                window.location.href = nextButton.href;
+                            } else {
+                                logToSidebar("다음 페이지 버튼을 찾을 수 없습니다.");
+                            }
+                        } else if (currentUrl.includes('kakuyomu.jp')) {
+                            logToSidebar("'kakuyomu.jp'입니다. 'PageDown' 키를 누릅니다.");
+                            setTimeout(() => {
+                                document.body.dispatchEvent(new KeyboardEvent('keydown', {
+                                    key: 'PageDown',
+                                    code: 'PageDown',
+                                    bubbles: true,
+                                    cancelable: true,
+                                    keyCode: 34
+                                }));
+                            }, 4000); // Small delay to ensure PageDown is registered
+                        } else {
+                            logToSidebar("지원되지 않는 사이트입니다. 기본 'PageDown' 키를 누릅니다.");
+                             setTimeout(() => {
+                                document.body.dispatchEvent(new KeyboardEvent('keydown', {
+                                    key: 'PageDown',
+                                    code: 'PageDown',
+                                    bubbles: true,
+                                    cancelable: true,
+                                    keyCode: 34
+                                }));
+                            }, 4000);
+                        }
                     }
                 }, 100);
             }, scrollDelay);

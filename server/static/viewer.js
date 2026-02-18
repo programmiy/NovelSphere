@@ -408,8 +408,22 @@ document.addEventListener('DOMContentLoaded', async () => {
             return;
         }
 
-        if (e.key === 'ArrowLeft') showPrevPage();
-        else if (e.key === 'ArrowRight') showNextPage();
+        const currentUrl = currentChapterItems?.[0]?.url;
+        if (currentUrl && currentUrl.includes('kakuyomu.jp')) {
+            if (e.key === 'ArrowLeft') {
+                showPrevPage();
+            } else if (e.key === 'ArrowRight') {
+                showNextPage();
+            } else if (e.key === 'PageDown' || e.key === ' ') { // Page Down key or Spacebar
+                // Check if scroll is at the end of the content area
+                const { scrollTop, scrollHeight, clientHeight } = contentArea;
+                if (scrollHeight - scrollTop <= clientHeight + 1) { // +1 for minor floating point discrepancies
+                    showNextPage();
+                    e.preventDefault(); // Prevent default browser scroll
+                }
+            }
+        }
+        // For other sites, the default key behavior will apply or other navigation methods will be used.
     }
 
     function handleBookClick(e) {

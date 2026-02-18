@@ -256,6 +256,7 @@ Example response format: [{{"id": "p1", "translated": "번역된 텍스트"}}]
                 except Exception as e:
                     logger.error(f"개별 항목 {item.id} 번역 중 오류 발생: {e}")
                     translated_map[item.id] = f"번역 실패: {e}"
+                time.sleep(1) # Add a 1-second delay between individual requests to prevent 429 errors
 
             translated_results = {}
             for item in items_to_translate:
