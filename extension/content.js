@@ -8,6 +8,7 @@ const JAPANESE_REGEX = /[\u3000-\u303f\u3040-\u309f\u30a0-\u30ff\uff00-\uff9f\u4
 const PID_REGEX = /^[a-zA-Z][a-zA-Z0-9]*$/;
 let hasScannedForP_Tags = false;
 let isTranslationCancelled = false;
+let resolveResume = null; // 번역 재개를 위한 전역 resolver
 let translationCache = new Map(); // Cache for original translation objects
 let exclusionSet = new Set(); // Cache for excluded original texts
 
@@ -179,6 +180,7 @@ function injectSidebar() {
             <h3>🗾 번역 워크스페이스</h3>
             <div class="sidebar-controls">
                 <button id="stop-translation-btn" title="번역 중지" style="display:none;">⏹️</button>
+                <button id="resume-translation-btn" title="번역 재개" style="display:none;">▶️</button>
                 <button id="retry-translation-btn" title="다시 시도" style="display:none;">🔄</button>
                 <button id="sidebar-close-btn" title="닫기">&times;</button>
             </div>
@@ -280,7 +282,18 @@ function setupEventListeners() {
         isTranslationCancelled = true;
         logToSidebar("API 요청이 사용자에 의해 중지되었습니다.", "log-error");
         document.getElementById('stop-translation-btn').style.display = 'none';
+        document.getElementById('resume-translation-btn').style.display = 'none';
         updateSidebarWithCancelled();
+    });
+
+    document.getElementById('resume-translation-btn').addEventListener('click', () => {
+        if (resolveResume) {
+            logToSidebar("번역을 재개합니다...");
+            document.getElementById('resume-translation-btn').style.display = 'none';
+            document.getElementById('stop-translation-btn').style.display = 'inline-block';
+            resolveResume();
+            resolveResume = null;
+        }
     });
 
     document.getElementById('retry-translation-btn').addEventListener('click', () => {
@@ -467,9 +480,24 @@ if (/^[\s—]+$/.test(text) || text.includes('----------') || text.includes('◎
                 if (response && response.notification) {
                     logToSidebar(response.notification, 'log-error');
                     if (response.stop) {
-                        isTranslationCancelled = true;
                         document.getElementById('stop-translation-btn').style.display = 'none';
-                        updateSidebarWithCancelled();
+                        document.getElementById('resume-translation-btn').style.display = 'inline-block';
+                        logToSidebar("번역이 일시 중지되었습니다. 수동 작업 후 재개 버튼(▶️)을 눌러주세요.");
+                        
+                        // 현재 처리 중인 항목들의 placeholder 문구를 지워 편집을 도움
+                        items.forEach(item => {
+                            const row = document.querySelector(`tr[data-pid="${item.id}"]`);
+                            if (row) {
+                                const cell = row.querySelector('.translated-text');
+                                if (cell && cell.textContent.includes('번역 중')) {
+                                    cell.textContent = '';
+                                }
+                            }
+                        });
+
+                        // 사용자가 재개 버튼을 누를 때까지 대기
+                        await new Promise(resolve => { resolveResume = resolve; });
+                        return await translateChunk(items, chunkSize); // 재개 시 현재 뭉치 다시 시도
                     }
                     return; 
                 }
@@ -781,9 +809,25 @@ function addPlaceholderRows(items) {
         row.setAttribute('data-pid', item.id);
         row.innerHTML = `
             <td><div class="original-text">${escapeHtml(item.text)}</div></td>
-            <td><div class="translated-text" contenteditable="false">⏳ 번역 중...</div></td>
+            <td><div class="translated-text" contenteditable="true">⏳ 번역 중...</div></td>
             <td><button class="save-btn" disabled>저장</button></td>
         `;
+
+        const translatedCell = row.querySelector('.translated-text');
+        const saveBtn = row.querySelector('.save-btn');
+
+        // 입력이 발생하면 저장 버튼 활성화
+        translatedCell.addEventListener('input', () => {
+            if (saveBtn.disabled) saveBtn.disabled = false;
+        });
+
+        // 클릭 시 수동 저장 기능 연결
+        saveBtn.addEventListener('click', async () => {
+            const editedText = translatedCell.textContent.trim();
+            await saveSingleTranslation(item.id, item.text, editedText);
+            saveBtn.textContent = '저장됨!';
+            setTimeout(() => { saveBtn.textContent = '저장'; }, 1500);
+        });
     });
     updateEmptyState();
 }
