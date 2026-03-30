@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>로컬 뷰어</title>
+    <link rel="manifest" href="/static/manifest.json">
+    <link rel="icon" href="data:,">
+    <link href="https://fonts.googleapis.com/css2?family=Gowun+Batang&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/viewer.css?v=1.1">
+</head>
+<body>
+    <div class="viewer-container">
+        <header class="viewer-header">
+            <a href="/" class="btn back-link" title="서재로 돌아가기">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+            </a>
+            <h1 id="book-title">로딩 중...</h1>
+            <div class="viewer-settings">
+                <button id="toc-btn" class="btn" title="목차">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+                </button>
+                <button id="focus-mode-btn" class="btn" title="집중 모드">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path></svg>
+                </button>
+                <button id="night-mode-btn" class="btn" title="야간 모드">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
+                </button>
+            </div>
+        </header>
+        <main id="book-container">
+            <div id="content-area" class="content-area"></div>
+            <div class="nav-arrow left" id="nav-arrow-left">&lt;</div>
+            <div class="nav-arrow right" id="nav-arrow-right">&gt;</div>
+        </main>
+        <div id="toc-sidebar" class="sidebar">
+            <div class="sidebar-header">
+                <h2>목차</h2>
+                <button id="view-original-btn" class="btn">원문 보기</button>
+                <button id="close-sidebar-btn" class="btn">&times;</button>
+            </div>
+            <div id="toc-list" class="toc-list"></div>
+            <div class="sidebar-footer">
+                <div class="setting-group" id="mobile-nav-setting">
+                    <label class="setting-label">모바일 넘김 방식</label>
+                    <div class="radio-group">
+                        <input type="radio" id="nav-both" name="mobile-nav" value="both" checked>
+                        <label for="nav-both">모두</label>
+                        <input type="radio" id="nav-tap" name="mobile-nav" value="tap">
+                        <label for="nav-tap">터치</label>
+                        <input type="radio" id="nav-swipe" name="mobile-nav" value="swipe">
+                        <label for="nav-swipe">스와이프</label>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div id="book-navigation">
+            <button id="prev-page-btn" class="btn">&lt; 이전</button>
+            <span id="page-indicator"></span>
+            <button id="next-page-btn" class="btn">다음 &gt;</button>
+        </div>
+    </div>
+    <div id="overlay" class="overlay"></div>
+    <script src="/static/viewer.js"></script>
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/service-worker.js');
+            });
+        }
+    </script>
+</body>
+</html>

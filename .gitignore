@@ -1,0 +1,36 @@
+regal-sorter-446110-s9-b1da9998d17c.json
+DEVELOPMENT_PLAN.md
+server/api_key.txt
+server/translations.db
+server/server_meta.json
+todo.md
+
+# Python cache
+__pycache__/
+model_training/venv/
+*.pyc
+/server/backups/
+server/settings.json
+server/logs/
+logs/
+
+# Build and Distribution directories
+build/
+dist/
+
+# Environment variables
+.env
+venv/
+
+# --- Additional Security for Public Repo ---
+# Data and DB
+*.db
+*.sqlite
+server/migration_data.json
+_legacy/folders.json
+
+# Build and Spec
+*.spec
+
+# Logs
+*.log

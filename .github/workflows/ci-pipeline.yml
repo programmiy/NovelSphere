@@ -1,0 +1,69 @@
+# .github/workflows/ci-pipeline.yml
+
+name: 'CI Pipeline (Test & Doc Check)'
+
+# --- 트리거 설정 ---
+# 1. 'extra' 브랜치로 푸시할 때 (git push main extra:extra)
+# 2. 'main' 브랜치로 Pull Request를 열 때
+on:
+  pull_request:
+    branches: [ main ]
+
+# --- 작업(Jobs) 설정 ---
+jobs:
+  # --- 1. 테스트 작업 (GEMINI.md 3번 항목 자동화) ---
+  test-and-lint:
+    name: 'Run Tests & Lint'
+    runs-on: ubuntu-latest # 작업 환경
+
+    steps:
+      # 1. 코드 체크아웃
+      - name: 'Checkout code'
+        uses: actions/checkout@v4
+
+      # 2. 백엔드(Python) 테스트
+      - name: 'Set up Python'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10' # 파이썬 버전 지정
+      - name: 'Install Python dependencies'
+        run: pip install -r server/requirements.txt #
+      - name: 'Run Python tests (pytest)'
+        run: |
+          pytest
+
+
+
+  # --- 2. 문서화 검사 작업 (GEMINI.md 4, 5번 항목 자동화) ---
+  check-documentation:
+    name: 'Check Documentation'
+    runs-on: ubuntu-latest
+    needs: test-and-lint # 'test-and-lint' 작업이 성공해야만 실행
+
+    steps:
+      - name: 'Checkout code (with full history)'
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # 'main' 브랜치와 비교하기 위해 전체 히스토리 가져오기
+
+      - name: 'Check for documentation changes'
+        run: |
+          # 1. main 브랜치와 현재 PR(extra) 간의 변경된 파일 목록 가져오기
+          # (PR일 경우 'main', 'extra' 푸시일 경우 'HEAD~1' 사용)
+          BASE_COMMIT=$(git merge-base origin/main HEAD)
+          CHANGED_FILES=$(git diff --name-only $BASE_COMMIT HEAD)
+
+          # 2. 코드 파일(server/, extension/)이 변경되었는지 확인
+          CODE_CHANGED=$(echo "$CHANGED_FILES" | grep -E '^(server/|extension/)' || true)
+
+          # 3. 문서 파일(docs/)이 변경되었는지 확인
+          DOCS_CHANGED=$(echo "$CHANGED_FILES" | grep -E '^docs/' || true)
+
+          # 3. GEMINI.md 규칙 적용
+          if [ -n "$CODE_CHANGED" ] && [ -z "$DOCS_CHANGED" ]; then
+            echo "::error::코드가 변경되었지만(server/ 또는 extension/), docs/ 폴더에 문서가 추가/수정되지 않았습니다."
+            echo "GEMINI.md 규칙 4, 5번을 확인하세요."
+            exit 1 # 작업 실패 처리
+          else
+            echo "문서화 규칙을 통과했습니다."
+          fi

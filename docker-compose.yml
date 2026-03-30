@@ -1,0 +1,51 @@
+version: '3.8'
+
+services:
+  redis:
+    image: "redis:alpine"
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+
+    environment:
+      # Override settings from server/settings.py
+      - REDIS_URL=redis://redis:6379/0
+      - GEMINI_API_KEY=YOUR_GEMINI_API_KEY_HERE # <-- IMPORTANT: Replace with your actual key
+      - SERVER_HOST=0.0.0.0
+      - SERVER_PORT=8000
+      - DEBUG=True # Enable debug mode for development
+    depends_on:
+      redis:
+        condition: service_healthy
+    # The command is already defined in the Dockerfile, 
+    # so we don't need to specify it here unless we want to override it.
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: celery -A server.celery_app worker --loglevel=info
+
+    environment:
+      # Ensure the worker uses the same settings as the web server
+      - REDIS_URL=redis://redis:6379/0
+      - GEMINI_API_KEY=YOUR_GEMINI_API_KEY_HERE # <-- IMPORTANT: Replace with your actual key
+    depends_on:
+      redis:
+        condition: service_healthy
+
+volumes:
+  redis-data:

@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="manifest" href="/static/manifest.json">
+    <title>LANOVEL Library</title>
+    <link rel="stylesheet" href="/static/library.css">
+</head>
+<body>
+    <div class="library-container">
+        <header class="library-header">
+            <h1>나의 서재</h1>
+            <div class="header-controls">
+                <button id="fetch-missing-titles-btn" class="btn-primary">누락된 제목 가져오기</button>
+                <button id="download-all-offline-btn" class="btn-primary">모든 책 오프라인 다운로드</button>
+                <span id="global-download-status" class="download-status"></span>
+                <a href="/admin" class="admin-link">번역 관리</a>
+            </div>
+            <div id="progress-container" class="progress-container" style="display: none;">
+                <div id="progress-bar" class="progress-bar"></div>
+                <span id="progress-text"></span>
+            </div>
+        </header>
+        <div id="tag-filter-bar" class="tag-filter-bar">
+            <!-- Tag filters will be dynamically generated here -->
+        </div>
+        <main id="book-shelf" class="book-shelf">
+            <!-- 책 목록이 여기에 동적으로 생성됩니다. -->
+        </main>
+    </div>
+
+    <!-- Tag Editor Modal -->
+    <div id="tag-editor-modal" class="modal-overlay" style="display: none;">
+        <div class="modal-content">
+            <header class="modal-header">
+                <h2 id="tag-editor-title">책 정보 편집</h2>
+                <button id="tag-editor-close" class="modal-close-btn">&times;</button>
+            </header>
+            <div class="modal-body">
+                <p><strong>책:</strong> <span id="tag-editor-book-name"></span></p>
+                
+                <h4>태그</h4>
+                <div id="tag-checkbox-form">
+                    <!-- Checkboxes will be populated here -->
+                </div>
+                <form id="new-tag-form">
+                    <input type="text" id="new-tag-name" placeholder="새 태그 생성" required>
+                    <button type="submit" class="btn-primary">추가</button>
+                </form>
+                
+                <hr style="margin: 1rem 0;">
+
+                <h4>요약 / 메모</h4>
+                <textarea id="book-notes-summary" rows="4" placeholder="책에 대한 줄거리나 개인적인 메모를 입력하세요." style="width: 100%;"></textarea>
+                
+                <h4 style="margin-top: 1rem;">출처 URL</h4>
+                <div style="display: flex; gap: 0.5rem;">
+                    <input type="text" id="book-summary-source-url" placeholder="줄거리를 가져올 원본 페이지 URL" style="flex-grow: 1;">
+                    <button type="button" id="crawl-summary-btn" class="btn-secondary">가져오기</button>
+                </div>
+
+            </div>
+            <footer class="modal-footer">
+                <button id="tag-editor-cancel" class="btn-secondary">취소</button>
+                <button id="tag-editor-save" class="btn-primary">저장</button>
+            </footer>
+        </div>
+    </div>
+
+    <!-- URL List Modal -->
+    <div id="url-list-modal" class="modal-overlay" style="display: none;">
+        <div class="modal-content">
+            <header class="modal-header">
+                <h2 id="url-list-title">URL 목록</h2>
+                <button id="import-toc-btn" class="btn-secondary" style="margin-left: auto; margin-right: 1rem;">TOC에서 가져오기</button>
+                <button id="url-list-close" class="modal-close-btn">&times;</button>
+            </header>
+            <div id="url-list-body" class="modal-body">
+                <!-- URL list will be populated here -->
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/library.js"></script>
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/service-worker.js')
+                    .then(registration => {
+                        console.log('Service Worker registered with scope:', registration.scope);
+                    })
+                    .catch(error => {
+                        console.error('Service Worker registration failed:', error);
+                    });
+            });
+        }
+    </script>
+</body>
+</html>

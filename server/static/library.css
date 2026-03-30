@@ -1,0 +1,446 @@
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Fira Sans", "Droid Sans", "Helvetica Neue", sans-serif;
+    background-color: #f9f9f9;
+    color: #333;
+    margin: 0;
+}
+
+.library-container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 2rem;
+}
+
+.library-header {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid #ddd;
+    padding-bottom: 1rem;
+    margin-bottom: 2rem;
+}
+
+.library-header h1 {
+    margin: 0;
+    flex-basis: 100%;
+    margin-bottom: 1rem;
+}
+
+.header-controls {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    width: 100%;
+    justify-content: space-between;
+}
+
+.header-controls label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    cursor: pointer;
+    user-select: none;
+}
+
+.admin-link {
+    text-decoration: none;
+    color: #007bff;
+    font-size: 1rem;
+}
+
+.tag-filter-bar {
+    margin-bottom: 2rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid #eee;
+}
+
+.tag-filter {
+    background-color: #f8f9fa;
+    border: 1px solid #dee2e6;
+    color: #495057;
+    padding: 0.4rem 0.8rem;
+    border-radius: 16px;
+    cursor: pointer;
+    transition: background-color 0.2s, color 0.2s;
+    font-size: 0.9rem;
+}
+
+.tag-filter:hover {
+    background-color: #e9ecef;
+}
+
+.tag-filter.active {
+    background-color: #007bff;
+    color: #fff;
+    border-color: #007bff;
+}
+
+.book-shelf {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 1.5rem;
+}
+
+.book-card {
+    position: relative; /* For positioning icons */
+    border: 1px solid #eee;
+    border-radius: 8px;
+    background-color: #fff;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+    display: flex;
+    flex-direction: column;
+    padding: 1rem;
+}
+
+.book-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+}
+
+.card-header {
+    padding-top: 1.5rem; /* Space for bookmark */
+    text-align: center;
+    position: relative; /* Needed for absolute positioning of children */
+}
+
+.book-card h2 {
+    margin: 0;
+    font-size: 1.2rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    padding: 0 25px; /* Add padding to prevent overlap with pin and menu buttons */
+}
+
+.pin-btn {
+    position: absolute;
+    top: 0;
+    right: 0;
+    font-size: 1.5rem;
+    cursor: pointer;
+    opacity: 0.2;
+    transition: opacity 0.2s, transform 0.2s;
+    user-select: none; /* Prevent text selection */
+}
+
+.book-card:hover .pin-btn {
+    opacity: 0.8;
+}
+
+.pin-btn:hover {
+    transform: scale(1.2);
+    opacity: 1;
+}
+
+.pin-btn.pinned {
+    opacity: 1;
+    color: #ffc107; /* Gold color for the pinned star */
+}
+
+.bookmark-icon {
+    position: absolute;
+    top: -4px;
+    left: 15px;
+    font-size: 2.5rem;
+    color: #6c757d;
+    text-shadow: 1px 1px 2px rgba(0,0,0,0.1);
+    cursor: pointer;
+    transition: opacity 0.2s, transform 0.2s;
+}
+
+.bookmark-icon:hover {
+    transform: scale(1.1);
+}
+
+.card-body {
+    padding: 1rem 0;
+    text-align: center;
+    flex-grow: 1; /* Make body grow to push actions to the bottom */
+}
+
+.tags-container {
+    margin-top: 0.75rem;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.3rem;
+}
+
+.tag {
+    display: inline-block;
+    background-color: #e9ecef;
+    color: #495057;
+    padding: 0.2rem 0.5rem;
+    border-radius: 12px; /* pill shape */
+    font-size: 0.75rem;
+    font-weight: 500;
+}
+
+.last-read-indicator {
+    font-size: 0.8rem;
+    color: #6c757d;
+    margin-top: 0.75rem;
+}
+
+.card-actions {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid #eee;
+}
+
+.url-menu-btn {
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    color: #aaa;
+    cursor: pointer;
+    padding: 0 8px;
+}
+
+.url-menu-btn:hover {
+    color: #333;
+}
+
+.edit-tags-btn {
+    flex-grow: 1;
+}
+
+
+/* Modal Styles */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.6);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+}
+
+.modal-content {
+    background: #fff;
+    padding: 1.5rem;
+    border-radius: 8px;
+    width: 90%;
+    max-width: 500px;
+    box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 1rem;
+    margin-bottom: 1rem;
+}
+
+.modal-close-btn {
+    background: none;
+    border: none;
+    font-size: 2rem;
+    cursor: pointer;
+    color: #aaa;
+}
+
+#tag-checkbox-form, #url-list-body ul {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    max-height: 400px;
+    overflow-y: auto;
+    padding: 0.5rem;
+    border: 1px solid #eee;
+    border-radius: 4px;
+    margin-bottom: 1rem;
+    list-style-type: none;
+}
+
+#url-list-body li {
+    padding: 0.5rem 0.2rem;
+    border-bottom: 1px solid #eee;
+}
+#url-list-body li:last-child {
+    border-bottom: none;
+}
+
+#url-list-body a {
+    text-decoration: none;
+    color: #007bff;
+}
+
+#tag-checkbox-form label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+#new-tag-form {
+    display: flex;
+    gap: 0.5rem;
+}
+
+#new-tag-form input {
+    flex-grow: 1;
+    padding: 0.5rem;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+}
+
+.modal-footer {
+    margin-top: 1.5rem;
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+}
+
+.btn-primary {
+    background-color: #007bff;
+    color: white;
+    border: none;
+    padding: 0.6rem 1rem;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.btn-secondary {
+    background-color: #6c757d;
+    color: white;
+    border: none;
+    padding: 0.6rem 1rem;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+/* Hover Preview */
+.book-card-preview {
+    position: absolute;
+    z-index: 10;
+    background-color: rgba(30, 30, 30, 0.95);
+    color: #fff;
+    padding: 1rem;
+    border-radius: 6px;
+    width: 280px;
+    font-size: 0.9rem;
+    line-height: 1.4;
+    box-shadow: 0 5px 20px rgba(0,0,0,0.4);
+    pointer-events: none; /* So the preview itself doesn't interfere with mouse events */
+    opacity: 0;
+    transform: scale(0.95);
+    transition: opacity 0.15s ease-out, transform 0.15s ease-out;
+    white-space: pre-wrap; /* Respect newlines in the summary */
+}
+
+/* Toggle Switch CSS */
+.toggle-switch {
+    position: relative;
+    display: inline-block;
+    width: 40px;
+    height: 24px;
+}
+
+.toggle-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: #ccc;
+    transition: .4s;
+    border-radius: 24px;
+}
+
+.slider:before {
+    position: absolute;
+    content: "";
+    height: 16px;
+    width: 16px;
+    left: 4px;
+    bottom: 4px;
+    background-color: white;
+    transition: .4s;
+    border-radius: 50%;
+}
+
+input:checked + .slider {
+    background-color: #2196F3;
+}
+
+input:checked + .slider:before {
+    transform: translateX(16px);
+}
+
+/* Connection Status Toast */
+#connection-toast {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 10px 20px;
+    border-radius: 8px;
+    color: white;
+    font-size: 14px;
+    font-weight: 500;
+    z-index: 2000;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+    opacity: 0;
+    transition: opacity 0.5s, transform 0.5s;
+    transform: translate(-50%, 10px);
+}
+
+#connection-toast.show {
+    opacity: 1;
+    transform: translate(-50%, 0);
+}
+
+#connection-toast.online {
+    background-color: #48bb78; /* Green */
+}
+
+#connection-toast.offline {
+    background-color: #718096; /* Gray */
+}
+
+.progress-container {
+    width: 100%;
+    background-color: #e9ecef;
+    border-radius: .25rem;
+    margin-top: 1rem;
+    display: flex;
+    align-items: center;
+}
+
+.progress-bar {
+    height: 20px;
+    background-color: #007bff;
+    width: 0%;
+    border-radius: .25rem;
+    transition: width 0.3s ease-in-out;
+    text-align: center;
+    color: white;
+    line-height: 20px;
+    font-size: 0.8rem;
+}
+
+#progress-text {
+    padding-left: 10px;
+    font-size: 0.9rem;
+    color: #495057;
+}
