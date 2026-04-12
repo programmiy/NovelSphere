@@ -18,3 +18,4 @@ pydantic-settings
 celery
 python-dotenv
 jinja2
+win10toast_persist
