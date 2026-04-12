@@ -10,8 +10,16 @@ engine = create_engine(
 @event.listens_for(engine, "connect")
 def _db_connect(dbapi_connection, _connection_record):
     """
-    Registers a custom REGEXP function for SQLite connections to enable regex searches in SQL.
+    Registers custom functions and optimizes SQLite performance.
     """
+    # SQLite optimization pragmas
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA journal_mode=WAL")
+    cursor.execute("PRAGMA synchronous=NORMAL")
+    cursor.execute("PRAGMA cache_size=10000")
+    cursor.execute("PRAGMA busy_timeout=5000")
+    cursor.close()
+
     def regexp(expr, item):
         if item is None:
             return False
