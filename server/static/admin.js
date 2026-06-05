@@ -570,9 +570,7 @@ function handleCheckboxChange(e) {
 
         const groupCheckboxes = folderGroup.querySelectorAll('.group-select-all-checkbox');
         groupCheckboxes.forEach(cb => {
-            if (cb.checked !== target.checked) {
-                cb.click();
-            }
+            cb.checked = target.checked;
         });
 
         const itemCheckboxes = folderGroup.querySelectorAll('.item-checkbox');

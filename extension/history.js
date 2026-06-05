@@ -364,15 +364,13 @@ function handleCheckboxChange(e) {
         const folderGroup = target.closest('.history-folder-group');
         if (!folderGroup) return;
 
-        // Programmatically click the group-level checkboxes
+        // Directly set all group checkboxes
         const groupCheckboxes = folderGroup.querySelectorAll('.group-select-all-checkbox');
         groupCheckboxes.forEach(cb => {
-            if (cb.checked !== target.checked) {
-                cb.click(); // Triggering a click will invoke its own change handler
-            }
+            cb.checked = target.checked;
         });
 
-        // Fallback: Directly set all item checkboxes as well to ensure consistency
+        // Directly set all item checkboxes as well to ensure consistency
         const itemCheckboxes = folderGroup.querySelectorAll('.item-checkbox');
         itemCheckboxes.forEach(cb => {
             cb.checked = target.checked;

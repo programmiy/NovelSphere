@@ -2,6 +2,8 @@ regal-sorter-446110-s9-b1da9998d17c.json
 DEVELOPMENT_PLAN.md
 server/api_key.txt
 server/translations.db
+server/translations.db-wal
+server/translations.db-shm
 server/server_meta.json
 todo.md
 
