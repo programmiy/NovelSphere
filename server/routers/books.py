@@ -283,7 +283,7 @@ def get_book_chapters(folder_name: str):
     conn = sqlite3.connect(get_db_path(), timeout=15)
     cursor = conn.cursor()
 
-    base_order_by = "ORDER BY MIN(url) ASC, MIN(CASE WHEN lower(pid) LIKE 'p%' OR lower(pid) LIKE 'l%' THEN CAST(SUBSTR(pid, 2) AS INTEGER) ELSE 999999 END) ASC"
+    base_order_by = "ORDER BY MIN(COALESCE(toc_sort_order, 999999)) ASC, MIN(url) ASC"
 
     if decoded_folder_name == "미분류":
         query = f"""SELECT title FROM translations WHERE folderName IS NULL AND title IS NOT NULL GROUP BY title {base_order_by}"""

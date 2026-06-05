@@ -263,23 +263,30 @@ def get_paged_translations(page: int = 1, per_page: int = 20):
 )
 def get_translations_by_folder(db: Session = Depends(get_db)):
     
-    # 모든 데이터를 한 번에 조회
+    # 모든 데이터를 한 번에 조회 (original, translated 제외하여 경량화)
     applied_urls_set = {row.url for row in db.query(AppliedUrl).all()}
-    url_metadata = {meta.url: meta for meta in db.query(UrlMetadata).all()}
-    translations = db.query(Translation).all()
+    translations = db.query(
+        Translation.id,
+        Translation.url,
+        Translation.pid,
+        Translation.timestamp,
+        Translation.folderName,
+        Translation.title,
+        Translation.toc_sort_order
+    ).all()
 
     # 폴더 및 URL별로 그룹화
     grouped_by_folder = defaultdict(lambda: defaultdict(list))
     for t in translations:
         folder_name = t.folderName or "폴더 추가 대기 상태"
         if t.url:
-            # Translation 객체를 직렬화 가능한 dict로 변환
+            # Translation 객체를 직렬화 가능한 dict로 변환 (본문 텍스트는 전송하지 않음)
             grouped_by_folder[folder_name][t.url].append({
                 "id": t.id,
                 "url": t.url,
                 "pid": t.pid,
-                "original": t.original,
-                "translated": t.translated,
+                "original": "",
+                "translated": "",
                 "timestamp": t.timestamp,
                 "folderName": t.folderName,
                 "title": t.title,

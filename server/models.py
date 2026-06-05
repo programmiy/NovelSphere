@@ -22,6 +22,7 @@ class Translation(Base):
         UniqueConstraint('url', 'pid', 'original', name='_url_pid_original_uc'),
         Index('ix_url', 'url'),
         Index('ix_folderName', 'folderName'),
+        Index('ix_title', 'title'),
     )
 
 class ExcludedSentence(Base):

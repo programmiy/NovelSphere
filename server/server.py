@@ -111,6 +111,11 @@ async def lifespan(app: FastAPI):
     asyncio.create_task(backup_check_task())
 
     Base.metadata.create_all(bind=engine)
+    try:
+        with engine.begin() as connection:
+            connection.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_title ON translations (title)")
+    except Exception as e:
+        logger.error(f"Error creating ix_title index: {e}")
     
     logger.info("Server startup complete. Runtime tracking and backup task started.")
     yield
