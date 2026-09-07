@@ -5,6 +5,7 @@
 const JAPANESE_REGEX = /[\u3000-\u303f\u3040-\u309f\u30a0-\u30ff\uff00-\uff9f\u4e00-\u9faf\u3400-\u4dbf]/;
 let groupedTranslations = {};
 let allFolders = [];
+let selectedIds = new Set();
 
 // UI state
 let isLoading = false;
@@ -67,6 +68,8 @@ async function loadAndRenderGrouped() {
     showToast('Loading data...', 'info'); // DEBUG
     document.getElementById('loading-skeleton').style.display = 'block';
     historyContainer.innerHTML = '';
+    selectedIds.clear();
+    updateBulkActionPanel();
 
     try {
         // Fetch all data from the server
@@ -576,13 +579,34 @@ function handleCheckboxChange(e) {
         const itemCheckboxes = folderGroup.querySelectorAll('.item-checkbox');
         itemCheckboxes.forEach(cb => {
             cb.checked = target.checked;
+            const id = parseInt(cb.dataset.id);
+            if (target.checked) {
+                selectedIds.add(id);
+            } else {
+                selectedIds.delete(id);
+            }
         });
-    }
-
-    if (target.classList.contains('group-select-all-checkbox')) {
+    } else if (target.classList.contains('group-select-all-checkbox')) {
         const urlGroup = target.closest('.list-group');
+        if (!urlGroup) return;
+        
         const itemCheckboxes = urlGroup.querySelectorAll('.item-checkbox');
-        itemCheckboxes.forEach(cb => cb.checked = target.checked);
+        itemCheckboxes.forEach(cb => {
+            cb.checked = target.checked;
+            const id = parseInt(cb.dataset.id);
+            if (target.checked) {
+                selectedIds.add(id);
+            } else {
+                selectedIds.delete(id);
+            }
+        });
+    } else if (target.classList.contains('item-checkbox')) {
+        const id = parseInt(target.dataset.id);
+        if (target.checked) {
+            selectedIds.add(id);
+        } else {
+            selectedIds.delete(id);
+        }
     }
 
     updateBulkActionPanel();
@@ -776,12 +800,11 @@ async function toggleApplyStatus(url, button) {
 }
 
 function updateBulkActionPanel() {
-    const checkedItems = document.querySelectorAll('.item-checkbox:checked');
-    const hasSelection = checkedItems.length > 0;
+    const hasSelection = selectedIds.size > 0;
 
     if (hasSelection) {
         bulkActionsPanel.style.display = 'flex';
-        selectionCount.textContent = `${checkedItems.length}개 항목 선택됨`;
+        selectionCount.textContent = `${selectedIds.size}개 항목 선택됨`;
     } else {
         bulkActionsPanel.style.display = 'none';
     }
@@ -791,28 +814,28 @@ function updateBulkActionPanel() {
 }
 
 async function deleteSelectedTranslations() {
-    const checkedItems = Array.from(document.querySelectorAll('.item-checkbox:checked'));
-    if (checkedItems.length === 0 || !confirm(`정말로 ${checkedItems.length}개의 번역을 삭제하시겠습니까?`)) return;
+    if (selectedIds.size === 0 || !confirm(`정말로 ${selectedIds.size}개의 번역을 삭제하시겠습니까?`)) return;
     
-    const idsToDelete = checkedItems.map(item => parseInt(item.dataset.id));
+    const idsToDelete = Array.from(selectedIds);
     await fetch(`/translations/delete`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: idsToDelete }) });
     showToast(`${idsToDelete.length}개의 항목이 삭제되었습니다.`, 'success');
+    selectedIds.clear();
     loadAndRenderGrouped();
 }
 
 async function moveSelectedTranslationsToFolder(event) {
-    const checkedItems = Array.from(document.querySelectorAll('.item-checkbox:checked'));
-    if (checkedItems.length === 0) return;
+    if (selectedIds.size === 0) return;
     const newFolderName = event.target.value;
     if (newFolderName === "") return;
 
-    const idsToMove = checkedItems.map(item => parseInt(item.dataset.id));
+    const idsToMove = Array.from(selectedIds);
     const folderForAPI = newFolderName === "__no_folder__" ? null : newFolderName;
 
     if (!confirm(`${idsToMove.length}개의 항목을 '${newFolderName}' 폴더로 이동하시겠습니까?`)) return;
 
     await fetch('/translations/move', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: idsToMove, folder_name: folderForAPI }) });
     showToast(`${idsToMove.length}개의 항목이 이동되었습니다.`, 'success');
+    selectedIds.clear();
     loadAndRenderGrouped();
 }
 

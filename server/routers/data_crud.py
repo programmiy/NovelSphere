@@ -259,36 +259,48 @@ def get_paged_translations(page: int = 1, per_page: int = 20):
     "/translations_by_folder",
     tags=["Data CRUD"],
     summary="폴더별 번역 기록 조회",
-    description="데이터베이스에서 모든 번역 기록을 폴더와 URL별로 그룹화하고, URL은 최초 접근 시간 순으로 정렬하여 조회합니다."
+    description="데이터베이스에서 모든 번역 기록을 폴더와 URL별로 그룹화하고 조회합니다. light=True 지정 시 본문 텍스트를 제외하여 전송 성능을 높입니다."
 )
-def get_translations_by_folder(db: Session = Depends(get_db)):
+def get_translations_by_folder(light: bool = False, db: Session = Depends(get_db)):
     
-    # 모든 데이터를 한 번에 조회 (사용되지 않던 url_metadata 쿼리는 제외하되 본문 필드 복구)
+    # 모든 데이터를 한 번에 조회
     applied_urls_set = {row.url for row in db.query(AppliedUrl).all()}
-    translations = db.query(
-        Translation.id,
-        Translation.url,
-        Translation.pid,
-        Translation.original,
-        Translation.translated,
-        Translation.timestamp,
-        Translation.folderName,
-        Translation.title,
-        Translation.toc_sort_order
-    ).all()
+    
+    if light:
+        translations = db.query(
+            Translation.id,
+            Translation.url,
+            Translation.pid,
+            Translation.timestamp,
+            Translation.folderName,
+            Translation.title,
+            Translation.toc_sort_order
+        ).all()
+    else:
+        translations = db.query(
+            Translation.id,
+            Translation.url,
+            Translation.pid,
+            Translation.original,
+            Translation.translated,
+            Translation.timestamp,
+            Translation.folderName,
+            Translation.title,
+            Translation.toc_sort_order
+        ).all()
 
     # 폴더 및 URL별로 그룹화
     grouped_by_folder = defaultdict(lambda: defaultdict(list))
     for t in translations:
         folder_name = t.folderName or "폴더 추가 대기 상태"
         if t.url:
-            # Translation 객체를 직렬화 가능한 dict로 변환 (UI 렌더링을 위해 본문 필드 복구)
+            # Translation 객체를 직렬화 가능한 dict로 변환 (light=True 시 본문 필드를 빈 값으로 대체)
             grouped_by_folder[folder_name][t.url].append({
                 "id": t.id,
                 "url": t.url,
                 "pid": t.pid,
-                "original": t.original,
-                "translated": t.translated,
+                "original": "" if light else t.original,
+                "translated": "" if light else t.translated,
                 "timestamp": t.timestamp,
                 "folderName": t.folderName,
                 "title": t.title,
