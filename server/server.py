@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import logging
 import logging.handlers
+from functools import lru_cache
 from contextlib import asynccontextmanager
 from datetime import datetime
 from urllib.parse import urlparse
@@ -188,6 +189,7 @@ app.mount("/static", StaticFiles(directory=settings.static_dir), name="static")
 templates = Jinja2Templates(directory=settings.templates_dir)
 
 # --- Dynamic Content ---
+@lru_cache(maxsize=1)
 def get_git_commit_hash():
     """Gets the short hash of the current git commit."""
     try:

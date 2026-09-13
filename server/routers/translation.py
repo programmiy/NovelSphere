@@ -25,6 +25,7 @@ logger = logging.getLogger(__name__)
 # --- Global State for 5 PM Stop Condition ---
 process_started_before_5pm = False
 _stop_lock = threading.Lock()
+_gemini_session = requests.Session()
 
 
 
@@ -63,9 +64,9 @@ def _get_excluded_sentences_for_url(url: str, db: Session) -> set:
     }
     return excluded_originals
 
-def call_gemini_api(api_url: str, prompt: str):
+def call_gemini_api(api_url: str, prompt: str, api_key: Optional[str] = None):
     """
-    Calls the Gemini API without a retry mechanism.
+    Calls the Gemini API using requests.Session with header authentication.
     """
     payload = {
         "contents": [{"parts": [{"text": prompt}]}],
@@ -81,7 +82,12 @@ def call_gemini_api(api_url: str, prompt: str):
     }
     logger.info(f"Gemini API Payload (first 500 chars): {json.dumps(payload, ensure_ascii=False)[:500]}...")
     
-    response = requests.post(api_url, json=payload, timeout=180)
+    headers = {"Content-Type": "application/json"}
+    key = api_key or getattr(settings, "gemini_api_key", None)
+    if key and "key=" not in api_url:
+        headers["x-goog-api-key"] = key
+
+    response = _gemini_session.post(api_url, json=payload, headers=headers, timeout=180)
     response.raise_for_status()
     return response.json()
 
@@ -268,7 +274,7 @@ def translate_texts(req: TranslateRequest, db: Session = Depends(get_db)):
 
     selected_model = req.model or (settings.gemini_retranslation_model if req.is_retranslation else settings.gemini_default_model)
     logger.info(f"Using Gemini Model: {selected_model} (is_retranslation={req.is_retranslation})")
-    api_url = f"https://generativelanguage.googleapis.com/v1beta/models/{selected_model}:generateContent?key={settings.gemini_api_key}"
+    api_url = f"https://generativelanguage.googleapis.com/v1beta/models/{selected_model}:generateContent"
     
     prompt = _build_translation_prompt(items_to_translate)
     logger.info(f"Gemini API URL: {api_url}")

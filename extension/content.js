@@ -18,10 +18,6 @@ function getCleanUrl() {
     return window.location.href.split('#')[0];
 }
 
-function getCleanUrl() {
-    return window.location.href.split('#')[0];
-}
-
 // =================================================================================
 // Initialization & Event Listeners
 // =================================================================================

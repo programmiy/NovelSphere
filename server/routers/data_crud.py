@@ -252,15 +252,19 @@ def get_paged_translations(page: int = 1, per_page: int = 20):
     "/translations_by_folder",
     tags=["Data CRUD"],
     summary="폴더별 번역 기록 조회",
-    description="데이터베이스에서 모든 번역 기록을 폴더와 URL별로 그룹화하고 조회합니다. light=True 지정 시 본문 텍스트를 제외하여 전송 성능을 높입니다."
+    description="데이터베이스에서 모든 번역 기록을 폴더와 URL별로 그룹화하고 조회합니다. folder 지정 시 해당 폴더만 필터링하며, light=True 지정 시 본문 텍스트를 제외하여 전송 성능을 높입니다."
 )
-def get_translations_by_folder(light: bool = False, db: Session = Depends(get_db)):
+def get_translations_by_folder(
+    light: bool = False,
+    folder: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
     
     # 모든 데이터를 한 번에 조회
     applied_urls_set = {row.url for row in db.query(AppliedUrl).all()}
     
     if light:
-        translations = db.query(
+        query = db.query(
             Translation.id,
             Translation.url,
             Translation.pid,
@@ -268,9 +272,9 @@ def get_translations_by_folder(light: bool = False, db: Session = Depends(get_db
             Translation.folderName,
             Translation.title,
             Translation.toc_sort_order
-        ).all()
+        )
     else:
-        translations = db.query(
+        query = db.query(
             Translation.id,
             Translation.url,
             Translation.pid,
@@ -280,7 +284,15 @@ def get_translations_by_folder(light: bool = False, db: Session = Depends(get_db
             Translation.folderName,
             Translation.title,
             Translation.toc_sort_order
-        ).all()
+        )
+
+    if folder:
+        if folder in ("폴더 추가 대기 상태", "미분류"):
+            query = query.filter(Translation.folderName.is_(None))
+        else:
+            query = query.filter(Translation.folderName == folder)
+
+    translations = query.all()
 
     # 폴더 및 URL별로 그룹화
     grouped_by_folder = defaultdict(lambda: defaultdict(list))
