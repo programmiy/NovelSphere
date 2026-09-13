@@ -122,34 +122,32 @@ def upsert_translations(items: List[TranslationItem], db: Session = Depends(get_
     updated_count = 0
     inserted_count = 0
 
-    # 처리할 모든 URL을 한 번에 수집
+    # 1. 처리할 모든 URL 수집 및 새 메타데이터 일괄 등록
     urls_in_batch = {item.url for item in items}
-
-    # 데이터베이스에 이미 있는 URL 메타데이터를 한 번에 조회
     existing_metadata = db.query(UrlMetadata).filter(UrlMetadata.url.in_(urls_in_batch)).all()
     existing_metadata_urls = {meta.url for meta in existing_metadata}
 
-    # 새 URL 메타데이터를 저장할 리스트
-    new_metadata_list = []
-
-    for url in urls_in_batch:
-        if url not in existing_metadata_urls:
-            new_metadata_list.append(UrlMetadata(url=url, first_accessed_at=int(time.time())))
-    
-    # 새 메타데이터를 한 번에 DB에 추가
+    new_metadata_list = [
+        UrlMetadata(url=url, first_accessed_at=int(time.time()))
+        for url in urls_in_batch if url not in existing_metadata_urls
+    ]
     if new_metadata_list:
         db.add_all(new_metadata_list)
-        db.commit()
+
+    # 2. 배치 내 URL에 해당하는 기존 번역 데이터를 1회 쿼리로 일괄 조회하여 N+1 제거
+    existing_translations = db.query(Translation).filter(Translation.url.in_(urls_in_batch)).all()
+    existing_map = {(t.url, t.pid): t for t in existing_translations}
 
     for item in items:
-        # 기존 번역 데이터 조회
-        existing_translation = db.query(Translation).filter_by(url=item.url, pid=item.pid).first()
+        key = (item.url, item.pid)
+        existing_translation = existing_map.get(key)
 
         if existing_translation:
             # 데이터 업데이트
             existing_translation.translated = item.translated
             existing_translation.timestamp = item.timestamp
-            existing_translation.folderName = item.folderName if item.folderName is not None else existing_translation.folderName
+            if item.folderName is not None:
+                existing_translation.folderName = item.folderName
             if item.title:
                 existing_translation.title = item.title
             updated_count += 1
@@ -165,8 +163,10 @@ def upsert_translations(items: List[TranslationItem], db: Session = Depends(get_
                 title=item.title
             )
             db.add(new_translation)
+            existing_map[key] = new_translation  # 배치 내 중복 항목 대비
             inserted_count += 1
 
+    # 단일 트랜잭션으로 원자적(Atomic) 커밋
     db.commit()
     return {"inserted": inserted_count, "updated": updated_count}
 

@@ -16,6 +16,7 @@ from server.models import Translation, ExcludedSentence # Add these imports
 from urllib.parse import urlparse
 from win10toast_persist import ToastNotifier
 
+import threading
 from server.settings import settings
 
 router = APIRouter()
@@ -23,6 +24,7 @@ logger = logging.getLogger(__name__)
 
 # --- Global State for 5 PM Stop Condition ---
 process_started_before_5pm = False
+_stop_lock = threading.Lock()
 
 
 
@@ -235,23 +237,18 @@ def translate_texts(req: TranslateRequest, db: Session = Depends(get_db)):
     global process_started_before_5pm
     now = datetime.datetime.now()
 
-    # --- 5 PM Boundary-Crossing Logic ---
-    # Reset the flag automatically on a new day (e.g., before the critical hour)
-    if now.hour < 16:
-        process_started_before_5pm = False
+    # --- 5 PM Boundary-Crossing Logic (Thread-safe) ---
+    with _stop_lock:
+        if now.hour < 16:
+            process_started_before_5pm = False
 
-    # If a request is made before 5 PM, mark that a process is active.
-    if now.hour < 17:
-        process_started_before_5pm = True
-    
-    # THE STOP CONDITION:
-    # If a process was active before 5 PM AND it's now 5 PM or later, stop it once.
-    if process_started_before_5pm and now.hour >= 17:
-        # Reset the flag immediately. This makes the stop "one-time" for the process,
-        # allowing a new manual process to start after 5 PM.
-        process_started_before_5pm = False 
-        logger.critical("오후 5시가 되어, 5시 이전에 시작된 자동 번역 프로세스를 중지합니다.")
-        raise HTTPException(status_code=503, detail="오후 5시가 되어 자동 번역을 중지합니다. 새로고침 후 다시 시도해주세요.")
+        if now.hour < 17:
+            process_started_before_5pm = True
+
+        if process_started_before_5pm and now.hour >= 17:
+            process_started_before_5pm = False
+            logger.critical("오후 5시가 되어, 5시 이전에 시작된 자동 번역 프로세스를 중지합니다.")
+            raise HTTPException(status_code=503, detail="오후 5시가 되어 자동 번역을 중지합니다. 새로고침 후 다시 시도해주세요.")
 
     translatable_items = [item for item in req.items if item.id != 'tagCount']
     
