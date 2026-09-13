@@ -127,8 +127,40 @@ async def lifespan(app: FastAPI):
     try:
         with engine.begin() as connection:
             connection.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_title ON translations (title)")
+            connection.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_folder_title ON translations (folderName, title)")
+
+            connection.exec_driver_sql("""
+                CREATE VIRTUAL TABLE IF NOT EXISTS translations_fts USING fts5(
+                    original,
+                    translated,
+                    content='translations',
+                    content_rowid='id',
+                    tokenize='unicode61'
+                );
+            """)
+            connection.exec_driver_sql("""
+                CREATE TRIGGER IF NOT EXISTS translations_ai AFTER INSERT ON translations BEGIN
+                    INSERT INTO translations_fts(rowid, original, translated) VALUES (new.id, new.original, new.translated);
+                END;
+            """)
+            connection.exec_driver_sql("""
+                CREATE TRIGGER IF NOT EXISTS translations_ad AFTER DELETE ON translations BEGIN
+                    INSERT INTO translations_fts(translations_fts, rowid, original, translated) VALUES('delete', old.id, old.original, old.translated);
+                END;
+            """)
+            connection.exec_driver_sql("""
+                CREATE TRIGGER IF NOT EXISTS translations_au AFTER UPDATE ON translations BEGIN
+                    INSERT INTO translations_fts(translations_fts, rowid, original, translated) VALUES('delete', old.id, old.original, old.translated);
+                    INSERT INTO translations_fts(rowid, original, translated) VALUES (new.id, new.original, new.translated);
+                END;
+            """)
+
+            fts_count = connection.exec_driver_sql("SELECT COUNT(*) FROM translations_fts").scalar()
+            if fts_count == 0:
+                connection.exec_driver_sql("INSERT INTO translations_fts(translations_fts) VALUES('rebuild')")
+                logger.info("Built translations_fts search index successfully.")
     except Exception as e:
-        logger.error(f"Error creating ix_title index: {e}")
+        logger.error(f"Error initializing indexes and FTS5: {e}")
     
     logger.info("Server startup complete. Runtime tracking and backup task started.")
     yield

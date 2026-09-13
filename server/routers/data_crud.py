@@ -63,8 +63,25 @@ def get_translations(skip: int = 0, limit: int = 100, folder: Optional[str] = No
             params.append(folder)
     
     if search:
-        conditions.append("(original LIKE ? OR translated LIKE ?)")
-        params.extend([f'%{search}%', f'%{search}%'])
+        use_fts = False
+        try:
+            clean_search = '"' + search.replace('"', '""') + '"'
+            fts_rows = cursor.execute("SELECT rowid FROM translations_fts WHERE translations_fts MATCH ? LIMIT 1000", (clean_search,)).fetchall()
+            matched_ids = [row['id'] if isinstance(row, dict) and 'id' in row else (row['rowid'] if isinstance(row, dict) and 'rowid' in row else row[0]) for row in fts_rows]
+            if matched_ids:
+                placeholders = ', '.join('?' * len(matched_ids))
+                conditions.append(f"id IN ({placeholders})")
+                params.extend(matched_ids)
+                use_fts = True
+            else:
+                conditions.append("1 = 0")
+                use_fts = True
+        except Exception:
+            use_fts = False
+
+        if not use_fts:
+            conditions.append("(original LIKE ? OR translated LIKE ?)")
+            params.extend([f'%{search}%', f'%{search}%'])
     
     if url:
         urls_to_check = set()

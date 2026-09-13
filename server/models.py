@@ -23,6 +23,7 @@ class Translation(Base):
         Index('ix_url', 'url'),
         Index('ix_folderName', 'folderName'),
         Index('ix_title', 'title'),
+        Index('ix_folder_title', 'folderName', 'title'),
     )
 
 class ExcludedSentence(Base):
