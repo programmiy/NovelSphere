@@ -191,7 +191,7 @@ function injectSidebar() {
                     <tr>
                         <th>원문 (일본어)</th>
                         <th>번역 (한국어)</th>
-                        <th>저장</th>
+                        <th>관리</th>
                     </tr>
                 </thead>
                 <tbody id="translation-table-body"></tbody>
@@ -225,17 +225,21 @@ function injectSidebar() {
         .log-time { margin-right: 8px; }
         .log-error { color: #ff6b6b !important; }
         #translation-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-        #translation-table th, #translation-table td { padding: 12px 15px; text-align: left; border-bottom: 1px solid #e9ecef; }
-        #translation-table th:nth-child(1) { width: 45%; }
-        #translation-table th:nth-child(2) { width: 45%; }
-        #translation-table th:nth-child(3) { width: 10%; }
+        #translation-table th, #translation-table td { padding: 8px 10px; text-align: left; border-bottom: 1px solid #e9ecef; }
+        #translation-table th:nth-child(1) { width: 40%; }
+        #translation-table th:nth-child(2) { width: 42%; }
+        #translation-table th:nth-child(3) { width: 18%; }
         #translation-table th { background-color: #f1f3f5; font-size: 12px; font-weight: 600; }
         #translation-table .original-text { font-size: 13px; color: #495057; word-break: break-all; }
         #translation-table .translated-text { font-size: 13px; color: #212529; outline: none; width: 100%; -webkit-user-modify: read-write-plaintext-only; }
         #translation-table .translated-text:focus { background-color: #e9f7fd; }
-        #translation-table .save-btn { background-color: #4CAF50; color: white; border: none; padding: 5px 8px; border-radius: 4px; cursor: pointer; font-size: 11px; }
+        #translation-table .action-btns { display: flex; gap: 4px; align-items: center; }
+        #translation-table .save-btn { background-color: #4CAF50; color: white; border: none; padding: 4px 6px; border-radius: 4px; cursor: pointer; font-size: 11px; white-space: nowrap; }
         #translation-table .save-btn:hover { background-color: #45a049; }
-        #translation-table .save-btn:disabled { background-color: #cccccc; }
+        #translation-table .save-btn:disabled { background-color: #cccccc; cursor: not-allowed; }
+        #translation-table .retranslate-row-btn { background-color: #4a6cf7; color: white; border: none; padding: 4px 6px; border-radius: 4px; cursor: pointer; font-size: 11px; white-space: nowrap; }
+        #translation-table .retranslate-row-btn:hover { background-color: #3b5bdb; }
+        #translation-table .retranslate-row-btn:disabled { background-color: #cccccc; cursor: not-allowed; }
         #jp-translator-toggle-btn { position: fixed; top: 50%; left: 0; transform: translateY(-50%); background-color: #667eea; color: white; border: none; border-top-right-radius: 5px; border-bottom-right-radius: 5px; padding: 10px 5px; cursor: pointer; z-index: 9998; font-size: 18px; writing-mode: vertical-rl; }
     `;
     document.head.appendChild(style);
@@ -283,6 +287,7 @@ function setupEventListeners() {
         logToSidebar("API 요청이 사용자에 의해 중지되었습니다.", "log-error");
         document.getElementById('stop-translation-btn').style.display = 'none';
         document.getElementById('resume-translation-btn').style.display = 'none';
+        document.getElementById('retry-translation-btn').style.display = 'inline-block';
         updateSidebarWithCancelled();
     });
 
@@ -297,11 +302,13 @@ function setupEventListeners() {
     });
 
     document.getElementById('retry-translation-btn').addEventListener('click', () => {
-        logToSidebar("재번역을 시도합니다...");
+        logToSidebar("고성능 모델(Gemini 3.0 Flash)로 전체 재번역을 시작합니다...");
         document.getElementById('retry-translation-btn').style.display = 'none';
         const tableBody = document.getElementById('translation-table-body');
         tableBody.innerHTML = ''; 
+        translationCache.clear();
         hasScannedForP_Tags = false;
+        translateAllPTags(true);
         showSidebar();
     });
 }
@@ -393,7 +400,7 @@ function chunkArray(array, size) {
     return chunks;
 }
 
-async function translateAllPTags() {
+async function translateAllPTags(isRetranslation = false) {
     isTranslationCancelled = false;
     document.getElementById('stop-translation-btn').style.display = 'inline-block';
     document.getElementById('retry-translation-btn').style.display = 'none';
@@ -441,10 +448,12 @@ if (/^[\s—]+$/.test(text) || text.includes('----------') || text.includes('◎
     if (textsToTranslate.length === 0) {
         logToSidebar("번역할 새로운 내용이 없습니다.");
         document.getElementById('stop-translation-btn').style.display = 'none';
+        document.getElementById('retry-translation-btn').style.display = 'inline-block';
         return;
     }
 
-    logToSidebar(`총 ${textsToTranslate.length}개의 문장 번역을 시작합니다.`);
+    const modelDescription = isRetranslation ? "재번역 엔진(Gemini 3.0 Flash)" : "기본 엔진(Gemini 3.5 Flash Lite)";
+    logToSidebar(`총 ${textsToTranslate.length}개의 문장 번역을 시작합니다. (${modelDescription})`);
     
     const longTexts = textsToTranslate.filter(item => item.text.length > LONG_TEXT_THRESHOLD);
     const normalTexts = textsToTranslate.filter(item => item.text.length <= LONG_TEXT_THRESHOLD);
@@ -463,7 +472,8 @@ if (/^[\s—]+$/.test(text) || text.includes('----------') || text.includes('◎
             try {
                 const response = await chrome.runtime.sendMessage({
                     action: 'batchTranslate',
-                    items: items
+                    items: items,
+                    isRetranslation: isRetranslation
                 });
     
                 if (isTranslationCancelled) return;
@@ -503,6 +513,15 @@ if (/^[\s—]+$/.test(text) || text.includes('----------') || text.includes('◎
                 }
 
                 if (response && response.translations) {
+                    // [검열 감지 알림] 하단 로그 콘솔에 검열 생략 안내
+                    const censoredItems = response.translations.filter(t => t.censored || (t.translated && t.translated.includes('[검열로 인해 번역 생략]')));
+                    if (censoredItems.length > 0) {
+                        censoredItems.forEach(item => {
+                            const preview = item.original ? (item.original.length > 25 ? item.original.slice(0, 25) + '...' : item.original) : '';
+                            logToSidebar(`⚠️ [검열 감지] 문장(ID: ${item.id}) 번역이 검열로 인해 생략되었습니다. (원문: ${preview})`, 'log-error');
+                        });
+                    }
+
                     const successes = response.translations.filter(t => t.translated !== null && !t.translated.includes('번역 실패'));
                     const failures = response.translations.filter(t => t.translated === null || t.translated.includes('번역 실패'));
     
@@ -586,7 +605,8 @@ if (/^[\s—]+$/.test(text) || text.includes('----------') || text.includes('◎
         try {
             const response = await chrome.runtime.sendMessage({
                 action: 'batchTranslate',
-                items: subItemsForApi
+                items: subItemsForApi,
+                isRetranslation: true
             });
 
             // Handle stop signals from background script (e.g., on 429 error)
@@ -707,6 +727,7 @@ if (/^[\s—]+$/.test(text) || text.includes('----------') || text.includes('◎
 
     // Finalize
     document.getElementById('stop-translation-btn').style.display = 'none';
+    document.getElementById('retry-translation-btn').style.display = 'inline-block';
     sortSidebar();
     logToSidebar("모든 번역 작업이 완료되었습니다.");
 
@@ -802,6 +823,68 @@ function populateSidebar(translations) {
     sortSidebar();
 }
 
+async function retranslateSingleRow(pid, originalText) {
+    const row = document.querySelector(`tr[data-pid="${pid}"]`);
+    if (!row) return;
+
+    const translatedCell = row.querySelector('.translated-text');
+    const retransBtn = row.querySelector('.retranslate-row-btn');
+    const saveBtn = row.querySelector('.save-btn');
+
+    if (retransBtn) retransBtn.disabled = true;
+    if (saveBtn) saveBtn.disabled = true;
+
+    const prevContent = translatedCell.textContent;
+    translatedCell.textContent = '⏳ 재번역 중...';
+    translatedCell.style.color = '#4a6cf7';
+
+    logToSidebar(`(pid: ${pid}) 고성능 모델로 재번역 요청 중...`);
+
+    try {
+        const response = await chrome.runtime.sendMessage({
+            action: 'batchTranslate',
+            items: [{ id: pid, text: originalText }],
+            isRetranslation: true
+        });
+
+        if (response && response.translations && response.translations.length > 0) {
+            const newTranslated = response.translations[0].translated;
+            if (newTranslated) {
+                translatedCell.textContent = newTranslated;
+                translatedCell.style.color = '';
+                translatedCell.setAttribute('contenteditable', 'true');
+
+                // 페이지 내 실제 p 태그 내용도 갱신
+                const pTag = document.getElementById(pid);
+                if (pTag) {
+                    pTag.innerHTML = newTranslated;
+                }
+
+                // translationCache 갱신
+                translationCache.set(pid, { pid: pid, original: originalText, translated: newTranslated });
+
+                // DB에 즉시 저장
+                await saveSingleTranslation(pid, originalText, newTranslated);
+                logToSidebar(`(pid: ${pid}) 고성능 모델 재번역 및 저장 완료.`);
+            } else {
+                throw new Error("빈 번역 응답 수신");
+            }
+        } else if (response && response.error) {
+            throw new Error(response.error);
+        } else {
+            throw new Error("유효하지 않은 응답");
+        }
+    } catch (err) {
+        console.error(`Error retranslating row ${pid}:`, err);
+        logToSidebar(`(pid: ${pid}) 재번역 실패: ${err.message}`, 'log-error');
+        translatedCell.textContent = prevContent;
+        translatedCell.style.color = '';
+    } finally {
+        if (retransBtn) retransBtn.disabled = false;
+        if (saveBtn) saveBtn.disabled = false;
+    }
+}
+
 function addPlaceholderRows(items) {
     const tableBody = document.getElementById('translation-table-body');
     items.forEach(item => {
@@ -810,11 +893,17 @@ function addPlaceholderRows(items) {
         row.innerHTML = `
             <td><div class="original-text">${escapeHtml(item.text)}</div></td>
             <td><div class="translated-text" contenteditable="true">⏳ 번역 중...</div></td>
-            <td><button class="save-btn" disabled>저장</button></td>
+            <td>
+                <div class="action-btns">
+                    <button class="save-btn" disabled>저장</button>
+                    <button class="retranslate-row-btn" title="고성능 모델로 재번역" disabled>🔄</button>
+                </div>
+            </td>
         `;
 
         const translatedCell = row.querySelector('.translated-text');
         const saveBtn = row.querySelector('.save-btn');
+        const retransBtn = row.querySelector('.retranslate-row-btn');
 
         // 입력이 발생하면 저장 버튼 활성화
         translatedCell.addEventListener('input', () => {
@@ -827,6 +916,11 @@ function addPlaceholderRows(items) {
             await saveSingleTranslation(item.id, item.text, editedText);
             saveBtn.textContent = '저장됨!';
             setTimeout(() => { saveBtn.textContent = '저장'; }, 1500);
+        });
+
+        // 재번역 버튼 연결
+        retransBtn.addEventListener('click', () => {
+            retranslateSingleRow(item.id, item.text);
         });
     });
     updateEmptyState();
@@ -846,30 +940,46 @@ function updateSidebarWithTranslations(translations) {
 
             const translatedCell = row.querySelector('.translated-text');
             const saveBtn = row.querySelector('.save-btn');
+            const retransBtn = row.querySelector('.retranslate-row-btn');
             
             const isError = item.translated.includes('번역 실패') || item.translated.includes('API 오류');
+            const isCensored = item.censored || item.translated.includes('[검열로 인해 번역 생략]');
 
             if (isError) {
                 translatedCell.innerHTML = escapeHtml(item.translated);
                 translatedCell.setAttribute('contenteditable', 'false');
                 translatedCell.style.color = 'red';
-                saveBtn.disabled = true;
+                if (saveBtn) saveBtn.disabled = true;
+                if (retransBtn) retransBtn.disabled = false; // 오류 시 재번역 버튼 활성화
             } else {
                 translatedCell.innerHTML = escapeHtml(item.translated);
                 translatedCell.setAttribute('contenteditable', 'true');
-                translatedCell.style.color = ''; // Reset color
-                saveBtn.disabled = false;
+                if (isCensored) {
+                    translatedCell.style.color = '#f59e0b'; // 검열 생략 문장은 시각적으로 구별되도록 주황색 표시
+                } else {
+                    translatedCell.style.color = ''; // Reset color
+                }
+                if (saveBtn) saveBtn.disabled = false;
+                if (retransBtn) retransBtn.disabled = false;
 
-                // Clone and replace the button to remove any old listeners and attach a new one
-                const newSaveBtn = saveBtn.cloneNode(true);
-                saveBtn.parentNode.replaceChild(newSaveBtn, saveBtn);
+                if (saveBtn) {
+                    const newSaveBtn = saveBtn.cloneNode(true);
+                    saveBtn.parentNode.replaceChild(newSaveBtn, saveBtn);
+                    newSaveBtn.addEventListener('click', async () => {
+                        const editedText = translatedCell.textContent.trim();
+                        await saveSingleTranslation(item.id, item.original, editedText);
+                        newSaveBtn.textContent = '저장됨!';
+                        setTimeout(() => { newSaveBtn.textContent = '저장'; }, 1500);
+                    });
+                }
 
-                newSaveBtn.addEventListener('click', async () => {
-                    const editedText = translatedCell.textContent.trim();
-                    await saveSingleTranslation(item.id, item.original, editedText);
-                    newSaveBtn.textContent = '저장됨!';
-                    setTimeout(() => { newSaveBtn.textContent = '저장'; }, 1500);
-                });
+                if (retransBtn) {
+                    const newRetransBtn = retransBtn.cloneNode(true);
+                    retransBtn.parentNode.replaceChild(newRetransBtn, retransBtn);
+                    newRetransBtn.addEventListener('click', () => {
+                        retranslateSingleRow(item.id, item.original);
+                    });
+                }
             }
         }
     });
@@ -884,7 +994,12 @@ function addEntryToSidebar(translation) {
     row.innerHTML = `
         <td><div class="original-text">${escapeHtml(translation.original)}</div></td>
         <td><div class="translated-text" contenteditable="true">${escapeHtml(translation.translated)}</div></td>
-        <td><button class="save-btn">저장</button></td>
+        <td>
+            <div class="action-btns">
+                <button class="save-btn">저장</button>
+                <button class="retranslate-row-btn" title="고성능 모델로 재번역">🔄</button>
+            </div>
+        </td>
     `;
 
     const saveBtn = row.querySelector('.save-btn');
@@ -894,6 +1009,12 @@ function addEntryToSidebar(translation) {
         saveBtn.textContent = '저장됨!';
         setTimeout(() => { saveBtn.textContent = '저장'; }, 1500);
     });
+
+    const retransBtn = row.querySelector('.retranslate-row-btn');
+    retransBtn.addEventListener('click', () => {
+        retranslateSingleRow(translation.pid, translation.original);
+    });
+
     updateEmptyState();
 }
 

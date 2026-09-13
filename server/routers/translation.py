@@ -34,6 +34,8 @@ class TranslationItemInput(BaseModel):
 class TranslateRequest(BaseModel):
     items: List[TranslationItemInput]
     url: str
+    is_retranslation: Optional[bool] = False
+    model: Optional[str] = None
 
 class ExcludeRequest(BaseModel):
     ids: List[int]
@@ -87,6 +89,141 @@ def process_repeated_chars(text: str) -> str:
         return text
     return re.sub(r'(.)\1{5,}', '(반복)', text)
 
+def _build_translation_prompt(items: List[TranslationItemInput]) -> str:
+    """번역용 JSON 배열 프롬프트를 생성합니다."""
+    api_input_json = json.dumps([{"id": item.id, "text": item.text} for item in items], ensure_ascii=False)
+    return f"""You are a JSON-only translation API. You will receive a JSON array of objects, each with an 'id' and a 'text' field.
+Your task is to translate the 'text' from Japanese to Korean.
+Your response MUST be a single, valid JSON array of objects. Each object in your response must contain the original 'id' and the translated text in a 'translated' field.
+Preserve the original quotation marks (like 「...」 and 『...』) in the translated text.
+Do not add any other explanations, formatting, or markdown code fences. Your entire output must be only the JSON data.
+Example response format: [{{"id": "p1", "translated": "번역된 텍스트"}}]
+
+---START OF JSON DATA---\r\n{api_input_json}\r\n---END OF JSON DATA---
+"""
+
+def is_safety_blocked(data: dict) -> (bool, str):
+    """Gemini API 응답에서 안전 필터/검열 차단 여부를 감지합니다."""
+    if not data:
+        return False, ""
+    feedback = data.get('promptFeedback')
+    if feedback and feedback.get('blockReason'):
+        return True, str(feedback.get('blockReason'))
+
+    if data.get('candidates') and isinstance(data['candidates'], list) and data['candidates']:
+        finish_reason = data['candidates'][0].get('finishReason')
+        if finish_reason in ('SAFETY', 'BLOCKLIST', 'PROHIBITED_CONTENT'):
+            return True, str(finish_reason)
+    return False, ""
+
+def _translate_sub_batch_with_safety_split(
+    items: List[TranslationItemInput],
+    api_url: str,
+    wait_time_on_block: int = 40,
+    depth: int = 1
+) -> (dict, set):
+    """
+    검열 발생 시 재귀적 2분할 번역을 수행합니다.
+    - len(items) > 1: 40초 대기 후 추가 2분할하여 안전한 문장들 번역 계속 진행
+    - len(items) == 1: Fast-Fail 적용 (즉시 에러를 catch하여 '[검열로 인해 번역 생략]' 처리 후 다음으로 진행)
+    반환값: (translated_map: dict, censored_ids: set)
+    """
+    if not items:
+        return {}, set()
+
+    sub_prompt = _build_translation_prompt(items)
+    try:
+        sub_data = call_gemini_api(api_url, sub_prompt)
+    except requests.exceptions.HTTPError as e:
+        if e.response.status_code == 429:
+            raise HTTPException(status_code=429, detail="API 요청 한도 초과. 잠시 후 다시 시도해주세요.")
+        raise HTTPException(status_code=500, detail=f"분할 번역 중 API 오류 발생: {e}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"분할 번역 중 예상치 못한 오류 발생: {e}")
+
+    blocked, reason = is_safety_blocked(sub_data)
+    if blocked:
+        if len(items) > 1:
+            logger.warning(
+                f"[검열 분할 {depth}단계] {len(items)}개 문장 그룹에서 검열 발생 ({reason}). "
+                f"{wait_time_on_block}초 대기 후 추가 2분할을 시도합니다."
+            )
+            time.sleep(wait_time_on_block)
+            mid = len(items) // 2
+            first_half = items[:mid]
+            second_half = items[mid:]
+
+            res1, cens1 = _translate_sub_batch_with_safety_split(first_half, api_url, wait_time_on_block, depth + 1)
+            time.sleep(2.0)
+            res2, cens2 = _translate_sub_batch_with_safety_split(second_half, api_url, wait_time_on_block, depth + 1)
+
+            combined_map = {**res1, **res2}
+            combined_cens = cens1.union(cens2)
+            return combined_map, combined_cens
+        else:
+            # Single item blocked -> Fast-Fail
+            single_item = items[0]
+            logger.warning(
+                f"[검열 Fast-Fail] 단일 문장(ID: {single_item.id})에서 검열 발생 ({reason}). "
+                f"해당 문장을 '[검열로 인해 번역 생략]' 처리하고 다음 문장으로 진행합니다."
+            )
+            return {str(single_item.id): "[검열로 인해 번역 생략]"}, {str(single_item.id)}
+
+    # Parse response
+    if not sub_data.get('candidates') or not sub_data['candidates']:
+        raise HTTPException(status_code=500, detail="분할 번역 응답에 결과가 없습니다.")
+
+    candidate = sub_data['candidates'][0]
+    finish_reason = candidate.get('finishReason')
+    if finish_reason and finish_reason != 'STOP':
+        if finish_reason in ('SAFETY', 'BLOCKLIST', 'PROHIBITED_CONTENT'):
+            if len(items) > 1:
+                logger.warning(
+                    f"[검열 분할 {depth}단계] 응답 후보에서 검열 발생 ({finish_reason}). "
+                    f"{wait_time_on_block}초 대기 후 추가 2분할을 시도합니다."
+                )
+                time.sleep(wait_time_on_block)
+                mid = len(items) // 2
+                res1, cens1 = _translate_sub_batch_with_safety_split(items[:mid], api_url, wait_time_on_block, depth + 1)
+                time.sleep(2.0)
+                res2, cens2 = _translate_sub_batch_with_safety_split(items[mid:], api_url, wait_time_on_block, depth + 1)
+                return {**res1, **res2}, cens1.union(cens2)
+            else:
+                single_item = items[0]
+                logger.warning(
+                    f"[검열 Fast-Fail] 단일 문장(ID: {single_item.id})에서 응답 검열 발생 ({finish_reason}). "
+                    f"해당 문장을 '[검열로 인해 번역 생략]' 처리합니다."
+                )
+                return {str(single_item.id): "[검열로 인해 번역 생략]"}, {str(single_item.id)}
+        raise HTTPException(status_code=500, detail=f"API가 번역을 거부했습니다. 이유: {finish_reason}")
+
+    if candidate.get('content') and candidate['content'].get('parts') and isinstance(candidate['content']['parts'], list) and candidate['content']['parts']:
+        raw_text = candidate['content']['parts'][0].get('text', '').strip()
+        if raw_text.startswith("```json"):
+            raw_text = raw_text[7:-3].strip()
+        elif raw_text.startswith("```"):
+            raw_text = raw_text[3:-3].strip()
+
+        try:
+            try:
+                sub_translated = json.loads(raw_text)
+            except json.JSONDecodeError:
+                sub_translated, _ = json.JSONDecoder().raw_decode(raw_text)
+
+            if isinstance(sub_translated, dict):
+                sub_translated = [sub_translated]
+
+            sub_map = {}
+            for t_item in sub_translated:
+                if isinstance(t_item, dict) and 'id' in t_item and 'translated' in t_item:
+                    sub_map[str(t_item['id'])] = t_item['translated']
+            return sub_map, set()
+        except Exception as e:
+            logger.error(f"분할 번역 JSON 파싱 실패: {e}, 원본: '{raw_text}'")
+            raise HTTPException(status_code=500, detail=f"분할 번역 JSON 파싱 실패: {e}")
+    else:
+        raise HTTPException(status_code=500, detail="분할 번역 응답 내용이 비어있습니다.")
+
 # --- API Endpoints ---
 @router.post(
     "/translate",
@@ -132,21 +269,11 @@ def translate_texts(req: TranslateRequest, db: Session = Depends(get_db)):
     if not settings.gemini_api_key or "YOUR_GEMINI_API_KEY_HERE" in settings.gemini_api_key:
         raise HTTPException(status_code=500, detail="Gemini API 키가 설정되지 않았습니다. .env 파일을 확인해주세요.")
 
-    api_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key={settings.gemini_api_key}"
+    selected_model = req.model or (settings.gemini_retranslation_model if req.is_retranslation else settings.gemini_default_model)
+    logger.info(f"Using Gemini Model: {selected_model} (is_retranslation={req.is_retranslation})")
+    api_url = f"https://generativelanguage.googleapis.com/v1beta/models/{selected_model}:generateContent?key={settings.gemini_api_key}"
     
-    api_input_json = json.dumps([{"id": item.id, "text": item.text} for item in items_to_translate], ensure_ascii=False)
-    logger.info(f"API Input JSON: {api_input_json}")
-
-    prompt = f"""You are a JSON-only translation API. You will receive a JSON array of objects, each with an 'id' and a 'text' field.
-Your task is to translate the 'text' from Japanese to Korean.
-Your response MUST be a single, valid JSON array of objects. Each object in your response must contain the original 'id' and the translated text in a 'translated' field.
-Preserve the original quotation marks (like 「...」 and 『...』) in the translated text.
-Do not add any other explanations, formatting, or markdown code fences. Your entire output must be only the JSON data.
-Example response format: [{{"id": "p1", "translated": "번역된 텍스트"}}]
-
----START OF JSON DATA---\r\n{api_input_json}\r\n---END OF JSON DATA---
-
-"""
+    prompt = _build_translation_prompt(items_to_translate)
     logger.info(f"Gemini API URL: {api_url}")
     logger.info(f"Gemini API Prompt (first 500 chars): {prompt[:500]}...")
 
@@ -203,93 +330,57 @@ Example response format: [{{"id": "p1", "translated": "번역된 텍스트"}}]
 
     # --- Process Response ---
     try:
-        feedback = data.get('promptFeedback')
-        if feedback and feedback.get('blockReason'):
-            logger.warning(f"배치 번역이 차단되었습니다 ({feedback.get('blockReason')}). 120초 대기 후 2분할 번역을 시도합니다.")
-            time.sleep(120)
-            
-            # Split items into two halves
-            mid = len(items_to_translate) // 2
-            halves = [items_to_translate[:mid], items_to_translate[mid:]]
-            
-            translated_map = {}
-            fatal_failure = False
-            failure_reason = ""
+        blocked, block_reason = is_safety_blocked(data)
+        if blocked:
+            logger.warning(f"배치 번역이 차단되었습니다 ({block_reason}). 40초 대기 후 분할 번역을 시도합니다.")
+            time.sleep(40)
 
-            for i, half in enumerate(halves):
-                if not half: continue
-                
-                half_json = json.dumps([{"id": item.id, "text": item.text} for item in half], ensure_ascii=False)
-                half_prompt = f"""You are a JSON-only translation API. You will receive a JSON array of objects, each with an 'id' and a 'text' field.
-Your task is to translate the 'text' from Japanese to Korean.
-Your response MUST be a single, valid JSON array of objects. Each object in your response must contain the original 'id' and the translated text in a 'translated' field.
-Preserve the original quotation marks (like 「...」 and 『...』) in the translated text.
-Do not add any other explanations, formatting, or markdown code fences.
-Example response format: [{{"id": "p1", "translated": "번역된 텍스트"}}]
+            if len(items_to_translate) > 1:
+                mid = len(items_to_translate) // 2
+                first_half = items_to_translate[:mid]
+                second_half = items_to_translate[mid:]
 
----START OF JSON DATA---\r\n{half_json}\r\n---END OF JSON DATA---
-"""
-                try:
-                    # Using the non-retrying version for the sub-batch
-                    half_data = call_gemini_api(api_url, half_prompt)
-                    
-                    # Check for safety filter in sub-batch
-                    half_feedback = half_data.get('promptFeedback')
-                    if half_feedback and half_feedback.get('blockReason'):
-                        fatal_failure = True
-                        failure_reason = f"분할 그룹 {i+1}에서도 검열 발생: {half_feedback.get('blockReason')}"
-                        break
-                    
-                    # Parse sub-batch candidates
-                    if not half_data.get('candidates') or not half_data['candidates']:
-                        fatal_failure = True
-                        failure_reason = f"분할 그룹 {i+1} 응답에 결과가 없습니다."
-                        break
-                        
-                    candidate = half_data['candidates'][0]
-                    if candidate.get('content') and candidate['content'].get('parts'):
-                        raw_text = candidate['content']['parts'][0].get('text').strip()
-                        if raw_text.startswith("```json"): raw_text = raw_text[7:-3].strip()
-                        elif raw_text.startswith("```"): raw_text = raw_text[3:-3].strip()
-                        
-                        half_translated = json.loads(raw_text)
-                        for t_item in half_translated:
-                            translated_map[str(t_item['id'])] = t_item['translated']
-                    else:
-                        fatal_failure = True
-                        failure_reason = f"분할 그룹 {i+1}의 내용이 비어있습니다."
-                        break
+                res1, cens1 = _translate_sub_batch_with_safety_split(first_half, api_url, wait_time_on_block=40, depth=1)
+                time.sleep(2.0)
+                res2, cens2 = _translate_sub_batch_with_safety_split(second_half, api_url, wait_time_on_block=40, depth=1)
 
-                except Exception as e:
-                    fatal_failure = True
-                    failure_reason = f"분할 그룹 {i+1} 처리 중 오류: {str(e)}"
-                    break
-                
-                time.sleep(2.0) # Gap between sub-batches
+                translated_map = {**res1, **res2}
+                censored_ids = cens1.union(cens2)
+            else:
+                # Fast-Fail on single item
+                single_item = items_to_translate[0]
+                logger.warning(
+                    f"[검열 Fast-Fail] 단일 문장(ID: {single_item.id})에서 검열 발생 ({block_reason}). "
+                    f"해당 문장을 '[검열로 인해 번역 생략]' 처리합니다."
+                )
+                translated_map = {str(single_item.id): "[검열로 인해 번역 생략]"}
+                censored_ids = {str(single_item.id)}
 
-            if fatal_failure:
-                logger.error(f"분할 번역 최종 실패: {failure_reason}. 모든 항목을 사용자 입력 대기로 전환합니다.")
-                # We return a 429 to tell the extension to stop.
-                # The detail will contain the "Manual Input Required" message for the user to see if possible.
-                raise HTTPException(status_code=429, detail=f"번역 중단: {failure_reason}. 해당 구간은 사용자가 직접 입력해야 합니다.")
-
-            # If all sub-batches succeeded, prepare the results
+            # Prepare the results
             translated_results = {}
             for item in items_to_translate:
-                translated_text = translated_map.get(item.id, item.text)
-                translated_text = process_repeated_chars(translated_text)
-                translated_results[item.id] = {
+                is_censored = str(item.id) in censored_ids or translated_map.get(str(item.id)) == "[검열로 인해 번역 생략]"
+                translated_text = translated_map.get(str(item.id), item.text)
+                if not is_censored:
+                    translated_text = process_repeated_chars(translated_text)
+                translated_results[str(item.id)] = {
                     "id": item.id,
                     "original": item.text,
-                    "translated": translated_text
+                    "translated": translated_text,
+                    "censored": is_censored
                 }
 
             final_translations = []
             for item in req.items:
-                if item.id in translated_results:
-                    final_translations.append(translated_results[item.id])
+                if str(item.id) in translated_results:
+                    final_translations.append(translated_results[str(item.id)])
                 else:
-                    final_translations.append({"id": item.id, "original": item.text, "translated": item.text})
+                    final_translations.append({
+                        "id": item.id,
+                        "original": item.text,
+                        "translated": item.text,
+                        "censored": False
+                    })
 
             return {"translations": final_translations}
 
@@ -341,26 +432,28 @@ Example response format: [{{"id": "p1", "translated": "번역된 텍스트"}}]
 
         translated_results = {}
         for item in items_to_translate:
-            translated_text = translated_map.get(item.id)
+            translated_text = translated_map.get(str(item.id))
             if translated_text is None:
                 translated_text = item.text
             else:
                 translated_text = process_repeated_chars(translated_text)
-            translated_results[item.id] = {
+            translated_results[str(item.id)] = {
                 "id": item.id,
                 "original": item.text,
-                "translated": translated_text
+                "translated": translated_text,
+                "censored": False
             }
 
         final_translations = []
         for item in req.items:
-            if item.id in translated_results:
-                final_translations.append(translated_results[item.id])
+            if str(item.id) in translated_results:
+                final_translations.append(translated_results[str(item.id)])
             else:
                 final_translations.append({
                     "id": item.id,
                     "original": item.text,
-                    "translated": item.text
+                    "translated": item.text,
+                    "censored": False
                 })
 
         return {"translations": final_translations}

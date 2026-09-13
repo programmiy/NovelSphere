@@ -9,10 +9,21 @@ import time
 @pytest.fixture(scope="module", autouse=True)
 def override_settings(tmp_path_factory):
     test_db_path = tmp_path_factory.mktemp("data") / "test_data_crud.db"
-    os.environ["DATABASE_URL"] = f"sqlite:///{test_db_path}"
+    test_db_url = f"sqlite:///{test_db_path}"
+    os.environ["DATABASE_URL"] = test_db_url
 
     from server.settings import settings
-    settings.database_url = f"sqlite:///{test_db_path}"
+    settings.database_url = test_db_url
+
+    import server.database as sdb
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    orig_engine = sdb.engine
+    orig_session_local = sdb.SessionLocal
+
+    sdb.engine = create_engine(test_db_url, connect_args={"check_same_thread": False})
+    sdb.SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=sdb.engine)
 
     conn = sqlite3.connect(test_db_path)
     cursor = conn.cursor()
@@ -43,9 +54,9 @@ def override_settings(tmp_path_factory):
     yield
     
     del os.environ["DATABASE_URL"]
-    
-    from server.database import engine
-    engine.dispose()
+    sdb.engine.dispose()
+    sdb.engine = orig_engine
+    sdb.SessionLocal = orig_session_local
 
 @pytest.fixture(scope="module")
 def client_instance(override_settings):
@@ -66,6 +77,7 @@ def setup_db_data():
     from server.models import Base, Translation, UrlMetadata
     
     # 모든 테이블을 삭제하고 다시 생성하여 깨끗한 상태로 시작
+    assert "test" in str(engine.url).lower(), f"Danger: Attempted drop_all on production DB ({engine.url})!"
     Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
 
@@ -96,6 +108,7 @@ def setup_db_data():
     # 테스트 후 데이터 정리
     # 새로운 세션을 열어 drop_all과 create_all을 수행합니다.
     db_cleanup = SessionLocal()
+    assert "test" in str(engine.url).lower(), f"Danger: Attempted drop_all on production DB ({engine.url})!"
     Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
     db_cleanup.close()

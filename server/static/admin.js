@@ -278,10 +278,11 @@ function renderItem(t) {
             <td class="item-actions-container">
                 <div class="item-date">${dateStr}</div>
                 <div class="item-actions">
-                    <button class="btn btn-outline save-item-btn" title="Save">💾</button>
-                    <button class="btn btn-outline copy-btn" title="Copy">📋</button>
-                    <button class="btn btn-outline exclude-btn" title="Exclude">❌</button>
-                    <button class="btn btn-outline delete-btn" title="Delete">🗑️</button>
+                    <button class="btn btn-outline save-item-btn" title="저장">💾</button>
+                    <button class="btn btn-outline retranslate-item-btn" title="재번역 (고성능 모델)">🔄</button>
+                    <button class="btn btn-outline copy-btn" title="복사">📋</button>
+                    <button class="btn btn-outline exclude-btn" title="제외">❌</button>
+                    <button class="btn btn-outline delete-btn" title="삭제">🗑️</button>
                 </div>
             </td>
         </tr>
@@ -712,6 +713,73 @@ async function handleHistoryClick(e) {
             } catch (error) {
                 console.error('Failed to exclude translation:', error);
                 showToast('문장 제외에 실패했습니다.', 'error');
+            }
+        } else if (target.classList.contains('retranslate-item-btn')) {
+            const originalItem = findTranslationById(id);
+            if (!originalItem) {
+                showToast('오류: 재번역할 항목을 찾을 수 없습니다.', 'error');
+                return;
+            }
+            if (!confirm(`이 문장을 고성능 모델로 재번역하시겠습니까?\n\n원문: ${originalItem.original}`)) return;
+
+            const translatedCell = itemRow.querySelector('.translated-text');
+            const prevText = translatedCell.textContent;
+            target.disabled = true;
+            translatedCell.textContent = '⏳ 고성능 모델로 재번역 중...';
+
+            try {
+                const response = await fetch('/translate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        items: [{ id: String(originalItem.pid || id), text: originalItem.original }],
+                        url: originalItem.url || '',
+                        is_retranslation: true
+                    })
+                });
+
+                if (!response.ok) {
+                    const errData = await response.json().catch(() => ({ detail: `HTTP ${response.status}` }));
+                    throw new Error(errData.detail || '재번역 API 호출 실패');
+                }
+
+                const data = await response.json();
+                if (data.translations && data.translations.length > 0) {
+                    const newTranslated = data.translations[0].translated;
+                    translatedCell.textContent = newTranslated;
+
+                    // DB 저장
+                    const updatedItemPayload = {
+                        ...originalItem,
+                        translated: newTranslated,
+                        timestamp: Math.floor(Date.now() / 1000)
+                    };
+                    delete updatedItemPayload.id;
+
+                    await fetch('/translations/upsert', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify([updatedItemPayload])
+                    });
+
+                    originalItem.translated = newTranslated;
+                    originalItem.timestamp = updatedItemPayload.timestamp;
+
+                    const dateElement = itemRow.querySelector('.item-date');
+                    if (dateElement) {
+                        const date = new Date(updatedItemPayload.timestamp * 1000);
+                        dateElement.textContent = date.toLocaleString('ko-KR', { dateStyle: 'short', timeStyle: 'short' });
+                    }
+                    showToast('고성능 모델로 재번역 및 저장되었습니다.', 'success');
+                } else {
+                    throw new Error('재번역 결과를 받지 못했습니다.');
+                }
+            } catch (error) {
+                console.error('재번역 실패:', error);
+                translatedCell.textContent = prevText;
+                showToast(`재번역 실패: ${error.message}`, 'error');
+            } finally {
+                target.disabled = false;
             }
         } else if (target.classList.contains('save-item-btn')) {
             const newTranslatedText = itemRow.querySelector('.translated-text').textContent;

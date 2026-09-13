@@ -103,7 +103,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === 'batchTranslate') {
         (async () => {
             try {
-                const translations = await handleBatchTranslate(request.items, sender.tab?.url);
+                const translations = await handleBatchTranslate(
+                    request.items, 
+                    sender.tab?.url, 
+                    request.isRetranslation || false, 
+                    request.model || null
+                );
                 apiErrorCount = 0; // 성공 시 카운터 리셋
                 try {
                     sendResponse({ translations });
@@ -185,12 +190,20 @@ async function fetchPageTitle(url) {
     }
 }
 
-async function handleBatchTranslate(items, sourceUrl) {
+async function handleBatchTranslate(items, sourceUrl, isRetranslation = false, model = null) {
     try {
+        const bodyPayload = { items: items, url: sourceUrl };
+        if (isRetranslation) {
+            bodyPayload.is_retranslation = true;
+        }
+        if (model) {
+            bodyPayload.model = model;
+        }
+
         const response = await fetch('http://127.0.0.1:8001/translate', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ items: items, url: sourceUrl })
+            body: JSON.stringify(bodyPayload)
         });
 
         if (!response.ok) {
