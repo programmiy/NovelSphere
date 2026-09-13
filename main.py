@@ -91,6 +91,18 @@ def start_celery_worker():
     ]
     celery_process = subprocess.Popen(command)
 
+def stop_process(proc, name="Process"):
+    """Safely terminates a subprocess with timeout and fallback to kill."""
+    if proc and proc.poll() is None:
+        try:
+            proc.terminate()
+            proc.wait(timeout=3)
+        except Exception:
+            try:
+                proc.kill()
+            except Exception:
+                pass
+
 def on_tray_menu_select(icon, item):
     """Function to handle tray menu selections."""
     global window, server_process, celery_process
@@ -98,22 +110,41 @@ def on_tray_menu_select(icon, item):
         if window:
             window.show()
     elif str(item) == "Exit":
-        if server_process:
-            server_process.terminate()
-        if celery_process:
-            celery_process.terminate()
+        stop_process(server_process, "Server")
+        stop_process(celery_process, "Celery")
         if window:
             window.destroy()
         icon.stop()
         sys.exit()
 
+def wait_for_server(target_url: str, timeout: float = 15.0, interval: float = 0.2) -> bool:
+    """Polls target_url until the server starts responding, or timeout is reached."""
+    import urllib.request
+    import urllib.error
+
+    start_time = time.time()
+    while time.time() - start_time < timeout:
+        try:
+            req = urllib.request.Request(target_url, headers={"User-Agent": "LANOVEL-Launcher"})
+            with urllib.request.urlopen(req, timeout=1.0) as response:
+                if response.status in (200, 302, 307):
+                    return True
+        except (urllib.error.URLError, ConnectionResetError, OSError):
+            pass
+        time.sleep(interval)
+    return False
+
 def start_webview():
     """Function to create and open the webview window."""
     global window
-    time.sleep(5) # Wait for server to start
+    target_url = f"http://{settings.server_host}:{settings.server_port}/library"
+    server_ready = wait_for_server(target_url, timeout=15.0)
+    if not server_ready:
+        print(f"Warning: Server did not respond within timeout at {target_url}. Launching webview anyway.")
+
     window = webview.create_window(
         settings.app_name,
-        f"http://{settings.server_host}:{settings.server_port}/library",
+        target_url,
         width=1200,
         height=800,
     )
@@ -141,8 +172,6 @@ if __name__ == "__main__":
 
     start_webview()
 
-    if server_process:
-        server_process.terminate()
-    if celery_process:
-        celery_process.terminate()
+    stop_process(server_process, "Server")
+    stop_process(celery_process, "Celery")
     sys.exit(0)

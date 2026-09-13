@@ -16,6 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.responses import RedirectResponse
 
+import sqlite3
 from server.settings import settings
 from server.database import engine
 from server.models import Base
@@ -68,6 +69,18 @@ def _update_runtime_metadata():
     except Exception as e:
         logger.error(f"Error saving metadata: {e}")
 
+def perform_sqlite_backup(src_path: str, dst_path: str):
+    """Safely backs up a SQLite database (including WAL mode) using the online backup API."""
+    src_conn = sqlite3.connect(src_path, timeout=30)
+    try:
+        dst_conn = sqlite3.connect(dst_path, timeout=30)
+        try:
+            src_conn.backup(dst_conn)
+        finally:
+            dst_conn.close()
+    finally:
+        src_conn.close()
+
 async def backup_check_task():
     """Periodically checks if a backup is needed based on cumulative runtime."""
     while True:
@@ -87,7 +100,7 @@ async def backup_check_task():
             backup_path = os.path.join(settings.backup_dir, backup_filename)
 
             try:
-                shutil.copy2(get_db_path(), backup_path)
+                await asyncio.to_thread(perform_sqlite_backup, get_db_path(), backup_path)
                 logger.info(f"Successfully created backup: {backup_path}")
                 
                 SERVER_METADATA["cumulative_runtime_seconds"] = 0
