@@ -1,5 +1,4 @@
 
-import sqlite3
 import re
 import requests
 import time
@@ -9,18 +8,10 @@ from fastapi import APIRouter, HTTPException
 from typing import List
 from server.celery_app import celery_app
 from celery.result import AsyncResult
-from urllib.parse import urlparse
-from server.settings import settings
+from server.database import get_sqlite_conn
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
-
-def get_db_path():
-    parsed_url = urlparse(settings.database_url)
-    path = parsed_url.path
-    if os.name == 'nt' and path.startswith('/'):
-        path = path[1:]
-    return path
 
 def _fetch_and_update_title_worker(url: str):
     """Internal worker to fetch a single title. Returns True if title is valid and updated."""
@@ -45,7 +36,7 @@ def _fetch_and_update_title_worker(url: str):
             if not title or any(invalid in title for invalid in invalid_titles):
                 logger.warning(f"Skipping invalid title for {url}: {title}")
                 return False
-            conn = sqlite3.connect(get_db_path(), timeout=15)
+            conn = get_sqlite_conn()
             cursor = conn.cursor()
             cursor.execute("UPDATE translations SET title = ? WHERE url = ?", (title, url))
             conn.commit()
@@ -82,7 +73,7 @@ def process_urls_in_background_task(self, urls: List[str]):
     description="데이터베이스에서 제목이 없는 모든 항목의 제목을 가져옵니다. Celery를 사용하는 장기 백그라운드 작업입니다."
 )
 async def fetch_missing_titles_endpoint():
-    conn = sqlite3.connect(get_db_path(), timeout=15)
+    conn = get_sqlite_conn()
     cursor = conn.cursor()
     invalid_titles_tuple = ('年齢確認', 'Just a moment...', 'Log in', '')
     placeholders = ', '.join('?' * len(invalid_titles_tuple))

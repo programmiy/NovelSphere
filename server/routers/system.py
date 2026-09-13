@@ -4,24 +4,10 @@ from pydantic import BaseModel
 from server.settings import settings
 import os
 import logging
-import sqlite3
-from urllib.parse import urlparse
+from server.database import get_sqlite_conn
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
-
-def get_db_path():
-    parsed_url = urlparse(settings.database_url)
-    path = parsed_url.path
-    if os.name == 'nt' and path.startswith('/'):
-        path = path[1:]
-    return path
-
-def dict_factory(cursor, row):
-    d = {}
-    for idx, col in enumerate(cursor.description):
-        d[col[0]] = row[idx]
-    return d
 
 class AutoStartSettings(BaseModel):
     autostart: bool
@@ -85,7 +71,7 @@ def get_allowed_origins():
     description="특정 폴더에 대한 고유 URL을 조회하는 임시 디버그 엔드포인트입니다."
 )
 def debug_get_urls_by_folder(folder_name: str):
-    conn = sqlite3.connect(get_db_path(), timeout=15)
+    conn = get_sqlite_conn()
     cursor = conn.cursor()
     cursor.execute("SELECT DISTINCT url FROM translations WHERE folderName = ? LIMIT 10", (folder_name,))
     urls = [row[0] for row in cursor.fetchall()]
@@ -99,8 +85,7 @@ def debug_get_urls_by_folder(folder_name: str):
     description="URL, 제목 또는 원문 텍스트에서 쿼리 문자열과 일치하는 번역 기록을 찾습니다."
 )
 def find_translation_by_query(q: str):
-    conn = sqlite3.connect(get_db_path(), timeout=15)
-    conn.row_factory = dict_factory
+    conn = get_sqlite_conn(as_dict=True)
     cursor = conn.cursor()
     
     search_term = f"%{q}%"

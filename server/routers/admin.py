@@ -1,17 +1,7 @@
-import sqlite3
-import os
 from fastapi import APIRouter, HTTPException
-from urllib.parse import urlparse
-from server.settings import settings
+from server.database import get_sqlite_conn
 
 router = APIRouter()
-
-def get_db_path():
-    parsed_url = urlparse(settings.database_url)
-    path = parsed_url.path
-    if os.name == 'nt' and path.startswith('/'):
-        path = path[1:]
-    return path
 
 @router.post(
     "/admin/cleanup_urls",
@@ -20,7 +10,7 @@ def get_db_path():
     description="모든 관련 테이블에서 URL 조각(예: #end)을 제거합니다."
 )
 def cleanup_url_fragments():
-    conn = sqlite3.connect(get_db_path(), timeout=15)
+    conn = get_sqlite_conn()
     cursor = conn.cursor()
     
     tables_to_clean = ['translations', 'url_metadata', 'applied_urls']
@@ -49,7 +39,7 @@ def cleanup_url_fragments():
     description="'la' 또는 'lp'로 시작하는 PID를 가진 기록을 제외 처리합니다."
 )
 def cleanup_pids():
-    conn = sqlite3.connect(get_db_path(), timeout=15)
+    conn = get_sqlite_conn()
     cursor = conn.cursor()
     
     deleted_count = 0

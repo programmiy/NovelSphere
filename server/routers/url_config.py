@@ -1,22 +1,12 @@
-import sqlite3
-import os
 import re
 import logging
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import List, Optional
-from urllib.parse import urlparse
-from server.settings import settings
+from server.database import get_sqlite_conn
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
-
-def get_db_path():
-    parsed_url = urlparse(settings.database_url)
-    path = parsed_url.path
-    if os.name == 'nt' and path.startswith('/'):
-        path = path[1:]
-    return path
 
 # Pydantic Models
 class ApplyUrlRequest(BaseModel):
@@ -38,7 +28,7 @@ class UrlMetadataBatchUpdate(BaseModel):
     description="주어진 URL의 적용 상태를 토글합니다 (적용/미적용)."
 )
 def toggle_apply_url(req: ApplyUrlRequest):
-    conn = sqlite3.connect(get_db_path(), timeout=15)
+    conn = get_sqlite_conn()
     cursor = conn.cursor()
     clean_url = req.url.split('#')[0].rstrip('/')
     
@@ -67,7 +57,7 @@ def toggle_apply_url(req: ApplyUrlRequest):
     description="단일 URL의 메타데이터(예: 정렬 순서)를 업데이트합니다."
 )
 def update_url_metadata(req: UrlMetadataUpdate):
-    conn = sqlite3.connect(get_db_path(), timeout=15)
+    conn = get_sqlite_conn()
     cursor = conn.cursor()
     try:
         cursor.execute(
@@ -90,14 +80,14 @@ def update_url_metadata(req: UrlMetadataUpdate):
     description="여러 URL의 메타데이터(예: 정렬 순서)를 일괄적으로 업데이트합니다."
 )
 def update_url_metadata_batch(req: UrlMetadataBatchUpdate):
-    conn = sqlite3.connect(get_db_path(), timeout=15)
+    conn = get_sqlite_conn()
     cursor = conn.cursor()
     try:
-        for update_item in req.updates:
-            cursor.execute(
-                "INSERT OR REPLACE INTO url_metadata (url, sort_order) VALUES (?, ?)",
-                (update_item.url, update_item.sort_order)
-            )
+        data = [(update_item.url, update_item.sort_order) for update_item in req.updates]
+        cursor.executemany(
+            "INSERT OR REPLACE INTO url_metadata (url, sort_order) VALUES (?, ?)",
+            data
+        )
         conn.commit()
         return {"message": f"Successfully batch updated {len(req.updates)} URL metadata entries."}
     except Exception as e:
@@ -114,7 +104,7 @@ def update_url_metadata_batch(req: UrlMetadataBatchUpdate):
     description="주어진 URL의 현재 적용 상태를 조회합니다."
 )
 def get_apply_status(url: str):
-    conn = sqlite3.connect(get_db_path(), timeout=15)
+    conn = get_sqlite_conn()
     cursor = conn.cursor()
 
     urls_to_check = set()

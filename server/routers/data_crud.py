@@ -14,23 +14,11 @@ from collections import defaultdict
 from urllib.parse import urlparse
 
 from server.settings import settings
-from server.database import get_db
+from server.database import get_db, get_sqlite_conn, dict_factory, get_db_path
 from server.models import Translation, UrlMetadata, AppliedUrl
 import time
 
 router = APIRouter()
-
-# --- Helper to get DB path from URL ---
-def get_db_path():
-    # sqlite:///C:\path\to\db.db -> C:\path\to\db.db
-    # Assumes the path is absolute after the third slash
-    parsed_url = urlparse(settings.database_url)
-    # On Windows, urlparse might add an extra leading slash if the path starts with a drive letter.
-    # e.g., sqlite:///C:/... becomes /C:/...
-    path = parsed_url.path
-    if os.name == 'nt' and path.startswith('/'):
-        path = path[1:]
-    return path
 
 # Pydantic Models
 class TranslationItem(BaseModel):
@@ -49,14 +37,6 @@ class MoveRequest(BaseModel):
 class DeleteRequest(BaseModel):
     ids: List[int]
 
-# Helper
-def dict_factory(cursor, row):
-    """쿼리 결과를 사전 형태로 변환합니다."""
-    d = {}
-    for idx, col in enumerate(cursor.description):
-        d[col[0]] = row[idx]
-    return d
-
 # API Endpoints
 @router.get(
     "/translations",
@@ -65,9 +45,7 @@ def dict_factory(cursor, row):
     description="데이터베이스에서 번역 기록을 조회합니다. 폴더, 검색어, URL로 필터링할 수 있습니다."
 )
 def get_translations(skip: int = 0, limit: int = 100, folder: Optional[str] = None, search: Optional[str] = None, url: Optional[str] = None):
-    conn = sqlite3.connect(get_db_path(), timeout=15)
-    conn.text_factory = str
-    conn.row_factory = dict_factory
+    conn = get_sqlite_conn(as_dict=True)
     cursor = conn.cursor()
 
     base_query = "FROM translations"
@@ -202,7 +180,7 @@ def move_translations(req: MoveRequest):
     placeholders = ', '.join('?' * len(req.ids))
     query = f"UPDATE translations SET folderName = ? WHERE id IN ({placeholders})"
     params = [req.folder_name] + req.ids
-    conn = sqlite3.connect(get_db_path(), timeout=15)
+    conn = get_sqlite_conn()
     cursor = conn.cursor()
     cursor.execute(query, params)
     updated_count = cursor.rowcount
@@ -219,7 +197,7 @@ def move_translations(req: MoveRequest):
 def delete_translations(req: DeleteRequest):
     placeholders = ', '.join('?' * len(req.ids))
     query = f"DELETE FROM translations WHERE id IN ({placeholders})"
-    conn = sqlite3.connect(get_db_path(), timeout=15)
+    conn = get_sqlite_conn()
     cursor = conn.cursor()
     cursor.execute(query, req.ids)
     deleted_count = cursor.rowcount
@@ -234,9 +212,7 @@ def delete_translations(req: DeleteRequest):
     description="페이지네이션을 지원하는 번역 기록 조회 엔드포인트입니다."
 )
 def get_paged_translations(page: int = 1, per_page: int = 20):
-    conn = sqlite3.connect(get_db_path(), timeout=15)
-    conn.text_factory = str
-    conn.row_factory = dict_factory
+    conn = get_sqlite_conn(as_dict=True)
     cursor = conn.cursor()
 
     # 전체 항목 수 계산
@@ -396,8 +372,7 @@ def get_abnormal_translations(db: Session = Depends(get_db)):
 
 async def stream_translations(book: Optional[str] = None):
     """DB에서 번역 데이터를 스트리밍합니다. '미분류' 폴더를 지원합니다."""
-    conn = sqlite3.connect(get_db_path(), timeout=15)
-    conn.row_factory = dict_factory
+    conn = get_sqlite_conn(as_dict=True)
     cursor = conn.cursor()
     
     query = "SELECT * FROM translations"
@@ -446,7 +421,7 @@ def migrate_data():
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="migration_data.json 파일을 찾을 수 없습니다.")
 
-    conn = sqlite3.connect(get_db_path(), timeout=15)
+    conn = get_sqlite_conn()
     cursor = conn.cursor()
     
     migrated_count = 0
