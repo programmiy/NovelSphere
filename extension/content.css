@@ -92,3 +92,172 @@
     font-weight: normal;
     color: #555;
 }
+
+/* 본문 문단 ↔ 사이드바 연동 하이라이트 애니메이션 */
+@keyframes lanovelPulse {
+    0% { background-color: rgba(99, 102, 241, 0.45); outline: 2px solid #6366f1; }
+    50% { background-color: rgba(99, 102, 241, 0.2); outline: 2px solid #818cf8; }
+    100% { background-color: transparent; outline: none; }
+}
+
+.lanovel-highlight-pulse {
+    animation: lanovelPulse 1.5s ease-out !important;
+    border-radius: 4px !important;
+}
+
+.lanovel-applied-text {
+    transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* 사이드바 테이블 행 하이라이트 애니메이션 */
+@keyframes lanovelRowPulse {
+    0% { background-color: #fef08a !important; }
+    100% { background-color: transparent; }
+}
+
+.lanovel-row-highlight {
+    animation: lanovelRowPulse 1.5s ease-out !important;
+}
+
+/* =================================================================================
+ * 알림 센터 연계 재번역 검수 전용 패널 & 하이라이트 스타일
+ * ================================================================================= */
+.review-target-panel {
+    background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
+    border: 1.5px solid #f59e0b;
+    border-radius: 8px;
+    margin: 8px 12px;
+    padding: 10px 12px;
+    box-shadow: 0 2px 8px rgba(245, 158, 11, 0.15);
+    font-size: 12px;
+    font-family: inherit;
+    color: #92400e;
+}
+
+.review-panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.review-panel-title {
+    font-weight: 700;
+    font-size: 13px;
+    color: #b45309;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.review-panel-actions {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+}
+
+.review-dismiss-btn {
+    background-color: #f59e0b;
+    color: #ffffff;
+    border: none;
+    border-radius: 4px;
+    padding: 2px 8px;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.review-dismiss-btn:hover {
+    background-color: #d97706;
+}
+
+.review-panel-body {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.review-card {
+    background: #ffffff;
+    border: 1px solid #fde68a;
+    border-left: 3px solid #f59e0b;
+    border-radius: 6px;
+    padding: 6px 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.review-card:hover {
+    background: #fffdf5;
+    border-color: #f59e0b;
+    transform: translateX(2px);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+.review-card-pid {
+    font-size: 10px;
+    font-weight: 700;
+    color: #b45309;
+    margin-bottom: 2px;
+}
+
+.review-card-ori {
+    color: #4b5563;
+    font-size: 11px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-bottom: 2px;
+}
+
+.review-card-tra {
+    color: #1f2937;
+    font-weight: 600;
+    font-size: 12px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.review-card-tra.waiting {
+    color: #9ca3af;
+    font-style: italic;
+    font-weight: 400;
+}
+
+/* 사이드바 행 강조 */
+tr.review-target-row {
+    background-color: rgba(254, 243, 199, 0.5) !important;
+    border-left: 4px solid #f59e0b !important;
+}
+
+tr.review-target-row:hover {
+    background-color: rgba(254, 243, 199, 0.8) !important;
+}
+
+/* 재검수 뱃지 */
+.review-badge {
+    display: inline-block;
+    background: linear-gradient(135deg, #f59e0b, #d97706);
+    color: white;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 1px 5px;
+    border-radius: 4px;
+    margin-right: 4px;
+    vertical-align: middle;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+}
+
+/* 웹페이지 본문 문장 강조 */
+.review-target-dom {
+    background-color: rgba(245, 158, 11, 0.18) !important;
+    border-left: 3px solid #f59e0b !important;
+    padding-left: 4px !important;
+    border-radius: 2px !important;
+    transition: background-color 0.3s ease;
+}
+

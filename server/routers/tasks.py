@@ -3,8 +3,9 @@ import re
 import requests
 import time
 import os
+import uuid
 import logging
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, BackgroundTasks
 from typing import List
 from server.celery_app import celery_app
 from celery.result import AsyncResult
@@ -12,6 +13,8 @@ from server.database import get_sqlite_conn
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+_fallback_status = {}
 
 def _fetch_and_update_title_worker(url: str):
     """Internal worker to fetch a single title. Returns True if title is valid and updated."""
@@ -53,6 +56,36 @@ def _fetch_and_update_title_worker(url: str):
         logger.error(f"An error occurred while processing {url}: {e}")
         return False
 
+def _process_urls_fallback_worker(urls: List[str], task_id: str):
+    """Fallback worker running in-process using BackgroundTasks."""
+    total_urls = len(urls)
+    logger.info(f"Starting fallback in-process task {task_id} for {total_urls} URLs.")
+    _fallback_status[task_id] = {
+        'state': 'PROGRESS',
+        'current': 0,
+        'total': total_urls,
+        'percentage': 0,
+        'status': 'Processing...'
+    }
+    for i, url in enumerate(urls):
+        _fetch_and_update_title_worker(url)
+        _fallback_status[task_id] = {
+            'state': 'PROGRESS',
+            'current': i + 1,
+            'total': total_urls,
+            'percentage': int(((i + 1) / total_urls) * 100),
+            'status': f'Processing {i + 1}/{total_urls}'
+        }
+        time.sleep(1)
+    _fallback_status[task_id] = {
+        'state': 'SUCCESS',
+        'current': total_urls,
+        'total': total_urls,
+        'percentage': 100,
+        'status': 'Completed'
+    }
+    logger.info(f"Finished fallback in-process task {task_id}.")
+
 @celery_app.task(bind=True)
 def process_urls_in_background_task(self, urls: List[str]):
     """Celery task to loop through URLs with a delay and fetch titles."""
@@ -70,9 +103,9 @@ def process_urls_in_background_task(self, urls: List[str]):
     "/fetch_missing_titles",
     tags=["Tasks"],
     summary="누락된 제목 가져오기",
-    description="데이터베이스에서 제목이 없는 모든 항목의 제목을 가져옵니다. Celery를 사용하는 장기 백그라운드 작업입니다."
+    description="데이터베이스에서 제목이 없는 모든 항목의 제목을 가져옵니다. Celery 또는 BackgroundTasks로 수행됩니다."
 )
-async def fetch_missing_titles_endpoint():
+async def fetch_missing_titles_endpoint(background_tasks: BackgroundTasks):
     conn = get_sqlite_conn()
     cursor = conn.cursor()
     invalid_titles_tuple = ('年齢確認', 'Just a moment...', 'Log in', '')
@@ -84,32 +117,52 @@ async def fetch_missing_titles_endpoint():
     if not urls:
         return {"message": "No missing titles to fetch."}
     
-    task = process_urls_in_background_task.apply_async(args=[urls])
-    return {"message": f"Started fetching titles for {len(urls)} URLs in the background.", "task_id": task.id}
+    try:
+        task = process_urls_in_background_task.apply_async(args=[urls])
+        return {"message": f"Started fetching titles for {len(urls)} URLs in the background.", "task_id": task.id}
+    except Exception as e:
+        logger.warning(f"Celery task dispatch failed ({e}). Falling back to in-process BackgroundTasks.")
+        task_id = f"fallback-{uuid.uuid4().hex[:8]}"
+        background_tasks.add_task(_process_urls_fallback_worker, urls, task_id)
+        return {"message": f"Started fetching titles for {len(urls)} URLs via background task (Celery fallback).", "task_id": task_id}
 
 @router.get(
     "/task_status/{task_id}",
     tags=["Tasks"],
-    summary="Celery 작업 상태 조회",
-    description="Celery 작업의 현재 상태를 조회합니다."
+    summary="작업 상태 조회",
+    description="Celery 또는 인프로세스 백그라운드 작업의 현재 상태를 조회합니다."
 )
 async def get_task_status(task_id: str):
-    task_result = AsyncResult(task_id, app=celery_app)
-    if task_result.state == 'PENDING':
-        response = {
-            'state': task_result.state,
-            'status': 'Pending...'
+    if task_id.startswith("fallback-") or task_id in _fallback_status:
+        info = _fallback_status.get(task_id, {'state': 'PENDING', 'status': 'Pending...'})
+        return {
+            'state': info.get('state', 'PROGRESS'),
+            'meta': info,
+            'status': info.get('status', 'Processing...')
         }
-    elif task_result.state != 'FAILURE':
-        response = {
-            'state': task_result.state,
-            'meta': task_result.info,
-        }
-        if 'status' in task_result.info:
-            response['status'] = task_result.info['status']
-    else:
-        response = {
-            'state': task_result.state,
-            'status': str(task_result.info),  # This is the exception raised
-        }
-    return response
+
+    try:
+        task_result = AsyncResult(task_id, app=celery_app)
+        if task_result.state == 'PENDING':
+            response = {
+                'state': task_result.state,
+                'status': 'Pending...'
+            }
+        elif task_result.state != 'FAILURE':
+            response = {
+                'state': task_result.state,
+                'meta': task_result.info if isinstance(task_result.info, dict) else {},
+            }
+            if isinstance(task_result.info, dict) and 'status' in task_result.info:
+                response['status'] = task_result.info['status']
+            else:
+                response['status'] = 'Processing...' if task_result.state == 'PROGRESS' else str(task_result.state)
+        else:
+            response = {
+                'state': task_result.state,
+                'status': str(task_result.info),
+            }
+        return response
+    except Exception as e:
+        logger.error(f"Error checking task status: {e}")
+        return {'state': 'FAILURE', 'status': str(e)}

@@ -10,12 +10,19 @@ let selectedIds = new Set();
 // UI state
 let isLoading = false;
 let isFindingEmpty = false;
+let isCleanupQueue = false;
+let currentAbnormalFilter = 'all';
+let activeTargetInput = null;
 let currentSearch = '';
 let translationStatuses = {}; // Holds the apply-status for each URL
 let appliedUrlsSet = new Set();
+let rawAbnormalData = null;
+let rawCleanupData = null;
 
 // DOM element cache
 let historyContainer, emptyState, searchBox, darkModeToggle, fetchAllTitlesBtn, bulkActionsPanel, selectionCount, deleteSelectedBtn, moveSelectedToFolderDropdown, findReplaceModal, closeFindReplaceModalBtn, cancelFindReplaceBtn, executeFindReplaceBtn, openGlobalFindReplaceBtn, createFolderButton, newFolderNameInput, findEmptyBtn, findText, replaceText, findCount, conditionText, folderScope, useRegex, caseSensitive, autoStartCheckbox, enableDragDropCheckbox;
+let cleanupQueueBtn, openRestoreCenterBtn, notifBadge, abnormalFilterBar, filterAbnormalAll, filterAbnormalPartial, filterAbnormalOther, moveToCleanupBtn, whitelistSelectedAbnormalBtn, cleanupSectionBar, cleanupSummaryText, deleteSelectedCleanupBtn, deleteAllCleanupBtn, cleanupRestoreModal, closeRestoreCenterModalBtn, closeRestoreCenterBottomBtn, tabBtnNotifications, tabBtnTrash, tabBtnAbnormalWhitelist, modalNotifBadge, modalTrashBadge, modalWhitelistBadge, tabContentNotifications, tabContentTrash, tabContentAbnormalWhitelist, notificationsTableBody, trashTableBody, whitelistTableBody, clearAllWhitelistBtn, dismissAllNotifsBtn, restoreAllTrashBtn, toggleDismissedHistory, dismissedHistoryContainer, dismissedTableBody, dismissedNotifsCount, similarRecommendPanel, recommendKeyword, recommendCardsContainer, closeRecommendPanelBtn;
+let deselectAllBtn, retranslateSelectedBtn, copySelectedOriginalBtn, bulkFindReplaceBtn, bulkWhitelistAbnormalBtn, bulkMoveToCleanupBtn, exportSelectedPdfBtn, exportSelectedJsonBtn, excludeSelectedBtn, exportPdfBtn, exportJsonBtn;
 
 // Debounce timer
 let searchTimeout;
@@ -30,6 +37,7 @@ document.addEventListener('DOMContentLoaded', () => {
     setupEventListeners();
     // loadDarkModePreference(); // Disabled: Chrome extension API not available
     loadAndRenderGrouped();
+    loadNotificationsAndBadge();
 });
 
 function cacheDOMElements() {
@@ -60,12 +68,65 @@ function cacheDOMElements() {
     findEmptyBtn = document.getElementById('findEmptyBtn');
     autoStartCheckbox = document.getElementById('autoStartCheckbox'); // Cache the auto-start checkbox
     enableDragDropCheckbox = document.getElementById('enableDragDropCheckbox');
+
+    // New cleanup & abnormal & restore center elements
+    cleanupQueueBtn = document.getElementById('cleanupQueueBtn');
+    openRestoreCenterBtn = document.getElementById('openRestoreCenterBtn');
+    notifBadge = document.getElementById('notifBadge');
+    abnormalFilterBar = document.getElementById('abnormalFilterBar');
+    filterAbnormalAll = document.getElementById('filterAbnormalAll');
+    filterAbnormalPartial = document.getElementById('filterAbnormalPartial');
+    filterAbnormalOther = document.getElementById('filterAbnormalOther');
+    moveToCleanupBtn = document.getElementById('moveToCleanupBtn');
+    whitelistSelectedAbnormalBtn = document.getElementById('whitelistSelectedAbnormalBtn');
+    cleanupSectionBar = document.getElementById('cleanupSectionBar');
+    cleanupSummaryText = document.getElementById('cleanupSummaryText');
+    deleteSelectedCleanupBtn = document.getElementById('deleteSelectedCleanupBtn');
+    deleteAllCleanupBtn = document.getElementById('deleteAllCleanupBtn');
+    cleanupRestoreModal = document.getElementById('cleanupRestoreModal');
+    closeRestoreCenterModalBtn = document.getElementById('closeRestoreCenterModal');
+    closeRestoreCenterBottomBtn = document.getElementById('closeRestoreCenterBottomBtn');
+    tabBtnNotifications = document.getElementById('tabBtnNotifications');
+    tabBtnTrash = document.getElementById('tabBtnTrash');
+    tabBtnAbnormalWhitelist = document.getElementById('tabBtnAbnormalWhitelist');
+    modalNotifBadge = document.getElementById('modalNotifBadge');
+    modalTrashBadge = document.getElementById('modalTrashBadge');
+    modalWhitelistBadge = document.getElementById('modalWhitelistBadge');
+    tabContentNotifications = document.getElementById('tabContentNotifications');
+    tabContentTrash = document.getElementById('tabContentTrash');
+    tabContentAbnormalWhitelist = document.getElementById('tabContentAbnormalWhitelist');
+    notificationsTableBody = document.getElementById('notificationsTableBody');
+    trashTableBody = document.getElementById('trashTableBody');
+    whitelistTableBody = document.getElementById('whitelistTableBody');
+    clearAllWhitelistBtn = document.getElementById('clearAllWhitelistBtn');
+    dismissAllNotifsBtn = document.getElementById('dismissAllNotifsBtn');
+    restoreAllTrashBtn = document.getElementById('restoreAllTrashBtn');
+    toggleDismissedHistory = document.getElementById('toggleDismissedHistory');
+    dismissedHistoryContainer = document.getElementById('dismissedHistoryContainer');
+    dismissedTableBody = document.getElementById('dismissedTableBody');
+    dismissedNotifsCount = document.getElementById('dismissedNotifsCount');
+    similarRecommendPanel = document.getElementById('similarRecommendPanel');
+    recommendKeyword = document.getElementById('recommendKeyword');
+    recommendCardsContainer = document.getElementById('recommendCardsContainer');
+    closeRecommendPanelBtn = document.getElementById('closeRecommendPanel');
+
+    // Bulk actions floating dock elements
+    deselectAllBtn = document.getElementById('deselectAllBtn');
+    retranslateSelectedBtn = document.getElementById('retranslateSelectedBtn');
+    copySelectedOriginalBtn = document.getElementById('copySelectedOriginalBtn');
+    bulkFindReplaceBtn = document.getElementById('bulkFindReplaceBtn');
+    bulkWhitelistAbnormalBtn = document.getElementById('bulkWhitelistAbnormalBtn');
+    bulkMoveToCleanupBtn = document.getElementById('bulkMoveToCleanupBtn');
+    exportSelectedPdfBtn = document.getElementById('exportSelectedPdfBtn');
+    exportSelectedJsonBtn = document.getElementById('exportSelectedJsonBtn');
+    excludeSelectedBtn = document.getElementById('excludeSelectedBtn');
+    exportPdfBtn = document.getElementById('exportPdfBtn');
+    exportJsonBtn = document.getElementById('exportJsonBtn');
 }
 
 async function loadAndRenderGrouped() {
     if (isLoading) return;
     isLoading = true;
-    showToast('Loading data...', 'info'); // DEBUG
     document.getElementById('loading-skeleton').style.display = 'block';
     historyContainer.innerHTML = '';
     selectedIds.clear();
@@ -77,8 +138,6 @@ async function loadAndRenderGrouped() {
             fetch(`/translations_by_folder?t=${Date.now()}`),
             fetch(`/folders?t=${Date.now()}`)
         ]);
-
-        showToast('Data fetched, processing...', 'info'); // DEBUG
 
         if (!translationsRes.ok) throw new Error(`Server error (translations): ${translationsRes.statusText}`);
         if (!foldersRes.ok) throw new Error(`Server error (folders): ${foldersRes.statusText}`);
@@ -103,7 +162,6 @@ async function loadAndRenderGrouped() {
         // NOTE: translationStatuses logic is removed
         translationStatuses = {};
 
-        showToast('Rendering history...', 'info'); // DEBUG
         renderGroupedHistory(groupedTranslations); // Pass data to render
         populateFolderDropdowns(allFolders);
         updateStatistics(groupedTranslations);
@@ -171,118 +229,236 @@ function populateFolderDropdowns(folders) {
 
 
 
-function renderGroupedHistory(dataToRender) {
+function renderGroupedHistory(dataToRender, selectedFolder = '') {
     historyContainer.innerHTML = '';
     const fragment = document.createDocumentFragment();
     sortableInstances = []; // Clear instances on re-render
     
-    const folderNames = allFolders.map(f => f.name).sort();
+    let folderNames = Array.from(new Set([...allFolders.map(f => f.name), ...Object.keys(dataToRender)])).sort();
+
+    if (selectedFolder && selectedFolder !== '__all__') {
+        folderNames = folderNames.filter(f => f === selectedFolder);
+    }
 
     for (const folderName of folderNames) {
         const urlGroups = dataToRender[folderName] || []; // This is now an array of urlGroup objects
         const folderContainer = document.createElement('div');
         folderContainer.className = 'history-folder-group';
+        folderContainer.dataset.folderName = folderName;
 
         let urlGroupsHtml = '';
         let totalTranslationsInFolder = 0;
+        let validEpisodeCount = 0;
 
         for (const urlGroup of urlGroups) {
             const url = urlGroup.url;
-            const translations = urlGroup.items;
+            const translations = urlGroup.items || [];
             const sortOrder = urlGroup.sort_order;
 
-            let filteredTranslations = translations.filter(t => 
-                !currentSearch || 
-                t.original.toLowerCase().includes(currentSearch) || 
-                (t.translated && t.translated.toLowerCase().includes(currentSearch))
-            );
+            let filteredTranslations = translations.filter(t => {
+                const matchesSearch = !currentSearch || 
+                    (t.original && t.original.toLowerCase().includes(currentSearch)) || 
+                    (t.translated && t.translated.toLowerCase().includes(currentSearch));
+                if (!matchesSearch) return false;
 
-            // This client-side filtering is now only for search, not for finding empty ones
-            // if (isFindingEmpty) {
-            //     filteredTranslations = filteredTranslations.filter(t => !t.translated || t.translated.trim() === '' || JAPANESE_REGEX.test(t.translated));
-            // }
+                if (isFindingEmpty && currentAbnormalFilter !== 'all') {
+                    return t.category === currentAbnormalFilter;
+                }
+                return true;
+            });
 
             if (filteredTranslations.length === 0) continue;
 
-            filteredTranslations.sort((a, b) => (a.pid || '').localeCompare(b.pid || '', undefined, { numeric: true, sensitivity: 'base' }));
-            
+            validEpisodeCount++;
             totalTranslationsInFolder += filteredTranslations.length;
-            const groupItemsHtml = filteredTranslations.map(t => renderItem(t)).join('');
             const title = filteredTranslations[0]?.title || url;
-            
             const isApplied = appliedUrlsSet.has(url.split('#')[0].replace(/\/$/, ''));
 
-            const isUrlGroupCollapsed = isFindingEmpty ? false : true;
+            const shouldRenderImmediately = Boolean(currentSearch || isFindingEmpty || isCleanupQueue);
+            const isUrlGroupCollapsed = shouldRenderImmediately ? false : true;
+            const groupItemsHtml = shouldRenderImmediately ? filteredTranslations.map(t => renderItem(t)).join('') : '';
 
             urlGroupsHtml += `
-                <div class="list-group fade-in" data-url="${url}">
+                <div class="list-group fade-in" data-url="${escapeHtml(url)}" data-folder-name="${escapeHtml(folderName)}">
                     <div class="list-group-header">
-                        <span class="list-group-toggle ${isUrlGroupCollapsed ? 'collapsed' : ''} material-icons">chevron_right</span>
-                        <a href="${url}" target="_blank" class="list-group-title-link"><h3 class="list-group-title">${escapeHtml(title)} (${filteredTranslations.length})</h3></a>
+                        <span class="list-group-toggle ${isUrlGroupCollapsed ? 'collapsed' : ''} material-icons">${isUrlGroupCollapsed ? 'chevron_right' : 'expand_more'}</span>
+                        <div class="list-group-title-container">
+                            <h3 class="list-group-title">${escapeHtml(title)}</h3>
+                            <span class="episode-count-badge">${filteredTranslations.length}개 단락</span>
+                        </div>
                         <div class="list-group-actions">
-
-                            <button class="btn btn-outline btn-icon edit-title-btn" data-url="${url}" title="제목 수정">✏️</button>
-                            <button class="btn btn-secondary btn-apply ${isApplied ? 'applied' : ''}" data-url="${url}">🔄️ ${isApplied ? '해제' : '적용'}</button>
-                            <label class="btn"><input type="checkbox" class="group-select-all-checkbox"> 전체 선택</label>
+                            <a href="${url}" target="_blank" class="btn btn-outline btn-sm ext-link-btn" title="소설 원본 웹페이지 새 창으로 열기">🔗 원본 ↗</a>
+                            <button class="btn btn-outline btn-sm edit-title-btn" data-url="${escapeHtml(url)}" title="회차 제목 수정">✏️ 수정</button>
+                            <button class="btn btn-secondary btn-sm btn-apply ${isApplied ? 'applied' : ''}" data-url="${escapeHtml(url)}">${isApplied ? '적용 해제' : '적용'}</button>
+                            <label class="checkbox-container select-all-label">
+                                <input type="checkbox" class="group-select-all-checkbox">
+                                <span class="checkmark"></span>
+                                전체 선택
+                            </label>
                         </div>
                     </div>
                     <div class="list-group-content ${isUrlGroupCollapsed ? 'collapsed' : ''}">
+                        ${groupItemsHtml ? `
                         <table class="history-table">
                             <thead>
                                 <tr>
-                                    <th style="width: 40px;"></th>
-                                    <th style="width: 80px;">PID</th>
-                                    <th>원문</th>
-                                    <th>번역</th>
-                                    <th style="width: 120px;">액션</th>
+                                    <th style="width: 44px; text-align: center;">선택</th>
+                                    <th style="width: 75px;">PID</th>
+                                    <th style="width: 42%;">원문 (일본어)</th>
+                                    <th style="width: 42%;">번역 (한국어)</th>
+                                    <th style="width: 150px; text-align: center;">관리</th>
                                 </tr>
                             </thead>
                             <tbody>${groupItemsHtml}</tbody>
                         </table>
+                        ` : ''}
                     </div>
                 </div>
             `;
         }
 
-        if (isFindingEmpty && totalTranslationsInFolder === 0) {
+        if ((isFindingEmpty || isCleanupQueue) && totalTranslationsInFolder === 0) {
             continue;
         }
 
-        const isFolderCollapsed = isFindingEmpty ? (totalTranslationsInFolder === 0) : true;
+        // 특정 폴더 선택 시 자동 펼침, 그 외 기본 접힘
+        const isFolderCollapsed = (selectedFolder && selectedFolder !== '__all__') ? false : ((isFindingEmpty || isCleanupQueue) ? (totalTranslationsInFolder === 0) : true);
 
         folderContainer.innerHTML = `
             <div class="folder-group-header">
                 <span class="folder-group-toggle material-icons ${isFolderCollapsed ? 'collapsed' : ''}">expand_more</span>
-                <h2 class="folder-group-title">${escapeHtml(folderName)} (${totalTranslationsInFolder})</h2>
+                <div class="folder-title-wrapper">
+                    <h2 class="folder-group-title">${escapeHtml(folderName)}</h2>
+                    <span class="folder-stats-badge">${validEpisodeCount}개 회차 / ${totalTranslationsInFolder.toLocaleString()}개 단락</span>
+                </div>
                 <div class="list-group-actions">
-                    <label class="btn"><input type="checkbox" class="folder-select-all-checkbox"> 폴더 전체 선택</label>
-                    <button class="btn btn-outline btn-icon edit-folder-name-btn" data-folder-name="${escapeHtml(folderName)}" title="폴더 이름 수정">✏️</button>
+                    <button class="btn btn-outline btn-sm toggle-all-episodes-btn" title="이 소설의 모든 회차를 한 번에 펼치거나 접습니다.">모든 회차 펼치기</button>
+                    <label class="checkbox-container select-all-label">
+                        <input type="checkbox" class="folder-select-all-checkbox">
+                        <span class="checkmark"></span>
+                        폴더 전체 선택
+                    </label>
                 </div>
             </div>
-            <div class="folder-group-content ${isFolderCollapsed ? 'collapsed' : ''}" id="folder-content-${folderName.replace(/\s/g, '-')}">${urlGroupsHtml}</div>
+            <div class="folder-group-content ${isFolderCollapsed ? 'collapsed' : ''}">
+                ${urlGroupsHtml || '<div class="empty-folder-notice">번역된 회차가 없습니다.</div>'}
+            </div>
         `;
         fragment.appendChild(folderContainer);
     }
     historyContainer.appendChild(fragment);
 }
 
+function renderUrlGroupContent(listGroupEl) {
+    const contentEl = listGroupEl.querySelector('.list-group-content');
+    if (!contentEl || contentEl.querySelector('.history-table')) return; // Already rendered
+
+    const url = listGroupEl.dataset.url;
+    const folderName = listGroupEl.dataset.folderName;
+    const currentDataSource = isFindingEmpty ? rawAbnormalData : (isCleanupQueue ? rawCleanupData : groupedTranslations);
+    const urlGroups = (currentDataSource && currentDataSource[folderName]) || [];
+    const urlGroup = urlGroups.find(g => g.url === url);
+    if (!urlGroup) return;
+
+    let items = (urlGroup.items || []).slice();
+    if (currentSearch) {
+        items = items.filter(t => 
+            (t.original && t.original.toLowerCase().includes(currentSearch)) || 
+            (t.translated && t.translated.toLowerCase().includes(currentSearch))
+        );
+    }
+    if (isFindingEmpty && currentAbnormalFilter !== 'all') {
+        items = items.filter(t => t.category === currentAbnormalFilter);
+    }
+    items.sort((a, b) => (a.pid || '').localeCompare(b.pid || '', undefined, { numeric: true, sensitivity: 'base' }));
+
+    const itemsHtml = items.map(t => renderItem(t)).join('');
+    contentEl.innerHTML = `
+        <table class="history-table">
+            <thead>
+                <tr>
+                    <th style="width: 44px; text-align: center;">선택</th>
+                    <th style="width: 75px;">PID</th>
+                    <th style="width: 42%;">원문 (일본어)</th>
+                    <th style="width: 42%;">번역 (한국어)</th>
+                    <th style="width: 150px; text-align: center;">관리</th>
+                </tr>
+            </thead>
+            <tbody>${itemsHtml}</tbody>
+        </table>
+    `;
+}
+
 function renderItem(t) {
     const date = new Date(t.timestamp * 1000);
     const dateStr = date.toLocaleString('ko-KR', { dateStyle: 'short', timeStyle: 'short' });
+    const isChecked = selectedIds.has(t.id);
+
+    let badgeHtml = '';
+    if (isFindingEmpty && t.category) {
+        const badgeClass = t.category === 'partial_untranslated' ? 'badge-partial' : 'badge-other-lang';
+        const label = t.category_label || (t.category === 'partial_untranslated' ? '일부 미번역' : '다른 언어로 번역');
+        let queuedBadge = '';
+        if (t.is_queued_for_cleanup) {
+            queuedBadge = ' <span class="category-badge badge-moved" title="원문 정리 섹션으로 이동된 상태입니다.">정리 대기</span>';
+        }
+        badgeHtml = `<div class="badge-wrapper"><span class="category-badge ${badgeClass}">${escapeHtml(label)}</span>${queuedBadge}</div>`;
+    } else if (isCleanupQueue && t.category) {
+        let badgeClass = 'badge-verbatim';
+        if (t.category === 'paraphrased_jp') badgeClass = 'badge-paraphrased';
+        else if (t.category === 'moved') badgeClass = 'badge-moved';
+        badgeHtml = `<div class="badge-wrapper"><span class="category-badge ${badgeClass}">${escapeHtml(t.category_label || t.category)}</span></div>`;
+    }
+
+    const kwList = Array.isArray(t.untranslated_keywords) ? t.untranslated_keywords.join(',') : '';
+
     return `
         <tr class="history-item" data-id="${t.id}">
-            <td style="width: 40px; text-align: center;"><input type="checkbox" class="item-checkbox" data-id="${t.id}"></td>
-            <td>${escapeHtml(t.pid)}</td>
-            <td><div class="item-text-block"><div class="text-content original-text">${escapeHtml(t.original)}</div></div></td>
-            <td><div class="item-text-block"><div class="text-content translated-text" contenteditable="true">${escapeHtml(t.translated)}</div></div></td>
+            <td class="item-checkbox-cell">
+                <input type="checkbox" class="item-checkbox" data-id="${t.id}" ${isChecked ? 'checked' : ''}>
+            </td>
+            <td class="item-pid-cell">
+                <span class="pid-badge">${escapeHtml(t.pid)}</span>
+            </td>
+            <td class="item-original-cell">
+                <div class="original-cell-container">
+                    <div class="text-content original-text" title="클릭 또는 드래그하여 원문을 복사할 수 있습니다.">${escapeHtml(t.original)}</div>
+                    <div class="original-actions">
+                        <button class="btn btn-sm btn-copy-orig copy-orig-btn" title="원문 일본어 복사" data-original="${escapeHtml(t.original)}">
+                            📋 원문 복사
+                        </button>
+                    </div>
+                </div>
+            </td>
+            <td class="item-translated-cell">
+                <div class="translated-cell-container">
+                    ${badgeHtml}
+                    <div class="text-content translated-text" contenteditable="true" data-id="${t.id}" data-folder="${escapeHtml(t.folderName || '')}" data-keywords="${escapeHtml(kwList)}" data-original="${escapeHtml(t.original)}">${escapeHtml(t.translated)}</div>
+                    <div class="translated-actions">
+                        <span class="edit-status-hint">✏️ 수정 가능</span>
+                        <button class="btn btn-sm btn-save-inline save-item-btn" title="번역 수정 내용 저장">
+                            💾 저장
+                        </button>
+                    </div>
+                </div>
+            </td>
             <td class="item-actions-container">
                 <div class="item-date">${dateStr}</div>
-                <div class="item-actions">
-                    <button class="btn btn-outline save-item-btn" title="저장">💾</button>
-                    <button class="btn btn-outline retranslate-item-btn" title="재번역 (고성능 모델)">🔄</button>
-                    <button class="btn btn-outline copy-btn" title="복사">📋</button>
-                    <button class="btn btn-outline exclude-btn" title="제외">❌</button>
-                    <button class="btn btn-outline delete-btn" title="삭제">🗑️</button>
+                <div class="action-btn-clusters">
+                    <!-- 1. AI 재번역 및 이상 제외 클러스터 (작업) -->
+                    <div class="action-cluster work-cluster">
+                        <button class="btn btn-sm btn-action retranslate-item-btn" title="고성능 AI 모델로 재번역">🔄 AI 재번역</button>
+                        ${isFindingEmpty ? `
+                            <button class="btn btn-sm btn-action-whitelist whitelist-item-btn" title="이 단락은 의도된 번역이므로 이상번역 찾기에서 제외합니다." data-id="${t.id}">🛡️ 이상 제외</button>
+                        ` : ''}
+                    </div>
+                    <!-- 분리선: 오클릭 방지를 위한 시각적/물리적 격리 -->
+                    <div class="action-divider"></div>
+                    <!-- 2. 관리/위험 클러스터 (제외, 삭제) -->
+                    <div class="action-cluster danger-cluster">
+                        <button class="btn btn-sm btn-action-danger exclude-btn" title="번역에서 영구 제외">❌ 제외</button>
+                        <button class="btn btn-sm btn-action-danger delete-btn" title="이 번역 항목 삭제">🗑️ 삭제</button>
+                    </div>
                 </div>
             </td>
         </tr>
@@ -294,22 +470,38 @@ function setupEventListeners() {
         clearTimeout(searchTimeout);
         searchTimeout = setTimeout(() => {
             currentSearch = e.target.value.toLowerCase();
-            // Deactivate find empty filter if user starts searching
-            if (isFindingEmpty) {
-                isFindingEmpty = false;
-                document.getElementById('findEmptyBtn').classList.remove('active');
+            const selectedFolder = folderFilterDropdown ? folderFilterDropdown.value : '';
+            if (isFindingEmpty && rawAbnormalData) {
+                renderGroupedHistory(rawAbnormalData, selectedFolder);
+            } else if (isCleanupQueue && rawCleanupData) {
+                renderGroupedHistory(rawCleanupData, selectedFolder);
+            } else {
+                renderGroupedHistory(groupedTranslations, selectedFolder);
             }
-            renderGroupedHistory(groupedTranslations);
         }, 300);
     });
+
+    // 소설/폴더 필터 드롭다운 선택 시 해당 소설만 즉시 표시하고 자동으로 회차 목록 펼침
+    const folderFilterDropdown = document.getElementById('folderFilterDropdown');
+    if (folderFilterDropdown) {
+        folderFilterDropdown.addEventListener('change', (e) => {
+            const selectedFolder = e.target.value;
+            const currentData = getCurrentDataSource();
+            renderGroupedHistory(currentData, selectedFolder);
+        });
+    }
 
     findEmptyBtn.addEventListener('click', toggleFindEmpty);
 
     historyContainer.addEventListener('click', handleHistoryClick);
     historyContainer.addEventListener('change', handleCheckboxChange);
+    historyContainer.addEventListener('focusin', (e) => {
+        if (e.target.classList.contains('translated-text')) {
+            handleTranslatedFocus(e.target);
+        }
+    });
 
     darkModeToggle.addEventListener('click', toggleDarkMode);
-    // fetchAllTitlesBtn.addEventListener('click', fetchAllTitles);
     deleteSelectedBtn.addEventListener('click', deleteSelectedTranslations);
     moveSelectedToFolderDropdown.addEventListener('change', moveSelectedTranslationsToFolder);
 
@@ -319,15 +511,18 @@ function setupEventListeners() {
     cancelFindReplaceBtn.addEventListener('click', closeFindReplaceModal);
     executeFindReplaceBtn.addEventListener('click', executeGlobalFindReplace);
 
-    // Live count for find & replace
-    findText.addEventListener('input', countOccurrences); // No debounce for immediate feedback
+    findText.addEventListener('input', () => {
+        clearTimeout(findReplaceCountTimeout);
+        findReplaceCountTimeout = setTimeout(countOccurrences, 400);
+    });
 
     [conditionText, useRegex, caseSensitive, folderScope].forEach(element => {
+        if (!element) return;
         element.addEventListener('input', () => {
             clearTimeout(findReplaceCountTimeout);
             findReplaceCountTimeout = setTimeout(countOccurrences, 300);
         });
-        if (element.type === 'checkbox') { // Also trigger on change for checkboxes
+        if (element.type === 'checkbox') {
              element.addEventListener('change', () => {
                 clearTimeout(findReplaceCountTimeout);
                 findReplaceCountTimeout = setTimeout(countOccurrences, 300);
@@ -336,10 +531,96 @@ function setupEventListeners() {
     });
 
     createFolderButton.addEventListener('click', createFolder);
-    autoStartCheckbox.addEventListener('change', saveAutoStartState); // Add event listener for auto-start checkbox
+    autoStartCheckbox.addEventListener('change', saveAutoStartState);
+
+    // Floating bulk actions dock
+    if (deselectAllBtn) deselectAllBtn.addEventListener('click', deselectAll);
+    if (retranslateSelectedBtn) retranslateSelectedBtn.addEventListener('click', retranslateSelectedTranslations);
+    if (copySelectedOriginalBtn) copySelectedOriginalBtn.addEventListener('click', copySelectedOriginals);
+    if (bulkFindReplaceBtn) bulkFindReplaceBtn.addEventListener('click', openFindReplaceModal);
+    if (bulkWhitelistAbnormalBtn) bulkWhitelistAbnormalBtn.addEventListener('click', whitelistSelectedAbnormal);
+    if (bulkMoveToCleanupBtn) bulkMoveToCleanupBtn.addEventListener('click', moveToCleanupQueueSelected);
+    if (excludeSelectedBtn) excludeSelectedBtn.addEventListener('click', excludeSelectedTranslations);
+    if (exportSelectedPdfBtn) exportSelectedPdfBtn.addEventListener('click', () => exportToPrintableHtml(true));
+    if (exportSelectedJsonBtn) exportSelectedJsonBtn.addEventListener('click', () => exportTranslationsAsJson(true));
+
+    // Top control export buttons
+    if (exportPdfBtn) exportPdfBtn.addEventListener('click', () => exportToPrintableHtml(false));
+    if (exportJsonBtn) exportJsonBtn.addEventListener('click', () => exportTranslationsAsJson(false));
+
+    // Cleanup queue toolbar & actions
+    if (cleanupQueueBtn) cleanupQueueBtn.addEventListener('click', toggleCleanupQueue);
+    if (deleteSelectedCleanupBtn) deleteSelectedCleanupBtn.addEventListener('click', deleteSelectedCleanup);
+    if (deleteAllCleanupBtn) deleteAllCleanupBtn.addEventListener('click', deleteAllCleanup);
+
+    // Abnormal sub-filters & actions
+    if (filterAbnormalAll) filterAbnormalAll.addEventListener('click', () => setAbnormalFilter('all'));
+    if (filterAbnormalPartial) filterAbnormalPartial.addEventListener('click', () => setAbnormalFilter('partial_untranslated'));
+    if (filterAbnormalOther) filterAbnormalOther.addEventListener('click', () => setAbnormalFilter('other_language'));
+    if (moveToCleanupBtn) moveToCleanupBtn.addEventListener('click', moveToCleanupQueueSelected);
+    if (whitelistSelectedAbnormalBtn) whitelistSelectedAbnormalBtn.addEventListener('click', whitelistSelectedAbnormal);
+
+    // Restore Center Modal & Tabs
+    if (openRestoreCenterBtn) openRestoreCenterBtn.addEventListener('click', () => openRestoreCenterModal('notifications'));
+    if (closeRestoreCenterModalBtn) closeRestoreCenterModalBtn.addEventListener('click', closeRestoreCenterModal);
+    if (closeRestoreCenterBottomBtn) closeRestoreCenterBottomBtn.addEventListener('click', closeRestoreCenterBottomBtn);
+    if (tabBtnNotifications) tabBtnNotifications.addEventListener('click', () => switchRestoreTab('notifications'));
+    if (tabBtnTrash) tabBtnTrash.addEventListener('click', () => switchRestoreTab('trash'));
+    if (tabBtnAbnormalWhitelist) tabBtnAbnormalWhitelist.addEventListener('click', () => switchRestoreTab('whitelist'));
+    if (dismissAllNotifsBtn) dismissAllNotifsBtn.addEventListener('click', dismissAllNotifications);
+    if (restoreAllTrashBtn) restoreAllTrashBtn.addEventListener('click', restoreAllTrash);
+    if (clearAllWhitelistBtn) clearAllWhitelistBtn.addEventListener('click', clearAllAbnormalWhitelist);
+    if (toggleDismissedHistory) toggleDismissedHistory.addEventListener('click', toggleDismissedHistoryView);
+
+    // Delegated actions for modal tables
+    if (notificationsTableBody) {
+        notificationsTableBody.addEventListener('click', (e) => {
+            const btn = e.target.closest('.dismiss-notif-btn');
+            if (btn && btn.dataset.id) {
+                dismissNotification(parseInt(btn.dataset.id));
+            }
+        });
+    }
+    if (trashTableBody) {
+        trashTableBody.addEventListener('click', (e) => {
+            const btn = e.target.closest('.restore-trash-btn');
+            if (btn && btn.dataset.id) {
+                restoreTrashItem(parseInt(btn.dataset.id));
+            }
+        });
+    }
+    if (whitelistTableBody) {
+        whitelistTableBody.addEventListener('click', (e) => {
+            const btn = e.target.closest('.remove-whitelist-btn');
+            if (btn && btn.dataset.id) {
+                removeSingleWhitelist(parseInt(btn.dataset.id));
+            }
+        });
+    }
+
+    // Recommendation panel actions
+    if (closeRecommendPanelBtn) closeRecommendPanelBtn.addEventListener('click', closeRecommendPanel);
+    if (recommendCardsContainer) {
+        recommendCardsContainer.addEventListener('click', handleRecommendCardClick);
+    }
+    if (recommendKeyword) {
+        recommendKeyword.addEventListener('click', (e) => {
+            const chip = e.target.closest('.kw-chip');
+            if (chip && chip.dataset.kw) {
+                const folder = activeTargetInput ? (activeTargetInput.dataset.folder || '') : '';
+                loadSimilarRecommendations(chip.dataset.kw, folder);
+            }
+        });
+    }
+
+    // Translation drag / text selection listener for similar recommendations
+    document.addEventListener('mouseup', handleDocumentMouseUp);
+    document.addEventListener('keyup', (e) => {
+        if (e.key && (e.key.startsWith('Arrow') || e.key === 'Shift')) {
+            handleDocumentMouseUp(e);
+        }
+    });
 }
-
-
 
 async function loadAndRenderAbnormal() {
     if (isLoading) return;
@@ -347,6 +628,8 @@ async function loadAndRenderAbnormal() {
     showToast('이상 번역 기록을 불러오는 중...', 'info');
     document.getElementById('loading-skeleton').style.display = 'block';
     historyContainer.innerHTML = '';
+    selectedIds.clear();
+    updateBulkActionPanel();
 
     try {
         const response = await fetch(`/translations/abnormal?t=${Date.now()}`);
@@ -355,13 +638,22 @@ async function loadAndRenderAbnormal() {
         }
         const abnormalData = await response.json();
         
-        // Update the applied URLs set from the response
         appliedUrlsSet = new Set(abnormalData._applied_urls || []);
         delete abnormalData._applied_urls;
 
-        renderGroupedHistory(abnormalData); // Render the filtered data
+        const catCounts = abnormalData._category_counts || { total: 0, partial_untranslated: 0, other_language: 0 };
+        delete abnormalData._category_counts;
 
-        if (Object.keys(abnormalData).length === 0) {
+        rawAbnormalData = abnormalData;
+
+        if (filterAbnormalAll) filterAbnormalAll.textContent = `전체 이상번역 (${catCounts.total || 0})`;
+        if (filterAbnormalPartial) filterAbnormalPartial.textContent = `일부 번역 안 함 (${catCounts.partial_untranslated || 0})`;
+        if (filterAbnormalOther) filterAbnormalOther.textContent = `다른 언어로 번역 (${catCounts.other_language || 0})`;
+
+        renderGroupedHistory(abnormalData);
+
+        const totalItems = catCounts.total || 0;
+        if (totalItems === 0) {
             showToast("이상 번역 기록이 없습니다.", "info");
         }
 
@@ -371,7 +663,18 @@ async function loadAndRenderAbnormal() {
     } finally {
         isLoading = false;
         document.getElementById('loading-skeleton').style.display = 'none';
-        // Do not hide emptyState here, as an empty result is valid for this view
+        updateBulkActionPanel();
+    }
+}
+
+function setAbnormalFilter(filterType) {
+    currentAbnormalFilter = filterType;
+    [filterAbnormalAll, filterAbnormalPartial, filterAbnormalOther].forEach(btn => {
+        if (!btn) return;
+        btn.classList.toggle('active', btn.dataset.filter === filterType);
+    });
+    if (rawAbnormalData) {
+        renderGroupedHistory(rawAbnormalData);
     }
 }
 
@@ -382,10 +685,739 @@ function toggleFindEmpty() {
     currentSearch = '';
 
     if (isFindingEmpty) {
+        if (isCleanupQueue) {
+            isCleanupQueue = false;
+            cleanupQueueBtn.classList.remove('active');
+            cleanupSectionBar.style.display = 'none';
+        }
+        abnormalFilterBar.style.display = 'flex';
         loadAndRenderAbnormal();
     } else {
-        // When turning off, reload the full dataset
+        abnormalFilterBar.style.display = 'none';
+        closeRecommendPanel();
         loadAndRenderGrouped();
+    }
+}
+
+function toggleCleanupQueue() {
+    isCleanupQueue = !isCleanupQueue;
+    cleanupQueueBtn.classList.toggle('active', isCleanupQueue);
+    searchBox.value = '';
+    currentSearch = '';
+
+    if (isCleanupQueue) {
+        if (isFindingEmpty) {
+            isFindingEmpty = false;
+            findEmptyBtn.classList.remove('active');
+            abnormalFilterBar.style.display = 'none';
+            closeRecommendPanel();
+        }
+        cleanupSectionBar.style.display = 'flex';
+        loadAndRenderCleanupQueue();
+    } else {
+        cleanupSectionBar.style.display = 'none';
+        loadAndRenderGrouped();
+    }
+}
+
+async function loadAndRenderCleanupQueue() {
+    if (isLoading) return;
+    isLoading = true;
+    showToast('원문 복제·변형 정리 대기열을 불러오는 중...', 'info');
+    document.getElementById('loading-skeleton').style.display = 'block';
+    historyContainer.innerHTML = '';
+    selectedIds.clear();
+    updateBulkActionPanel();
+
+    try {
+        const response = await fetch(`/translations/cleanup_queue?t=${Date.now()}`);
+        if (!response.ok) {
+            throw new Error(`Server error: ${response.statusText}`);
+        }
+        const cleanupData = await response.json();
+
+        const summary = cleanupData._summary || { total: 0, verbatim_count: 0, paraphrased_count: 0, moved_count: 0 };
+        delete cleanupData._summary;
+        rawCleanupData = cleanupData;
+
+        if (cleanupSummaryText) {
+            cleanupSummaryText.textContent = `원문 그대로 반환 ${summary.verbatim_count || 0}건 / 원문 변형 ${summary.paraphrased_count || 0}건 / 이동된 항목 ${summary.moved_count || 0}건 (총 ${summary.total || 0}건)`;
+        }
+
+        renderGroupedHistory(cleanupData);
+
+        if (summary.total === 0) {
+            showToast("정리할 원문 복제·변형 기록이 없습니다.", "info");
+        }
+
+    } catch (error) {
+        console.error("Failed to load cleanup queue:", error);
+        showToast("원문 정리 대기열 로딩 실패.", "error");
+    } finally {
+        isLoading = false;
+        document.getElementById('loading-skeleton').style.display = 'none';
+        updateBulkActionPanel();
+    }
+}
+
+async function deleteSelectedCleanup() {
+    if (selectedIds.size === 0) {
+        showToast('삭제할 항목을 먼저 선택하세요.', 'error');
+        return;
+    }
+    const count = selectedIds.size;
+    if (!confirm(`선택한 ${count}개 항목을 삭제하시겠습니까?\n\n(삭제된 항목은 휴지통에 보관되며 '알림 및 복원 센터'에서 언제든 되돌릴 수 있습니다.)`)) {
+        return;
+    }
+
+    try {
+        const response = await fetch('/translations/cleanup_queue/delete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids: Array.from(selectedIds) })
+        });
+        if (!response.ok) throw new Error('삭제 요청 실패');
+        const res = await response.json();
+        showToast(res.message || `${count}개 항목이 삭제되었습니다.`, 'success');
+        selectedIds.clear();
+        loadAndRenderCleanupQueue();
+        loadNotificationsAndBadge();
+    } catch (err) {
+        console.error('정리 삭제 실패:', err);
+        showToast('삭제 처리 중 오류가 발생했습니다.', 'error');
+    }
+}
+
+async function deleteAllCleanup() {
+    if (!confirm('정리 대기열의 모든 항목을 일괄 삭제하시겠습니까?\n\n(삭제된 모든 항목은 휴지통에 보관되며 알림 및 복원 센터에서 회차별 확인 및 복원이 가능합니다.)')) {
+        return;
+    }
+
+    try {
+        const response = await fetch('/translations/cleanup_queue/delete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ all_queue: true })
+        });
+        if (!response.ok) throw new Error('전체 삭제 요청 실패');
+        const res = await response.json();
+        showToast(res.message || '정리 대기열 전체가 삭제되었습니다.', 'success');
+        selectedIds.clear();
+        loadAndRenderCleanupQueue();
+        loadNotificationsAndBadge();
+    } catch (err) {
+        console.error('대기열 전체 삭제 실패:', err);
+        showToast('대기열 삭제 중 오류가 발생했습니다.', 'error');
+    }
+}
+
+async function moveToCleanupQueueSelected() {
+    if (selectedIds.size === 0) {
+        showToast('원문 정리 섹션으로 이동할 항목을 먼저 선택하세요.', 'error');
+        return;
+    }
+    const count = selectedIds.size;
+    if (!confirm(`선택한 ${count}개 항목을 [원문 복제·변형 정리] 섹션(삭제 대기열)으로 이동하시겠습니까?`)) {
+        return;
+    }
+
+    try {
+        const response = await fetch('/translations/move_to_cleanup', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids: Array.from(selectedIds) })
+        });
+        if (!response.ok) throw new Error('이동 실패');
+        const res = await response.json();
+        showToast(res.message || `${count}개 항목이 원문 정리 섹션으로 이동되었습니다.`, 'success');
+        selectedIds.clear();
+        loadAndRenderAbnormal();
+    } catch (err) {
+        console.error('원문 정리 섹션 이동 실패:', err);
+        showToast('이동 처리 중 오류가 발생했습니다.', 'error');
+    }
+}
+
+async function whitelistSelectedAbnormal() {
+    if (selectedIds.size === 0) {
+        showToast('이상번역 검사에서 제외할 항목을 먼저 선택하세요.', 'error');
+        return;
+    }
+    const count = selectedIds.size;
+    if (!confirm(`선택한 ${count}개 항목을 이상번역 검사에서 제외하시겠습니까?\n(의도적으로 일본어를 남겨둔 문장으로 처리되며, 복원 센터의 [이상번역 예외 목록] 탭에서 언제든지 다시 포함할 수 있습니다.)`)) {
+        return;
+    }
+
+    try {
+        const response = await fetch('/translations/abnormal_whitelist/add', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids: Array.from(selectedIds) })
+        });
+        if (!response.ok) throw new Error('서버 응답 오류');
+        const res = await response.json();
+        showToast(res.message || `${count}개 항목이 이상번역 검사에서 제외되었습니다.`, 'success');
+        selectedIds.clear();
+        loadAndRenderAbnormal();
+        loadNotificationsAndBadge();
+    } catch (err) {
+        console.error('이상번역 제외 실패:', err);
+        showToast(`이상번역 제외 실패: ${err.message}`, 'error');
+    }
+}
+
+async function loadNotificationsAndBadge() {
+    try {
+        const [notifsRes, trashRes, whitelistRes] = await Promise.all([
+            fetch(`/cleanup/notifications?t=${Date.now()}`),
+            fetch(`/translations/trash?t=${Date.now()}`),
+            fetch(`/translations/abnormal_whitelist?t=${Date.now()}`)
+        ]);
+
+        if (notifsRes.ok) {
+            const data = await notifsRes.json();
+            const activeCount = (data.active_notifications || []).length;
+            if (notifBadge) {
+                notifBadge.textContent = activeCount;
+                notifBadge.style.display = activeCount > 0 ? 'inline-flex' : 'none';
+            }
+            if (modalNotifBadge) {
+                modalNotifBadge.textContent = activeCount;
+            }
+        }
+
+        if (trashRes.ok) {
+            const trashData = await trashRes.json();
+            const trashCount = (trashData.trash || []).length;
+            if (modalTrashBadge) {
+                modalTrashBadge.textContent = trashCount;
+            }
+        }
+
+        if (whitelistRes && whitelistRes.ok) {
+            const wlData = await whitelistRes.json();
+            const wlCount = (wlData.whitelist || []).length;
+            if (modalWhitelistBadge) {
+                modalWhitelistBadge.textContent = wlCount;
+            }
+        }
+    } catch (err) {
+        console.warn('알림 및 휴지통 뱃지 로딩 실패:', err);
+    }
+}
+
+function openRestoreCenterModal(defaultTab = 'notifications') {
+    if (!cleanupRestoreModal) return;
+    cleanupRestoreModal.style.display = 'flex';
+    switchRestoreTab(defaultTab);
+}
+
+function closeRestoreCenterModal() {
+    if (!cleanupRestoreModal) return;
+    cleanupRestoreModal.style.display = 'none';
+}
+
+function switchRestoreTab(tab) {
+    if (tab === 'notifications') {
+        if (tabBtnNotifications) tabBtnNotifications.classList.add('active');
+        if (tabBtnTrash) tabBtnTrash.classList.remove('active');
+        if (tabBtnAbnormalWhitelist) tabBtnAbnormalWhitelist.classList.remove('active');
+        if (tabContentNotifications) tabContentNotifications.style.display = 'block';
+        if (tabContentTrash) tabContentTrash.style.display = 'none';
+        if (tabContentAbnormalWhitelist) tabContentAbnormalWhitelist.style.display = 'none';
+        loadAndRenderNotifications();
+    } else if (tab === 'trash') {
+        if (tabBtnNotifications) tabBtnNotifications.classList.remove('active');
+        if (tabBtnTrash) tabBtnTrash.classList.add('active');
+        if (tabBtnAbnormalWhitelist) tabBtnAbnormalWhitelist.classList.remove('active');
+        if (tabContentNotifications) tabContentNotifications.style.display = 'none';
+        if (tabContentTrash) tabContentTrash.style.display = 'block';
+        if (tabContentAbnormalWhitelist) tabContentAbnormalWhitelist.style.display = 'none';
+        loadAndRenderTrash();
+    } else if (tab === 'whitelist') {
+        if (tabBtnNotifications) tabBtnNotifications.classList.remove('active');
+        if (tabBtnTrash) tabBtnTrash.classList.remove('active');
+        if (tabBtnAbnormalWhitelist) tabBtnAbnormalWhitelist.classList.add('active');
+        if (tabContentNotifications) tabContentNotifications.style.display = 'none';
+        if (tabContentTrash) tabContentTrash.style.display = 'none';
+        if (tabContentAbnormalWhitelist) tabContentAbnormalWhitelist.style.display = 'block';
+        loadAndRenderAbnormalWhitelist();
+    }
+}
+
+async function loadAndRenderNotifications() {
+    if (!notificationsTableBody) return;
+    notificationsTableBody.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 20px;">알림 불러오는 중...</td></tr>';
+
+    try {
+        const res = await fetch(`/cleanup/notifications?t=${Date.now()}`);
+        if (!res.ok) throw new Error('알림 조회 실패');
+        const data = await res.json();
+        const activeList = data.active_notifications || [];
+        const dismissedList = data.recent_dismissed || [];
+
+        if (modalNotifBadge) modalNotifBadge.textContent = activeList.length;
+        if (notifBadge) {
+            notifBadge.textContent = activeList.length;
+            notifBadge.style.display = activeList.length > 0 ? 'inline-flex' : 'none';
+        }
+
+        if (activeList.length === 0) {
+            notificationsTableBody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: var(--text-muted); padding: 24px;">활성화된 삭제 알림이 없습니다.</td></tr>';
+        } else {
+            notificationsTableBody.innerHTML = activeList.map(n => {
+                const baseCleanUrl = (n.url || '').split('#')[0];
+                const reviewUrl = `${baseCleanUrl}#lanovel_review=${encodeURIComponent(n.batch_id || n.id)}`;
+                return `
+                <tr>
+                    <td style="font-weight: 500;">${escapeHtml(n.novel_title || '미분류')}</td>
+                    <td>${escapeHtml(n.episode_title || n.url)}</td>
+                    <td style="text-align: center;"><span style="color: var(--danger-color); font-weight: 600;">${n.deleted_count}건</span></td>
+                    <td>
+                        <a href="${escapeHtml(reviewUrl)}" target="_blank" class="btn btn-sm btn-primary" style="text-decoration: none;">🔍 검수 회차 열기 ↗</a>
+                    </td>
+                    <td style="text-align: center;">
+                        <button class="btn btn-sm btn-outline dismiss-notif-btn" data-id="${n.id}">해제</button>
+                    </td>
+                </tr>
+            `;
+            }).join('');
+        }
+
+        if (dismissedNotifsCount) dismissedNotifsCount.textContent = dismissedList.length;
+        if (dismissedTableBody) {
+            if (dismissedList.length === 0) {
+                dismissedTableBody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: var(--text-muted); padding: 16px;">최근 7일간 해제된 이력이 없습니다.</td></tr>';
+            } else {
+                dismissedTableBody.innerHTML = dismissedList.map(d => {
+                    const dismissedDate = d.dismissed_at ? new Date(d.dismissed_at * 1000).toLocaleString('ko-KR', { dateStyle: 'short', timeStyle: 'short' }) : '-';
+                    const baseCleanUrl = (d.url || '').split('#')[0];
+                    const reviewUrl = `${baseCleanUrl}#lanovel_review=${encodeURIComponent(d.batch_id || d.id)}`;
+                    return `
+                        <tr>
+                            <td>${escapeHtml(d.novel_title || '미분류')}</td>
+                            <td>${escapeHtml(d.episode_title || d.url)}</td>
+                            <td>${d.deleted_count}건</td>
+                            <td>${dismissedDate}</td>
+                            <td><a href="${escapeHtml(reviewUrl)}" target="_blank" style="color: var(--primary-color);">열기 ↗</a></td>
+                        </tr>
+                    `;
+                }).join('');
+            }
+        }
+
+    } catch (err) {
+        console.error('알림 로딩 실패:', err);
+        notificationsTableBody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: var(--danger-color); padding: 20px;">알림 로딩 실패</td></tr>';
+    }
+}
+
+async function dismissNotification(id) {
+    try {
+        const res = await fetch(`/cleanup/notifications/${id}/dismiss`, { method: 'POST' });
+        if (!res.ok) throw new Error('해제 실패');
+        showToast('삭제 알림이 해제되었습니다. (7일간 보존 이력에 보관됩니다)', 'info');
+        loadAndRenderNotifications();
+    } catch (err) {
+        console.error('알림 해제 실패:', err);
+        showToast('알림 해제 중 오류가 발생했습니다.', 'error');
+    }
+}
+
+async function dismissAllNotifications() {
+    if (!confirm('모든 삭제 알림을 해제하시겠습니까?')) return;
+    try {
+        const res = await fetch('/cleanup/notifications/dismiss_all', { method: 'POST' });
+        if (!res.ok) throw new Error('전체 해제 실패');
+        showToast('모든 알림이 해제되었습니다.', 'info');
+        loadAndRenderNotifications();
+    } catch (err) {
+        console.error('전체 해제 실패:', err);
+        showToast('알림 전체 해제 중 오류가 발생했습니다.', 'error');
+    }
+}
+
+function toggleDismissedHistoryView() {
+    if (!dismissedHistoryContainer) return;
+    const isHidden = dismissedHistoryContainer.style.display === 'none';
+    dismissedHistoryContainer.style.display = isHidden ? 'block' : 'none';
+    const icon = document.getElementById('dismissedToggleIcon');
+    if (icon) icon.textContent = isHidden ? '▼' : '▶';
+}
+
+async function loadAndRenderTrash() {
+    if (!trashTableBody) return;
+    trashTableBody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 20px;">휴지통 목록 불러오는 중...</td></tr>';
+
+    try {
+        const res = await fetch(`/translations/trash?t=${Date.now()}`);
+        if (!res.ok) throw new Error('휴지통 조회 실패');
+        const data = await res.json();
+        const trashList = data.trash || [];
+
+        if (modalTrashBadge) modalTrashBadge.textContent = trashList.length;
+
+        if (trashList.length === 0) {
+            trashTableBody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 24px;">휴지통이 비어 있습니다. (7일 경과 항목은 자동 영구 정리됩니다)</td></tr>';
+            return;
+        }
+
+        trashTableBody.innerHTML = trashList.map(item => {
+            const delDate = item.deleted_at ? new Date(item.deleted_at * 1000).toLocaleString('ko-KR', { dateStyle: 'short', timeStyle: 'short' }) : '-';
+            let catBadge = '';
+            if (item.reason_category === 'verbatim_or_empty') {
+                catBadge = '<span class="category-badge badge-verbatim">원문 그대로</span>';
+            } else if (item.reason_category === 'paraphrased_jp') {
+                catBadge = '<span class="category-badge badge-paraphrased">원문 변형</span>';
+            } else {
+                catBadge = '<span class="category-badge badge-moved">다른 언어</span>';
+            }
+
+            return `
+                <tr>
+                    <td style="font-size: 12px;">
+                        <div><strong>${escapeHtml(item.folderName || '미분류')}</strong></div>
+                        <div style="color: var(--text-muted);">${escapeHtml(item.title || item.url)}</div>
+                    </td>
+                    <td style="max-width: 250px; font-size: 12px;"><div style="max-height: 60px; overflow-y: auto;">${escapeHtml(item.original)}</div></td>
+                    <td style="max-width: 250px; font-size: 12px;"><div style="max-height: 60px; overflow-y: auto;">${escapeHtml(item.translated || '(없음)')}</div></td>
+                    <td>${catBadge}</td>
+                    <td style="font-size: 12px; color: var(--text-muted);">${delDate}</td>
+                    <td style="text-align: center;">
+                        <button class="btn btn-sm btn-primary restore-trash-btn" data-id="${item.id}">복원</button>
+                    </td>
+                </tr>
+            `;
+        }).join('');
+
+    } catch (err) {
+        console.error('휴지통 로딩 실패:', err);
+        trashTableBody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--danger-color); padding: 20px;">휴지통 로딩 실패</td></tr>';
+    }
+}
+
+async function restoreTrashItem(trashId) {
+    try {
+        const res = await fetch('/translations/trash/restore', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ trash_ids: [trashId] })
+        });
+        if (!res.ok) throw new Error('복원 실패');
+        const data = await res.json();
+        showToast(data.message || '항목이 원래 번역 목록으로 복원되었습니다.', 'success');
+        loadAndRenderTrash();
+        loadNotificationsAndBadge();
+        if (!isFindingEmpty && !isCleanupQueue) {
+            loadAndRenderGrouped();
+        } else if (isCleanupQueue) {
+            loadAndRenderCleanupQueue();
+        }
+    } catch (err) {
+        console.error('복원 실패:', err);
+        showToast('복원 중 오류가 발생했습니다.', 'error');
+    }
+}
+
+async function restoreAllTrash() {
+    if (!confirm('휴지통의 모든 항목을 일괄 복원하시겠습니까?')) return;
+    try {
+        const res = await fetch('/translations/trash/restore', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ all_trash: true })
+        });
+        if (!res.ok) throw new Error('전체 복원 실패');
+        const data = await res.json();
+        showToast(data.message || '모든 항목이 복원되었습니다.', 'success');
+        loadAndRenderTrash();
+        loadNotificationsAndBadge();
+        if (!isFindingEmpty && !isCleanupQueue) {
+            loadAndRenderGrouped();
+        } else if (isCleanupQueue) {
+            loadAndRenderCleanupQueue();
+        }
+    } catch (err) {
+        console.error('휴지통 전체 복원 실패:', err);
+        showToast('전체 복원 처리 중 오류가 발생했습니다.', 'error');
+    }
+}
+
+async function loadAndRenderAbnormalWhitelist() {
+    if (!whitelistTableBody) return;
+    whitelistTableBody.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 20px;">예외 목록 불러오는 중...</td></tr>';
+
+    try {
+        const res = await fetch(`/translations/abnormal_whitelist?t=${Date.now()}`);
+        if (!res.ok) throw new Error('예외 목록 조회 실패');
+        const data = await res.json();
+        const wlList = data.whitelist || [];
+
+        if (modalWhitelistBadge) modalWhitelistBadge.textContent = wlList.length;
+
+        if (wlList.length === 0) {
+            whitelistTableBody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: var(--text-muted); padding: 24px;">이상번역에서 제외된 단락이 없습니다.</td></tr>';
+            return;
+        }
+
+        whitelistTableBody.innerHTML = wlList.map(item => {
+            const dateStr = item.created_at ? new Date(item.created_at * 1000).toLocaleString('ko-KR', { dateStyle: 'short', timeStyle: 'short' }) : '-';
+            return `
+                <tr>
+                    <td style="font-size: 12px;">
+                        <div><strong>${escapeHtml(item.folderName || '미분류')}</strong></div>
+                        <div style="color: var(--text-muted);">${escapeHtml(item.title || item.url || '')}</div>
+                    </td>
+                    <td style="max-width: 250px; font-size: 12px;"><div style="max-height: 60px; overflow-y: auto;">${escapeHtml(item.original)}</div></td>
+                    <td style="max-width: 250px; font-size: 12px;"><div style="max-height: 60px; overflow-y: auto;">${escapeHtml(item.translated || '(없음)')}</div></td>
+                    <td style="font-size: 12px; color: var(--text-muted);">${dateStr}</td>
+                    <td style="text-align: center;">
+                        <button class="btn btn-sm btn-outline remove-whitelist-btn" data-id="${item.translation_id}">해제</button>
+                    </td>
+                </tr>
+            `;
+        }).join('');
+
+    } catch (err) {
+        console.error('예외 목록 로딩 실패:', err);
+        whitelistTableBody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: var(--danger-color); padding: 20px;">예외 목록 로딩 실패</td></tr>';
+    }
+}
+
+async function removeSingleWhitelist(translationId) {
+    try {
+        const res = await fetch('/translations/abnormal_whitelist/remove', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids: [translationId] })
+        });
+        if (!res.ok) throw new Error('해제 실패');
+        const data = await res.json();
+        showToast(data.message || '이상번역 제외가 해제되었습니다.', 'success');
+        loadAndRenderAbnormalWhitelist();
+        loadNotificationsAndBadge();
+        if (isFindingEmpty) {
+            loadAndRenderAbnormal();
+        }
+    } catch (err) {
+        console.error('예외 해제 실패:', err);
+        showToast('예외 해제 중 오류가 발생했습니다.', 'error');
+    }
+}
+
+async function clearAllAbnormalWhitelist() {
+    if (!confirm('등록된 모든 이상번역 예외 항목을 일괄 해제하시겠습니까?\n해제 시 다시 이상번역 찾기 검사 대상에 포함됩니다.')) return;
+    try {
+        const res = await fetch('/translations/abnormal_whitelist/clear', {
+            method: 'POST'
+        });
+        if (!res.ok) throw new Error('전체 해제 실패');
+        const data = await res.json();
+        showToast(data.message || '모든 이상번역 예외 항목이 해제되었습니다.', 'success');
+        loadAndRenderAbnormalWhitelist();
+        loadNotificationsAndBadge();
+        if (isFindingEmpty) {
+            loadAndRenderAbnormal();
+        }
+    } catch (err) {
+        console.error('전체 예외 해제 실패:', err);
+        showToast('전체 예외 해제 중 오류가 발생했습니다.', 'error');
+    }
+}
+
+function closeRecommendPanel() {
+    if (!similarRecommendPanel) return;
+    similarRecommendPanel.style.display = 'none';
+}
+
+function handleTranslatedFocus(el) {
+    activeTargetInput = el;
+    if (!isFindingEmpty && !el.dataset.keywords) {
+        return;
+    }
+    const kwString = el.dataset.keywords || '';
+    const keywords = kwString.split(',').map(s => s.trim()).filter(Boolean);
+    let keywordToSearch = keywords[0];
+
+    if (!keywordToSearch) {
+        const orig = el.dataset.original || '';
+        const match = orig.match(/[\u30a0-\u30ff]{2,}|[\u4e00-\u9faf]{2,}/);
+        if (match) {
+            keywordToSearch = match[0];
+        }
+    }
+
+    if (keywordToSearch) {
+        const folder = el.dataset.folder || '';
+        loadSimilarRecommendations(keywordToSearch, folder, keywords);
+    }
+}
+
+async function loadSimilarRecommendations(keyword, folder = '', allKeywords = []) {
+    if (!similarRecommendPanel) return;
+    similarRecommendPanel.style.display = 'flex';
+
+    recommendKeyword.textContent = `"${keyword}" 검색 중...`;
+    recommendCardsContainer.innerHTML = '<div style="padding: 16px; text-align: center; color: var(--text-muted);">유사 단락 검색 중...</div>';
+
+    try {
+        const url = `/translations/similar_examples?keyword=${encodeURIComponent(keyword)}&folder=${encodeURIComponent(folder)}&limit=8`;
+        const res = await fetch(url);
+        if (!res.ok) throw new Error('추천 검색 실패');
+        const data = await res.json();
+        const examples = data.examples || [];
+
+        renderSimilarRecommendations(keyword, examples, allKeywords);
+    } catch (err) {
+        console.error('추천 로딩 실패:', err);
+        recommendCardsContainer.innerHTML = '<div style="padding: 16px; text-align: center; color: var(--danger-color);">추천 불러오기 실패</div>';
+    }
+}
+
+function renderSimilarRecommendations(keyword, examples, allKeywords = []) {
+    if (!similarRecommendPanel) return;
+
+    let kwHeaderHtml = `"${escapeHtml(keyword)}" <span style="font-size: 12px; font-weight: normal; color: var(--text-muted);">(${examples.length}건)</span>`;
+    if (allKeywords && allKeywords.length > 1) {
+        kwHeaderHtml = allKeywords.map(k => `
+            <span class="kw-chip ${k === keyword ? 'active' : ''}" style="cursor: pointer; text-decoration: underline; margin-right: 4px;" data-kw="${escapeHtml(k)}">${escapeHtml(k)}</span>
+        `).join(' ');
+    }
+    recommendKeyword.innerHTML = kwHeaderHtml;
+
+    if (!examples || examples.length === 0) {
+        recommendCardsContainer.innerHTML = `<div style="padding: 16px; text-align: center; color: var(--text-muted);">'${escapeHtml(keyword)}'에 대한 다른 번역 사례를 찾지 못했습니다.</div>`;
+        return;
+    }
+
+    const cardsHtml = examples.map(ex => {
+        const novelTitle = ex.folderName || '소설';
+        const epTitle = ex.title || '회차';
+        const escOri = escapeHtml(ex.original || '');
+        const escTra = escapeHtml(ex.translated || '');
+        const highlightedOri = highlightKeyword(escOri, keyword);
+        const highlightedTra = highlightKeyword(escTra, keyword);
+        const pidBadge = ex.pid ? `<span class="recommend-card-pid">${escapeHtml(ex.pid)}</span>` : '';
+
+        const baseCleanUrl = (ex.url || '').split('#')[0];
+        const targetUrl = ex.pid ? `${baseCleanUrl}#${ex.pid}` : baseCleanUrl;
+
+        return `
+            <div class="recommend-card" data-url="${escapeHtml(targetUrl)}" data-id="${ex.id}" title="클릭 시 새 창에서 해당 단락 열기">
+                <div class="recommend-card-header">
+                    <span class="recommend-card-novel">[${escapeHtml(novelTitle)}]</span>
+                    <span class="recommend-card-ep" title="${escapeHtml(epTitle)}">${escapeHtml(epTitle)}</span>
+                    ${pidBadge}
+                    <span class="recommend-card-ext-icon">🔗 새 창 ↗</span>
+                </div>
+                <div class="recommend-card-ori">${highlightedOri}</div>
+                <div class="recommend-card-tra">${highlightedTra}</div>
+                <div class="recommend-card-actions">
+                    <button type="button" class="btn btn-sm btn-outline recommend-copy-btn" data-text="${escTra}" title="번역문 복사 또는 현재 셀에 적용">📋 번역 복사</button>
+                    <button type="button" class="btn btn-sm btn-primary recommend-open-btn" data-url="${escapeHtml(targetUrl)}" title="새 창에서 원본 웹소설의 해당 단락으로 이동">🔗 해당 단락 열기 ↗</button>
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    recommendCardsContainer.innerHTML = cardsHtml;
+}
+
+function highlightKeyword(text, keyword) {
+    if (!keyword) return text;
+    const escapedKw = escapeRegExp(keyword);
+    return text.replace(new RegExp(`(${escapedKw})`, 'gi'), '<mark style="background-color: #ffec99; padding: 0 2px; border-radius: 2px;">$1</mark>');
+}
+
+function handleRecommendCardClick(e) {
+    const copyBtn = e.target.closest('.recommend-copy-btn');
+    if (copyBtn) {
+        e.stopPropagation();
+        const text = copyBtn.dataset.text || '';
+        if (activeTargetInput) {
+            activeTargetInput.textContent = text;
+            showToast('추천 번역문이 입력창에 적용되었습니다. (💾 저장 버튼을 눌러 확정하세요)', 'success');
+        } else {
+            navigator.clipboard.writeText(text);
+            showToast('추천 번역문이 클립보드에 복사되었습니다.', 'success');
+        }
+        return;
+    }
+
+    const openBtn = e.target.closest('.recommend-open-btn');
+    const card = e.target.closest('.recommend-card');
+    const targetUrl = openBtn ? openBtn.dataset.url : (card ? card.dataset.url : null);
+
+    if (targetUrl) {
+        window.open(targetUrl, '_blank');
+    }
+}
+
+let dragSearchTimeout = null;
+let dragSearchAbortController = null;
+
+function handleDocumentMouseUp(e) {
+    // If clicking or selecting inside the recommendation panel or any modal, ignore
+    if (e.target && (e.target.closest('#similarRecommendPanel') || e.target.closest('.modal-content') || e.target.closest('.master-controls'))) {
+        return;
+    }
+
+    const selection = window.getSelection();
+    if (!selection || selection.isCollapsed) return;
+
+    const selectedText = selection.toString().trim();
+    // Only search meaningful terms: length between 2 and 80 characters
+    if (selectedText.length < 2 || selectedText.length > 80) return;
+
+    // Check if selection is within translated-text or translated-cell
+    const anchorNode = selection.anchorNode;
+    const focusNode = selection.focusNode;
+    const translatedEl = (anchorNode ? (anchorNode.nodeType === 1 ? anchorNode : anchorNode.parentElement).closest('.translated-text') : null) ||
+                         (focusNode ? (focusNode.nodeType === 1 ? focusNode : focusNode.parentElement).closest('.translated-text') : null);
+
+    if (!translatedEl) return;
+
+    activeTargetInput = translatedEl;
+    const currentId = parseInt(translatedEl.dataset.id, 10) || null;
+    const folder = translatedEl.dataset.folder || '';
+
+    // Debounce to allow natural mouse release
+    if (dragSearchTimeout) clearTimeout(dragSearchTimeout);
+    dragSearchTimeout = setTimeout(() => {
+        handleDragTranslationSearch(selectedText, currentId, folder);
+    }, 200);
+}
+
+async function handleDragTranslationSearch(keyword, excludeId, folder) {
+    if (dragSearchAbortController) {
+        dragSearchAbortController.abort();
+    }
+    dragSearchAbortController = new AbortController();
+
+    try {
+        const url = `/translations/similar_examples?keyword=${encodeURIComponent(keyword)}&exclude_id=${excludeId || ''}&folder=${encodeURIComponent(folder || '')}&limit=8`;
+        const res = await fetch(url, { signal: dragSearchAbortController.signal });
+        if (!res.ok) return;
+        const data = await res.json();
+        const examples = data.examples || [];
+
+        // If other translations exist with this keyword, show the recommendation panel!
+        if (examples.length > 0) {
+            renderSimilarRecommendations(keyword, examples, [keyword]);
+            if (similarRecommendPanel) {
+                similarRecommendPanel.style.display = 'flex';
+            }
+        } else {
+            // If panel is ALREADY open, show message; if closed, do not disturb the user
+            if (similarRecommendPanel && similarRecommendPanel.style.display === 'flex') {
+                recommendKeyword.textContent = `"${keyword}" (0건)`;
+                recommendCardsContainer.innerHTML = `<div style="padding: 16px; text-align: center; color: var(--text-muted);">'${escapeHtml(keyword)}'을(를) 포함하는 다른 번역문을 찾지 못했습니다.</div>`;
+            }
+        }
+    } catch (err) {
+        if (err.name !== 'AbortError') {
+            console.error('드래그 단어 검색 오류:', err);
+        }
     }
 }
 
@@ -480,6 +1512,69 @@ function escapeRegExp(string) {
     return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // $& means the whole matched string
 }
 
+function applyFindReplaceToLocalData(findTextValue, replaceTextValue, conditionTextValue, selectedFolder, useRegexValue, caseSensitiveValue) {
+    let regex;
+    const flags = caseSensitiveValue ? 'g' : 'gi';
+    try {
+        regex = new RegExp(useRegexValue ? findTextValue : escapeRegExp(findTextValue), flags);
+    } catch (e) {
+        console.error("Regex build error in local update:", e);
+        return;
+    }
+
+    // 1. 메모리 상의 groupedTranslations 업데이트
+    for (const folderName in groupedTranslations) {
+        if (selectedFolder !== '__all__' && folderName !== selectedFolder) {
+            continue;
+        }
+
+        const urlGroups = groupedTranslations[folderName];
+        if (!Array.isArray(urlGroups)) continue;
+
+        for (const urlGroup of urlGroups) {
+            const items = urlGroup.items;
+            if (!Array.isArray(items)) continue;
+
+            for (const item of items) {
+                if (conditionTextValue) {
+                    const originalContent = caseSensitiveValue ? (item.original || '') : (item.original || '').toLowerCase();
+                    const conditionContent = caseSensitiveValue ? conditionTextValue : conditionTextValue.toLowerCase();
+                    if (!originalContent.includes(conditionContent)) {
+                        continue;
+                    }
+                }
+
+                if (item.translated) {
+                    item.translated = item.translated.replace(regex, replaceTextValue);
+                }
+            }
+        }
+    }
+
+    // 2. 현재 화면에 이미 렌더링된 번역 텍스트 요소들 즉시 갱신
+    document.querySelectorAll('.translated-text').forEach(el => {
+        const itemFolder = el.dataset.folder || '';
+        if (selectedFolder !== '__all__' && itemFolder !== selectedFolder) {
+            return;
+        }
+
+        if (conditionTextValue) {
+            const itemOrig = caseSensitiveValue ? (el.dataset.original || '') : (el.dataset.original || '').toLowerCase();
+            const conditionContent = caseSensitiveValue ? conditionTextValue : conditionTextValue.toLowerCase();
+            if (!itemOrig.includes(conditionContent)) {
+                return;
+            }
+        }
+
+        if (el.textContent) {
+            el.textContent = el.textContent.replace(regex, replaceTextValue);
+        }
+    });
+
+    // 3. 통계 갱신
+    updateStatistics(groupedTranslations);
+}
+
 async function executeGlobalFindReplace() {
     const findTextValue = findText.value;
     const replaceTextValue = replaceText.value;
@@ -496,6 +1591,10 @@ async function executeGlobalFindReplace() {
     if (!confirm(`선택된 조건에 따라 번역 기록에서 "${findTextValue}"을(를) "${replaceTextValue}"(으)로 바꾸시겠습니까? 이 작업은 되돌릴 수 없습니다.`)) {
         return;
     }
+
+    const originalBtnText = executeFindReplaceBtn.textContent;
+    executeFindReplaceBtn.disabled = true;
+    executeFindReplaceBtn.textContent = '치환 중...';
 
     try {
         const response = await fetch('/translations/find_replace', {
@@ -519,11 +1618,16 @@ async function executeGlobalFindReplace() {
         const result = await response.json();
         showToast(result.message, 'success');
         closeFindReplaceModal();
-        loadAndRenderGrouped(); // Reload data to show changes
+
+        // 192MB 전체 재로드(loadAndRenderGrouped) 대신 로컬 데이터와 화면 DOM에 즉시 반영
+        applyFindReplaceToLocalData(findTextValue, replaceTextValue, conditionTextValue, selectedFolder, useRegexValue, caseSensitiveValue);
 
     } catch (error) {
         console.error("Global find and replace failed:", error);
         showToast(`오류: ${error.message}`, 'error');
+    } finally {
+        executeFindReplaceBtn.disabled = false;
+        executeFindReplaceBtn.textContent = originalBtnText;
     }
 }
 
@@ -564,13 +1668,34 @@ async function createFolder() {
     }
 }
 
+function getCurrentDataSource() {
+    if (isFindingEmpty) return rawAbnormalData || {};
+    if (isCleanupQueue) return rawCleanupData || {};
+    return groupedTranslations || {};
+}
+
 function handleCheckboxChange(e) {
     const target = e.target;
     if (!target.matches('input[type="checkbox"]')) return;
 
+    const currentData = getCurrentDataSource();
+
     if (target.classList.contains('folder-select-all-checkbox')) {
         const folderGroup = target.closest('.history-folder-group');
         if (!folderGroup) return;
+
+        const folderTitleEl = folderGroup.querySelector('.folder-group-title');
+        const folderName = folderTitleEl ? folderTitleEl.textContent.split(' (')[0].trim() : '';
+        const urlGroups = currentData[folderName] || [];
+        for (const ug of urlGroups) {
+            for (const item of ug.items || []) {
+                if (target.checked) {
+                    selectedIds.add(item.id);
+                } else {
+                    selectedIds.delete(item.id);
+                }
+            }
+        }
 
         const groupCheckboxes = folderGroup.querySelectorAll('.group-select-all-checkbox');
         groupCheckboxes.forEach(cb => {
@@ -580,26 +1705,28 @@ function handleCheckboxChange(e) {
         const itemCheckboxes = folderGroup.querySelectorAll('.item-checkbox');
         itemCheckboxes.forEach(cb => {
             cb.checked = target.checked;
-            const id = parseInt(cb.dataset.id);
-            if (target.checked) {
-                selectedIds.add(id);
-            } else {
-                selectedIds.delete(id);
-            }
         });
     } else if (target.classList.contains('group-select-all-checkbox')) {
         const urlGroup = target.closest('.list-group');
         if (!urlGroup) return;
+
+        const url = urlGroup.dataset.url;
+        const folderName = urlGroup.dataset.folderName;
+        const urlGroups = currentData[folderName] || [];
+        const foundGroup = urlGroups.find(g => g.url === url);
+        if (foundGroup) {
+            for (const item of foundGroup.items || []) {
+                if (target.checked) {
+                    selectedIds.add(item.id);
+                } else {
+                    selectedIds.delete(item.id);
+                }
+            }
+        }
         
         const itemCheckboxes = urlGroup.querySelectorAll('.item-checkbox');
         itemCheckboxes.forEach(cb => {
             cb.checked = target.checked;
-            const id = parseInt(cb.dataset.id);
-            if (target.checked) {
-                selectedIds.add(id);
-            } else {
-                selectedIds.delete(id);
-            }
         });
     } else if (target.classList.contains('item-checkbox')) {
         const id = parseInt(target.dataset.id);
@@ -614,16 +1741,20 @@ function handleCheckboxChange(e) {
 }
 
 function findTranslationById(id) {
-    for (const folderName in groupedTranslations) {
-        const urlGroups = groupedTranslations[folderName];
-        if (!Array.isArray(urlGroups)) continue;
+    const sources = [groupedTranslations, rawAbnormalData, rawCleanupData];
+    for (const data of sources) {
+        if (!data) continue;
+        for (const folderName in data) {
+            const urlGroups = data[folderName];
+            if (!Array.isArray(urlGroups)) continue;
 
-        for (const urlGroup of urlGroups) {
-            const items = urlGroup.items;
-            if (!Array.isArray(items)) continue;
+            for (const urlGroup of urlGroups) {
+                const items = urlGroup.items;
+                if (!Array.isArray(items)) continue;
 
-            const item = items.find(t => t.id === id);
-            if (item) return item;
+                const item = items.find(t => t.id === id);
+                if (item) return item;
+            }
         }
     }
     return null;
@@ -647,45 +1778,68 @@ async function handleHistoryClick(e) {
         return; // Action handled
     }
 
-    // 2. Handle URL-level actions (Title Edit, Apply)
+    // 2. Handle URL-level actions (Title Edit, Apply, Episode toggle)
     const urlHeader = target.closest('.list-group-header');
     if (urlHeader) {
-        if (target.classList.contains('edit-title-btn')) {
-            const url = target.dataset.url;
+        if (target.closest('.edit-title-btn')) {
+            const btn = target.closest('.edit-title-btn');
+            const url = btn.dataset.url;
             const titleElement = urlHeader.querySelector('.list-group-title');
-            const currentTitle = titleElement.textContent.split(' (')[0];
-            const newTitle = prompt("Enter new title:", currentTitle);
+            const currentTitle = titleElement ? titleElement.textContent : '';
+            const newTitle = prompt("새 회차 제목을 입력하세요:", currentTitle);
             if (newTitle && newTitle !== currentTitle) {
-                const countMatch = titleElement.textContent.match(/(\d+)/);
-                const count = countMatch ? countMatch[0] : '';
-                titleElement.textContent = `${newTitle} (${count}`;
+                if (titleElement) titleElement.textContent = newTitle;
                 try {
                     await fetch('/translations/url_title', {
                         method: 'PUT',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ url: url, title: newTitle })
                     });
-                    showToast('Title updated successfully!', 'success');
+                    showToast('회차 제목이 수정되었습니다.', 'success');
                 } catch (error) {
-                    showToast('Failed to update title.', 'error');
-                    titleElement.textContent = `${currentTitle} (${count}`;
+                    showToast('제목 수정에 실패했습니다.', 'error');
+                    if (titleElement) titleElement.textContent = currentTitle;
                 }
             }
             return; // Action handled
         }
 
-        if (target.classList.contains('btn-apply')) {
-            const url = target.dataset.url;
-            toggleApplyStatus(url, target); // Pass button for optimistic UI update
+        if (target.closest('.btn-apply')) {
+            const btn = target.closest('.btn-apply');
+            const url = btn.dataset.url;
+            toggleApplyStatus(url, btn); // Pass button for optimistic UI update
             return; // Action handled
         }
 
-        // If no specific action button in the url-header was clicked, treat it as a toggle
-        if (!target.closest('.list-group-actions') && !target.closest('a')) {
-            urlHeader.nextElementSibling.classList.toggle('collapsed');
+        if (target.closest('.ext-link-btn')) {
+            // Let the browser open the external novel link naturally in new tab
+            return;
+        }
+
+        if (target.closest('.group-select-all-checkbox') || target.closest('.checkbox-container')) {
+            return; // Handled by change listener
+        }
+
+        // Clicking anywhere else in the episode header (title, chevron, or row background) toggles the episode
+        const listGroupEl = urlHeader.closest('.list-group');
+        const contentEl = urlHeader.nextElementSibling;
+        const isExpanding = contentEl.classList.contains('collapsed');
+
+        if (isExpanding) {
+            renderUrlGroupContent(listGroupEl);
+            contentEl.classList.remove('collapsed');
             const icon = urlHeader.querySelector('.list-group-toggle');
-            icon.classList.toggle('collapsed');
-            icon.textContent = icon.classList.contains('collapsed') ? 'chevron_right' : 'expand_more';
+            if (icon) {
+                icon.classList.remove('collapsed');
+                icon.textContent = 'expand_more';
+            }
+        } else {
+            contentEl.classList.add('collapsed');
+            const icon = urlHeader.querySelector('.list-group-toggle');
+            if (icon) {
+                icon.classList.add('collapsed');
+                icon.textContent = 'chevron_right';
+            }
         }
         return;
     }
@@ -694,12 +1848,58 @@ async function handleHistoryClick(e) {
     const itemRow = target.closest('.history-item');
     if (itemRow) {
         const id = parseInt(itemRow.dataset.id);
-        if (target.classList.contains('delete-btn')) {
+
+        // 원문 복사 버튼 처리 (원문 텍스트 복사 및 시각 피드백)
+        const copyOrigBtn = target.closest('.copy-orig-btn') || (target.classList.contains('copy-btn') ? target : null);
+        if (copyOrigBtn) {
+            const originalText = copyOrigBtn.dataset.original || itemRow.querySelector('.original-text')?.textContent;
+            if (originalText) {
+                navigator.clipboard.writeText(originalText);
+                showToast('원문이 클립보드에 복사되었습니다.', 'success');
+                const origHtml = copyOrigBtn.innerHTML;
+                copyOrigBtn.innerHTML = '✅ 복사 완료!';
+                copyOrigBtn.classList.add('copied');
+                setTimeout(() => {
+                    copyOrigBtn.innerHTML = origHtml;
+                    copyOrigBtn.classList.remove('copied');
+                }, 1500);
+            }
+            return;
+        }
+
+        const whitelistBtn = target.closest('.whitelist-item-btn');
+        if (whitelistBtn) {
+            try {
+                const res = await fetch('/translations/abnormal_whitelist/add', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ids: [id] })
+                });
+                if (!res.ok) throw new Error('서버 응답 오류');
+                itemRow.style.transition = 'opacity 0.25s, transform 0.25s';
+                itemRow.style.opacity = '0';
+                itemRow.style.transform = 'translateX(20px)';
+                setTimeout(() => itemRow.remove(), 250);
+                showToast('해당 단락이 이상번역 검사에서 제외되었습니다.', 'success');
+                loadNotificationsAndBadge();
+            } catch (err) {
+                console.error('이상번역 제외 실패:', err);
+                showToast(`이상번역 제외 실패: ${err.message}`, 'error');
+            }
+            return;
+        }
+
+        const deleteBtn = target.closest('.delete-btn');
+        if (deleteBtn) {
             if (!confirm('이 번역을 삭제하시겠습니까?')) return;
             await fetch(`/translations/delete`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: [id] }) });
             itemRow.remove();
             showToast('삭제되었습니다.');
-        } else if (target.classList.contains('exclude-btn')) {
+            return;
+        }
+
+        const excludeBtn = target.closest('.exclude-btn');
+        if (excludeBtn) {
             if (!confirm('이 문장을 번역에서 영구적으로 제외하시겠습니까?')) return;
             try {
                 const response = await fetch(`/translations/exclude`, {
@@ -714,7 +1914,11 @@ async function handleHistoryClick(e) {
                 console.error('Failed to exclude translation:', error);
                 showToast('문장 제외에 실패했습니다.', 'error');
             }
-        } else if (target.classList.contains('retranslate-item-btn')) {
+            return;
+        }
+
+        const retransBtn = target.closest('.retranslate-item-btn');
+        if (retransBtn) {
             const originalItem = findTranslationById(id);
             if (!originalItem) {
                 showToast('오류: 재번역할 항목을 찾을 수 없습니다.', 'error');
@@ -724,7 +1928,7 @@ async function handleHistoryClick(e) {
 
             const translatedCell = itemRow.querySelector('.translated-text');
             const prevText = translatedCell.textContent;
-            target.disabled = true;
+            retransBtn.disabled = true;
             translatedCell.textContent = '⏳ 고성능 모델로 재번역 중...';
 
             try {
@@ -779,9 +1983,13 @@ async function handleHistoryClick(e) {
                 translatedCell.textContent = prevText;
                 showToast(`재번역 실패: ${error.message}`, 'error');
             } finally {
-                target.disabled = false;
+                retransBtn.disabled = false;
             }
-        } else if (target.classList.contains('save-item-btn')) {
+            return;
+        }
+
+        const saveBtn = target.closest('.save-item-btn');
+        if (saveBtn) {
             const newTranslatedText = itemRow.querySelector('.translated-text').textContent;
             const originalItem = findTranslationById(id);
             if (!originalItem) {
@@ -816,20 +2024,60 @@ async function handleHistoryClick(e) {
                 console.error('Failed to save translation:', error);
                 showToast(`저장 실패: ${error.message}`, 'error');
             }
-        } else if (target.classList.contains('copy-btn')) {
-            navigator.clipboard.writeText(itemRow.querySelector('.translated-text').textContent);
-            showToast('클립보드에 복사되었습니다.');
+            return;
         }
         return; // Action handled
     }
 
-    // 4. Handle Folder expand/collapse
+    // 4. Handle Folder expand/collapse & Toggle All Episodes
     const folderHeader = target.closest('.folder-group-header');
     if (folderHeader) {
-        // Only toggle if the click was not on an action button
-        if (!target.closest('.list-group-actions')) {
-             folderHeader.nextElementSibling.classList.toggle('collapsed');
-             folderHeader.querySelector('.folder-group-toggle').classList.toggle('collapsed');
+        if (target.closest('.folder-select-all-checkbox') || target.closest('.checkbox-container')) {
+            return; // Handled by change listener
+        }
+
+        // Toggle all episodes button in this folder
+        const toggleAllBtn = target.closest('.toggle-all-episodes-btn');
+        if (toggleAllBtn) {
+            const folderContent = folderHeader.nextElementSibling;
+            if (folderContent.classList.contains('collapsed')) {
+                folderContent.classList.remove('collapsed');
+                folderHeader.querySelector('.folder-group-toggle')?.classList.remove('collapsed');
+            }
+            const isExpandingAll = toggleAllBtn.textContent.includes('펼치기');
+            const listGroups = folderContent.querySelectorAll('.list-group');
+            listGroups.forEach(lg => {
+                const content = lg.querySelector('.list-group-content');
+                const toggle = lg.querySelector('.list-group-toggle');
+                if (isExpandingAll) {
+                    renderUrlGroupContent(lg);
+                    content?.classList.remove('collapsed');
+                    if (toggle) {
+                        toggle.classList.remove('collapsed');
+                        toggle.textContent = 'expand_more';
+                    }
+                } else {
+                    content?.classList.add('collapsed');
+                    if (toggle) {
+                        toggle.classList.add('collapsed');
+                        toggle.textContent = 'chevron_right';
+                    }
+                }
+            });
+            toggleAllBtn.textContent = isExpandingAll ? '모든 회차 접기' : '모든 회차 펼치기';
+            return;
+        }
+
+        // Toggle novel folder
+        const folderContent = folderHeader.nextElementSibling;
+        const toggle = folderHeader.querySelector('.folder-group-toggle');
+        const isExpanding = folderContent.classList.contains('collapsed');
+        if (isExpanding) {
+            folderContent.classList.remove('collapsed');
+            if (toggle) toggle.classList.remove('collapsed');
+        } else {
+            folderContent.classList.add('collapsed');
+            if (toggle) toggle.classList.add('collapsed');
         }
         return;
     }
@@ -872,13 +2120,282 @@ function updateBulkActionPanel() {
 
     if (hasSelection) {
         bulkActionsPanel.style.display = 'flex';
-        selectionCount.textContent = `${selectedIds.size}개 항목 선택됨`;
+        selectionCount.textContent = `${selectedIds.size}개 선택됨`;
     } else {
         bulkActionsPanel.style.display = 'none';
     }
-    
-    deleteSelectedBtn.disabled = !hasSelection;
-    moveSelectedToFolderDropdown.disabled = !hasSelection;
+
+    if (bulkWhitelistAbnormalBtn) {
+        bulkWhitelistAbnormalBtn.style.display = (hasSelection && isFindingEmpty) ? 'inline-flex' : 'none';
+    }
+    if (bulkMoveToCleanupBtn) {
+        bulkMoveToCleanupBtn.style.display = (hasSelection && isFindingEmpty) ? 'inline-flex' : 'none';
+    }
+
+    if (deleteSelectedBtn) deleteSelectedBtn.disabled = !hasSelection;
+    if (moveSelectedToFolderDropdown) moveSelectedToFolderDropdown.disabled = !hasSelection;
+    if (retranslateSelectedBtn) retranslateSelectedBtn.disabled = !hasSelection;
+    if (copySelectedOriginalBtn) copySelectedOriginalBtn.disabled = !hasSelection;
+    if (bulkFindReplaceBtn) bulkFindReplaceBtn.disabled = !hasSelection;
+    if (excludeSelectedBtn) excludeSelectedBtn.disabled = !hasSelection;
+    if (exportSelectedPdfBtn) exportSelectedPdfBtn.disabled = !hasSelection;
+    if (exportSelectedJsonBtn) exportSelectedJsonBtn.disabled = !hasSelection;
+}
+
+function deselectAll() {
+    selectedIds.clear();
+    const checkboxes = historyContainer.querySelectorAll('input[type="checkbox"]');
+    checkboxes.forEach(cb => { cb.checked = false; });
+    updateBulkActionPanel();
+    showToast('선택이 해제되었습니다.', 'info');
+}
+
+function copySelectedOriginals() {
+    if (selectedIds.size === 0) return;
+    const originals = [];
+    for (const id of selectedIds) {
+        const item = findTranslationById(id);
+        if (item && item.original) {
+            originals.push(item.original);
+        }
+    }
+    if (originals.length === 0) {
+        showToast('복사할 원문이 없습니다.', 'error');
+        return;
+    }
+    const text = originals.join('\n\n');
+    navigator.clipboard.writeText(text);
+    showToast(`선택한 ${originals.length}개 단락의 원문이 클립보드에 복사되었습니다.`, 'success');
+}
+
+async function excludeSelectedTranslations() {
+    if (selectedIds.size === 0) return;
+    const count = selectedIds.size;
+    if (!confirm(`선택한 ${count}개 문장을 번역에서 영구적으로 제외하시겠습니까?\n(제외된 문장은 삭제되며, 이후 웹페이지 번역 시에도 자동으로 건너뜁니다.)`)) return;
+
+    try {
+        const response = await fetch('/translations/exclude', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids: Array.from(selectedIds) })
+        });
+        if (!response.ok) throw new Error('서버 응답 오류');
+        showToast(`${count}개의 문장이 제외되고 삭제되었습니다.`, 'success');
+        selectedIds.clear();
+        if (isFindingEmpty) {
+            loadAndRenderAbnormal();
+        } else if (isCleanupQueue) {
+            loadAndRenderCleanupQueue();
+        } else {
+            loadAndRenderGrouped();
+        }
+    } catch (err) {
+        console.error('문장 일괄 제외 실패:', err);
+        showToast(`문장 제외 실패: ${err.message}`, 'error');
+    }
+}
+
+async function retranslateSelectedTranslations() {
+    if (selectedIds.size === 0) return;
+    const count = selectedIds.size;
+    if (!confirm(`선택한 ${count}개의 단락을 고성능 AI 모델로 일괄 재번역하시겠습니까?`)) return;
+
+    const itemsToRetranslate = [];
+    for (const id of selectedIds) {
+        const item = findTranslationById(id);
+        if (item && item.original) {
+            itemsToRetranslate.push(item);
+        }
+    }
+
+    if (itemsToRetranslate.length === 0) {
+        showToast('재번역할 문장을 찾을 수 없습니다.', 'error');
+        return;
+    }
+
+    showToast(`${count}개 단락 재번역을 시작합니다...`, 'info');
+    if (retranslateSelectedBtn) retranslateSelectedBtn.disabled = true;
+
+    const CHUNK_SIZE = 10;
+    let successCount = 0;
+    let failCount = 0;
+
+    try {
+        for (let i = 0; i < itemsToRetranslate.length; i += CHUNK_SIZE) {
+            const chunk = itemsToRetranslate.slice(i, i + CHUNK_SIZE);
+            const reqPayload = {
+                items: chunk.map(it => ({ id: String(it.pid || it.id), text: it.original })),
+                url: chunk[0].url || '',
+                is_retranslation: true
+            };
+
+            try {
+                const res = await fetch('/translate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(reqPayload)
+                });
+
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const data = await res.json();
+                const translations = data.translations || [];
+
+                const upsertPayload = [];
+                const now = Math.floor(Date.now() / 1000);
+
+                for (const t of translations) {
+                    const matched = chunk.find(it => String(it.pid || it.id) === String(t.id));
+                    if (matched) {
+                        matched.translated = t.translated;
+                        matched.timestamp = now;
+
+                        const p = { ...matched, translated: t.translated, timestamp: now };
+                        delete p.id;
+                        upsertPayload.push(p);
+                        successCount++;
+                    }
+                }
+
+                if (upsertPayload.length > 0) {
+                    await fetch('/translations/upsert', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(upsertPayload)
+                    });
+                }
+            } catch (err) {
+                console.error('청크 재번역 실패:', err);
+                failCount += chunk.length;
+            }
+        }
+
+        showToast(`재번역 완료: ${successCount}건 성공${failCount > 0 ? `, ${failCount}건 실패` : ''}`, successCount > 0 ? 'success' : 'error');
+        selectedIds.clear();
+        if (isFindingEmpty) {
+            loadAndRenderAbnormal();
+        } else if (isCleanupQueue) {
+            loadAndRenderCleanupQueue();
+        } else {
+            loadAndRenderGrouped();
+        }
+    } finally {
+        if (retranslateSelectedBtn) retranslateSelectedBtn.disabled = false;
+    }
+}
+
+function getTranslationsList(selectedOnly = false) {
+    const list = [];
+    const source = isFindingEmpty ? rawAbnormalData : (isCleanupQueue ? rawCleanupData : groupedTranslations);
+    if (!source) return list;
+
+    for (const folderName in source) {
+        if (folderName.startsWith('_')) continue;
+        const groups = source[folderName];
+        if (!Array.isArray(groups)) continue;
+        for (const grp of groups) {
+            for (const item of (grp.items || [])) {
+                if (!selectedOnly || selectedIds.has(item.id)) {
+                    list.push({
+                        ...item,
+                        folderName: item.folderName || folderName,
+                        title: item.title || grp.title || grp.url
+                    });
+                }
+            }
+        }
+    }
+    return list;
+}
+
+function exportTranslationsAsJson(selectedOnly = false) {
+    const items = getTranslationsList(selectedOnly);
+    if (items.length === 0) {
+        showToast(selectedOnly ? '선택된 번역 항목이 없습니다.' : '내보낼 번역 데이터가 없습니다.', 'error');
+        return;
+    }
+
+    const exportData = items.map(t => ({
+        id: t.id,
+        PID: t.pid || '',
+        소설: t.folderName || '미분류',
+        회차: t.title || t.url || '',
+        URL: t.url || '',
+        원문: t.original || '',
+        번역: t.translated || '',
+        날짜: t.timestamp ? new Date(t.timestamp * 1000).toLocaleString('ko-KR') : ''
+    }));
+
+    const dataStr = JSON.stringify(exportData, null, 2);
+    const blob = new Blob([dataStr], { type: 'application/json;charset=utf-8' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    const dateStr = new Date().toISOString().split('T')[0];
+    link.download = `lanovel-${selectedOnly ? 'selected-' : ''}translations-${dateStr}.json`;
+    link.click();
+    showToast(`${items.length}개 번역 항목이 JSON 파일로 다운로드되었습니다.`, 'success');
+}
+
+function exportToPrintableHtml(selectedOnly = false) {
+    const items = getTranslationsList(selectedOnly);
+    if (items.length === 0) {
+        showToast(selectedOnly ? '선택된 번역 항목이 없습니다.' : '내보낼 번역 데이터가 없습니다.', 'error');
+        return;
+    }
+
+    const grouped = {};
+    for (const item of items) {
+        const folder = item.folderName || '미분류';
+        const title = item.title || item.url || '회차';
+        const key = `${folder} - ${title}`;
+        if (!grouped[key]) grouped[key] = [];
+        grouped[key].push(item);
+    }
+
+    let bodyContent = '';
+    for (const key in grouped) {
+        bodyContent += `<h2 style="margin-top: 32px; border-bottom: 2px solid #334155; padding-bottom: 8px; color: #1e293b;">${escapeHtml(key)}</h2>`;
+        bodyContent += '<table style="width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 13px;">';
+        bodyContent += '<thead><tr style="background: #f1f5f9;"><th style="border: 1px solid #cbd5e1; padding: 8px; width: 60px; text-align: center;">PID</th><th style="border: 1px solid #cbd5e1; padding: 8px; width: 45%;">일본어 원문</th><th style="border: 1px solid #cbd5e1; padding: 8px; width: 45%;">한국어 번역문</th></tr></thead><tbody>';
+        for (const t of grouped[key]) {
+            bodyContent += `<tr>
+                <td style="border: 1px solid #e2e8f0; padding: 6px; text-align: center; color: #64748b; font-family: monospace;">${escapeHtml(t.pid || '')}</td>
+                <td style="border: 1px solid #e2e8f0; padding: 8px; line-height: 1.5; color: #475569;">${escapeHtml(t.original || '')}</td>
+                <td style="border: 1px solid #e2e8f0; padding: 8px; line-height: 1.5; font-weight: 500; color: #0f172a;">${escapeHtml(t.translated || '')}</td>
+            </tr>`;
+        }
+        bodyContent += '</tbody></table>';
+    }
+
+    const html = `<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>LANOVEL 번역 내보내기 (PDF)</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Pretendard", "Noto Sans KR", sans-serif; margin: 40px; color: #0f172a; }
+        .no-print { margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; background: #e0e7ff; padding: 12px 20px; border-radius: 8px; }
+        .btn-print { background: #4f46e5; color: white; border: none; padding: 8px 18px; border-radius: 6px; font-weight: 600; cursor: pointer; font-size: 14px; }
+        .btn-print:hover { background: #4338ca; }
+        @media print { .no-print { display: none !important; } body { margin: 15mm; } h2 { page-break-after: avoid; } tr { page-break-inside: avoid; } }
+    </style>
+</head>
+<body>
+    <div class="no-print">
+        <span><strong>LANOVEL 번역 리포트</strong> (총 ${items.length}개 단락)</span>
+        <button class="btn-print" onclick="window.print()">🖨️ 인쇄 (PDF로 저장)</button>
+    </div>
+    ${bodyContent}
+</body>
+</html>`;
+
+    const newTab = window.open();
+    if (newTab) {
+        newTab.document.open();
+        newTab.document.write(html);
+        newTab.document.close();
+    } else {
+        showToast('팝업 차단이 감지되었습니다. 팝업을 허용해주세요.', 'error');
+    }
 }
 
 async function deleteSelectedTranslations() {
@@ -956,7 +2473,7 @@ function escapeHtml(text) {
     return text.toString().replace(/[&<>"'/]/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;','/':'&#x2F;'})[s]);
 }
 
-function showToast(message, type = 'success') {
+function showToast(message, type = 'success', duration = 3000) {
     let container = document.getElementById('toast-container');
     if (!container) {
         container = document.createElement('div');
@@ -964,27 +2481,69 @@ function showToast(message, type = 'success') {
         document.body.appendChild(container);
     }
 
+    // Limit maximum stacked toasts to 5
+    while (container.children.length >= 5) {
+        container.removeChild(container.firstChild);
+    }
+
     const toast = document.createElement('div');
     toast.className = `toast ${type}`;
-    toast.textContent = message;
 
-    container.prepend(toast);
+    let icon = '✓';
+    if (type === 'error') icon = '✕';
+    else if (type === 'info') icon = 'ℹ';
 
-    setTimeout(() => {
-        toast.classList.add('show');
-    }, 10); // A small delay to allow the element to be in the DOM for the transition
+    const iconSpan = document.createElement('span');
+    iconSpan.className = 'toast-icon';
+    iconSpan.textContent = icon;
 
-    setTimeout(() => {
+    const textSpan = document.createElement('span');
+    textSpan.className = 'toast-text';
+    textSpan.textContent = message;
+
+    const closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.className = 'toast-close-btn';
+    closeBtn.innerHTML = '&times;';
+    closeBtn.title = '닫기';
+
+    toast.appendChild(iconSpan);
+    toast.appendChild(textSpan);
+    toast.appendChild(closeBtn);
+
+    container.appendChild(toast);
+
+    let isDismissed = false;
+    const dismiss = () => {
+        if (isDismissed) return;
+        isDismissed = true;
         toast.classList.remove('show');
-        // Remove the element after the transition is complete
-        toast.addEventListener('transitionend', () => {
-            toast.remove();
-            // If the container is empty, remove it as well
-            if (container.children.length === 0) {
+        toast.classList.add('removing');
+        setTimeout(() => {
+            if (toast.parentNode) {
+                toast.remove();
+            }
+            if (container && container.children.length === 0) {
                 container.remove();
             }
+        }, 260);
+    };
+
+    closeBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        dismiss();
+    });
+
+    // Animate in
+    requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+            toast.classList.add('show');
         });
-    }, 5000); // Keep the toast for 5 seconds
+    });
+
+    if (duration > 0) {
+        setTimeout(dismiss, duration);
+    }
 }
 
 function toggleDarkMode() {

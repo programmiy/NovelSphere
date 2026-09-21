@@ -4,85 +4,281 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="manifest" href="/static/manifest.json">
-    <title>LANOVEL Library</title>
-    <link rel="stylesheet" href="/static/library.css">
+    <title>나의 서재 | LANOVEL</title>
+    <!-- Fonts & Icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&family=Gowun+Batang:wght@400;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <link rel="stylesheet" href="/static/library.css?v=2.0">
 </head>
 <body>
     <div class="library-container">
+        <!-- 메인 헤더 -->
         <header class="library-header">
-            <h1>나의 서재</h1>
-            <div class="header-controls">
-                <button id="fetch-missing-titles-btn" class="btn-primary">누락된 제목 가져오기</button>
-                <button id="download-all-offline-btn" class="btn-primary">모든 책 오프라인 다운로드</button>
-                <span id="global-download-status" class="download-status"></span>
-                <a href="/admin" class="admin-link">번역 관리</a>
+            <div class="header-nav">
+                <div class="brand-group">
+                    <div class="brand-logo">
+                        <span class="material-icons">local_library</span>
+                    </div>
+                    <div class="brand-text">
+                        <h1>나의 서재</h1>
+                        <p class="subtitle">개인 맞춤형 로컬 웹소설 번역 라이브러리</p>
+                    </div>
+                </div>
+
+                <div class="header-actions">
+                    <button id="fetch-missing-titles-btn" class="btn btn-outline" title="소설 원본 사이트에서 누락된 회차 제목들을 자동으로 수집합니다.">
+                        <span class="material-icons">sync</span> 누락된 제목 가져오기
+                    </button>
+                    <button id="download-all-offline-btn" class="btn btn-outline" title="인터넷 연결 없이도 읽을 수 있도록 모든 책을 캐시에 오프라인 저장합니다.">
+                        <span class="material-icons">cloud_download</span> 오프라인 다운로드
+                    </button>
+                    <a href="/admin" class="btn btn-outline nav-btn">
+                        <span class="material-icons">dashboard_customize</span> 번역 관리
+                    </a>
+                    <a href="/db_editor" class="btn btn-outline nav-btn">
+                        <span class="material-icons">table_chart</span> DB 편집기
+                    </a>
+                    <button class="btn btn-icon theme-toggle-btn" id="darkModeToggle" title="다크 모드 토글">
+                        <span class="material-icons">dark_mode</span>
+                    </button>
+                </div>
             </div>
+
+            <div id="global-download-status" class="download-status" style="display: none;"></div>
+
+            <!-- 작업 진행 상태 표시줄 -->
             <div id="progress-container" class="progress-container" style="display: none;">
                 <div id="progress-bar" class="progress-bar"></div>
-                <span id="progress-text"></span>
+                <span id="progress-text" class="progress-text">작업을 준비하는 중...</span>
             </div>
         </header>
-        <div id="tag-filter-bar" class="tag-filter-bar">
-            <!-- Tag filters will be dynamically generated here -->
-        </div>
+
+        <!-- 통계 요약 바 -->
+        <section class="stats-overview-bar">
+            <div class="stat-card">
+                <div class="stat-icon-wrap primary">
+                    <span class="material-icons">auto_stories</span>
+                </div>
+                <div class="stat-info">
+                    <div class="stat-number" id="statTotalBooks">0</div>
+                    <div class="stat-label">전체 도서</div>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon-wrap warning">
+                    <span class="material-icons">star</span>
+                </div>
+                <div class="stat-info">
+                    <div class="stat-number" id="statPinnedBooks">0</div>
+                    <div class="stat-label">즐겨찾기</div>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon-wrap info">
+                    <span class="material-icons">menu_book</span>
+                </div>
+                <div class="stat-info">
+                    <div class="stat-number" id="statReadingBooks">0</div>
+                    <div class="stat-label">읽는 중</div>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon-wrap neutral">
+                    <span class="material-icons">auto_stories</span>
+                </div>
+                <div class="stat-info">
+                    <div class="stat-number" id="statUnreadBooks">0</div>
+                    <div class="stat-label">미열람</div>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon-wrap success">
+                    <span class="material-icons">task_alt</span>
+                </div>
+                <div class="stat-info">
+                    <div class="stat-number" id="statCompletedBooks">0</div>
+                    <div class="stat-label">완결 작품</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 스마트 이어보기 Hero 위젯 (최근 읽던 작품 1위 하이라이트) -->
+        <section id="hero-continue-reading" class="hero-continue-section" style="display: none;">
+            <!-- JavaScript로 동적 렌더링 -->
+        </section>
+
+        <!-- 마스터 툴바 (검색, 정렬, 뷰 모드, 상태 필터) -->
+        <section class="library-toolbar">
+            <div class="toolbar-primary-row">
+                <div class="search-input-wrapper">
+                    <span class="material-icons search-icon">search</span>
+                    <input type="text" id="bookSearchInput" class="form-input search-box" placeholder="소설 제목, 줄거리, 태그 검색...">
+                    <button id="searchClearBtn" class="search-clear-btn" style="display: none;">&times;</button>
+                </div>
+
+                <div class="toolbar-controls-right">
+                    <div class="sort-wrapper">
+                        <span class="material-icons sort-icon">sort</span>
+                        <select id="sortDropdown" class="form-select">
+                            <option value="recent">최근 읽은 순</option>
+                            <option value="pinned">즐겨찾기 고정 우선</option>
+                            <option value="name_asc">제목 가나다순</option>
+                            <option value="chapters_desc">회차(챕터) 많은 순</option>
+                        </select>
+                    </div>
+
+                    <div class="view-mode-toggle" id="viewModeToggle">
+                        <button id="btnViewGrid" class="view-mode-btn active" data-mode="grid" title="그리드 커버 뷰">
+                            <span class="material-icons">grid_view</span>
+                        </button>
+                        <button id="btnViewList" class="view-mode-btn" data-mode="list" title="콤팩트 리스트 뷰">
+                            <span class="material-icons">view_list</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 상태 필터 탭 -->
+            <div class="status-tab-group">
+                <button class="status-tab-btn active" data-status="all">
+                    전체 (<span id="countAll">0</span>)
+                </button>
+                <button class="status-tab-btn" data-status="pinned">
+                    ⭐ 즐겨찾기 (<span id="countPinned">0</span>)
+                </button>
+                <button class="status-tab-btn" data-status="reading">
+                    📖 읽는 중 (<span id="countReading">0</span>)
+                </button>
+                <button class="status-tab-btn" data-status="unread">
+                    ✨ 미열람 (<span id="countUnread">0</span>)
+                </button>
+                <button class="status-tab-btn" data-status="completed">
+                    🏆 완결작 (<span id="countCompleted">0</span>)
+                </button>
+            </div>
+
+            <!-- 태그 필터 바 -->
+            <div id="tag-filter-bar" class="tag-filter-bar">
+                <!-- 태그 칩이 자바스크립트로 동적 생성됩니다. -->
+            </div>
+        </section>
+
+        <!-- 메인 서재 책장 그리드 -->
         <main id="book-shelf" class="book-shelf">
-            <!-- 책 목록이 여기에 동적으로 생성됩니다. -->
+            <!-- 책 목록이 여기에 동적으로 렌더링됩니다. -->
         </main>
     </div>
 
-    <!-- Tag Editor Modal -->
+    <!-- 책 정보 및 태그 편집 모달 -->
     <div id="tag-editor-modal" class="modal-overlay" style="display: none;">
         <div class="modal-content">
             <header class="modal-header">
-                <h2 id="tag-editor-title">책 정보 편집</h2>
+                <div class="modal-title-wrap">
+                    <span class="material-icons title-icon">edit_note</span>
+                    <h2 id="tag-editor-title">책 정보 & 태그 설정</h2>
+                </div>
                 <button id="tag-editor-close" class="modal-close-btn">&times;</button>
             </header>
+
             <div class="modal-body">
-                <p><strong>책:</strong> <span id="tag-editor-book-name"></span></p>
-                
-                <h4>태그</h4>
-                <div id="tag-checkbox-form">
-                    <!-- Checkboxes will be populated here -->
-                </div>
-                <form id="new-tag-form">
-                    <input type="text" id="new-tag-name" placeholder="새 태그 생성" required>
-                    <button type="submit" class="btn-primary">추가</button>
-                </form>
-                
-                <hr style="margin: 1rem 0;">
-
-                <h4>요약 / 메모</h4>
-                <textarea id="book-notes-summary" rows="4" placeholder="책에 대한 줄거리나 개인적인 메모를 입력하세요." style="width: 100%;"></textarea>
-                
-                <h4 style="margin-top: 1rem;">출처 URL</h4>
-                <div style="display: flex; gap: 0.5rem;">
-                    <input type="text" id="book-summary-source-url" placeholder="줄거리를 가져올 원본 페이지 URL" style="flex-grow: 1;">
-                    <button type="button" id="crawl-summary-btn" class="btn-secondary">가져오기</button>
+                <div class="meta-preview-box">
+                    <span class="meta-label">대상 소설:</span>
+                    <span id="tag-editor-book-name" class="meta-book-name"></span>
                 </div>
 
+                <!-- 완결 여부 토글 (Phase 2 스포일러 방지 사전용) -->
+                <div class="setting-toggle-row">
+                    <div class="toggle-info">
+                        <label for="book-is-completed-toggle" class="toggle-title">완결 작품 지정</label>
+                        <span class="toggle-desc">완결된 소설로 지정하면 서재에 완결 뱃지가 부여되며, 향후 스포일러 방지 사전 엔진의 분석 대상이 됩니다.</span>
+                    </div>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="book-is-completed-toggle">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+
+                <div class="form-section">
+                    <div class="section-header">
+                        <label class="section-title">분류 태그</label>
+                        <span class="section-hint">선택하여 책을 분류하세요.</span>
+                    </div>
+                    <div id="tag-checkbox-form" class="tag-chips-picker">
+                        <!-- 태그 칩 체크박스 목록 -->
+                    </div>
+                    <form id="new-tag-form" class="new-tag-form">
+                        <input type="text" id="new-tag-name" placeholder="새 태그 이름 입력..." class="form-input" required>
+                        <button type="submit" class="btn btn-primary btn-sm">태그 추가</button>
+                    </form>
+                </div>
+
+                <div class="form-section">
+                    <div class="section-header">
+                        <label class="section-title">줄거리 요약 / 개인 메모</label>
+                    </div>
+                    <textarea id="book-notes-summary" rows="4" placeholder="작품의 시놉시스, 등장인물 특징, 개인적인 감상 메모를 자유롭게 입력하세요." class="form-textarea"></textarea>
+                </div>
+
+                <div class="form-section">
+                    <div class="section-header">
+                        <label class="section-title">소설 소개 출처 URL</label>
+                        <span class="section-hint">소설 공식 소개 페이지에서 줄거리를 크롤링해 올 수 있습니다.</span>
+                    </div>
+                    <div class="input-with-button">
+                        <input type="text" id="book-summary-source-url" placeholder="https://kakuyomu.jp/works/... 또는 syosetu.com/..." class="form-input">
+                        <button type="button" id="crawl-summary-btn" class="btn btn-outline">소개 가져오기</button>
+                    </div>
+                </div>
             </div>
+
             <footer class="modal-footer">
-                <button id="tag-editor-cancel" class="btn-secondary">취소</button>
-                <button id="tag-editor-save" class="btn-primary">저장</button>
+                <button id="tag-editor-cancel" class="btn btn-outline">취소</button>
+                <button id="tag-editor-save" class="btn btn-primary">변경사항 저장</button>
             </footer>
         </div>
     </div>
 
-    <!-- URL List Modal -->
+    <!-- URL 및 회차 목록 모달 -->
     <div id="url-list-modal" class="modal-overlay" style="display: none;">
-        <div class="modal-content">
+        <div class="modal-content url-modal-content">
             <header class="modal-header">
-                <h2 id="url-list-title">URL 목록</h2>
-                <button id="import-toc-btn" class="btn-secondary" style="margin-left: auto; margin-right: 1rem;">TOC에서 가져오기</button>
-                <button id="url-list-close" class="modal-close-btn">&times;</button>
+                <div class="modal-title-wrap">
+                    <span class="material-icons title-icon">format_list_bulleted</span>
+                    <h2 id="url-list-title">회차 목차 목록</h2>
+                </div>
+                <div class="modal-header-actions">
+                    <button id="import-toc-btn" class="btn btn-sm btn-outline">
+                        <span class="material-icons">alt_route</span> TOC 목차 정렬 동기화
+                    </button>
+                    <button id="url-list-close" class="modal-close-btn">&times;</button>
+                </div>
             </header>
-            <div id="url-list-body" class="modal-body">
-                <!-- URL list will be populated here -->
+            
+            <div class="url-modal-toolbar">
+                <div class="search-input-wrapper small">
+                    <span class="material-icons search-icon">search</span>
+                    <input type="text" id="urlSearchInput" class="form-input" placeholder="회차 제목 또는 URL 검색...">
+                </div>
+                <div id="urlListStats" class="url-list-stats">총 0개 회차</div>
             </div>
+
+            <div id="url-list-body" class="modal-body url-list-body">
+                <!-- URL 목록이 동적으로 들어옵니다 -->
+            </div>
+
+            <footer class="modal-footer">
+                <button id="url-list-close-bottom" class="btn btn-outline">닫기</button>
+            </footer>
         </div>
     </div>
 
-    <script src="/static/library.js"></script>
+    <!-- 전역 토스트 메시지 컨테이너 -->
+    <div id="global-toast" class="toast" style="display: none;"></div>
+
+    <script type="module" src="/static/library.js?v=2.0"></script>
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {

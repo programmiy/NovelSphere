@@ -9,12 +9,36 @@ import time
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import List, Optional
-from sqlalchemy.orm import Session # Add this import
-from server.database import get_db # Add this import
-from server.models import Translation, ExcludedSentence # Add these imports
+from sqlalchemy import text
+from sqlalchemy.orm import Session
+from server.database import get_db
+from server.models import Translation, ExcludedSentence, TranslationTrash, CleanupNotification
+from server.rule_classifier import classify_translation, is_verbatim_copy, normalize_text
 
 from urllib.parse import urlparse
-from win10toast_persist import ToastNotifier
+try:
+    from win10toast_persist import ToastNotifier
+    def _safe_toast_on_destroy(self, hwnd, msg, wparam, lparam):
+        try:
+            from win32gui import Shell_NotifyIcon, NIM_DELETE
+            from win32api import PostQuitMessage
+            nid = (self.hwnd, 0)
+            Shell_NotifyIcon(NIM_DELETE, nid)
+            PostQuitMessage(0)
+        except Exception:
+            pass
+        return 0
+    ToastNotifier.on_destroy = _safe_toast_on_destroy
+
+    orig_show_toast = ToastNotifier._show_toast
+    def _safe_show_toast_thread(self, *args, **kwargs):
+        try:
+            orig_show_toast(self, *args, **kwargs)
+        except Exception:
+            pass
+    ToastNotifier._show_toast = _safe_show_toast_thread
+except Exception:
+    ToastNotifier = None
 
 import threading
 from server.settings import settings
@@ -64,14 +88,68 @@ def _get_excluded_sentences_for_url(url: str, db: Session) -> set:
     }
     return excluded_originals
 
-def call_gemini_api(api_url: str, prompt: str, api_key: Optional[str] = None):
+TRANSLATION_SYSTEM_INSTRUCTION = {
+    "parts": [{
+        "text": (
+            "You are a professional Japanese-to-Korean light novel translation engine.\n\n"
+            "CRITICAL RULES & NEGATIVE CONSTRAINTS:\n"
+            "1. STRICT TRANSLATION ONLY (NO ECHOING / DO NOT RETURN ORIGINAL):\n"
+            "   - Under NO circumstances should you output or echo the original Japanese text into the 'translated' field.\n"
+            "   - Every Japanese sentence MUST be completely and naturally translated into fluent Korean.\n"
+            "2. STRICT ITEM INDEPENDENCE (NO CROSS-CONTAMINATION & NO REPETITION LOOP):\n"
+            "   - Each 'translated' field MUST correspond strictly and uniquely to its own 'text' field by 'id'.\n"
+            "   - NEVER copy, carry over, or duplicate text/translations from preceding items or other items.\n"
+            "   - If different items have different Japanese text, their Korean translations MUST also be distinct.\n"
+            "3. ZERO KANA LEAKAGE (NO RESIDUAL KANA):\n"
+            "   - Ensure NO Japanese Hiragana or Katakana remains untranslated in the Korean text.\n"
+            "   - Common colloquial expressions must be translated into natural Korean:\n"
+            "     * というか -> '그보다', '아니', '라기보다는'\n"
+            "     * こんどこそ / 今度こそ -> '이번에야말로', '이번만큼은'\n"
+            "     * やっぱり / やはり -> '역시', '아무래도'\n"
+            "     * さすがに -> '아무리 그래도', '역시나'\n"
+            "     * まぁ / まあ -> '뭐', '글쎄'\n"
+            "     * ……っ -> '……!', '……읏', '……'\n"
+            "4. STYLE & PUNCTUATION:\n"
+            "   - Preserve original quotation marks (「...」, 『...』) and punctuation marks (……, 〜, !?).\n"
+            "   - Maintain light novel storytelling tone (natural Korean web novel dialogue and narration).\n"
+            "5. OUTPUT FORMAT:\n"
+            "   - Return ONLY a valid JSON array matching the schema, with each item containing 'id' and 'translated'.\n"
+            "   - Do not add explanations, notes, or markdown formatting."
+        )
+    }]
+}
+
+TRANSLATION_RESPONSE_SCHEMA = {
+    "type": "ARRAY",
+    "items": {
+        "type": "OBJECT",
+        "properties": {
+            "id": {"type": "STRING"},
+            "translated": {"type": "STRING"}
+        },
+        "required": ["id", "translated"]
+    }
+}
+
+def call_gemini_api(api_url: str, prompt: str, api_key: Optional[str] = None, system_instruction: Optional[dict] = None):
     """
-    Calls the Gemini API using requests.Session with header authentication.
+    Calls the Gemini API using requests.Session with header authentication,
+    low temperature (0.3), systemInstruction separation, and response_schema.
+    Ensures fresh session state by clearing cookies before request.
     """
+    # 매 요청마다 세션 쿠키/상태를 리셋하여 이전 요청의 컨텍스트 간섭 방지
+    try:
+        _gemini_session.cookies.clear()
+    except Exception:
+        pass
+
     payload = {
         "contents": [{"parts": [{"text": prompt}]}],
+        "systemInstruction": system_instruction or TRANSLATION_SYSTEM_INSTRUCTION,
         "generationConfig": {
+            "temperature": 0.3,
             "response_mime_type": "application/json",
+            "response_schema": TRANSLATION_RESPONSE_SCHEMA,
         },
         "safetySettings": [
             {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
@@ -80,7 +158,7 @@ def call_gemini_api(api_url: str, prompt: str, api_key: Optional[str] = None):
             {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"}
         ]
     }
-    logger.info(f"Gemini API Payload (first 500 chars): {json.dumps(payload, ensure_ascii=False)[:500]}...")
+    logger.debug(f"Gemini API Payload (first 500 chars): {json.dumps(payload, ensure_ascii=False)[:500]}...")
     
     headers = {"Content-Type": "application/json"}
     key = api_key or getattr(settings, "gemini_api_key", None)
@@ -97,21 +175,358 @@ def process_repeated_chars(text: str) -> str:
         return text
     return re.sub(r'(.)\1{5,}', '(반복)', text)
 
-def _build_translation_prompt(items: List[TranslationItemInput]) -> str:
-    """번역용 JSON 배열 프롬프트를 생성합니다."""
-    api_input_json = json.dumps([{"id": item.id, "text": item.text} for item in items], ensure_ascii=False)
-    return f"""You are a JSON-only translation API. You will receive a JSON array of objects, each with an 'id' and a 'text' field.
-Your task is to translate the 'text' from Japanese to Korean.
-Your response MUST be a single, valid JSON array of objects. Each object in your response must contain the original 'id' and the translated text in a 'translated' field.
-Preserve the original quotation marks (like 「...」 and 『...』) in the translated text.
-Do not add any other explanations, formatting, or markdown code fences. Your entire output must be only the JSON data.
-Example response format: [{{"id": "p1", "translated": "번역된 텍스트"}}]
+def parse_translation_response(raw_text: str) -> dict:
+    """
+    Gemini API 등 LLM 응답에서 번역된 JSON 데이터를 안전하게 파싱하여 {id: translated_text} 딕셔너리로 반환합니다.
+    - 제어 문자(줄바꿈 \\n, 탭 \\t 등) 허용 (strict=False)
+    - 마크다운 코드 블록 (```json ... ```) 제거
+    - 텍스트 앞뒤 찌꺼기 및 추가 문자열(raw_decode 및 대괄호/중괄호 슬라이싱) 처리
+    - 후행 쉼표(trailing comma), 잘못된 이스케이프(\\\\ ) 등 문법 오류 복구
+    - 잘린 JSON에 대한 정규식 기반 폴백 복구
+    """
+    if not raw_text or not raw_text.strip():
+        raise ValueError("번역 응답 내용이 비어있습니다.")
 
----START OF JSON DATA---\r\n{api_input_json}\r\n---END OF JSON DATA---
-"""
+    def _extract_map(data) -> dict:
+        if isinstance(data, list):
+            res = {}
+            for item in data:
+                if isinstance(item, dict):
+                    item_id = item.get('id')
+                    if item_id is None:
+                        continue
+                    item_id = str(item_id)
+
+                    trans = None
+                    for candidate_key in ('translated', 'translation', 'text', 'translated_text', 'korean', 'ko', 'result', 'output', 'content'):
+                        if candidate_key in item and item[candidate_key] is not None:
+                            trans = str(item[candidate_key])
+                            break
+                    if trans is None:
+                        other_keys = [k for k in item.keys() if k != 'id']
+                        if len(other_keys) == 1 and item[other_keys[0]] is not None:
+                            trans = str(item[other_keys[0]])
+
+                    if trans is not None:
+                        res[item_id] = trans
+            if res:
+                return res
+        elif isinstance(data, dict):
+            for key in ("translations", "items", "data", "results", "sentences", "response"):
+                if key in data and isinstance(data[key], (list, dict)):
+                    res = _extract_map(data[key])
+                    if res:
+                        return res
+            if 'id' in data:
+                item_id = str(data['id'])
+                trans = None
+                for candidate_key in ('translated', 'translation', 'text', 'translated_text', 'korean', 'ko', 'result'):
+                    if candidate_key in data and data[candidate_key] is not None:
+                        trans = str(data[candidate_key])
+                        break
+                if trans is None:
+                    other_keys = [k for k in data.keys() if k != 'id']
+                    if len(other_keys) == 1 and data[other_keys[0]] is not None:
+                        trans = str(data[other_keys[0]])
+                if trans is not None:
+                    return {item_id: trans}
+            if data and all(isinstance(k, str) for k in data.keys()):
+                return {str(k): str(v) for k, v in data.items() if v is not None}
+        return {}
+
+    text = raw_text.strip()
+
+    # 1. 마크다운 코드 블록 제거
+    if "```" in text:
+        fence_match = re.search(r'```(?:json)?\s*([\s\S]*?)\s*```', text, flags=re.IGNORECASE)
+        if fence_match:
+            text = fence_match.group(1).strip()
+        else:
+            text = re.sub(r'^\s*```(?:json)?\s*', '', text, flags=re.IGNORECASE)
+            text = re.sub(r'\s*```\s*$', '', text).strip()
+
+    # 2. 1차 시도: json.loads (strict=False로 줄바꿈/제어 문자 허용)
+    try:
+        data = json.loads(text, strict=False)
+        m = _extract_map(data)
+        if m:
+            return m
+    except Exception:
+        pass
+
+    # 3. 2차 시도: raw_decode (strict=False로 뒤쪽 찌꺼기 e.g. "}]" 허용)
+    try:
+        decoder = json.JSONDecoder(strict=False)
+        data, _ = decoder.raw_decode(text)
+        m = _extract_map(data)
+        if m:
+            return m
+    except Exception:
+        pass
+
+    # 4. 3차 시도: 텍스트 내에서 JSON 배열[...] 또는 객체{...} 영역만 추출 후 파싱
+    s_arr = text.find('[')
+    if s_arr != -1:
+        e_arr = text.rfind(']')
+        if e_arr != -1 and s_arr < e_arr:
+            sub = text[s_arr:e_arr + 1]
+            try:
+                data = json.loads(sub, strict=False)
+                m = _extract_map(data)
+                if m:
+                    return m
+            except Exception:
+                pass
+            try:
+                decoder = json.JSONDecoder(strict=False)
+                data, _ = decoder.raw_decode(sub)
+                m = _extract_map(data)
+                if m:
+                    return m
+            except Exception:
+                pass
+        else:
+            # 잘린 배열 복구: 마지막 '}'를 찾아 뒤에 ']' 닫기
+            last_brace = text.rfind('}')
+            if last_brace != -1 and s_arr < last_brace:
+                sub = text[s_arr:last_brace + 1] + ']'
+                try:
+                    data = json.loads(sub, strict=False)
+                    m = _extract_map(data)
+                    if m:
+                        return m
+                except Exception:
+                    pass
+                try:
+                    decoder = json.JSONDecoder(strict=False)
+                    data, _ = decoder.raw_decode(sub)
+                    m = _extract_map(data)
+                    if m:
+                        return m
+                except Exception:
+                    pass
+
+    # 객체인 경우 (배열이 아니거나 객체가 먼저 나오는 경우)
+    s_obj = text.find('{')
+    e_obj = text.rfind('}')
+    if s_obj != -1 and e_obj != -1 and s_obj < e_obj:
+        if s_arr == -1 or s_obj < s_arr:
+            sub = text[s_obj:e_obj + 1]
+            try:
+                data = json.loads(sub, strict=False)
+                m = _extract_map(data)
+                if m:
+                    return m
+            except Exception:
+                pass
+            try:
+                decoder = json.JSONDecoder(strict=False)
+                data, _ = decoder.raw_decode(sub)
+                m = _extract_map(data)
+                if m:
+                    return m
+            except Exception:
+                pass
+
+    # 5. 4차 시도: 흔한 JSON 문법 에러 복구 (Trailing commas, 유효하지 않은 이스케이프)
+    repaired = text
+    # 후행 쉼표 제거 (e.g. [1, 2, ] -> [1, 2])
+    repaired = re.sub(r',\s*([\]}])', r'\1', repaired)
+    # 유효하지 않은 백슬래시 이스케이프 복구 (JSON 표준: ", \, /, b, f, n, r, t, uXXXX 외는 \\로 치환)
+    repaired = re.sub(r'\\(?![/u"\\bfnrt]|u[0-9a-fA-F]{4})', r'\\\\', repaired)
+
+    try:
+        data = json.loads(repaired, strict=False)
+        m = _extract_map(data)
+        if m:
+            return m
+    except Exception:
+        pass
+
+    try:
+        decoder = json.JSONDecoder(strict=False)
+        data, _ = decoder.raw_decode(repaired)
+        m = _extract_map(data)
+        if m:
+            return m
+    except Exception:
+        pass
+
+    # 6. 5차 시도: 정규식 기반 개별 객체 폴백 추출 (잘린 JSON이나 부분 손상된 응답 복구)
+    fallback_map = {}
+    item_pattern = re.compile(
+        r'\{\s*"id"\s*:\s*(?:"([^"\\]*(?:\\.[^"\\]*)*)"|([0-9a-zA-Z_\-]+))\s*,\s*"(?:translated|translation|text|translated_text|korean|result)"\s*:\s*"((?:[^"\\]|\\.)*)"',
+        re.DOTALL | re.IGNORECASE
+    )
+    for match in item_pattern.finditer(text):
+        item_id = match.group(1) if match.group(1) is not None else match.group(2)
+        trans_raw = match.group(3)
+        try:
+            trans_val = json.loads(f'"{trans_raw}"', strict=False)
+        except Exception:
+            trans_val = trans_raw.replace('\\"', '"').replace('\\\\', '\\').replace('\\n', '\n')
+        if item_id:
+            fallback_map[str(item_id)] = trans_val
+
+    item_pattern_rev = re.compile(
+        r'\{\s*"(?:translated|translation|text|translated_text|korean|result)"\s*:\s*"((?:[^"\\]|\\.)*)"\s*,\s*"id"\s*:\s*(?:"([^"\\]*(?:\\.[^"\\]*)*)"|([0-9a-zA-Z_\-]+))',
+        re.DOTALL | re.IGNORECASE
+    )
+    for match in item_pattern_rev.finditer(text):
+        trans_raw = match.group(1)
+        item_id = match.group(2) if match.group(2) is not None else match.group(3)
+        try:
+            trans_val = json.loads(f'"{trans_raw}"', strict=False)
+        except Exception:
+            trans_val = trans_raw.replace('\\"', '"').replace('\\\\', '\\').replace('\\n', '\n')
+        if item_id and str(item_id) not in fallback_map:
+            fallback_map[str(item_id)] = trans_val
+
+    # 6-2. 텍스트 라인 형태: "p1": "번역문" 또는 p1: 번역문 폴백
+    if not fallback_map:
+        line_pattern = re.compile(
+            r'(?:^|\n)\s*["\']?([0-9a-zA-Z_\-]+)["\']?\s*:\s*["\']?(.*?)["\']?(?=\n\s*["\']?[0-9a-zA-Z_\-]+["\']?\s*:|\s*$)',
+            re.DOTALL
+        )
+        for match in line_pattern.finditer(text):
+            item_id = match.group(1)
+            trans_raw = match.group(2).strip().strip('"').strip("'")
+            if item_id and trans_raw and item_id.lower() not in ("id", "translation", "translated", "text"):
+                fallback_map[str(item_id)] = trans_raw
+
+    if fallback_map:
+        logger.warning(f"정규식 폴백으로 {len(fallback_map)}개의 번역 항목을 복구했습니다.")
+        return fallback_map
+
+    raise json.JSONDecodeError("JSON 파싱 및 복구에 모두 실패했습니다.", text, 0)
+
+def _build_translation_prompt(items: List[TranslationItemInput]) -> str:
+    """번역 대상 JSON 데이터를 생성합니다. 프롬프트 내 명시적 지침 및 이전 컨텍스트 격리를 지시합니다."""
+    api_input_json = json.dumps([{"id": item.id, "text": item.text} for item in items], ensure_ascii=False)
+    return (
+        "Translate the following JSON array from Japanese to Korean.\n"
+        "MANDATORY REQUIREMENTS:\n"
+        "1. Translate each item independently and uniquely based only on its own text.\n"
+        "2. Do NOT echo or copy the original Japanese text into 'translated'.\n"
+        "3. Do NOT repeat or carry over translations or text from preceding items.\n"
+        "4. Return ONLY a valid JSON array of objects with 'id' and 'translated':\n\n"
+        f"{api_input_json}"
+    )
+
+def handle_verbatim_cleanup_items(
+    db: Session,
+    url: str,
+    verbatim_items: List[dict],
+    folder_name: Optional[str] = None,
+    title: Optional[str] = None
+) -> str:
+    """
+    원문 복붙(글자만 일치)으로 감지된 번역 항목들을 즉시 삭제하고,
+    TranslationTrash(휴지통)로 이전하며 CleanupNotification 알림을 등록합니다.
+    """
+    if not verbatim_items:
+        return ""
+
+    sample_meta = db.query(Translation.folderName, Translation.title).filter(Translation.url == url).first()
+    novel_title = folder_name or (sample_meta[0] if sample_meta else None) or "미분류"
+    episode_title = title or (sample_meta[1] if sample_meta else None) or url
+
+    target_pids = {str(item.get("id")) for item in verbatim_items if item.get("id")}
+    target_origs = {item.get("original") for item in verbatim_items if item.get("original")}
+
+    now_ms = int(time.time() * 1000)
+    batch_id = f"verbatim_auto_{now_ms}"
+
+    # 기존 DB에 해당 원문 또는 pid가 이미 적재되어 있는 경우 휴지통으로 이동 후 삭제
+    existing_targets = db.query(Translation).filter(
+        Translation.url == url,
+        (Translation.pid.in_(target_pids) | Translation.original.in_(target_origs))
+    ).all()
+
+    existing_pid_set = set()
+    existing_orig_set = set()
+
+    for t in existing_targets:
+        if t.pid:
+            existing_pid_set.add(str(t.pid))
+        if t.original:
+            existing_orig_set.add(t.original)
+
+        trash_item = TranslationTrash(
+            original_translation_id=t.id,
+            url=t.url,
+            pid=t.pid,
+            original=t.original,
+            translated=t.translated,
+            timestamp=t.timestamp,
+            folderName=t.folderName,
+            title=t.title,
+            toc_sort_order=t.toc_sort_order,
+            reason_category='verbatim',
+            deleted_at=now_ms,
+            cleanup_batch_id=batch_id
+        )
+        db.add(trash_item)
+        db.delete(t)
+
+    # 기존 DB에 없던 신규 번역 항목들도 TranslationTrash에 등록하여 재검수 대상으로 보존
+    for item in verbatim_items:
+        pid = str(item.get("id") or "")
+        orig = item.get("original") or ""
+        if (pid and pid in existing_pid_set) or (orig and orig in existing_orig_set):
+            continue
+
+        trash_item = TranslationTrash(
+            original_translation_id=None,
+            url=url,
+            pid=pid,
+            original=orig,
+            translated=item.get("translated") or "",
+            timestamp=now_ms // 1000,
+            folderName=novel_title,
+            title=episode_title,
+            toc_sort_order=None,
+            reason_category='verbatim',
+            deleted_at=now_ms,
+            cleanup_batch_id=batch_id
+        )
+        db.add(trash_item)
+
+    # 알림 시스템(CleanupNotification)에 등록
+    notif = CleanupNotification(
+        batch_id=batch_id,
+        novel_title=novel_title,
+        episode_title=episode_title,
+        url=url,
+        deleted_count=len(verbatim_items),
+        is_dismissed=0,
+        created_at=now_ms,
+        dismissed_at=None
+    )
+    db.add(notif)
+    db.commit()
+
+    logger.warning(
+        f"[원문 복사 즉시 삭제] URL: '{url}'에서 {len(verbatim_items)}개 원문 복붙 문장을 "
+        f"즉시 삭제하고 알림 시스템(배치 ID: {batch_id})으로 이전했습니다."
+    )
+
+    if ToastNotifier:
+        try:
+            toaster = ToastNotifier()
+            toaster.show_toast(
+                "미번역 원문 복사 감지",
+                f"[{novel_title}] {len(verbatim_items)}개 문장의 원문 복붙이 즉시 삭제되어 알림 센터로 이동되었습니다.",
+                duration=5,
+                threaded=True
+            )
+        except Exception as toast_err:
+            logger.debug(f"데스크톱 알림 전송 생략: {toast_err}")
+
+    return batch_id
 
 def is_safety_blocked(data: dict) -> (bool, str):
-    """Gemini API 응답에서 안전 필터/검열 차단 여부를 감지합니다."""
+    """Gemini API 응답에서 안전 필터/검열 차단 여부를 감지합니다 (소프트 거절 텍스트 포함)."""
     if not data:
         return False, ""
     feedback = data.get('promptFeedback')
@@ -119,21 +534,51 @@ def is_safety_blocked(data: dict) -> (bool, str):
         return True, str(feedback.get('blockReason'))
 
     if data.get('candidates') and isinstance(data['candidates'], list) and data['candidates']:
-        finish_reason = data['candidates'][0].get('finishReason')
+        candidate = data['candidates'][0]
+        finish_reason = candidate.get('finishReason')
         if finish_reason in ('SAFETY', 'BLOCKLIST', 'PROHIBITED_CONTENT'):
             return True, str(finish_reason)
+
+        # 소프트 거절(Soft Refusal) 감지: finishReason은 STOP이지만 본문에 거절 문구가 담긴 경우
+        if candidate.get('content') and candidate['content'].get('parts'):
+            parts = candidate['content']['parts']
+            if isinstance(parts, list) and parts:
+                text = parts[0].get('text', '')
+                lower_text = text.lower()
+                refusal_keywords = [
+                    "cannot fulfill this request",
+                    "unable to fulfill",
+                    "unable to translate",
+                    "cannot translate this",
+                    "against safety guidelines",
+                    "against our safety",
+                    "safety policies",
+                    "violates our",
+                    "sexually explicit",
+                    "nsfw",
+                    "申し訳ありません",
+                    "お受けできません",
+                    "翻訳はお受け",
+                    "성인 콘텐츠",
+                    "번역할 수 없습니다"
+                ]
+                for kw in refusal_keywords:
+                    if kw in lower_text:
+                        clean_check = text.strip()
+                        if not (clean_check.startswith('[') or clean_check.startswith('{')):
+                            return True, f"SOFT_REFUSAL ({kw})"
     return False, ""
 
 def _translate_sub_batch_with_safety_split(
     items: List[TranslationItemInput],
     api_url: str,
-    wait_time_on_block: int = 40,
+    wait_time_on_block: int = 5,
     depth: int = 1
 ) -> (dict, set):
     """
-    검열 발생 시 재귀적 2분할 번역을 수행합니다.
-    - len(items) > 1: 40초 대기 후 추가 2분할하여 안전한 문장들 번역 계속 진행
-    - len(items) == 1: Fast-Fail 적용 (즉시 에러를 catch하여 '[검열로 인해 번역 생략]' 처리 후 다음으로 진행)
+    검열 발생 또는 파싱 실패 시 재귀적 2분할 번역을 수행합니다.
+    - len(items) > 1: 분할하여 안전한 문장들 번역 계속 진행
+    - len(items) == 1: Fast-Fail 적용 (해당 문장 '[검열로 인해 번역 생략]' 처리 후 다음으로 진행)
     반환값: (translated_map: dict, censored_ids: set)
     """
     if not items:
@@ -145,9 +590,22 @@ def _translate_sub_batch_with_safety_split(
     except requests.exceptions.HTTPError as e:
         if e.response.status_code == 429:
             raise HTTPException(status_code=429, detail="API 요청 한도 초과. 잠시 후 다시 시도해주세요.")
-        raise HTTPException(status_code=500, detail=f"분할 번역 중 API 오류 발생: {e}")
+        logger.warning(f"분할 번역 중 HTTP 오류 ({e}). 하위 분할을 시도합니다.")
+        sub_data = None
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"분할 번역 중 예상치 못한 오류 발생: {e}")
+        logger.warning(f"분할 번역 중 오류 ({e}). 하위 분할을 시도합니다.")
+        sub_data = None
+
+    if sub_data is None:
+        if len(items) > 1:
+            mid = len(items) // 2
+            res1, cens1 = _translate_sub_batch_with_safety_split(items[:mid], api_url, wait_time_on_block, depth + 1)
+            time.sleep(1.0)
+            res2, cens2 = _translate_sub_batch_with_safety_split(items[mid:], api_url, wait_time_on_block, depth + 1)
+            return {**res1, **res2}, cens1.union(cens2)
+        else:
+            single_item = items[0]
+            return {str(single_item.id): single_item.text}, set()
 
     blocked, reason = is_safety_blocked(sub_data)
     if blocked:
@@ -162,7 +620,7 @@ def _translate_sub_batch_with_safety_split(
             second_half = items[mid:]
 
             res1, cens1 = _translate_sub_batch_with_safety_split(first_half, api_url, wait_time_on_block, depth + 1)
-            time.sleep(2.0)
+            time.sleep(1.0)
             res2, cens2 = _translate_sub_batch_with_safety_split(second_half, api_url, wait_time_on_block, depth + 1)
 
             combined_map = {**res1, **res2}
@@ -179,7 +637,15 @@ def _translate_sub_batch_with_safety_split(
 
     # Parse response
     if not sub_data.get('candidates') or not sub_data['candidates']:
-        raise HTTPException(status_code=500, detail="분할 번역 응답에 결과가 없습니다.")
+        if len(items) > 1:
+            mid = len(items) // 2
+            res1, cens1 = _translate_sub_batch_with_safety_split(items[:mid], api_url, wait_time_on_block, depth + 1)
+            time.sleep(1.0)
+            res2, cens2 = _translate_sub_batch_with_safety_split(items[mid:], api_url, wait_time_on_block, depth + 1)
+            return {**res1, **res2}, cens1.union(cens2)
+        else:
+            logger.warning(f"[단일 문장 번역 실패] ID: {items[0].id}. 원문 오염을 방지하기 위해 빈 번역문으로 처리합니다.")
+            return {str(items[0].id): ""}, set()
 
     candidate = sub_data['candidates'][0]
     finish_reason = candidate.get('finishReason')
@@ -193,7 +659,7 @@ def _translate_sub_batch_with_safety_split(
                 time.sleep(wait_time_on_block)
                 mid = len(items) // 2
                 res1, cens1 = _translate_sub_batch_with_safety_split(items[:mid], api_url, wait_time_on_block, depth + 1)
-                time.sleep(2.0)
+                time.sleep(1.0)
                 res2, cens2 = _translate_sub_batch_with_safety_split(items[mid:], api_url, wait_time_on_block, depth + 1)
                 return {**res1, **res2}, cens1.union(cens2)
             else:
@@ -203,34 +669,41 @@ def _translate_sub_batch_with_safety_split(
                     f"해당 문장을 '[검열로 인해 번역 생략]' 처리합니다."
                 )
                 return {str(single_item.id): "[검열로 인해 번역 생략]"}, {str(single_item.id)}
-        raise HTTPException(status_code=500, detail=f"API가 번역을 거부했습니다. 이유: {finish_reason}")
+        if len(items) > 1:
+            mid = len(items) // 2
+            res1, cens1 = _translate_sub_batch_with_safety_split(items[:mid], api_url, wait_time_on_block, depth + 1)
+            time.sleep(1.0)
+            res2, cens2 = _translate_sub_batch_with_safety_split(items[mid:], api_url, wait_time_on_block, depth + 1)
+            return {**res1, **res2}, cens1.union(cens2)
+        else:
+            return {str(items[0].id): ""}, set()
 
     if candidate.get('content') and candidate['content'].get('parts') and isinstance(candidate['content']['parts'], list) and candidate['content']['parts']:
-        raw_text = candidate['content']['parts'][0].get('text', '').strip()
-        if raw_text.startswith("```json"):
-            raw_text = raw_text[7:-3].strip()
-        elif raw_text.startswith("```"):
-            raw_text = raw_text[3:-3].strip()
-
+        raw_text = candidate['content']['parts'][0].get('text', '')
         try:
-            try:
-                sub_translated = json.loads(raw_text)
-            except json.JSONDecodeError:
-                sub_translated, _ = json.JSONDecoder().raw_decode(raw_text)
-
-            if isinstance(sub_translated, dict):
-                sub_translated = [sub_translated]
-
-            sub_map = {}
-            for t_item in sub_translated:
-                if isinstance(t_item, dict) and 'id' in t_item and 'translated' in t_item:
-                    sub_map[str(t_item['id'])] = t_item['translated']
+            sub_map = parse_translation_response(raw_text)
             return sub_map, set()
         except Exception as e:
-            logger.error(f"분할 번역 JSON 파싱 실패: {e}, 원본: '{raw_text}'")
-            raise HTTPException(status_code=500, detail=f"분할 번역 JSON 파싱 실패: {e}")
+            logger.warning(f"분할 번역 JSON 파싱 실패 ({e}), 원본: '{raw_text[:100]}...'. 추가 분할을 시도합니다.")
+            if len(items) > 1:
+                mid = len(items) // 2
+                res1, cens1 = _translate_sub_batch_with_safety_split(items[:mid], api_url, wait_time_on_block, depth + 1)
+                time.sleep(1.0)
+                res2, cens2 = _translate_sub_batch_with_safety_split(items[mid:], api_url, wait_time_on_block, depth + 1)
+                return {**res1, **res2}, cens1.union(cens2)
+            else:
+                single_item = items[0]
+                logger.warning(f"[Fast-Fail] 단일 문장(ID: {single_item.id}) 파싱 실패로 빈 번역문으로 처리합니다.")
+                return {str(single_item.id): ""}, set()
     else:
-        raise HTTPException(status_code=500, detail="분할 번역 응답 내용이 비어있습니다.")
+        if len(items) > 1:
+            mid = len(items) // 2
+            res1, cens1 = _translate_sub_batch_with_safety_split(items[:mid], api_url, wait_time_on_block, depth + 1)
+            time.sleep(1.0)
+            res2, cens2 = _translate_sub_batch_with_safety_split(items[mid:], api_url, wait_time_on_block, depth + 1)
+            return {**res1, **res2}, cens1.union(cens2)
+        else:
+            return {str(items[0].id): ""}, set()
 
 # --- API Endpoints ---
 @router.post(
@@ -273,12 +746,12 @@ def translate_texts(req: TranslateRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail="Gemini API 키가 설정되지 않았습니다. .env 파일을 확인해주세요.")
 
     selected_model = req.model or (settings.gemini_retranslation_model if req.is_retranslation else settings.gemini_default_model)
-    logger.info(f"Using Gemini Model: {selected_model} (is_retranslation={req.is_retranslation})")
+    logger.debug(f"Using Gemini Model: {selected_model} (is_retranslation={req.is_retranslation})")
     api_url = f"https://generativelanguage.googleapis.com/v1beta/models/{selected_model}:generateContent"
     
     prompt = _build_translation_prompt(items_to_translate)
-    logger.info(f"Gemini API URL: {api_url}")
-    logger.info(f"Gemini API Prompt (first 500 chars): {prompt[:500]}...")
+    logger.debug(f"Gemini API URL: {api_url}")
+    logger.debug(f"Gemini API Prompt (first 500 chars): {prompt[:500]}...")
 
     # --- Manual Retry Logic ---
     data = None
@@ -361,17 +834,38 @@ def translate_texts(req: TranslateRequest, db: Session = Depends(get_db)):
 
             # Prepare the results
             translated_results = {}
+            verbatim_detected_items = []
+
             for item in items_to_translate:
                 is_censored = str(item.id) in censored_ids or translated_map.get(str(item.id)) == "[검열로 인해 번역 생략]"
-                translated_text = translated_map.get(str(item.id), item.text)
-                if not is_censored:
+                raw_trans = translated_map.get(str(item.id))
+                
+                if raw_trans is None:
+                    translated_text = ""
+                else:
+                    translated_text = raw_trans
+
+                if not is_censored and translated_text:
                     translated_text = process_repeated_chars(translated_text)
+                    if is_verbatim_copy(item.text, translated_text):
+                        logger.warning(f"[검열 분할 중 원문 복붙 감지] ID: {item.id} -> 번역문을 즉시 삭제합니다.")
+                        verbatim_detected_items.append({
+                            "id": item.id,
+                            "original": item.text,
+                            "translated": translated_text
+                        })
+                        translated_text = ""
+                        is_censored = True
+
                 translated_results[str(item.id)] = {
                     "id": item.id,
                     "original": item.text,
                     "translated": translated_text,
                     "censored": is_censored
                 }
+
+            if verbatim_detected_items:
+                handle_verbatim_cleanup_items(db, req.url, verbatim_detected_items)
 
             final_translations = []
             for item in req.items:
@@ -381,7 +875,7 @@ def translate_texts(req: TranslateRequest, db: Session = Depends(get_db)):
                     final_translations.append({
                         "id": item.id,
                         "original": item.text,
-                        "translated": item.text,
+                        "translated": "",
                         "censored": False
                     })
 
@@ -393,59 +887,76 @@ def translate_texts(req: TranslateRequest, db: Session = Depends(get_db)):
             
             finish_reason = candidate.get('finishReason')
             if finish_reason and finish_reason != 'STOP':
-                error_detail = f"API가 번역을 거부했습니다. 이유: {finish_reason}"
-                raise HTTPException(status_code=500, detail=error_detail)
+                logger.warning(f"API finishReason이 '{finish_reason}'입니다. 분할 번역으로 복구를 시도합니다.")
 
             if candidate.get('content') and candidate['content'].get('parts') and isinstance(candidate['content']['parts'], list) and candidate['content']['parts']:
                 raw_text = candidate['content']['parts'][0].get('text')
 
         if raw_text is None:
-            error_detail = f"API 응답에서 번역된 텍스트를 추출할 수 없습니다. 응답: {data}"
-            raise HTTPException(status_code=500, detail=error_detail)
-        
-        clean_json_text = raw_text.strip()
-        if clean_json_text.startswith("```json"):
-            clean_json_text = clean_json_text[7:-3].strip()
-        elif clean_json_text.startswith("```"):
-            clean_json_text = clean_json_text[3:-3].strip()
-
-        try:
+            logger.warning("API 응답에서 번역 텍스트를 추출할 수 없습니다. 분할 번역으로 자동 복구합니다.")
+            if len(items_to_translate) > 1:
+                mid = len(items_to_translate) // 2
+                res1, cens1 = _translate_sub_batch_with_safety_split(items_to_translate[:mid], api_url, wait_time_on_block=2, depth=1)
+                time.sleep(1.0)
+                res2, cens2 = _translate_sub_batch_with_safety_split(items_to_translate[mid:], api_url, wait_time_on_block=2, depth=1)
+                translated_map = {**res1, **res2}
+            else:
+                single_item = items_to_translate[0]
+                translated_map = {str(single_item.id): ""}
+        else:
             try:
-                translated_data = json.loads(clean_json_text)
-            except json.JSONDecodeError:
-                # Try raw_decode to handle extra data at the end (e.g. "}]" artifact)
-                translated_data, _ = json.JSONDecoder().raw_decode(clean_json_text)
-
-            if not isinstance(translated_data, list):
-                logger.warning(f"Expected a JSON array, but got {type(translated_data)}. Data: {clean_json_text}")
-                if isinstance(translated_data, dict):
-                    translated_data = [translated_data]
+                translated_map = parse_translation_response(raw_text)
+            except Exception as parse_err:
+                logger.warning(
+                    f"배치 번역 파싱 실패 ({parse_err}). 원본: '{raw_text[:200]}...'. "
+                    f"분할 번역(Safety/Resilience Split)으로 자동 복구합니다."
+                )
+                if len(items_to_translate) > 1:
+                    mid = len(items_to_translate) // 2
+                    res1, cens1 = _translate_sub_batch_with_safety_split(items_to_translate[:mid], api_url, wait_time_on_block=2, depth=1)
+                    time.sleep(1.0)
+                    res2, cens2 = _translate_sub_batch_with_safety_split(items_to_translate[mid:], api_url, wait_time_on_block=2, depth=1)
+                    translated_map = {**res1, **res2}
                 else:
-                    raise json.JSONDecodeError("Expected a JSON array.", clean_json_text, 0)
-            
-            translated_map = {
-                str(item['id']): item['translated']
-                for item in translated_data
-                if 'id' in item and 'translated' in item
-            }
-        except json.JSONDecodeError as e:
-            error_detail = f"API 응답의 JSON 파싱에 실패했습니다: {e}. 원본 응답: '{raw_text}'"
-            logger.error(error_detail)
-            raise HTTPException(status_code=500, detail=error_detail)
+                    single_item = items_to_translate[0]
+                    logger.warning(f"[Fast-Fail] 단일 문장(ID: {single_item.id}) 파싱 실패로 빈 번역문으로 처리합니다.")
+                    translated_map = {str(single_item.id): ""}
 
         translated_results = {}
+        verbatim_detected_items = []
+
         for item in items_to_translate:
-            translated_text = translated_map.get(str(item.id))
-            if translated_text is None:
-                translated_text = item.text
+            raw_trans = translated_map.get(str(item.id))
+            if raw_trans is None:
+                translated_text = ""
             else:
+                translated_text = raw_trans
+
+            is_censored = False
+            if translated_text:
                 translated_text = process_repeated_chars(translated_text)
+                # 원문을 그대로 복붙한 경우 (글자만 일치) 감지:
+                # 즉시 삭제 처리하고 알림 시스템으로 이전
+                if is_verbatim_copy(item.text, translated_text):
+                    logger.warning(f"[원문 복붙 감지] ID: {item.id}, 원문: '{item.text[:40]}...' -> 번역문을 즉시 삭제합니다.")
+                    verbatim_detected_items.append({
+                        "id": item.id,
+                        "original": item.text,
+                        "translated": translated_text
+                    })
+                    translated_text = ""
+                    is_censored = True
+
             translated_results[str(item.id)] = {
                 "id": item.id,
                 "original": item.text,
                 "translated": translated_text,
-                "censored": False
+                "censored": is_censored
             }
+
+        # 원문 복붙 항목이 있는 경우 즉시 삭제 및 알림 시스템으로 이전
+        if verbatim_detected_items:
+            handle_verbatim_cleanup_items(db, req.url, verbatim_detected_items)
 
         final_translations = []
         for item in req.items:
@@ -455,7 +966,7 @@ def translate_texts(req: TranslateRequest, db: Session = Depends(get_db)):
                 final_translations.append({
                     "id": item.id,
                     "original": item.text,
-                    "translated": item.text,
+                    "translated": "",
                     "censored": False
                 })
 
@@ -507,59 +1018,80 @@ def exclude_translations(req: ExcludeRequest, db: Session = Depends(get_db)):
     "/translations/find_replace",
     tags=["Translation"],
     summary="찾아 바꾸기",
-    description="모든 번역 기록의 번역된 텍스트에 대해 찾아 바꾸기를 수행합니다."
+    description="모든 번역 기록의 번역된 텍스트에 대해 고성능 일괄 찾아 바꾸기를 수행합니다."
 )
 def find_replace_all(req: FindReplaceRequest, db: Session = Depends(get_db)):
-    updated_count = 0
+    if not req.find_text:
+        raise HTTPException(status_code=400, detail="찾을 텍스트를 입력해야 합니다.")
 
-    query = db.query(Translation)
+    flags = re.IGNORECASE if not req.case_sensitive else 0
+    if req.use_regex:
+        try:
+            re.compile(req.find_text, flags=flags)
+        except re.error as e:
+            raise HTTPException(status_code=400, detail=f"유효하지 않은 정규식: {e}")
+        pattern = req.find_text
+    else:
+        pattern = re.escape(req.find_text)
 
-    # 1. 필터링 조건 설정
+    # 1. SQL WHERE 조건절 및 파라미터 구성
+    where_clauses = ["translated IS NOT NULL"]
+    params = {
+        "pattern": pattern,
+        "replace_text": req.replace_text or "",
+        "flags": int(flags)
+    }
+
+    # 대상 텍스트 매칭 조건
+    if not req.use_regex and req.case_sensitive:
+        where_clauses.append("instr(translated, :find_raw) > 0")
+        params["find_raw"] = req.find_text
+    else:
+        where_clauses.append("translated REGEXP :pattern")
+
+    # 폴더 범위 필터링
     if req.folder_scope and req.folder_scope != "__all__":
         if req.folder_scope == "폴더 추가 대기 상태":
-            query = query.filter(Translation.folderName.is_(None))
+            where_clauses.append("folderName IS NULL")
         else:
-            query = query.filter(Translation.folderName == req.folder_scope)
-    
-    # 2. 원문 조건 필터링
+            where_clauses.append("folderName = :folder_scope")
+            params["folder_scope"] = req.folder_scope
+
+    # 원문 조건 필터링
     if req.condition_text:
         if req.case_sensitive:
-            query = query.filter(Translation.original.like(f"%{req.condition_text}%"))
+            where_clauses.append("instr(original, :condition_text) > 0")
         else:
-            query = query.filter(Translation.original.ilike(f"%{req.condition_text}%"))
+            where_clauses.append("original REGEXP :condition_pattern")
+            params["condition_pattern"] = re.escape(req.condition_text)
+        params["condition_text"] = req.condition_text
 
-    # 3. 찾아바꿀 텍스트가 포함된 항목만 대상으로 함
-    if not req.use_regex:
-        if req.case_sensitive:
-            query = query.filter(Translation.translated.like(f"%{req.find_text}%"))
-        else:
-            query = query.filter(Translation.translated.ilike(f"%{req.find_text}%"))
+    # 치환 함수 표현식
+    if not req.use_regex and req.case_sensitive:
+        replace_expr = "replace(translated, :find_raw, :replace_text)"
+    else:
+        replace_expr = "REGEXP_REPLACE(:pattern, :replace_text, translated, :flags)"
 
-    records_to_update = query.all()
+    # 실제 내용이 변경되는 항목만 치환하고 카운트하도록 필터링
+    where_clauses.append(f"translated != {replace_expr}")
 
-    for record in records_to_update:
-        old_translated_text = record.translated
-        new_translated_text = old_translated_text
-        if old_translated_text is None:
-            continue
+    where_sql = " AND ".join(where_clauses)
+    update_sql = f"""
+        UPDATE translations
+        SET translated = {replace_expr}
+        WHERE {where_sql}
+    """
 
-        if req.use_regex:
-            flags = re.IGNORECASE if not req.case_sensitive else 0
-            try:
-                new_translated_text = re.sub(req.find_text, req.replace_text, old_translated_text, flags=flags)
-            except re.error as e:
-                db.rollback() # Rollback in case of regex error
-                raise HTTPException(status_code=400, detail=f"유효하지 않은 정규식: {e}")
-        else:
-            flags = re.IGNORECASE if not req.case_sensitive else 0
-            new_translated_text = re.sub(re.escape(req.find_text), req.replace_text, old_translated_text, flags=flags)
+    try:
+        result = db.execute(text(update_sql), params)
+        db.commit()
+        updated_count = result.rowcount if result.rowcount is not None and result.rowcount >= 0 else 0
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"치환 처리 중 오류 발생: {e}")
 
-        if new_translated_text != old_translated_text:
-            record.translated = new_translated_text
-            updated_count += 1
-    
-    db.commit()
     return {"message": f"{updated_count}개의 항목에서 내용을 교체했습니다."}
+
 
 @router.put(
     "/translations/url_title",

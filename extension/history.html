@@ -97,7 +97,7 @@
         }
         .btn-apply.applied { background-color: var(--danger-color); color: white; border-color: var(--danger-color); }
         #history-container { display: flex; flex-direction: column; gap: 16px; }
-        .list-group { background: var(--card-bg); border-radius: var(--border-radius); border: 1px solid var(--border-color); overflow: hidden; }
+        .list-group { background: var(--card-bg); border-radius: var(--border-radius); border: 1px solid var(--border-color); overflow: hidden; content-visibility: auto; contain-intrinsic-size: 55px; }
         .list-group-header { display: flex; align-items: center; padding: 12px 16px; cursor: pointer; user-select: none; background-color: var(--group-header-bg); }
         .list-group-header:hover { background-color: var(--group-header-hover-bg); }
         .list-group-toggle { margin-right: 12px; transition: transform 0.2s; }
@@ -106,9 +106,8 @@
         a.list-group-title-link { text-decoration: none; color: inherit; }
         a.list-group-title-link:hover { text-decoration: underline; }
         .list-group-actions { display: flex; align-items: center; gap: 8px; }
-        .list-group-content { display: block; overflow: hidden; transition: max-height 0.3s ease-out; }
-        .list-group-content.collapsed { max-height: 0; }
-        .list-group-content:not(.collapsed) { max-height: none; /* 충분히 큰 값으로 설정 */ }
+        .list-group-content { display: block; }
+        .list-group-content.collapsed { display: none; }
 
         .history-folder-group {
             background: var(--card-bg);
@@ -116,6 +115,8 @@
             border: 1px solid var(--border-color);
             margin-bottom: 16px;
             overflow: hidden;
+            content-visibility: auto;
+            contain-intrinsic-size: 60px;
         }
         .folder-group-header {
             display: flex;
@@ -276,6 +277,7 @@
                     </select>
                     <button id="openGlobalFindReplaceBtn" class="btn btn-outline">🔍 전체 찾아 바꾸기</button>
                     <button id="fetchAllTitlesBtn" class="btn btn-secondary">모든 제목 가져오기</button>
+                    <button id="openSeparatorsModalBtn" class="btn btn-outline">⚙️ 소설별 구분선 설정</button>
                 </div>
                 <div class="control-group right">
                     <button class="btn btn-primary" id="exportPdfBtn">PDF로 내보내기</button>
@@ -412,6 +414,64 @@
             <div class="modal-actions">
                 <button class="btn btn-outline" id="cancelFindReplace">취소</button>
                 <button class="btn btn-primary" id="executeFindReplace">실행</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 소설별 구분선 설정 모달 -->
+    <div class="edit-modal" id="separatorsModal" style="display: none;">
+        <div class="modal-content" style="max-width: 650px; width: 90%;">
+            <div class="modal-header">
+                <div class="modal-title">⚙️ 소설별 번역 구분선(작가의 말) 관리</div>
+                <button class="close-btn" id="closeSeparatorsModal">×</button>
+            </div>
+            <div style="padding: 10px 0; border-bottom: 1px solid var(--border-color, #e2e8f0); margin-bottom: 15px;">
+                <p style="font-size: 13px; color: #64748b; margin: 0 0 10px;">
+                    소설마다 본문 맥락선(장면 전환선)과 작가의 말 구분선이 다릅니다. 소설별로 필요한 구분선만 추가하세요.
+                </p>
+                <div style="display: flex; gap: 8px; align-items: center;">
+                    <label style="font-weight: 600; font-size: 13px;">소설 선택:</label>
+                    <select id="sepModalNovelSelect" class="form-select" style="flex: 1;">
+                        <!-- 소설/폴더 목록 동적 생성 -->
+                    </select>
+                </div>
+            </div>
+
+            <div id="sepModalNovelDetails">
+                <div class="form-group" style="margin-bottom: 10px;">
+                    <label class="sep-checkbox-label" style="display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer;">
+                        <input type="checkbox" id="sepModalUseDefaults" checked>
+                        <span>공통 후기 키워드 포함 (＜あとがき＞, 【大事なお知らせ】 등)</span>
+                    </label>
+                </div>
+
+                <div class="form-group" style="margin-bottom: 10px;">
+                    <label class="form-label" style="font-size: 12px; font-weight: 600;">현재 적용 중인 구분선:</label>
+                    <div id="sepModalActiveTags" style="display: flex; flex-wrap: wrap; gap: 6px; padding: 8px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; min-height: 36px;">
+                    </div>
+                </div>
+
+                <div class="form-group" style="margin-bottom: 10px;">
+                    <label class="form-label" style="font-size: 12px; font-weight: 600;">빠른 프리셋 추가:</label>
+                    <div id="sepModalPresets" style="display: flex; flex-wrap: wrap; gap: 6px;">
+                    </div>
+                </div>
+
+                <div class="form-group" style="margin-bottom: 15px;">
+                    <label class="form-label" style="font-size: 12px; font-weight: 600;">새 구분선 직접 추가:</label>
+                    <div style="display: flex; gap: 6px;">
+                        <input type="text" id="sepModalNewInput" class="form-input" style="flex: 1;" placeholder="추가할 기호 입력 (예: ◎◎◎)">
+                        <button id="sepModalAddBtn" class="btn btn-secondary">추가</button>
+                    </div>
+                </div>
+
+                <div class="modal-actions" style="display: flex; justify-content: space-between; align-items: center;">
+                    <button class="btn btn-danger" id="sepModalResetBtn">기본값 복원</button>
+                    <div style="display: flex; gap: 8px;">
+                        <button class="btn btn-outline" id="sepModalCloseBtn">닫기</button>
+                        <button class="btn btn-primary" id="sepModalSaveBtn">💾 설정 저장</button>
+                    </div>
+                </div>
             </div>
         </div>
     </div>

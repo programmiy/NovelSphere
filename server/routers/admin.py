@@ -18,11 +18,12 @@ def cleanup_url_fragments():
 
     try:
         for table in tables_to_clean:
-            query = f"""UPDATE {table} 
-                       SET url = SUBSTR(url, 1, INSTR(url, '#') - 1) 
-                       WHERE url LIKE '%#%';"""
-            cursor.execute(query)
+            cursor.execute(f"""UPDATE OR IGNORE {table} 
+                               SET url = SUBSTR(url, 1, INSTR(url, '#') - 1) 
+                               WHERE url LIKE '%#%';""")
             total_updated += cursor.rowcount
+            # Clean up remaining records that could not be updated due to conflict
+            cursor.execute(f"DELETE FROM {table} WHERE url LIKE '%#%';")
         conn.commit()
     except Exception as e:
         conn.rollback()

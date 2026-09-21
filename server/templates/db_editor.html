@@ -41,11 +41,29 @@
     <div class="container">
         <h1 class="mb-4">데이터베이스 편집기</h1>
 
-        {% for table_name, records in tables.items() %}
+        <!-- 테이블 목록 탭 (온디맨드 로딩) -->
+        <div class="table-nav mb-4" style="display: flex; gap: 8px; flex-wrap: wrap;">
+            {% for name in all_table_names %}
+            <a href="/db_editor?table_name={{ name }}" 
+               class="btn {% if active_table == name %}btn-primary{% else %}btn-secondary{% endif %} btn-sm"
+               style="text-decoration: none; padding: 6px 12px; border-radius: 4px; font-weight: {% if active_table == name %}bold{% else %}normal{% endif %};">
+               {{ name }}
+            </a>
+            {% endfor %}
+        </div>
+
+        {% if not active_table %}
+        <div class="table-container" style="text-align: center; padding: 40px 20px;">
+            <h3 style="color: var(--text-color, #333);">조회할 테이블을 선택하세요</h3>
+            <p style="color: var(--text-muted, #666); margin-top: 10px;">상단의 테이블 이름 버튼을 클릭하면 해당 테이블의 데이터만 빠르게 로드됩니다.</p>
+        </div>
+        {% endif %}
+
+        {% for table_name, records in tables.items() if active_table == table_name %}
         <div class="table-container" data-table-name="{{ table_name }}">
             <h3 class="mb-3">{{ table_name }} ({{ records|length }}개 항목)</h3>
             <div class="btn-group" role="group" aria-label="Table actions">
-                <button type="button" class="btn btn-primary btn-sm" onclick="location.reload()">새로고침</button>
+                <button type="button" class="btn btn-primary btn-sm" onclick="location.href='/db_editor?table_name={{ table_name }}'">새로고침</button>
             </div>
             <div class="form-inline mt-2">
                 <input type="text" class="form-control form-control-sm" id="jump-to-id-{{ table_name }}" placeholder="ID, URL, 또는 폴더명으로 이동">

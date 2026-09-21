@@ -1,160 +1,259 @@
 document.addEventListener('DOMContentLoaded', async () => {
     // --- DOM Elements ---
     const bookTitleElement = document.getElementById('book-title');
+    const chapterTitleElement = document.getElementById('chapter-title');
     const contentArea = document.getElementById('content-area');
+    const bookContainer = document.getElementById('book-container');
+    const viewerContainer = document.querySelector('.viewer-container');
+    const pageIndicator = document.getElementById('page-indicator');
+    const readingProgressBar = document.getElementById('reading-progress-bar');
+
+    // Header buttons
+    const tocBtn = document.getElementById('toc-btn');
+    const readerSettingsBtn = document.getElementById('reader-settings-btn');
     const focusModeBtn = document.getElementById('focus-mode-btn');
     const nightModeBtn = document.getElementById('night-mode-btn');
-    const viewerContainer = document.querySelector('.viewer-container');
-    const bookContainer = document.getElementById('book-container');
-    const pageIndicator = document.getElementById('page-indicator'); // Re-using for chapter pages
+    const shortcutHelpBtn = document.getElementById('shortcut-help-btn');
 
-    // Sidebar Elements
-    const tocBtn = document.getElementById('toc-btn');
+    // Navigation buttons
+    const prevPageBtn = document.getElementById('prev-page-btn');
+    const nextPageBtn = document.getElementById('next-page-btn');
+
+    // Sidebar Elements (TOC)
     const sidebar = document.getElementById('toc-sidebar');
     const closeSidebarBtn = document.getElementById('close-sidebar-btn');
     const tocList = document.getElementById('toc-list');
     const viewOriginalBtn = document.getElementById('view-original-btn');
+    const tocSearchInput = document.getElementById('toc-search-input');
+    const tocJumpInput = document.getElementById('toc-jump-input');
+    const tocJumpBtn = document.getElementById('toc-jump-btn');
+    const tocPrevChapterBtn = document.getElementById('toc-prev-chapter-btn');
+    const tocNextChapterBtn = document.getElementById('toc-next-chapter-btn');
+    const tocCurrentIndexLabel = document.getElementById('toc-current-index-label');
+
+    // Settings Drawer Elements
+    const settingsDrawer = document.getElementById('reader-settings-panel');
+    const closeSettingsBtn = document.getElementById('close-settings-btn');
+    const fontSizeSlider = document.getElementById('font-size-slider');
+    const fontSizeVal = document.getElementById('font-size-val');
+    const fontDecreaseBtn = document.getElementById('font-decrease-btn');
+    const fontIncreaseBtn = document.getElementById('font-increase-btn');
+    const toggleOriginalSwitch = document.getElementById('toggle-original-switch');
+
+    // Shortcut Help Modal
+    const shortcutModal = document.getElementById('shortcut-help-modal');
+    const closeShortcutModalBtn = document.getElementById('close-shortcut-modal-btn');
+    const closeShortcutBottomBtn = document.getElementById('close-shortcut-bottom-btn');
+
+    // Overlay & Mobile Nav
     const overlay = document.getElementById('overlay');
+    const mobileNavSetting = document.getElementById('mobile-nav-setting');
 
     // --- State ---
     const urlParams = new URLSearchParams(window.location.search);
     const bookName = urlParams.get('book');
-    
+    const paramTitle = urlParams.get('title') || urlParams.get('url');
+
     let chapterTitles = [];
     let currentChapterIndex = -1;
     let currentChapterItems = [];
     let pages = [];
     let currentPageInChapter = 0;
+    let saveTimeout = null;
 
-    let showOriginal = localStorage.getItem('showOriginalText') === 'true';
-    let saveTimeout;
+    // Preferences State
+    let prefs = {
+        theme: 'paper', // 'paper', 'white', 'sepia', 'dark', 'oled'
+        font: 'batang',  // 'batang', 'myeongjo', 'pretendard', 'sans'
+        fontSize: 18,
+        lineHeight: 1.8,
+        width: 840,
+        mode: 'paging',  // 'paging', 'scroll'
+        showOriginal: false
+    };
+
+    // Touch State
     let touchStartX = 0;
     let touchStartY = 0;
     const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
     let mobileNavMode = 'both'; // 'both', 'tap', 'swipe'
 
-    const ICON_MAXIMIZE = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path></svg>';
-    const ICON_MINIMIZE = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"></path></svg>';
-    const ICON_SUN = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>';
-    const ICON_MOON = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>';
-
-    // --- Initialization ---
-    applyInitialTheme();
-    bookTitleElement.textContent = bookName || '책을 찾을 수 없음';
-    if (showOriginal) viewOriginalBtn.classList.add('active');
-
-    // --- Event Listeners ---
-    contentArea.addEventListener('mouseup', handleTextSelection);
-    focusModeBtn.addEventListener('click', toggleFocusMode);
-    nightModeBtn.addEventListener('click', toggleNightMode);
-    document.addEventListener('keydown', handleKeyPress);
-    bookContainer.addEventListener('click', handleBookClick);
-    bookContainer.addEventListener('mousemove', handleBookMouseMove);
-    bookContainer.addEventListener('mouseleave', handleBookMouseLeave);
-    bookContainer.addEventListener('touchstart', handleTouchStart, { passive: true });
-    bookContainer.addEventListener('touchmove', handleTouchMove, { passive: false });
-    bookContainer.addEventListener('touchend', handleTouchEnd, { passive: true });
-
-    tocBtn.addEventListener('click', openSidebar);
-    closeSidebarBtn.addEventListener('click', closeSidebar);
-    overlay.addEventListener('click', closeSidebar);
-    viewOriginalBtn.addEventListener('click', toggleOriginalView);
-
-    function updateUIMode() {
-        // 1. Remove existing arrows to ensure a clean state
-        const existingLeft = document.getElementById('nav-arrow-left');
-        const existingRight = document.getElementById('nav-arrow-right');
-        if (existingLeft) existingLeft.remove();
-        if (existingRight) existingRight.remove();
-
-        // Determine if touch controls should be active
-        const touchEnabled = !isMobile || mobileNavMode === 'tap' || mobileNavMode === 'both';
-
-        if (touchEnabled) {
-            // 2. Create and append new arrow elements
-            const leftArrow = document.createElement('div');
-            leftArrow.id = 'nav-arrow-left';
-            leftArrow.className = 'nav-arrow left';
-            leftArrow.innerHTML = '&lt;';
-
-            const rightArrow = document.createElement('div');
-            rightArrow.id = 'nav-arrow-right';
-            rightArrow.className = 'nav-arrow right';
-            rightArrow.innerHTML = '&gt;';
-
-            bookContainer.appendChild(leftArrow);
-            bookContainer.appendChild(rightArrow);
+    // --- Toast Function ---
+    function showToast(message, duration = 2000) {
+        let toast = document.getElementById('viewer-toast');
+        if (!toast) {
+            toast = document.createElement('div');
+            toast.id = 'viewer-toast';
+            toast.className = 'toast';
+            document.body.appendChild(toast);
         }
+        toast.textContent = message;
+        toast.style.display = 'flex';
+        clearTimeout(toast._timeout);
+        toast._timeout = setTimeout(() => {
+            toast.style.display = 'none';
+        }, duration);
     }
 
-    const mobileNavSetting = document.getElementById('mobile-nav-setting');
-    if (!isMobile) {
-        mobileNavSetting.style.display = 'none';
-        updateUIMode(); // Apply desktop mode
-    } else {
-        const savedNavMode = localStorage.getItem('mobileNavMode') || 'both';
-        mobileNavMode = savedNavMode;
-        const currentRadio = document.getElementById(`nav-${savedNavMode}`);
-        if (currentRadio) {
-            currentRadio.checked = true;
-        }
-        updateUIMode(); // Call on initial load
+    // --- Utilities ---
+    function escapeHtml(text) {
+        if (text === null || text === undefined) return '';
+        const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' };
+        return text.toString().replace(/[&<>"']/g, m => map[m]);
+    }
 
-        mobileNavSetting.addEventListener('change', (e) => {
-            if (e.target.name === 'mobile-nav') {
-                mobileNavMode = e.target.value;
-                localStorage.setItem('mobileNavMode', mobileNavMode);
-                updateUIMode(); // Call on change
+    // --- Preferences System ---
+    function loadPreferences() {
+        try {
+            const saved = localStorage.getItem('lanovel_reader_prefs');
+            if (saved) {
+                const parsed = JSON.parse(saved);
+                prefs = { ...prefs, ...parsed };
             }
-        });
+            // Backward compatibility checks
+            if (localStorage.getItem('nightMode') === 'true') {
+                prefs.theme = 'dark';
+            }
+            if (localStorage.getItem('showOriginalText') === 'true') {
+                prefs.showOriginal = true;
+            }
+        } catch (e) {
+            console.warn('Failed to load reader preferences:', e);
+        }
+        applyPreferences();
     }
 
-    // --- Main Execution ---
-    await loadBook();
+    function savePreferences() {
+        try {
+            localStorage.setItem('lanovel_reader_prefs', JSON.stringify(prefs));
+            localStorage.setItem('showOriginalText', prefs.showOriginal);
+            localStorage.setItem('nightMode', prefs.theme === 'dark' || prefs.theme === 'oled');
+        } catch (e) {
+            console.warn('Failed to save reader preferences:', e);
+        }
+    }
 
-    // --- Core Functions ---
+    function applyPreferences() {
+        // 1. Theme Class
+        document.body.classList.remove('theme-paper', 'theme-white', 'theme-sepia', 'theme-dark', 'theme-oled', 'dark-mode');
+        document.body.classList.add(`theme-${prefs.theme}`);
+        if (prefs.theme === 'dark' || prefs.theme === 'oled') {
+            document.body.classList.add('dark-mode');
+        }
 
+        // Active Theme Chip
+        document.querySelectorAll('.theme-chip').forEach(chip => {
+            chip.classList.toggle('active', chip.dataset.theme === prefs.theme);
+        });
+
+        // 2. Font Family
+        let fontValue = "var(--font-batang)";
+        if (prefs.font === 'myeongjo') fontValue = "var(--font-myeongjo)";
+        else if (prefs.font === 'pretendard') fontValue = "var(--font-pretendard)";
+        else if (prefs.font === 'sans') fontValue = "var(--font-sans)";
+        document.documentElement.style.setProperty('--reader-font', fontValue);
+
+        document.querySelectorAll('.font-selector .segment-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.font === prefs.font);
+        });
+
+        // 3. Font Size
+        document.documentElement.style.setProperty('--reader-font-size', `${prefs.fontSize}px`);
+        if (fontSizeSlider) fontSizeSlider.value = prefs.fontSize;
+        if (fontSizeVal) fontSizeVal.textContent = `${prefs.fontSize}px`;
+
+        // 4. Line Height
+        document.documentElement.style.setProperty('--reader-line-height', prefs.lineHeight);
+        document.querySelectorAll('.line-height-selector .segment-btn').forEach(btn => {
+            btn.classList.toggle('active', parseFloat(btn.dataset.lh) === prefs.lineHeight);
+        });
+
+        // 5. Container Max Width
+        document.documentElement.style.setProperty('--viewer-max-width', `${prefs.width}px`);
+        document.querySelectorAll('.width-selector .segment-btn').forEach(btn => {
+            btn.classList.toggle('active', parseInt(btn.dataset.width, 10) === prefs.width);
+        });
+
+        // 6. Reading Mode
+        document.body.classList.toggle('scroll-mode', prefs.mode === 'scroll');
+        document.querySelectorAll('.view-mode-selector .segment-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.mode === prefs.mode);
+        });
+
+        // 7. Original Text Toggle
+        if (toggleOriginalSwitch) toggleOriginalSwitch.checked = prefs.showOriginal;
+        if (viewOriginalBtn) viewOriginalBtn.classList.toggle('active', prefs.showOriginal);
+
+        updateHeaderIcons();
+    }
+
+    function updateHeaderIcons() {
+        const isDark = prefs.theme === 'dark' || prefs.theme === 'oled';
+        if (nightModeBtn) {
+            nightModeBtn.innerHTML = `<span class="material-icons">${isDark ? 'light_mode' : 'dark_mode'}</span>`;
+            nightModeBtn.classList.toggle('active', isDark);
+        }
+        if (focusModeBtn) {
+            const isFocus = viewerContainer.classList.contains('focus-mode');
+            focusModeBtn.innerHTML = `<span class="material-icons">${isFocus ? 'fullscreen_exit' : 'fullscreen'}</span>`;
+            focusModeBtn.classList.toggle('active', isFocus);
+        }
+    }
+
+    // --- Book Loading & Pagination ---
     async function loadBook() {
         if (!bookName) {
-            contentArea.innerHTML = '<p>책 이름이 지정되지 않았습니다.</p>';
+            contentArea.innerHTML = `
+                <div style="text-align: center; padding: 40px;">
+                    <span class="material-icons" style="font-size: 40px; color: var(--text-muted);">help_outline</span>
+                    <p style="margin-top: 10px; font-weight: 600;">책 이름이 지정되지 않았습니다.</p>
+                </div>
+            `;
+            bookTitleElement.textContent = '책을 찾을 수 없음';
             return;
         }
-        try {
-            // 1. Fetch activity data first to know where to start
-            const activityResponse = await fetch(`/api/books/${encodeURIComponent(bookName)}/activity`);
-            const activityData = activityResponse.ok ? await activityResponse.json() : {};
 
-            // 2. Fetch the list of all chapters
-            const chaptersResponse = await fetch(`/api/books/${encodeURIComponent(bookName)}/chapters`);
-            if (!chaptersResponse.ok) throw new Error(`챕터 목록을 불러오지 못했습니다: ${chaptersResponse.status}`);
-            
-            chapterTitles = await chaptersResponse.json();
+        bookTitleElement.textContent = bookName;
+
+        try {
+            // 1. Fetch user activity history
+            const activityRes = await fetch(`/api/books/${encodeURIComponent(bookName)}/activity`);
+            const activityData = activityRes.ok ? await activityRes.json() : {};
+
+            // 2. Fetch chapter titles
+            const chaptersRes = await fetch(`/api/books/${encodeURIComponent(bookName)}/chapters`);
+            if (!chaptersRes.ok) throw new Error(`챕터 목록 로딩 실패: ${chaptersRes.status}`);
+            chapterTitles = await chaptersRes.json();
 
             if (chapterTitles.length === 0) {
-                contentArea.innerHTML = '<p>표시할 챕터가 없습니다.</p>';
+                contentArea.innerHTML = '<p style="text-align: center; padding: 40px;">표시할 챕터가 없습니다.</p>';
                 return;
             }
 
-            populateToc();
-            
-            // 3. Determine starting chapter and PID
+            renderTocList();
+
+            // 3. Determine start chapter index and PID
             let startChapterIndex = 0;
             let startPid = null;
 
-            if (activityData.last_read_chapter_title) {
-                const foundIndex = chapterTitles.findIndex(title => title === activityData.last_read_chapter_title);
-                if (foundIndex !== -1) {
-                    startChapterIndex = foundIndex;
+            if (paramTitle) {
+                const foundParamIndex = chapterTitles.findIndex(t => t === paramTitle);
+                if (foundParamIndex !== -1) startChapterIndex = foundParamIndex;
+            } else if (activityData.last_read_chapter_title) {
+                const foundActIndex = chapterTitles.findIndex(t => t === activityData.last_read_chapter_title);
+                if (foundActIndex !== -1) {
+                    startChapterIndex = foundActIndex;
                     startPid = activityData.last_read_pid;
                 }
+            } else if (activityData.last_read_pid) {
+                startPid = activityData.last_read_pid;
             }
-            
-            // 4. Load the chapter, passing the specific PID to start on
+
             await loadChapter(startChapterIndex, 'first', startPid);
 
         } catch (error) {
             console.error('Error loading book:', error);
-            contentArea.innerHTML = `<p style="color: red;">책을 불러오는 데 실패했습니다: ${error.message}</p>`;
+            contentArea.innerHTML = `<p style="color: red; text-align: center; padding: 40px;">책을 불러오지 못했습니다: ${escapeHtml(error.message)}</p>`;
         }
     }
 
@@ -164,42 +263,66 @@ document.addEventListener('DOMContentLoaded', async () => {
         currentChapterIndex = chapterIndex;
         const chapterTitle = chapterTitles[currentChapterIndex];
 
-        contentArea.innerHTML = `<p><em>'${chapterTitle}' 챕터를 불러오는 중...</em></p>`;
+        chapterTitleElement.textContent = chapterTitle || `제 ${currentChapterIndex + 1}화`;
+        if (tocCurrentIndexLabel) {
+            tocCurrentIndexLabel.textContent = `${currentChapterIndex + 1} / ${chapterTitles.length} 화`;
+        }
+
+        contentArea.innerHTML = `
+            <div style="text-align: center; padding: 60px 20px; color: var(--text-muted);">
+                <span class="material-icons" style="font-size: 32px; animation: spin 1s linear infinite;">sync</span>
+                <p style="margin-top: 12px; font-size: 15px;">'${escapeHtml(chapterTitle)}' 불러오는 중...</p>
+            </div>
+        `;
+
         updateActiveTocItem();
 
         try {
-            const contentResponse = await fetch(`/api/books/${encodeURIComponent(bookName)}/chapter?title=${encodeURIComponent(chapterTitle)}`);
-            if (!contentResponse.ok) throw new Error(`챕터 내용을 불러오지 못했습니다: ${contentResponse.status}`);
-            
-            currentChapterItems = await contentResponse.json();
+            const contentRes = await fetch(`/api/books/${encodeURIComponent(bookName)}/chapter?title=${encodeURIComponent(chapterTitle)}`);
+            if (!contentRes.ok) throw new Error(`챕터 내용을 불러오지 못했습니다: ${contentRes.status}`);
+
+            currentChapterItems = await contentRes.json();
             if (currentChapterItems.length === 0) {
-                contentArea.innerHTML = '<p>이 챕터에 내용이 없습니다.</p>';
+                contentArea.innerHTML = '<p style="text-align: center; padding: 40px;">이 챕터에 번역된 내용이 없습니다.</p>';
                 return;
             }
 
-            await paginate();
+            if (prefs.mode === 'scroll') {
+                renderScrollMode();
+            } else {
+                await paginate();
 
-            let pageIndexToShow = 0;
-            if (startPid) {
-                const foundPage = pages.findIndex(page => page.some(item => item.pid === startPid));
-                if (foundPage !== -1) {
-                    pageIndexToShow = foundPage;
+                let pageIndexToShow = 0;
+                if (startPid) {
+                    const foundPage = pages.findIndex(page => page.some(item => item.pid === startPid));
+                    if (foundPage !== -1) pageIndexToShow = foundPage;
+                } else if (pagePosition === 'last') {
+                    pageIndexToShow = pages.length - 1;
                 }
-            } else if (pagePosition === 'last') {
-                pageIndexToShow = pages.length - 1;
+
+                renderPage(pageIndexToShow, true);
             }
 
-            renderPage(pageIndexToShow, true);
+            updateProgress();
 
         } catch (error) {
             console.error(`Error loading chapter '${chapterTitle}':`, error);
-            contentArea.innerHTML = `<p style="color: red;">챕터를 불러오는 데 실패했습니다: ${error.message}</p>`;
+            contentArea.innerHTML = `<p style="color: red; text-align: center; padding: 40px;">챕터 로딩 실패: ${escapeHtml(error.message)}</p>`;
         }
     }
 
+    // --- Continuous Scroll Mode Rendering ---
+    function renderScrollMode() {
+        contentArea.innerHTML = currentChapterItems.map(createItemHtml).join('');
+        pageIndicator.textContent = `연속 스크롤 (총 ${currentChapterItems.length} 단락)`;
+        contentArea.style.opacity = '1';
+        window.scrollTo({ top: 0, behavior: 'instant' });
+        saveLastReadPosition();
+    }
+
+    // --- Paged Mode Pagination ---
     async function paginate() {
         return new Promise(resolve => {
-            // Ensure contentArea is visible and has dimensions
             if (contentArea.offsetHeight === 0) {
                 setTimeout(() => paginate().then(resolve), 100);
                 return;
@@ -216,6 +339,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             measurer.style.padding = getComputedStyle(contentArea).padding;
             measurer.style.lineHeight = getComputedStyle(contentArea).lineHeight;
             measurer.style.fontSize = getComputedStyle(contentArea).fontSize;
+            measurer.style.fontFamily = getComputedStyle(contentArea).fontFamily;
             document.body.appendChild(measurer);
 
             for (const item of currentChapterItems) {
@@ -226,9 +350,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                     if (currentPageItems.length > 0) {
                         pages.push(currentPageItems);
                     } else {
-                        // If a single item is taller than the page, put it on its own page
                         pages.push([item]);
-                        measurer.innerHTML = ''; 
+                        measurer.innerHTML = '';
                         continue;
                     }
                     currentPageItems = [item];
@@ -250,7 +373,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     function renderPage(pageIndex, isInitialLoad = false) {
         if (pageIndex < 0 || pageIndex >= pages.length) return;
 
-        // Reset arrows on page turn, only if they exist
         const navArrowLeft = document.getElementById('nav-arrow-left');
         const navArrowRight = document.getElementById('nav-arrow-right');
         if (navArrowLeft) navArrowLeft.style.opacity = '0';
@@ -259,12 +381,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         const updateContent = () => {
             currentPageInChapter = pageIndex;
             const pageItems = pages[currentPageInChapter];
-                            if (!pageItems) return;
-                    
-                            contentArea.innerHTML = pageItems.map(createItemHtml).join('');
+            if (!pageItems) return;
+
+            contentArea.innerHTML = pageItems.map(createItemHtml).join('');
             pageIndicator.textContent = `${currentPageInChapter + 1} / ${pages.length}`;
             contentArea.style.opacity = '1';
 
+            updateProgress();
             saveLastReadPosition();
         };
 
@@ -272,294 +395,246 @@ document.addEventListener('DOMContentLoaded', async () => {
             updateContent();
         } else {
             contentArea.style.opacity = '0';
-            setTimeout(updateContent, 200); // Match CSS transition
+            setTimeout(updateContent, 180);
         }
     }
-
-    // --- Navigation and UI ---
-
-    function showPrevPage() {
-        if (currentPageInChapter > 0) {
-            renderPage(currentPageInChapter - 1);
-        } else if (currentChapterIndex > 0) {
-            // Load previous chapter, last page
-            loadChapter(currentChapterIndex - 1, 'last');
-        }
-    }
-
-    function showNextPage() {
-        if (currentPageInChapter < pages.length - 1) {
-            renderPage(currentPageInChapter + 1);
-        } else if (currentChapterIndex < chapterTitles.length - 1) {
-            // Load next chapter, first page
-            loadChapter(currentChapterIndex + 1, 'first');
-        }
-    }
-
-    function populateToc() {
-        tocList.innerHTML = '';
-        chapterTitles.forEach((title, index) => {
-            const div = document.createElement('div');
-            div.className = 'toc-item';
-            div.dataset.index = index;
-            div.textContent = title || `(제목 없음)`;
-            div.title = title;
-            div.addEventListener('click', () => {
-                loadChapter(index, 'first');
-                closeSidebar();
-            });
-            tocList.appendChild(div);
-        });
-    }
-
-    function updateActiveTocItem() {
-        document.querySelectorAll('.toc-item').forEach(el => {
-            if (parseInt(el.dataset.index, 10) === currentChapterIndex) {
-                el.classList.add('active');
-                el.scrollIntoView({ block: 'nearest' });
-            } else {
-                el.classList.remove('active');
-            }
-        });
-    }
-
-    async function toggleOriginalView() {
-        // 1. Toggle state
-        showOriginal = !showOriginal;
-        localStorage.setItem('showOriginalText', showOriginal);
-        viewOriginalBtn.classList.toggle('active', showOriginal);
-
-        // 2. Repaginate and render
-        await repaginateAndRender();
-    }
-
-    let resizeTimeout;
-    window.addEventListener('resize', () => {
-        clearTimeout(resizeTimeout);
-        resizeTimeout = setTimeout(() => repaginateAndRender(), 250);
-    });
-
-    async function repaginateAndRender() {
-        const topItemPid = pages[currentPageInChapter]?.[0]?.pid;
-        await paginate();
-        let newPageIndex = 0;
-        if (topItemPid) {
-            const foundPage = pages.findIndex(page => page.some(item => item.pid === topItemPid));
-            if (foundPage !== -1) {
-                newPageIndex = foundPage;
-            }
-        }
-        renderPage(newPageIndex, true);
-    }
-
-    function openSidebar() {
-        sidebar.classList.add('open');
-        overlay.classList.add('visible');
-    }
-
-    function closeSidebar() {
-        sidebar.classList.remove('open');
-        overlay.classList.remove('visible');
-    }
-
-    // --- Helper Functions ---
 
     function createItemHtml(item) {
+        const hasOriginal = Boolean(item.original);
         let itemHtml = `<div class="translation-item" data-id="${item.id}" data-pid="${item.pid}" data-original="${escapeHtml(item.original)}">`;
-        if (showOriginal) {
+
+        // Edit trigger button
+        itemHtml += `<button class="paragraph-edit-btn" title="단락 번역문 수정 (더블클릭 가능)"><span class="material-icons" style="font-size: 16px;">edit</span></button>`;
+
+        if (prefs.showOriginal && hasOriginal) {
             itemHtml += `<p class="original-text">${escapeHtml(item.original)}</p>`;
         }
         itemHtml += `<p class="translated-text">${escapeHtml(item.translated)}</p></div>`;
         return itemHtml;
     }
 
+    function updateProgress() {
+        if (!readingProgressBar) return;
+        if (prefs.mode === 'scroll') {
+            const scrollTop = window.scrollY || document.documentElement.scrollTop;
+            const docHeight = document.documentElement.scrollHeight - window.innerHeight;
+            const scrollPercent = docHeight > 0 ? (scrollTop / docHeight) * 100 : 0;
+            readingProgressBar.style.width = `${Math.min(100, Math.max(0, scrollPercent))}%`;
+        } else {
+            if (pages.length > 0) {
+                const pagePct = ((currentPageInChapter + 1) / pages.length) * 100;
+                readingProgressBar.style.width = `${pagePct}%`;
+            }
+        }
+    }
+
+    window.addEventListener('scroll', () => {
+        if (prefs.mode === 'scroll') updateProgress();
+    });
+
+    // --- Navigation ---
+    function showPrevPage() {
+        if (prefs.mode === 'scroll') {
+            if (currentChapterIndex > 0) {
+                loadChapter(currentChapterIndex - 1, 'first');
+            } else {
+                showToast('첫 번째 챕터입니다.');
+            }
+            return;
+        }
+
+        if (currentPageInChapter > 0) {
+            renderPage(currentPageInChapter - 1);
+        } else if (currentChapterIndex > 0) {
+            loadChapter(currentChapterIndex - 1, 'last');
+        } else {
+            showToast('책의 첫 페이지입니다.');
+        }
+    }
+
+    function showNextPage() {
+        if (prefs.mode === 'scroll') {
+            if (currentChapterIndex < chapterTitles.length - 1) {
+                loadChapter(currentChapterIndex + 1, 'first');
+            } else {
+                showToast('마지막 챕터입니다.');
+            }
+            return;
+        }
+
+        if (currentPageInChapter < pages.length - 1) {
+            renderPage(currentPageInChapter + 1);
+        } else if (currentChapterIndex < chapterTitles.length - 1) {
+            loadChapter(currentChapterIndex + 1, 'first');
+        } else {
+            showToast('책의 마지막 페이지입니다.');
+        }
+    }
+
+    // --- Last Read Position Persistence ---
     function saveLastReadPosition() {
         clearTimeout(saveTimeout);
-        saveTimeout = setTimeout(() => commitPosition(false), 1500);
+        saveTimeout = setTimeout(() => commitPosition(false), 1200);
     }
 
     window.addEventListener('pagehide', () => commitPosition(true));
 
     function commitPosition(useKeepalive) {
-        const firstItemOnPage = pages[currentPageInChapter]?.[0];
-        if (!firstItemOnPage || !bookName) return;
+        if (!bookName) return;
+
+        let firstPid = null;
+        if (prefs.mode === 'scroll') {
+            firstPid = currentChapterItems[0]?.pid || null;
+        } else {
+            firstPid = pages[currentPageInChapter]?.[0]?.pid || null;
+        }
 
         const payload = {
-            last_read_pid: firstItemOnPage.pid,
+            last_read_chapter_title: chapterTitles[currentChapterIndex] || null,
+            last_read_pid: firstPid,
             last_read_timestamp: Math.floor(Date.now() / 1000)
         };
 
-        const headers = { type: 'application/json' };
-        const blob = new Blob([JSON.stringify(payload)], headers);
-        
-        // Use sendBeacon for reliability on exit, but it only sends POST
-        // The endpoint must accept POST. For now, we use fetch with keepalive.
         fetch(`/api/books/${encodeURIComponent(bookName)}/activity`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload),
             keepalive: useKeepalive
-        }).catch(error => console.error('Failed to save last read position:', error));
+        }).catch(error => console.warn('Failed to save last read position:', error));
     }
 
-    function handleKeyPress(e) {
-        // If the user is editing text, don't turn the page with arrow keys.
-        if (e.target.isContentEditable) {
-            return;
-        }
+    // --- TOC Sidebar Management ---
+    function renderTocList(filterQuery = '') {
+        tocList.innerHTML = '';
+        const q = filterQuery.toLowerCase().trim();
 
-        const currentUrl = currentChapterItems?.[0]?.url;
-        if (currentUrl && currentUrl.includes('kakuyomu.jp')) {
-            if (e.key === 'ArrowLeft') {
-                showPrevPage();
-            } else if (e.key === 'ArrowRight') {
-                showNextPage();
-            } else if (e.key === 'PageDown' || e.key === ' ') { // Page Down key or Spacebar
-                // Check if scroll is at the end of the content area
-                const { scrollTop, scrollHeight, clientHeight } = contentArea;
-                if (scrollHeight - scrollTop <= clientHeight + 1) { // +1 for minor floating point discrepancies
-                    showNextPage();
-                    e.preventDefault(); // Prevent default browser scroll
-                }
+        chapterTitles.forEach((title, index) => {
+            if (q && !title.toLowerCase().includes(q)) return;
+
+            const div = document.createElement('div');
+            div.className = `toc-item ${index === currentChapterIndex ? 'active' : ''}`;
+            div.dataset.index = index;
+            div.textContent = `${index + 1}. ${title || '(제목 없음)'}`;
+            div.title = title;
+
+            div.addEventListener('click', () => {
+                loadChapter(index, 'first');
+                closeSidebar();
+            });
+            tocList.appendChild(div);
+        });
+
+        updateActiveTocItem();
+    }
+
+    function updateActiveTocItem() {
+        document.querySelectorAll('.toc-item').forEach(el => {
+            const isCurr = parseInt(el.dataset.index, 10) === currentChapterIndex;
+            el.classList.toggle('active', isCurr);
+            if (isCurr && sidebar.classList.contains('open')) {
+                el.scrollIntoView({ block: 'center', behavior: 'smooth' });
             }
-        }
-        // For other sites, the default key behavior will apply or other navigation methods will be used.
+        });
     }
 
-    function handleBookClick(e) {
-        // In swipe-only mode, tap navigation is disabled.
-        if (isMobile && mobileNavMode === 'swipe') return;
-
-        // If the user is editing or has selected text, don't turn the page.
-        if (e.target.closest('.editing') || !window.getSelection().isCollapsed) {
-            return;
-        }
-
-        const rect = bookContainer.getBoundingClientRect();
-        const clickX = e.clientX - rect.left;
-        const clickArea = clickX / rect.width;
-
-        if (clickArea < 0.3) {
-            showPrevPage();
-        } else if (clickArea > 0.7) {
-            showNextPage();
-        }
+    if (tocSearchInput) {
+        tocSearchInput.addEventListener('input', (e) => {
+            renderTocList(e.target.value);
+        });
     }
 
-    function handleBookMouseMove(e) {
-        const navArrowLeft = document.getElementById('nav-arrow-left');
-        const navArrowRight = document.getElementById('nav-arrow-right');
-        if (!navArrowLeft || !navArrowRight) return; // Arrows don't exist, do nothing.
-
-        const rect = bookContainer.getBoundingClientRect();
-        const hoverX = e.clientX - rect.left;
-        const hoverArea = hoverX / rect.width;
-        if (hoverArea < 0.3) {
-            navArrowLeft.style.opacity = '1';
-            navArrowRight.style.opacity = '0';
-        } else if (hoverArea > 0.7) {
-            navArrowLeft.style.opacity = '0';
-            navArrowRight.style.opacity = '1';
-        } else {
-            navArrowLeft.style.opacity = '0';
-            navArrowRight.style.opacity = '0';
-        }
-    }
-
-    function handleBookMouseLeave() {
-        const navArrowLeft = document.getElementById('nav-arrow-left');
-        const navArrowRight = document.getElementById('nav-arrow-right');
-        if (navArrowLeft) navArrowLeft.style.opacity = '0';
-        if (navArrowRight) navArrowRight.style.opacity = '0';
-    }
-
-    function handleTouchStart(e) {
-        touchStartX = e.touches[0].clientX;
-        touchStartY = e.touches[0].clientY;
-    }
-
-    function handleTouchMove(e) {
-        // If swipe is not enabled, do nothing.
-        if (mobileNavMode === 'tap') return;
-        
-        // If swipe is more horizontal than vertical, prevent vertical scroll
-        if (Math.abs(e.touches[0].clientX - touchStartX) > Math.abs(e.touches[0].clientY - touchStartY)) {
-            e.preventDefault();
-        }
-    }
-
-    function handleTouchEnd(e) {
-        // If swipe is not enabled, do nothing.
-        if (mobileNavMode === 'tap') return;
-
-        const touchEndX = e.changedTouches[0].clientX;
-        const touchEndY = e.changedTouches[0].clientY;
-        const deltaX = touchEndX - touchStartX;
-        const deltaY = touchEndY - touchStartY;
-        const swipeThreshold = 50; // Minimum distance for a swipe
-
-        // Check for a horizontal swipe and not a vertical scroll
-        if (Math.abs(deltaX) > swipeThreshold && Math.abs(deltaY) < swipeThreshold) {
-            if (deltaX > 0) { // Swiped right
-                showPrevPage();
-            } else { // Swiped left
-                showNextPage();
+    if (tocJumpBtn && tocJumpInput) {
+        const executeJump = () => {
+            const num = parseInt(tocJumpInput.value, 10);
+            if (!isNaN(num) && num >= 1 && num <= chapterTitles.length) {
+                loadChapter(num - 1, 'first');
+                closeSidebar();
+                tocJumpInput.value = '';
+            } else {
+                showToast(`1부터 ${chapterTitles.length} 사이의 회차 번호를 입력하세요.`);
             }
+        };
+        tocJumpBtn.addEventListener('click', executeJump);
+        tocJumpInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') executeJump();
+        });
+    }
+
+    if (tocPrevChapterBtn) {
+        tocPrevChapterBtn.addEventListener('click', () => {
+            if (currentChapterIndex > 0) {
+                loadChapter(currentChapterIndex - 1, 'first');
+            } else {
+                showToast('첫 번째 챕터입니다.');
+            }
+        });
+    }
+
+    if (tocNextChapterBtn) {
+        tocNextChapterBtn.addEventListener('click', () => {
+            if (currentChapterIndex < chapterTitles.length - 1) {
+                loadChapter(currentChapterIndex + 1, 'first');
+            } else {
+                showToast('마지막 챕터입니다.');
+            }
+        });
+    }
+
+    // --- Sidebar & Drawer Open/Close ---
+    function openSidebar() {
+        closeSettingsDrawer();
+        sidebar.classList.add('open');
+        overlay.classList.add('visible');
+        if (tocSearchInput) {
+            tocSearchInput.value = '';
+            renderTocList();
+        }
+        setTimeout(() => updateActiveTocItem(), 100);
+    }
+
+    function closeSidebar() {
+        sidebar.classList.remove('open');
+        if (!settingsDrawer.classList.contains('open') && !shortcutModal.style.display.includes('flex')) {
+            overlay.classList.remove('visible');
         }
     }
 
-    function updateFocusModeButton() {
-        if (viewerContainer.classList.contains('focus-mode')) {
-            focusModeBtn.innerHTML = ICON_MINIMIZE;
-            focusModeBtn.title = '집중 모드 종료';
-        } else {
-            focusModeBtn.innerHTML = ICON_MAXIMIZE;
-            focusModeBtn.title = '집중 모드';
+    function openSettingsDrawer() {
+        closeSidebar();
+        settingsDrawer.classList.add('open');
+        overlay.classList.add('visible');
+    }
+
+    function closeSettingsDrawer() {
+        settingsDrawer.classList.remove('open');
+        if (!sidebar.classList.contains('open') && !shortcutModal.style.display.includes('flex')) {
+            overlay.classList.remove('visible');
         }
     }
 
     function toggleFocusMode() {
-        viewerContainer.classList.toggle('focus-mode');
-        updateFocusModeButton();
-    }
-
-    function updateNightModeButton() {
-        const isNightMode = document.body.classList.contains('dark-mode');
-        if (isNightMode) {
-            nightModeBtn.innerHTML = ICON_SUN;
-            nightModeBtn.title = '주간 모드';
+        const isFocus = viewerContainer.classList.toggle('focus-mode');
+        updateHeaderIcons();
+        if (isFocus) {
+            showToast('집중 모드 활성화 (F 키로 해제)');
         } else {
-            nightModeBtn.innerHTML = ICON_MOON;
-            nightModeBtn.title = '야간 모드';
-        }
-        nightModeBtn.classList.toggle('active', isNightMode);
-    }
-
-    function toggleNightMode() {
-        document.body.classList.toggle('dark-mode');
-        localStorage.setItem('nightMode', document.body.classList.contains('dark-mode'));
-        updateNightModeButton();
-    }
-
-    function applyInitialTheme() {
-        const isNightMode = localStorage.getItem('nightMode') === 'true';
-        if (isNightMode) {
-            document.body.classList.add('dark-mode');
-        }
-        updateNightModeButton();
-    }
-
-    function handleTextSelection(e) {
-        const selection = window.getSelection();
-        if (!selection.isCollapsed && selection.toString().trim()) {
-            const target = selection.anchorNode.parentElement;
-            const translationItem = target.closest('.translation-item');
-            if (translationItem) {
-                enableEditing(translationItem);
-            }
+            showToast('집중 모드 해제');
         }
     }
 
+    function openShortcutModal() {
+        shortcutModal.style.display = 'flex';
+        overlay.classList.add('visible');
+    }
+
+    function closeShortcutModal() {
+        shortcutModal.style.display = 'none';
+        if (!sidebar.classList.contains('open') && !settingsDrawer.classList.contains('open')) {
+            overlay.classList.remove('visible');
+        }
+    }
+
+    // --- Paragraph Inline Editing ---
     function enableEditing(translationItem) {
         // Disable other editing items
         document.querySelectorAll('.editing').forEach(item => {
@@ -570,37 +645,60 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         translationItem.classList.add('editing');
         const translatedTextElement = translationItem.querySelector('.translated-text');
+        const originalText = translatedTextElement.textContent;
         translatedTextElement.contentEditable = 'true';
         translatedTextElement.focus();
 
+        let actionBox = translationItem.querySelector('.inline-edit-actions');
+        if (!actionBox) {
+            actionBox = document.createElement('div');
+            actionBox.className = 'inline-edit-actions';
+            actionBox.innerHTML = `
+                <button class="btn btn-sm btn-outline cancel-edit-btn">취소 (Esc)</button>
+                <button class="btn btn-sm btn-primary save-edit-btn">저장 (Ctrl+Enter)</button>
+            `;
+            translationItem.appendChild(actionBox);
 
-        const saveBtn = document.createElement('button');
-        saveBtn.textContent = '저장';
-        saveBtn.className = 'btn btn-save';
-        saveBtn.onclick = () => saveChanges(translationItem);
+            actionBox.querySelector('.save-edit-btn').onclick = () => saveParagraphChanges(translationItem);
+            actionBox.querySelector('.cancel-edit-btn').onclick = () => {
+                translatedTextElement.textContent = originalText;
+                disableEditing(translationItem);
+            };
+        }
 
-        translationItem.appendChild(saveBtn);
+        translatedTextElement.onkeydown = (e) => {
+            if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                e.preventDefault();
+                saveParagraphChanges(translationItem);
+            } else if (e.key === 'Escape') {
+                translatedTextElement.textContent = originalText;
+                disableEditing(translationItem);
+            }
+        };
     }
 
     function disableEditing(translationItem) {
         translationItem.classList.remove('editing');
         const translatedTextElement = translationItem.querySelector('.translated-text');
-        translatedTextElement.contentEditable = 'false';
-        const saveBtn = translationItem.querySelector('.btn-save');
-        if (saveBtn) saveBtn.remove();
+        if (translatedTextElement) {
+            translatedTextElement.contentEditable = 'false';
+            translatedTextElement.onkeydown = null;
+        }
+        const actionBox = translationItem.querySelector('.inline-edit-actions');
+        if (actionBox) actionBox.remove();
     }
 
-    async function saveChanges(translationItem) {
+    async function saveParagraphChanges(translationItem) {
         const translatedTextElement = translationItem.querySelector('.translated-text');
-        const newTranslatedText = translatedTextElement.textContent;
+        const newTranslatedText = translatedTextElement.textContent.trim();
 
         const itemData = {
-            url: currentChapterItems[0].url, // Assuming all items in a chapter share the same URL
+            url: currentChapterItems[0]?.url || '',
             pid: translationItem.dataset.pid,
             original: translationItem.dataset.original,
             translated: newTranslatedText,
             timestamp: Math.floor(Date.now() / 1000),
-            title: currentChapterItems[0].title
+            title: chapterTitles[currentChapterIndex] || ''
         };
 
         try {
@@ -609,21 +707,15 @@ document.addEventListener('DOMContentLoaded', async () => {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify([itemData])
             });
-            if (!response.ok) throw new Error('Failed to save changes.');
+            if (!response.ok) throw new Error('저장에 실패했습니다.');
 
             disableEditing(translationItem);
-            
-            // Visually indicate success
-            translatedTextElement.style.transition = 'background-color 0.5s';
-            translatedTextElement.style.backgroundColor = '#e6ffed';
-            setTimeout(() => {
-                translatedTextElement.style.backgroundColor = '';
-            }, 1500);
-            
-            // Update the item in the local state to prevent stale data
-            const itemId = parseInt(translationItem.dataset.id);
-            const sourceItem = currentChapterItems.find(i => i.id === itemId);
-            if(sourceItem) sourceItem.translated = newTranslatedText;
+            showToast('번역문이 수정되었습니다.');
+
+            // Update local state
+            const itemId = parseInt(translationItem.dataset.id, 10);
+            const sourceItem = currentChapterItems.find(i => i.id === itemId || i.pid === itemData.pid);
+            if (sourceItem) sourceItem.translated = newTranslatedText;
 
         } catch (error) {
             console.error('Error saving changes:', error);
@@ -631,39 +723,312 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
-    function escapeHtml(text) {
-        if (text === null || text === undefined) return '';
-        return text.toString().replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
-    }
-
-    // --- Connection Status ---
-    (function() {
-        function showConnectionStatus(isOnline) {
-            let toast = document.getElementById('connection-toast');
-            if (!toast) {
-                toast = document.createElement('div');
-                toast.id = 'connection-toast';
-                document.body.appendChild(toast);
-            }
-
-            if (isOnline) {
-                toast.textContent = '온라인 상태입니다.';
-                toast.className = 'online';
-            } else {
-                toast.textContent = '오프라인 상태입니다. 일부 기능이 제한될 수 있습니다.';
-                toast.className = 'offline';
-            }
-
-            // Show the toast
-            toast.classList.add('show');
-
-            // Hide after 3 seconds
-            setTimeout(() => {
-                toast.classList.remove('show');
-            }, 3000);
+    // --- Keyboard Navigation (Universal - Kakuyomu restriction removed!) ---
+    function handleKeyPress(e) {
+        // Ignore shortcuts when editing text or typing in inputs
+        if (e.target.isContentEditable || e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
+            return;
         }
 
-        window.addEventListener('online', () => showConnectionStatus(true));
-        window.addEventListener('offline', () => showConnectionStatus(false));
-    })();
+        const key = e.key;
+
+        // Navigation Keys
+        if (key === 'ArrowLeft' || key === 'h' || key === 'H' || key === '[') {
+            e.preventDefault();
+            showPrevPage();
+        } else if (key === 'ArrowRight' || key === 'l' || key === 'L' || key === ']') {
+            e.preventDefault();
+            showNextPage();
+        } else if (key === 'PageDown' || (key === ' ' && !e.shiftKey)) {
+            e.preventDefault();
+            showNextPage();
+        } else if (key === 'PageUp' || (key === ' ' && e.shiftKey)) {
+            e.preventDefault();
+            showPrevPage();
+        } else if (key === 'o' || key === 'O' || key === 't' || key === 'T') {
+            e.preventDefault();
+            if (sidebar.classList.contains('open')) closeSidebar();
+            else openSidebar();
+        } else if (key === 's' || key === 'S') {
+            e.preventDefault();
+            if (settingsDrawer.classList.contains('open')) closeSettingsDrawer();
+            else openSettingsDrawer();
+        } else if (key === 'f' || key === 'F') {
+            e.preventDefault();
+            toggleFocusMode();
+        } else if (key === 'd' || key === 'D') {
+            e.preventDefault();
+            // Fast toggle between light (paper) and dark (dark)
+            prefs.theme = (prefs.theme === 'dark' || prefs.theme === 'oled') ? 'paper' : 'dark';
+            applyPreferences();
+            savePreferences();
+            showToast(prefs.theme === 'dark' ? '다크 테마 적용' : '페이퍼 테마 적용');
+        } else if (key === '+' || key === '=') {
+            e.preventDefault();
+            if (prefs.fontSize < 28) {
+                prefs.fontSize += 1;
+                applyPreferences();
+                savePreferences();
+                repaginateAndRender();
+            }
+        } else if (key === '-' || key === '_') {
+            e.preventDefault();
+            if (prefs.fontSize > 14) {
+                prefs.fontSize -= 1;
+                applyPreferences();
+                savePreferences();
+                repaginateAndRender();
+            }
+        } else if (key === '?') {
+            e.preventDefault();
+            openShortcutModal();
+        } else if (key === 'Escape') {
+            closeSidebar();
+            closeSettingsDrawer();
+            closeShortcutModal();
+            if (viewerContainer.classList.contains('focus-mode')) {
+                toggleFocusMode();
+            }
+        }
+    }
+
+    async function repaginateAndRender() {
+        if (prefs.mode === 'scroll') return;
+        const topItemPid = pages[currentPageInChapter]?.[0]?.pid;
+        await paginate();
+        let newPageIndex = 0;
+        if (topItemPid) {
+            const foundPage = pages.findIndex(page => page.some(item => item.pid === topItemPid));
+            if (foundPage !== -1) newPageIndex = foundPage;
+        }
+        renderPage(newPageIndex, true);
+    }
+
+    // --- Touch & Click Handlers ---
+    function handleBookClick(e) {
+        if (isMobile && mobileNavMode === 'swipe') return;
+        if (e.target.closest('.editing') || !window.getSelection().isCollapsed || e.target.closest('.paragraph-edit-btn')) {
+            return;
+        }
+
+        const rect = bookContainer.getBoundingClientRect();
+        const clickX = e.clientX - rect.left;
+        const clickArea = clickX / rect.width;
+
+        if (clickArea < 0.28) {
+            showPrevPage();
+        } else if (clickArea > 0.72) {
+            showNextPage();
+        }
+    }
+
+    // Touch Swipe
+    bookContainer.addEventListener('touchstart', (e) => {
+        touchStartX = e.touches[0].clientX;
+        touchStartY = e.touches[0].clientY;
+    }, { passive: true });
+
+    bookContainer.addEventListener('touchmove', (e) => {
+        if (mobileNavMode === 'tap') return;
+        if (Math.abs(e.touches[0].clientX - touchStartX) > Math.abs(e.touches[0].clientY - touchStartY)) {
+            if (prefs.mode !== 'scroll') e.preventDefault();
+        }
+    }, { passive: false });
+
+    bookContainer.addEventListener('touchend', (e) => {
+        if (mobileNavMode === 'tap') return;
+        const touchEndX = e.changedTouches[0].clientX;
+        const touchEndY = e.changedTouches[0].clientY;
+        const deltaX = touchEndX - touchStartX;
+        const deltaY = touchEndY - touchStartY;
+
+        if (Math.abs(deltaX) > 50 && Math.abs(deltaY) < 60) {
+            if (deltaX > 0) showPrevPage();
+            else showNextPage();
+        }
+    }, { passive: true });
+
+    // --- Event Listeners Setup ---
+    document.addEventListener('keydown', handleKeyPress);
+    bookContainer.addEventListener('click', handleBookClick);
+
+    // Double click to edit paragraph
+    contentArea.addEventListener('dblclick', (e) => {
+        const item = e.target.closest('.translation-item');
+        if (item) enableEditing(item);
+    });
+
+    // Hover edit button click
+    contentArea.addEventListener('click', (e) => {
+        const editBtn = e.target.closest('.paragraph-edit-btn');
+        if (editBtn) {
+            e.stopPropagation();
+            const item = editBtn.closest('.translation-item');
+            if (item) enableEditing(item);
+        }
+    });
+
+    // Top Header Buttons
+    tocBtn.addEventListener('click', openSidebar);
+    readerSettingsBtn.addEventListener('click', openSettingsDrawer);
+    focusModeBtn.addEventListener('click', toggleFocusMode);
+    nightModeBtn.addEventListener('click', () => {
+        prefs.theme = (prefs.theme === 'dark' || prefs.theme === 'oled') ? 'paper' : 'dark';
+        applyPreferences();
+        savePreferences();
+    });
+    shortcutHelpBtn.addEventListener('click', openShortcutModal);
+
+    // Paging Arrows & Buttons
+    const navArrowLeft = document.getElementById('nav-arrow-left');
+    const navArrowRight = document.getElementById('nav-arrow-right');
+    if (navArrowLeft) navArrowLeft.addEventListener('click', showPrevPage);
+    if (navArrowRight) navArrowRight.addEventListener('click', showNextPage);
+    if (prevPageBtn) prevPageBtn.addEventListener('click', showPrevPage);
+    if (nextPageBtn) nextPageBtn.addEventListener('click', showNextPage);
+
+    // Sidebar and Modal Closes
+    closeSidebarBtn.addEventListener('click', closeSidebar);
+    closeSettingsBtn.addEventListener('click', closeSettingsDrawer);
+    overlay.addEventListener('click', () => {
+        closeSidebar();
+        closeSettingsDrawer();
+        closeShortcutModal();
+    });
+    closeShortcutModalBtn.addEventListener('click', closeShortcutModal);
+    closeShortcutBottomBtn.addEventListener('click', closeShortcutModal);
+
+    // Reader Preferences Drawer Controls
+    // 1. Theme Chips
+    document.querySelectorAll('.theme-chip').forEach(chip => {
+        chip.addEventListener('click', () => {
+            prefs.theme = chip.dataset.theme;
+            applyPreferences();
+            savePreferences();
+        });
+    });
+
+    // 2. Font Selector
+    document.querySelectorAll('.font-selector .segment-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            prefs.font = btn.dataset.font;
+            applyPreferences();
+            savePreferences();
+            repaginateAndRender();
+        });
+    });
+
+    // 3. Font Size Slider & Stepper
+    if (fontSizeSlider) {
+        fontSizeSlider.addEventListener('input', (e) => {
+            prefs.fontSize = parseInt(e.target.value, 10);
+            applyPreferences();
+            savePreferences();
+            repaginateAndRender();
+        });
+    }
+    if (fontDecreaseBtn) {
+        fontDecreaseBtn.addEventListener('click', () => {
+            if (prefs.fontSize > 14) {
+                prefs.fontSize -= 1;
+                applyPreferences();
+                savePreferences();
+                repaginateAndRender();
+            }
+        });
+    }
+    if (fontIncreaseBtn) {
+        fontIncreaseBtn.addEventListener('click', () => {
+            if (prefs.fontSize < 28) {
+                prefs.fontSize += 1;
+                applyPreferences();
+                savePreferences();
+                repaginateAndRender();
+            }
+        });
+    }
+
+    // 4. Line Height
+    document.querySelectorAll('.line-height-selector .segment-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            prefs.lineHeight = parseFloat(btn.dataset.lh);
+            applyPreferences();
+            savePreferences();
+            repaginateAndRender();
+        });
+    });
+
+    // 5. Width
+    document.querySelectorAll('.width-selector .segment-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            prefs.width = parseInt(btn.dataset.width, 10);
+            applyPreferences();
+            savePreferences();
+            repaginateAndRender();
+        });
+    });
+
+    // 6. View Mode (Paging vs Scroll)
+    document.querySelectorAll('.view-mode-selector .segment-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            prefs.mode = btn.dataset.mode;
+            applyPreferences();
+            savePreferences();
+            if (prefs.mode === 'scroll') {
+                renderScrollMode();
+            } else {
+                repaginateAndRender();
+            }
+        });
+    });
+
+    // 7. Toggle Original View
+    if (toggleOriginalSwitch) {
+        toggleOriginalSwitch.addEventListener('change', async (e) => {
+            prefs.showOriginal = e.target.checked;
+            applyPreferences();
+            savePreferences();
+            if (prefs.mode === 'scroll') {
+                renderScrollMode();
+            } else {
+                await repaginateAndRender();
+            }
+        });
+    }
+
+    if (viewOriginalBtn) {
+        viewOriginalBtn.addEventListener('click', async () => {
+            prefs.showOriginal = !prefs.showOriginal;
+            applyPreferences();
+            savePreferences();
+            if (prefs.mode === 'scroll') {
+                renderScrollMode();
+            } else {
+                await repaginateAndRender();
+            }
+        });
+    }
+
+    // Mobile Nav Setting
+    if (mobileNavSetting) {
+        mobileNavSetting.addEventListener('change', (e) => {
+            if (e.target.name === 'mobile-nav') {
+                mobileNavMode = e.target.value;
+                localStorage.setItem('mobileNavMode', mobileNavMode);
+            }
+        });
+    }
+
+    // Window Resize Handling
+    let resizeTimer;
+    window.addEventListener('resize', () => {
+        clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(() => {
+            if (prefs.mode === 'paging') repaginateAndRender();
+        }, 250);
+    });
+
+    // --- Start ---
+    loadPreferences();
+    await loadBook();
 });

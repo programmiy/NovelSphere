@@ -24,3 +24,9 @@ dist/
 # Environment variables
 .env
 venv/
+
+# Local DBs and Scratch
+*.db
+*.db-wal
+*.db-shm
+scratch_*

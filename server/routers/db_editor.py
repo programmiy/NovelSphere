@@ -22,9 +22,17 @@ async def db_editor_page(request: Request, db: Session = Depends(get_db), table_
     tables = {}
     all_table_names = ["Translation", "ExcludedSentence", "PinnedBook", "Tag", "BookTag", "BookActivity", "AppliedUrl", "UrlMetadata"]
 
+    # 사용자가 테이블을 클릭했을 때(table_name이 제공된 경우)만 해당 테이블 데이터를 온디맨드 쿼리
+    active_tables = [table_name] if table_name in all_table_names else []
+
     for name in all_table_names:
+        if name not in active_tables:
+            tables[name] = []
+            continue
+
         model = TABLE_MODELS.get(name)
         if not model:
+            tables[name] = []
             continue
 
         query = db.query(model)
@@ -47,7 +55,7 @@ async def db_editor_page(request: Request, db: Session = Depends(get_db), table_
             if hasattr(model, 'id'):
                 query = query.order_by(model.id.desc()).limit(100)
             else:
-                 query = query.limit(100)
+                query = query.limit(100)
 
         results = query.all()
         processed_results = []
@@ -62,7 +70,16 @@ async def db_editor_page(request: Request, db: Session = Depends(get_db), table_
             processed_results.append({'data': d, 'json': json_str})
         tables[name] = processed_results
 
-    return templates.TemplateResponse("db_editor.html", {"request": request, "tables": tables, "jumped_to_id": jump_to_id})
+    return templates.TemplateResponse(
+        request=request,
+        name="db_editor.html",
+        context={
+            "tables": tables,
+            "all_table_names": all_table_names,
+            "active_table": table_name,
+            "jumped_to_id": jump_to_id
+        }
+    )
 
 # TODO: Add API endpoints for CRUD operations (create, update, delete) for each table
 

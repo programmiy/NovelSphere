@@ -4,6 +4,7 @@ import json
 import re
 import requests
 import time
+import logging
 from fastapi import APIRouter, HTTPException, BackgroundTasks, Request
 from fastapi.responses import JSONResponse, HTMLResponse
 from pydantic import BaseModel
@@ -14,8 +15,10 @@ from fastapi.templating import Jinja2Templates
 
 from server.settings import settings
 from server.database import get_sqlite_conn, dict_factory, get_db_path
+from server.utils import natural_sort_key
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 templates = Jinja2Templates(directory=settings.templates_dir)
 
@@ -35,6 +38,8 @@ class BookTagUpdate(BaseModel):
 class BookActivityUpdate(BaseModel):
     last_read_timestamp: Optional[int] = None
     last_read_pid: Optional[str] = None
+    last_read_chapter_title: Optional[str] = None
+    is_completed: Optional[bool] = None
     is_bookmarked: Optional[bool] = None
     notes: Optional[str] = None
     summary: Optional[str] = None
@@ -62,19 +67,36 @@ def update_book_urls_order(folder_name: str, req: TocUrlUpdate):
 
     try:
         # Reset existing sort orders for this book
-        cursor.execute("UPDATE translations SET toc_sort_order = NULL WHERE folderName = ?", (decoded_folder_name,))
+        if decoded_folder_name == "미분류":
+            cursor.execute("UPDATE translations SET toc_sort_order = NULL WHERE folderName IS NULL")
+        else:
+            cursor.execute("UPDATE translations SET toc_sort_order = NULL WHERE folderName = ?", (decoded_folder_name,))
 
         # Update with new sort order
         for i, item in enumerate(req.urls):
-            # Normalize URL by removing trailing slash for more robust matching
             normalized_url = item.url.rstrip('/')
             
-            cursor.execute(
-                "UPDATE translations SET toc_sort_order = ?, title = ? WHERE folderName = ? AND RTRIM(url, '/') = ?",
-                (i, item.title, decoded_folder_name, normalized_url)
-            )
+            if decoded_folder_name == "미분류":
+                cursor.execute(
+                    "UPDATE translations SET toc_sort_order = ?, title = ? WHERE folderName IS NULL AND (RTRIM(url, '/') = ? OR url = ?)",
+                    (i, item.title, normalized_url, item.url)
+                )
+            else:
+                cursor.execute(
+                    "UPDATE translations SET toc_sort_order = ?, title = ? WHERE folderName = ? AND (RTRIM(url, '/') = ? OR url = ?)",
+                    (i, item.title, decoded_folder_name, normalized_url, item.url)
+                )
             if cursor.rowcount > 0:
                 updated_count += 1
+
+            # Sync with url_metadata if table exists
+            try:
+                cursor.execute(
+                    "UPDATE url_metadata SET sort_order = ?, title = ? WHERE RTRIM(url, '/') = ? OR url = ?",
+                    (i, item.title, normalized_url, item.url)
+                )
+            except Exception:
+                pass
 
         conn.commit()
     except Exception as e:
@@ -113,13 +135,22 @@ def get_folders():
     cursor.execute("SELECT 1 FROM translations WHERE folderName IS NULL LIMIT 1")
     if cursor.fetchone():
         all_folders_set.add("폴더 추가 대기 상태")
+
+    cursor.execute("SELECT folderName, COUNT(DISTINCT title) as chapter_count FROM translations WHERE folderName IS NOT NULL AND title IS NOT NULL GROUP BY folderName")
+    chapter_counts = {row['folderName']: row['chapter_count'] for row in cursor.fetchall()}
+    cursor.execute("SELECT COUNT(DISTINCT title) as chapter_count FROM translations WHERE folderName IS NULL AND title IS NOT NULL")
+    null_chapter_row = cursor.fetchone()
+    if null_chapter_row and null_chapter_row['chapter_count']:
+        chapter_counts["폴더 추가 대기 상태"] = null_chapter_row['chapter_count']
+
     conn.close()
     folder_objects = [
         {
             'name': f,
             'pinned': f in pinned_set,
             'tags': book_tags_map.get(f, []),
-            'activity': activity_map.get(f)
+            'activity': activity_map.get(f),
+            'chapter_count': chapter_counts.get(f, 0)
         } for f in all_folders_set
     ]
     sorted_folders = sorted(folder_objects, key=lambda x: (not x['pinned'], x['name']))
@@ -188,6 +219,8 @@ def update_folder_name(folder_name: str, req: FolderUpdate):
 
         cursor.execute("UPDATE translations SET folderName = ? WHERE folderName = ?", (new_name, old_name))
         cursor.execute("UPDATE book_activity SET folderName = ? WHERE folderName = ?", (new_name, old_name))
+        cursor.execute("UPDATE pinned_books SET folderName = ? WHERE folderName = ?", (new_name, old_name))
+        cursor.execute("UPDATE book_tags SET book_folderName = ? WHERE book_folderName = ?", (new_name, old_name))
 
         conn.commit()
     except HTTPException:
@@ -236,8 +269,7 @@ def get_book_urls(folder_name: str):
     base_query = """SELECT url, title, COUNT(*) as count, MIN(toc_sort_order) as toc_sort_order
                   FROM translations
                   WHERE {folder_clause}
-                  GROUP BY url, title
-                  ORDER BY toc_sort_order IS NULL, toc_sort_order ASC"""
+                  GROUP BY url, title"""
 
     if decoded_folder_name == "미분류":
         query = base_query.format(folder_clause="folderName IS NULL")
@@ -249,6 +281,14 @@ def get_book_urls(folder_name: str):
     cursor.execute(query, tuple(params))
     urls = cursor.fetchall()
     conn.close()
+
+    # 자연 정렬: toc_sort_order 우선, 없으면 URL 및 제목 자연 정렬 (001 -> 002 -> 010 -> 100)
+    urls.sort(key=lambda x: (
+        x.get('toc_sort_order') is None,
+        x.get('toc_sort_order') if x.get('toc_sort_order') is not None else 0,
+        natural_sort_key(x.get('url') or ''),
+        natural_sort_key(x.get('title') or '')
+    ))
     
     headers = {
         "Cache-Control": "no-cache, no-store, must-revalidate",
@@ -265,21 +305,38 @@ def get_book_urls(folder_name: str):
 )
 def get_book_chapters(folder_name: str):
     decoded_folder_name = unquote(folder_name)
-    conn = get_sqlite_conn()
+    conn = get_sqlite_conn(as_dict=True)
     cursor = conn.cursor()
 
-    base_order_by = "ORDER BY MIN(COALESCE(toc_sort_order, 999999)) ASC, MIN(url) ASC"
+    base_query = """SELECT title, MIN(COALESCE(toc_sort_order, 999999)) as sort_order, MIN(url) as min_url
+                    FROM translations
+                    WHERE {folder_clause} AND title IS NOT NULL
+                    GROUP BY title"""
 
     if decoded_folder_name == "미분류":
-        query = f"""SELECT title FROM translations WHERE folderName IS NULL AND title IS NOT NULL GROUP BY title {base_order_by}"""
+        query = base_query.format(folder_clause="folderName IS NULL")
         params = []
     else:
-        query = f"""SELECT title FROM translations WHERE folderName = ? AND title IS NOT NULL GROUP BY title {base_order_by}"""
+        query = base_query.format(folder_clause="folderName = ?")
         params = [decoded_folder_name]
 
     cursor.execute(query, tuple(params))
-    chapters = [row[0] for row in cursor.fetchall()]
+    rows = cursor.fetchall()
     conn.close()
+
+    # 자연 정렬: toc_sort_order 우선, 없으면 URL 및 제목 자연 정렬 (001 -> 002 -> 010 -> 100)
+    def chapter_sort_key(row):
+        sort_order = row.get('sort_order')
+        has_valid_toc = sort_order is not None and sort_order < 999999
+        return (
+            not has_valid_toc,
+            sort_order if has_valid_toc else 0,
+            natural_sort_key(row.get('min_url') or ''),
+            natural_sort_key(row.get('title') or '')
+        )
+
+    rows.sort(key=chapter_sort_key)
+    chapters = [row['title'] for row in rows]
     return chapters
 
 @router.get(
@@ -395,13 +452,34 @@ def update_book_activity(folder_name: str, req: BookActivityUpdate):
     activity = cursor.fetchone()
     if not activity:
         activity = {'folderName': decoded_folder_name}
-    update_data = req.dict(exclude_unset=True)
+    if hasattr(req, "model_dump"):
+        update_data = req.model_dump(exclude_unset=True)
+    else:
+        update_data = req.dict(exclude_unset=True)
     activity.update(update_data)
     is_bookmarked_int = 1 if activity.get('is_bookmarked') else 0
-    cursor.execute("""INSERT OR REPLACE INTO book_activity (folderName, last_read_timestamp, last_read_pid, is_bookmarked, notes, summary, summary_source_url) VALUES (?, ?, ?, ?, ?, ?, ?)""", (decoded_folder_name, activity.get('last_read_timestamp'), activity.get('last_read_pid'), is_bookmarked_int, activity.get('notes'), activity.get('summary'), activity.get('summary_source_url')))
+    is_completed_int = 1 if activity.get('is_completed') else 0
+    cursor.execute("""
+        INSERT OR REPLACE INTO book_activity (
+            folderName, last_read_timestamp, last_read_pid, last_read_chapter_title, 
+            is_completed, is_bookmarked, notes, summary, summary_source_url
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        decoded_folder_name, 
+        activity.get('last_read_timestamp'), 
+        activity.get('last_read_pid'), 
+        activity.get('last_read_chapter_title'),
+        is_completed_int,
+        is_bookmarked_int, 
+        activity.get('notes'), 
+        activity.get('summary'), 
+        activity.get('summary_source_url')
+    ))
     conn.commit()
     conn.close()
-    return {"message": f"Activity for '{decoded_folder_name}' updated."}
+    activity['is_completed'] = is_completed_int
+    activity['is_bookmarked'] = is_bookmarked_int
+    return {"message": f"Activity for '{decoded_folder_name}' updated.", "activity": activity}
 
 @router.get(
     "/api/books/{folder_name}/activity",
@@ -443,14 +521,24 @@ def _crawl_and_update_summary_worker(folder_name: str, url: str):
         html_content = response.text
 
         summary = None
+        # 1. Syosetu (novel_ex) 줄거리 원문 추출 (축약/요약 없이 원문 그대로 보존)
         summary_match = re.search(r'<div id="novel_ex">(.*?)</div>', html_content, re.DOTALL)
         if summary_match:
             summary_html = summary_match.group(1).strip()
-            summary = summary_html.replace('<br />', '\n')
-            summary = re.sub('<.*?>', '', summary)
+            summary = summary_html.replace('<br />', '\n').replace('<br>', '\n').replace('<br/>', '\n')
+            summary = re.sub(r'<.*?>', '', summary).strip()
         
+        # 2. Kakuyomu 줄거리 원문 추출
         if not summary:
-            meta_match = re.search(r'<meta name="description" content="(.*?)">', html_content, re.IGNORECASE)
+            kakuyomu_match = re.search(r'<div[^>]*class="[^"]*WorkIntroductionText[^"]*"[^>]*>(.*?)</div>', html_content, re.DOTALL)
+            if kakuyomu_match:
+                k_html = kakuyomu_match.group(1).strip()
+                summary = k_html.replace('<br />', '\n').replace('<br>', '\n').replace('<br/>', '\n')
+                summary = re.sub(r'<.*?>', '', summary).strip()
+
+        # 3. Meta description 폴백
+        if not summary:
+            meta_match = re.search(r'<meta\s+name=["\']description["\']\s+content=["\'](.*?)["\']', html_content, re.IGNORECASE)
             if meta_match:
                 summary = meta_match.group(1).strip()
 
@@ -460,12 +548,17 @@ def _crawl_and_update_summary_worker(folder_name: str, url: str):
             cursor.execute("""INSERT INTO book_activity (folderName, summary) VALUES (?, ?) ON CONFLICT(folderName) DO UPDATE SET summary = excluded.summary;""", (folder_name, summary))
             conn.commit()
             conn.close()
+            logger.info(f"[줄거리 수집 성공] '{folder_name}' ({url}) - {len(summary)}자 원문 저장 완료")
             return True
         else:
+            logger.warning(f"[줄거리 수집 실패] 본문에서 줄거리를 찾을 수 없습니다: '{folder_name}' ({url})")
             return False
 
+    except requests.exceptions.RequestException as e:
+        logger.error(f"[줄거리 수집 네트워크 오류] '{folder_name}' ({url}): {e}")
+        return False
     except Exception as e:
-        # Consider logging the error
+        logger.error(f"[줄거리 수집 예외 발생] '{folder_name}' ({url}): {e}", exc_info=True)
         return False
 
 @router.post(

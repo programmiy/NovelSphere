@@ -44,6 +44,15 @@ console_handler = logging.StreamHandler()
 console_handler.setFormatter(formatter)
 logger.addHandler(console_handler)
 
+console_warning_handler = logging.StreamHandler()
+console_warning_handler.setFormatter(formatter)
+console_warning_handler.setLevel(logging.WARNING)
+
+root_logger = logging.getLogger()
+root_logger.setLevel(logging.INFO)
+root_logger.addHandler(handler)
+root_logger.addHandler(console_warning_handler)
+
 uvicorn_access_logger = logging.getLogger("uvicorn.access")
 uvicorn_access_logger.setLevel(logging.INFO)
 uvicorn_access_logger.propagate = False
@@ -82,6 +91,26 @@ def perform_sqlite_backup(src_path: str, dst_path: str):
     finally:
         src_conn.close()
 
+def rotate_backups(backup_dir: str, max_backups: int = 7):
+    """Keep only the latest max_backups backup files and delete older ones."""
+    try:
+        backup_files = [
+            f for f in os.listdir(backup_dir)
+            if f.startswith("translations_backup_") and f.endswith(".db")
+        ]
+        if len(backup_files) > max_backups:
+            backup_files.sort()  # Timestamps %Y%m%d_%H%M%S sort chronologically
+            files_to_delete = backup_files[:-max_backups]
+            for file_name in files_to_delete:
+                file_path = os.path.join(backup_dir, file_name)
+                try:
+                    os.remove(file_path)
+                    logger.info(f"Rotated and deleted old backup: {file_name}")
+                except Exception as del_err:
+                    logger.warning(f"Failed to delete old backup {file_name}: {del_err}")
+    except Exception as e:
+        logger.error(f"Error during backup rotation: {e}")
+
 async def backup_check_task():
     """Periodically checks if a backup is needed based on cumulative runtime."""
     while True:
@@ -103,6 +132,7 @@ async def backup_check_task():
             try:
                 await asyncio.to_thread(perform_sqlite_backup, get_db_path(), backup_path)
                 logger.info(f"Successfully created backup: {backup_path}")
+                rotate_backups(settings.backup_dir, max_backups=7)
                 
                 SERVER_METADATA["cumulative_runtime_seconds"] = 0
                 _update_runtime_metadata()
@@ -122,11 +152,21 @@ async def lifespan(app: FastAPI):
 
     APP_START_TIME = time.time()
     
-    asyncio.create_task(backup_check_task())
+    backup_task = asyncio.create_task(backup_check_task())
 
     Base.metadata.create_all(bind=engine)
     try:
         with engine.begin() as connection:
+            # Safe schema migration for book_activity
+            try:
+                connection.exec_driver_sql("ALTER TABLE book_activity ADD COLUMN last_read_chapter_title TEXT")
+            except Exception:
+                pass
+            try:
+                connection.exec_driver_sql("ALTER TABLE book_activity ADD COLUMN is_completed INTEGER DEFAULT 0")
+            except Exception:
+                pass
+
             connection.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_title ON translations (title)")
             connection.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_folder_title ON translations (folderName, title)")
 
@@ -166,11 +206,25 @@ async def lifespan(app: FastAPI):
     logger.info("Server startup complete. Runtime tracking and backup task started.")
     yield
     
+    # Graceful shutdown: cancel backup task
+    backup_task.cancel()
+    try:
+        await backup_task
+    except asyncio.CancelledError:
+        pass
+
     if APP_START_TIME:
         session_duration = time.time() - APP_START_TIME
         SERVER_METADATA["cumulative_runtime_seconds"] += session_duration
         _update_runtime_metadata()
         logger.info("Server shutting down. Updated cumulative runtime.")
+
+    # Dispose DB engine pool
+    try:
+        engine.dispose()
+        logger.info("Database engine disposed successfully.")
+    except Exception as e:
+        logger.error(f"Error disposing database engine: {e}")
 
 app = FastAPI(lifespan=lifespan, title=settings.app_name, debug=settings.debug)
 
@@ -214,9 +268,18 @@ async def serve_service_worker():
             content = f.read()
         
         git_hash = get_git_commit_hash()
-        content = content.replace("__GIT_HASH__", git_hash)
+        try:
+            mtime = int(max(os.path.getmtime(os.path.join(settings.static_dir, f)) for f in ["admin.js", "admin.css", "service-worker.js"] if os.path.exists(os.path.join(settings.static_dir, f))))
+            cache_version = f"{git_hash}-{mtime}"
+        except Exception:
+            cache_version = git_hash
+        content = content.replace("__GIT_HASH__", cache_version)
         
-        return Response(content=content, media_type="application/javascript")
+        return Response(
+            content=content, 
+            media_type="application/javascript",
+            headers={"Cache-Control": "no-cache, no-store, must-revalidate"}
+        )
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="service-worker.js not found.")
 
@@ -228,7 +291,7 @@ async def redirect_service_worker():
     return RedirectResponse(url="/service-worker.js")
 
 # --- Routers ---
-from server.routers import ui, translation, data_crud, books, system, tasks, admin, url_config, db_editor, toc_importer
+from server.routers import ui, translation, data_crud, books, system, tasks, admin, url_config, db_editor, toc_importer, separators
 app.include_router(ui.router)
 app.include_router(translation.router)
 app.include_router(data_crud.router)
@@ -239,3 +302,4 @@ app.include_router(admin.router)
 app.include_router(url_config.router)
 app.include_router(db_editor.router)
 app.include_router(toc_importer.router)
+app.include_router(separators.router)

@@ -32,7 +32,9 @@ async def read_viewer_ui(request: Request, book: Optional[str] = None):
     description="관리자 UI 웹페이지를 렌더링합니다."
 )
 async def read_admin_ui(request: Request):
-    return templates.TemplateResponse("admin.html", {"request": request})
+    response = templates.TemplateResponse("admin.html", {"request": request})
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    return response
 
 @router.get(
     "/logs",

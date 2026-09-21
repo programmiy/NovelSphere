@@ -22,10 +22,39 @@ def dict_factory(cursor, row):
         d[col[0]] = row[idx]
     return d
 
+import functools
+
+@functools.lru_cache(maxsize=256)
+def _get_compiled_regex(expr: str, flags: int = 0):
+    return re.compile(expr, flags=flags)
+
+def _sqlite_regexp(expr, item):
+    if item is None or expr is None:
+        return False
+    try:
+        return _get_compiled_regex(expr).search(item) is not None
+    except Exception:
+        return False
+
+def _sqlite_regexp_replace(pattern, repl, text, flags=0):
+    if text is None:
+        return None
+    if pattern is None or repl is None:
+        return text
+    try:
+        return _get_compiled_regex(pattern, flags=flags).sub(repl, text)
+    except Exception:
+        return text
+
+def register_sqlite_functions(conn):
+    conn.create_function("REGEXP", 2, _sqlite_regexp)
+    conn.create_function("REGEXP_REPLACE", 3, lambda p, r, t: _sqlite_regexp_replace(p, r, t, 0))
+    conn.create_function("REGEXP_REPLACE", 4, _sqlite_regexp_replace)
+
 def get_sqlite_conn(as_dict: bool = False, timeout: float = 15.0) -> sqlite3.Connection:
     """
     Creates and configures a raw SQLite connection with WAL mode, foreign keys,
-    busy timeout, and custom regex function registered.
+    busy timeout, and custom regex functions registered.
     """
     conn = sqlite3.connect(get_db_path(), timeout=timeout)
     conn.text_factory = str
@@ -37,13 +66,7 @@ def get_sqlite_conn(as_dict: bool = False, timeout: float = 15.0) -> sqlite3.Con
     cursor.execute("PRAGMA foreign_keys=ON")
     cursor.close()
 
-    def regexp(expr, item):
-        if item is None:
-            return False
-        reg = re.compile(expr)
-        return reg.search(item) is not None
-
-    conn.create_function("REGEXP", 2, regexp)
+    register_sqlite_functions(conn)
 
     if as_dict:
         conn.row_factory = dict_factory
@@ -77,13 +100,7 @@ def _db_connect(dbapi_connection, _connection_record):
     cursor.execute("PRAGMA foreign_keys=ON")
     cursor.close()
 
-    def regexp(expr, item):
-        if item is None:
-            return False
-        reg = re.compile(expr)
-        return reg.search(item) is not None
-
-    dbapi_connection.create_function("REGEXP", 2, regexp)
+    register_sqlite_functions(dbapi_connection)
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
@@ -93,3 +110,4 @@ def get_db():
         yield db
     finally:
         db.close()
+

@@ -3,65 +3,306 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>로컬 뷰어</title>
+    <title>로컬 뷰어 | LANOVEL</title>
     <link rel="manifest" href="/static/manifest.json">
     <link rel="icon" href="data:,">
-    <link href="https://fonts.googleapis.com/css2?family=Gowun+Batang&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/viewer.css?v=1.1">
+    <!-- Fonts: Pretendard, Noto Sans KR, Gowun Batang, Nanum Myeongjo -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&family=Nanum+Myeongjo:wght@400;700&family=Noto+Sans+KR:wght@400;500;700&family=Noto+Serif+KR:wght@400;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <link rel="stylesheet" href="/static/viewer.css?v=2.0">
 </head>
-<body>
+<body class="theme-paper">
+    <!-- 독서 진행률 표시줄 -->
+    <div id="reading-progress-container" class="reading-progress-container">
+        <div id="reading-progress-bar" class="reading-progress-bar"></div>
+    </div>
+
     <div class="viewer-container">
+        <!-- 뷰어 상단 헤더 -->
         <header class="viewer-header">
-            <a href="/" class="btn back-link" title="서재로 돌아가기">
-                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
-            </a>
-            <h1 id="book-title">로딩 중...</h1>
+            <div class="header-left">
+                <a href="/" class="btn back-link" title="서재로 돌아가기 (Esc)">
+                    <span class="material-icons">arrow_back</span>
+                    <span class="back-text">서재</span>
+                </a>
+            </div>
+
+            <div class="header-center">
+                <h1 id="book-title" class="book-title">로딩 중...</h1>
+                <div id="chapter-title" class="chapter-title"></div>
+            </div>
+
             <div class="viewer-settings">
-                <button id="toc-btn" class="btn" title="목차">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+                <button id="toc-btn" class="btn btn-icon" title="목차 열기 (T 또는 O)">
+                    <span class="material-icons">format_list_bulleted</span>
                 </button>
-                <button id="focus-mode-btn" class="btn" title="집중 모드">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path></svg>
+                <button id="reader-settings-btn" class="btn btn-icon" title="독서 환경설정 (S)">
+                    <span class="material-icons">tune</span>
                 </button>
-                <button id="night-mode-btn" class="btn" title="야간 모드">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
+                <button id="focus-mode-btn" class="btn btn-icon" title="집중 모드 (F)">
+                    <span class="material-icons">fullscreen</span>
+                </button>
+                <button id="night-mode-btn" class="btn btn-icon" title="다크 테마 토글 (D)">
+                    <span class="material-icons">dark_mode</span>
+                </button>
+                <button id="shortcut-help-btn" class="btn btn-icon" title="단축키 안내 (?)">
+                    <span class="material-icons">help_outline</span>
                 </button>
             </div>
         </header>
+
+        <!-- 메인 도서 콘텐츠 영역 -->
         <main id="book-container">
             <div id="content-area" class="content-area"></div>
-            <div class="nav-arrow left" id="nav-arrow-left">&lt;</div>
-            <div class="nav-arrow right" id="nav-arrow-right">&gt;</div>
+            <div class="nav-arrow left" id="nav-arrow-left" title="이전 페이지 (H 또는 [)">&lt;</div>
+            <div class="nav-arrow right" id="nav-arrow-right" title="다음 페이지 (L 또는 ])">&gt;</div>
         </main>
-        <div id="toc-sidebar" class="sidebar">
-            <div class="sidebar-header">
-                <h2>목차</h2>
-                <button id="view-original-btn" class="btn">원문 보기</button>
-                <button id="close-sidebar-btn" class="btn">&times;</button>
+
+        <!-- 뷰어 하단 상태/내비게이션 -->
+        <footer class="viewer-footer">
+            <div id="book-navigation">
+                <button id="prev-page-btn" class="btn btn-sm">&lt; 이전</button>
+                <span id="page-indicator" class="page-indicator">0 / 0</span>
+                <button id="next-page-btn" class="btn btn-sm">다음 &gt;</button>
             </div>
-            <div id="toc-list" class="toc-list"></div>
-            <div class="sidebar-footer">
-                <div class="setting-group" id="mobile-nav-setting">
-                    <label class="setting-label">모바일 넘김 방식</label>
-                    <div class="radio-group">
-                        <input type="radio" id="nav-both" name="mobile-nav" value="both" checked>
-                        <label for="nav-both">모두</label>
-                        <input type="radio" id="nav-tap" name="mobile-nav" value="tap">
-                        <label for="nav-tap">터치</label>
-                        <input type="radio" id="nav-swipe" name="mobile-nav" value="swipe">
-                        <label for="nav-swipe">스와이프</label>
-                    </div>
+        </footer>
+    </div>
+
+    <!-- 목차(TOC) 사이드바 -->
+    <div id="toc-sidebar" class="sidebar">
+        <div class="sidebar-header">
+            <div class="sidebar-title-group">
+                <span class="material-icons sidebar-icon">menu_book</span>
+                <h2>목차</h2>
+            </div>
+            <div class="sidebar-header-actions">
+                <button id="view-original-btn" class="btn btn-sm btn-outline" title="원문/번역문 병기 전환">원문 병기</button>
+                <button id="close-sidebar-btn" class="btn btn-icon btn-sm" title="닫기 (Esc)">&times;</button>
+            </div>
+        </div>
+
+        <!-- 목차 실시간 검색 & 회차 점프 바 -->
+        <div class="toc-search-bar">
+            <div class="toc-input-wrap">
+                <span class="material-icons">search</span>
+                <input type="text" id="toc-search-input" placeholder="회차 제목 검색...">
+            </div>
+            <div class="toc-jump-wrap">
+                <input type="number" id="toc-jump-input" placeholder="화수" min="1" title="회차 번호로 바로 이동">
+                <button id="toc-jump-btn" class="btn btn-sm btn-outline">이동</button>
+            </div>
+        </div>
+
+        <!-- 이전/다음 회차 퀵 점프 버튼 바 -->
+        <div class="toc-chapter-nav">
+            <button id="toc-prev-chapter-btn" class="btn btn-sm btn-outline" title="이전 챕터">&larr; 이전 화</button>
+            <span id="toc-current-index-label" class="current-chapter-label">0 / 0 화</span>
+            <button id="toc-next-chapter-btn" class="btn btn-sm btn-outline" title="다음 챕터">다음 화 &rarr;</button>
+        </div>
+
+        <!-- 목차 리스트 -->
+        <div id="toc-list" class="toc-list"></div>
+
+        <div class="sidebar-footer">
+            <div class="setting-group" id="mobile-nav-setting">
+                <label class="setting-label">모바일 넘김 방식</label>
+                <div class="radio-group">
+                    <input type="radio" id="nav-both" name="mobile-nav" value="both" checked>
+                    <label for="nav-both">모두</label>
+                    <input type="radio" id="nav-tap" name="mobile-nav" value="tap">
+                    <label for="nav-tap">터치</label>
+                    <input type="radio" id="nav-swipe" name="mobile-nav" value="swipe">
+                    <label for="nav-swipe">스와이프</label>
                 </div>
             </div>
         </div>
-        <div id="book-navigation">
-            <button id="prev-page-btn" class="btn">&lt; 이전</button>
-            <span id="page-indicator"></span>
-            <button id="next-page-btn" class="btn">다음 &gt;</button>
+    </div>
+
+    <!-- 독서 환경설정(Reader Preferences) 슬라이드인 드로어 -->
+    <div id="reader-settings-panel" class="settings-drawer">
+        <div class="drawer-header">
+            <div class="drawer-title-group">
+                <span class="material-icons">tune</span>
+                <h2>독서 환경설정</h2>
+            </div>
+            <button id="close-settings-btn" class="btn btn-icon btn-sm">&times;</button>
+        </div>
+
+        <div class="drawer-body">
+            <!-- 1. 독서 테마 선택 -->
+            <div class="pref-section">
+                <label class="pref-label">배경 테마</label>
+                <div class="theme-palette-grid">
+                    <button class="theme-chip theme-paper active" data-theme="paper" title="크림 페이퍼 (기본)">
+                        <span class="theme-preview">가</span>
+                        <span class="theme-name">페이퍼</span>
+                    </button>
+                    <button class="theme-chip theme-white" data-theme="white" title="클린 화이트">
+                        <span class="theme-preview">가</span>
+                        <span class="theme-name">화이트</span>
+                    </button>
+                    <button class="theme-chip theme-sepia" data-theme="sepia" title="웜 세피아">
+                        <span class="theme-preview">가</span>
+                        <span class="theme-name">세피아</span>
+                    </button>
+                    <button class="theme-chip theme-dark" data-theme="dark" title="다크 슬레이트">
+                        <span class="theme-preview">가</span>
+                        <span class="theme-name">다크</span>
+                    </button>
+                    <button class="theme-chip theme-oled" data-theme="oled" title="미드나잇 OLED">
+                        <span class="theme-preview">가</span>
+                        <span class="theme-name">블랙</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- 2. 글꼴 선택 -->
+            <div class="pref-section">
+                <label class="pref-label">서체 (글꼴)</label>
+                <div class="segmented-control font-selector">
+                    <button class="segment-btn active" data-font="batang" style="font-family: 'Gowun Batang', serif;">고운바탕</button>
+                    <button class="segment-btn" data-font="myeongjo" style="font-family: 'Nanum Myeongjo', serif;">나눔명조</button>
+                    <button class="segment-btn" data-font="pretendard" style="font-family: 'Pretendard', sans-serif;">프리텐다드</button>
+                    <button class="segment-btn" data-font="sans" style="font-family: 'Noto Sans KR', sans-serif;">본고딕</button>
+                </div>
+            </div>
+
+            <!-- 3. 글자 크기 조절 -->
+            <div class="pref-section">
+                <div class="pref-header-row">
+                    <label class="pref-label">글자 크기</label>
+                    <span id="font-size-val" class="pref-val-badge">18px</span>
+                </div>
+                <div class="stepper-control">
+                    <button id="font-decrease-btn" class="btn btn-outline stepper-btn">A -</button>
+                    <input type="range" id="font-size-slider" min="14" max="28" step="1" value="18" class="pref-slider">
+                    <button id="font-increase-btn" class="btn btn-outline stepper-btn">A +</button>
+                </div>
+            </div>
+
+            <!-- 4. 줄 간격 조절 -->
+            <div class="pref-section">
+                <label class="pref-label">줄 간격</label>
+                <div class="segmented-control line-height-selector">
+                    <button class="segment-btn" data-lh="1.6">1.6배</button>
+                    <button class="segment-btn active" data-lh="1.8">1.8배</button>
+                    <button class="segment-btn" data-lh="2.0">2.0배</button>
+                    <button class="segment-btn" data-lh="2.2">2.2배</button>
+                </div>
+            </div>
+
+            <!-- 5. 뷰어 너비 조절 -->
+            <div class="pref-section">
+                <label class="pref-label">본문 너비</label>
+                <div class="segmented-control width-selector">
+                    <button class="segment-btn" data-width="680">좁게</button>
+                    <button class="segment-btn active" data-width="840">보통</button>
+                    <button class="segment-btn" data-width="1040">넓게</button>
+                    <button class="segment-btn" data-width="1280">최대</button>
+                </div>
+            </div>
+
+            <!-- 6. 독서 모드 (페이징 vs 스크롤) -->
+            <div class="pref-section">
+                <label class="pref-label">독서 보기 방식</label>
+                <div class="segmented-control view-mode-selector">
+                    <button class="segment-btn active" data-mode="paging">
+                        <span class="material-icons" style="font-size: 16px;">auto_stories</span> 전자책 페이징
+                    </button>
+                    <button class="segment-btn" data-mode="scroll">
+                        <span class="material-icons" style="font-size: 16px;">swap_vert</span> 연속 스크롤
+                    </button>
+                </div>
+            </div>
+
+            <!-- 7. 원문 병기 토글 -->
+            <div class="pref-section toggle-section">
+                <div class="toggle-text">
+                    <div class="pref-label">일본어 원문 함께 보기</div>
+                    <div class="pref-desc">번역문 상단에 원문을 병기 표시합니다.</div>
+                </div>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="toggle-original-switch">
+                    <span class="slider"></span>
+                </label>
+            </div>
         </div>
     </div>
+
+    <!-- 키보드 단축키 안내 모달 -->
+    <div id="shortcut-help-modal" class="modal-overlay" style="display: none;">
+        <div class="modal-content shortcut-modal-content">
+            <header class="modal-header">
+                <div class="modal-title-wrap">
+                    <span class="material-icons title-icon">keyboard</span>
+                    <h2>키보드 단축키 안내</h2>
+                </div>
+                <button id="close-shortcut-modal-btn" class="modal-close-btn">&times;</button>
+            </header>
+            <div class="modal-body">
+                <div class="shortcut-grid">
+                    <div class="shortcut-item">
+                        <kbd>←</kbd> <kbd>H</kbd> <kbd>[</kbd>
+                        <span>이전 페이지 (첫 페이지 시 이전 화 이동)</span>
+                    </div>
+                    <div class="shortcut-item">
+                        <kbd>→</kbd> <kbd>L</kbd> <kbd>]</kbd>
+                        <span>다음 페이지 (끝 페이지 시 다음 화 이동)</span>
+                    </div>
+                    <div class="shortcut-item">
+                        <kbd>Space</kbd> <kbd>PageDown</kbd>
+                        <span>다음 페이지 / 스크롤 넘김</span>
+                    </div>
+                    <div class="shortcut-item">
+                        <kbd>Shift</kbd> + <kbd>Space</kbd>
+                        <span>이전 페이지 / 스크롤 넘김</span>
+                    </div>
+                    <div class="shortcut-item">
+                        <kbd>T</kbd> <kbd>O</kbd>
+                        <span>소설 목차(TOC) 사이드바 열기 / 닫기</span>
+                    </div>
+                    <div class="shortcut-item">
+                        <kbd>S</kbd>
+                        <span>독서 환경설정 드로어 열기 / 닫기</span>
+                    </div>
+                    <div class="shortcut-item">
+                        <kbd>F</kbd>
+                        <span>집중 모드 / 전체화면 전환</span>
+                    </div>
+                    <div class="shortcut-item">
+                        <kbd>D</kbd>
+                        <span>야간 / 다크 모드 빠른 토글</span>
+                    </div>
+                    <div class="shortcut-item">
+                        <kbd>+</kbd> / <kbd>-</kbd>
+                        <span>본문 글자 크기 확대 / 축소</span>
+                    </div>
+                    <div class="shortcut-item">
+                        <kbd>Esc</kbd>
+                        <span>열린 사이드바 / 설정 드로어 닫기</span>
+                    </div>
+                    <div class="shortcut-item">
+                        <kbd>?</kbd>
+                        <span>단축키 안내창 표시</span>
+                    </div>
+                </div>
+            </div>
+            <footer class="modal-footer">
+                <button id="close-shortcut-bottom-btn" class="btn btn-outline">닫기</button>
+            </footer>
+        </div>
+    </div>
+
+    <!-- 배경 어둡게 오버레이 -->
     <div id="overlay" class="overlay"></div>
-    <script src="/static/viewer.js"></script>
+
+    <!-- 뷰어 토스트 메시지 -->
+    <div id="viewer-toast" class="toast" style="display: none;"></div>
+
+    <script type="module" src="/static/viewer.js?v=2.0"></script>
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {

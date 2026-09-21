@@ -50,3 +50,32 @@
 
 ## 4. 결론
 작업 영역 외의 모든 정상 번역 데이터(221,076건)와 서재, 북마크, 독서 이력 등 모든 연관 데이터가 100% 안전하게 보존되었으며, 뷰어 및 서재의 목차와 본문에서 중복 단락 및 숫자 회차 문제가 완전히 해결되었습니다.
+
+---
+
+## 5. 작업 트리 미반영 변경 사항 동시 스테이징 및 정리 내역
+
+작업 트리에 누적되어 있던 기능 고도화 코드 및 문서 파일들을 통합 스테이징 및 커밋 처리함:
+
+- **문서 (Docs)**:
+  - `docs/fix-toc-import-and-natural-sort-2026-09-15.md`: TOC 파서 개편 및 자연 정렬 문서
+  - `docs/system-stability-and-architecture-improvements-2026-09-15.md`: 아키텍처 및 안정성 문서
+  - `docs/ui-ux-observations-and-future-improvements-2026-09-18.md`: UI/UX 관찰 및 개선 계획
+- **백엔드 코어 및 라우터**:
+  - `server/database.py`, `server/models.py`, `server/server.py`, `server/settings.py`
+  - `server/routers/admin.py`, `server/routers/books.py`, `server/routers/data_crud.py`
+  - `server/routers/db_editor.py`, `server/routers/system.py`, `server/routers/tasks.py`
+  - `server/routers/toc_importer.py`, `server/routers/translation.py`, `server/routers/ui.py`, `server/routers/url_config.py`
+  - `server/routers/separators.py` (신규): 구분선 관리 라우터
+  - `server/rule_classifier.py` (신규): 번역 품질 룰베이스 분류기
+  - `server/utils.py` (신규): 자연 정렬 키 생성 등
+- **웹 프론트엔드 UI**:
+  - `server/static/admin.css`, `server/static/admin.js`, `server/templates/admin.html`
+  - `server/static/library.css`, `server/static/library.js`, `server/templates/library.html`
+  - `server/static/viewer.css`, `server/static/viewer.js`, `server/templates/viewer.html`
+  - `server/static/service-worker.js`, `server/templates/db_editor.html`
+- **크롬 확장 프로그램 (Chrome Extension)**:
+  - `extension/content.css`, `extension/content.js`
+  - `extension/history.html`, `extension/history.js`
+- **테스트 코드**:
+  - `tests/test_find_replace.py`, `tests/test_library_viewer_api.py`, `tests/test_verbatim_cleanup.py`, `tests/test_json_parsing.py`

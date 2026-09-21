@@ -1,4 +1,4 @@
-const CACHE_NAME = 'lanovel-cache-__GIT_HASH__';
+const CACHE_NAME = 'lanovel-cache-v2-__GIT_HASH__';
 // App Shell: Core files needed for the app to run offline
 const APP_SHELL_URLS = [
     '/', // This should map to the root, which is library.html
@@ -21,6 +21,7 @@ const APP_SHELL_URLS = [
 // Install event: cache the app shell
 self.addEventListener('install', event => {
     console.log('Service Worker: Installing...');
+    self.skipWaiting();
     event.waitUntil(
         caches.open(CACHE_NAME).then(cache => {
             console.log('Service Worker: Caching App Shell');
@@ -59,19 +60,44 @@ self.addEventListener('fetch', event => {
         return;
     }
 
-    // Strategy for API data (e.g., book content, folders, etc.)
-    // Cache first, then network. This makes the app feel fast and work offline.
-    if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/translations') || url.pathname.startsWith('/stream') || url.pathname.startsWith('/folders')) {
+    // Strategy for dynamic API data (books, folders, tags, activity, config, etc.)
+    // Network-First with Cache Fallback:
+    // Always fetch from server first to immediately reflect DB updates (completion tag, bookmarks, notes, etc.).
+    // Falls back to offline cache if network is unavailable.
+    if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/folders')) {
+        event.respondWith(
+            fetch(event.request)
+                .then(networkResponse => {
+                    if (networkResponse && networkResponse.status === 200) {
+                        const responseClone = networkResponse.clone();
+                        caches.open(CACHE_NAME).then(cache => {
+                            cache.put(event.request, responseClone);
+                        });
+                    }
+                    return networkResponse;
+                })
+                .catch(() => {
+                    return caches.match(event.request);
+                })
+        );
+        return;
+    }
+
+    // Strategy for content & streaming data (translations, stream)
+    // Cache-First with Network fallback for fast reading and offline support
+    if (url.pathname.startsWith('/translations') || url.pathname.startsWith('/stream')) {
         event.respondWith(
             caches.open(CACHE_NAME).then(cache => {
                 return cache.match(event.request).then(cachedResponse => {
                     const networkFetch = fetch(event.request).then(networkResponse => {
-                        // Update the cache with the new response
-                        cache.put(event.request, networkResponse.clone());
+                        if (networkResponse && networkResponse.status === 200) {
+                            cache.put(event.request, networkResponse.clone());
+                        }
                         return networkResponse;
+                    }).catch(err => {
+                        console.warn('Network fetch failed for translation content:', err);
                     });
 
-                    // Return cached response immediately if available, otherwise wait for network
                     return cachedResponse || networkFetch;
                 });
             })

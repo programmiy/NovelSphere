@@ -31,7 +31,7 @@ class Settings(BaseSettings):
     # --- API Keys & Models ---
     gemini_api_key: str = Field(default="", description="Gemini API 키")
     gemini_default_model: str = Field(default="gemini-3.5-flash-lite", description="기본 번역 모델")
-    gemini_retranslation_model: str = Field(default="gemini-3-flash-preview", description="재번역 모델 (현재 고성능 모델)")
+    gemini_retranslation_model: str = Field(default="gemini-3.8-flash", description="재번역 모델 (Gemini 3.8 Flash)")
 
     # --- Database Settings ---
     database_url: str = f"sqlite:///{os.path.join(APP_ROOT, 'server', 'translations.db')}"

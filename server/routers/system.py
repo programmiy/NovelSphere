@@ -4,6 +4,7 @@ from pydantic import BaseModel
 from server.settings import settings
 import os
 import logging
+from collections import deque
 from server.database import get_sqlite_conn
 
 router = APIRouter()
@@ -34,9 +35,9 @@ def get_autostart_setting():
     "/api/logs",
     tags=["System"],
     summary="최신 로그 조회",
-    description="최신 로그 파일의 내용을 읽어 반환합니다."
+    description="최신 로그 파일의 내용을 읽어 반환합니다. 기본적으로 최근 1,000줄만 반환하여 OOM을 방지합니다."
 )
-async def get_logs():
+async def get_logs(limit: int = 1000):
     try:
         log_files = sorted(
             [f for f in os.listdir(settings.log_dir) if f.startswith("app.log")], 
@@ -47,10 +48,10 @@ async def get_logs():
 
         latest_log_file = os.path.join(settings.log_dir, log_files[0])
         
-        with open(latest_log_file, "r", encoding="utf-8") as f:
-            logs = f.readlines()
+        with open(latest_log_file, "r", encoding="utf-8", errors="replace") as f:
+            logs = list(deque(f, maxlen=limit))
         
-        return {"message": "Success", "logs": logs}
+        return {"message": "Success", "logs": logs, "total_returned": len(logs)}
     except Exception as e:
         logger.error(f"Error reading log files: {e}")
         raise HTTPException(status_code=500, detail=f"Error reading log files: {e}")

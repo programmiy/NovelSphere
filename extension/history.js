@@ -41,6 +41,20 @@ function cacheDOMElements() {
     openGlobalFindReplaceBtn = document.getElementById('openGlobalFindReplaceBtn');
     newFolderNameInput = document.getElementById('newFolderNameInput');
     createFolderButton = document.getElementById('createFolderButton');
+    
+    // Separators Modal Elements
+    openSeparatorsModalBtn = document.getElementById('openSeparatorsModalBtn');
+    separatorsModal = document.getElementById('separatorsModal');
+    closeSeparatorsModalBtn = document.getElementById('closeSeparatorsModal');
+    sepModalCloseBtn = document.getElementById('sepModalCloseBtn');
+    sepModalNovelSelect = document.getElementById('sepModalNovelSelect');
+    sepModalUseDefaults = document.getElementById('sepModalUseDefaults');
+    sepModalActiveTags = document.getElementById('sepModalActiveTags');
+    sepModalPresets = document.getElementById('sepModalPresets');
+    sepModalNewInput = document.getElementById('sepModalNewInput');
+    sepModalAddBtn = document.getElementById('sepModalAddBtn');
+    sepModalSaveBtn = document.getElementById('sepModalSaveBtn');
+    sepModalResetBtn = document.getElementById('sepModalResetBtn');
 }
 
 async function loadAndRenderGrouped() {
@@ -179,29 +193,30 @@ function renderGroupedHistory() {
 
             if (filteredTranslations.length === 0) continue;
 
-            // Sort by pid using natural sort to ensure correct chapter order
-            filteredTranslations.sort((a, b) => (a.pid || '').localeCompare(b.pid || '', undefined, { numeric: true, sensitivity: 'base' }));
-            
             totalTranslationsInFolder += filteredTranslations.length;
-            const groupItemsHtml = filteredTranslations.map(t => renderItem(t)).join('');
             const title = filteredTranslations[0]?.title || url;
             
             // Check the applied status for the current URL
             const statusKey = `status-${url}`;
             const isApplied = translationStatuses[statusKey]?.applied || false;
 
+            const shouldRenderImmediately = Boolean(currentSearch);
+            const isUrlGroupCollapsed = shouldRenderImmediately ? false : true;
+            const groupItemsHtml = shouldRenderImmediately ? filteredTranslations.map(t => renderItem(t)).join('') : '';
+
             urlGroupsHtml += `
-                <div class="list-group fade-in" data-url="${url}">
+                <div class="list-group fade-in" data-url="${escapeHtml(url)}" data-folder-name="${escapeHtml(folderName)}">
                     <div class="list-group-header">
-                        <span class="list-group-toggle collapsed material-icons">chevron_right</span>
+                        <span class="list-group-toggle ${isUrlGroupCollapsed ? 'collapsed' : ''} material-icons">${isUrlGroupCollapsed ? 'chevron_right' : 'expand_more'}</span>
                         <a href="${url}" target="_blank" class="list-group-title-link"><h3 class="list-group-title">${escapeHtml(title)} (${filteredTranslations.length})</h3></a>
-                        <button class="btn btn-outline btn-icon edit-title-btn" data-url="${url}" title="제목 수정">✏️</button>
+                        <button class="btn btn-outline btn-icon edit-title-btn" data-url="${escapeHtml(url)}" title="제목 수정">✏️</button>
                         <div class="list-group-actions">
-                            <button class="btn btn-secondary btn-apply ${isApplied ? 'applied' : ''}" data-url="${url}">${isApplied ? '적용 해제' : '페이지에 적용'}</button>
+                            <button class="btn btn-secondary btn-apply ${isApplied ? 'applied' : ''}" data-url="${escapeHtml(url)}">${isApplied ? '적용 해제' : '페이지에 적용'}</button>
                             <label class="btn"><input type="checkbox" class="group-select-all-checkbox"> 전체 선택</label>
                         </div>
                     </div>
-                    <div class="list-group-content collapsed">
+                    <div class="list-group-content ${isUrlGroupCollapsed ? 'collapsed' : ''}">
+                        ${groupItemsHtml ? `
                         <table class="history-table">
                             <thead>
                                 <tr>
@@ -214,6 +229,7 @@ function renderGroupedHistory() {
                             </thead>
                             <tbody>${groupItemsHtml}</tbody>
                         </table>
+                        ` : ''}
                     </div>
                 </div>
             `;
@@ -235,12 +251,48 @@ function renderGroupedHistory() {
     }
 }
 
+function renderUrlGroupContent(listGroupEl) {
+    const contentEl = listGroupEl.querySelector('.list-group-content');
+    if (!contentEl || contentEl.querySelector('.history-table')) return; // Already rendered
+
+    const url = listGroupEl.dataset.url;
+    const folderName = listGroupEl.dataset.folderName;
+    const urlGroups = groupedTranslations[folderName] || {};
+    const translations = urlGroups[url] || [];
+
+    let filtered = translations.slice();
+    if (currentSearch) {
+        filtered = filtered.filter(t => 
+            t.original.toLowerCase().includes(currentSearch) || 
+            (t.translated && t.translated.toLowerCase().includes(currentSearch))
+        );
+    }
+    filtered.sort((a, b) => (a.pid || '').localeCompare(b.pid || '', undefined, { numeric: true, sensitivity: 'base' }));
+
+    const itemsHtml = filtered.map(t => renderItem(t)).join('');
+    contentEl.innerHTML = `
+        <table class="history-table">
+            <thead>
+                <tr>
+                    <th style="width: 40px;"></th>
+                    <th style="width: 80px;">PID</th>
+                    <th>원문</th>
+                    <th>번역</th>
+                    <th style="width: 120px;">액션</th>
+                </tr>
+            </thead>
+            <tbody>${itemsHtml}</tbody>
+        </table>
+    `;
+}
+
 function renderItem(t) {
     const date = new Date(t.timestamp * 1000);
     const dateStr = date.toLocaleString('ko-KR', { dateStyle: 'short', timeStyle: 'short' });
+    const isChecked = selectedIds.has(t.id);
     return `
         <tr class="history-item" data-id="${t.id}">
-            <td style="width: 40px; text-align: center;"><input type="checkbox" class="item-checkbox" data-id="${t.id}"></td>
+            <td style="width: 40px; text-align: center;"><input type="checkbox" class="item-checkbox" data-id="${t.id}" ${isChecked ? 'checked' : ''}></td>
             <td>${escapeHtml(t.pid)}</td>
             <td><div class="item-text-block"><div class="text-content original-text">${escapeHtml(t.original)}</div></div></td>
             <td><div class="item-text-block"><div class="text-content translated-text" contenteditable="true">${escapeHtml(t.translated)}</div></div></td>
@@ -280,6 +332,24 @@ function setupEventListeners() {
     cancelFindReplaceBtn.addEventListener('click', closeFindReplaceModal);
     executeFindReplaceBtn.addEventListener('click', executeGlobalFindReplace);
     createFolderButton.addEventListener('click', createFolder);
+
+    // Separators Modal Listeners
+    if (openSeparatorsModalBtn) openSeparatorsModalBtn.addEventListener('click', openSeparatorsModal);
+    if (closeSeparatorsModalBtn) closeSeparatorsModalBtn.addEventListener('click', closeSeparatorsModal);
+    if (sepModalCloseBtn) sepModalCloseBtn.addEventListener('click', closeSeparatorsModal);
+    if (sepModalNovelSelect) sepModalNovelSelect.addEventListener('change', handleModalNovelChange);
+    if (sepModalAddBtn) sepModalAddBtn.addEventListener('click', handleModalAddSeparator);
+    if (sepModalNewInput) {
+        sepModalNewInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                handleModalAddSeparator();
+            }
+        });
+    }
+    if (sepModalUseDefaults) sepModalUseDefaults.addEventListener('change', handleModalUseDefaultsChange);
+    if (sepModalSaveBtn) sepModalSaveBtn.addEventListener('click', saveModalSeparators);
+    if (sepModalResetBtn) sepModalResetBtn.addEventListener('click', resetModalSeparators);
 }
 
 async function createFolder() {
@@ -336,6 +406,12 @@ async function executeGlobalFindReplace() {
         return;
     }
 
+    const originalBtnText = executeFindReplaceBtn ? executeFindReplaceBtn.textContent : '';
+    if (executeFindReplaceBtn) {
+        executeFindReplaceBtn.disabled = true;
+        executeFindReplaceBtn.textContent = '치환 중...';
+    }
+
     try {
         const response = await fetch('http://127.0.0.1:8001/translations/find_replace', {
             method: 'POST',
@@ -356,6 +432,11 @@ async function executeGlobalFindReplace() {
     } catch (error) {
         console.error("Global find and replace failed:", error);
         showToast(`오류: ${error.message}`, 'error');
+    } finally {
+        if (executeFindReplaceBtn) {
+            executeFindReplaceBtn.disabled = false;
+            executeFindReplaceBtn.textContent = originalBtnText;
+        }
     }
 }
 
@@ -367,6 +448,19 @@ function handleCheckboxChange(e) {
         const folderGroup = target.closest('.history-folder-group');
         if (!folderGroup) return;
 
+        const folderTitleEl = folderGroup.querySelector('.folder-group-title');
+        const folderName = folderTitleEl ? folderTitleEl.textContent.split(' (')[0].trim() : '';
+        const urlGroups = groupedTranslations[folderName] || {};
+        for (const url in urlGroups) {
+            for (const item of urlGroups[url] || []) {
+                if (target.checked) {
+                    selectedIds.add(item.id);
+                } else {
+                    selectedIds.delete(item.id);
+                }
+            }
+        }
+
         // Directly set all group checkboxes
         const groupCheckboxes = folderGroup.querySelectorAll('.group-select-all-checkbox');
         groupCheckboxes.forEach(cb => {
@@ -377,25 +471,24 @@ function handleCheckboxChange(e) {
         const itemCheckboxes = folderGroup.querySelectorAll('.item-checkbox');
         itemCheckboxes.forEach(cb => {
             cb.checked = target.checked;
-            const id = parseInt(cb.dataset.id);
-            if (target.checked) {
-                selectedIds.add(id);
-            } else {
-                selectedIds.delete(id);
-            }
         });
     } else if (target.classList.contains('group-select-all-checkbox')) {
         const urlGroup = target.closest('.list-group');
         if (!urlGroup) return;
+        const url = urlGroup.dataset.url;
+        const folderName = urlGroup.dataset.folderName;
+        const items = (groupedTranslations[folderName] && groupedTranslations[folderName][url]) || [];
+        for (const item of items) {
+            if (target.checked) {
+                selectedIds.add(item.id);
+            } else {
+                selectedIds.delete(item.id);
+            }
+        }
+
         const itemCheckboxes = urlGroup.querySelectorAll('.item-checkbox');
         itemCheckboxes.forEach(cb => {
             cb.checked = target.checked;
-            const id = parseInt(cb.dataset.id);
-            if (target.checked) {
-                selectedIds.add(id);
-            } else {
-                selectedIds.delete(id);
-            }
         });
     } else if (target.classList.contains('item-checkbox')) {
         const id = parseInt(target.dataset.id);
@@ -468,10 +561,26 @@ async function handleHistoryClick(e) {
     // Logic for toggling URL group collapse/expand
     const urlHeader = target.closest('.list-group-header');
     if (urlHeader) {
-        urlHeader.nextElementSibling.classList.toggle('collapsed');
-        const icon = urlHeader.querySelector('.list-group-toggle');
-        icon.classList.toggle('collapsed');
-        icon.textContent = icon.classList.contains('collapsed') ? 'chevron_right' : 'expand_more';
+        const listGroupEl = urlHeader.closest('.list-group');
+        const contentEl = urlHeader.nextElementSibling;
+        const isExpanding = contentEl.classList.contains('collapsed');
+
+        if (isExpanding) {
+            renderUrlGroupContent(listGroupEl);
+            contentEl.classList.remove('collapsed');
+            const icon = urlHeader.querySelector('.list-group-toggle');
+            if (icon) {
+                icon.classList.remove('collapsed');
+                icon.textContent = 'expand_more';
+            }
+        } else {
+            contentEl.classList.add('collapsed');
+            const icon = urlHeader.querySelector('.list-group-toggle');
+            if (icon) {
+                icon.classList.add('collapsed');
+                icon.textContent = 'chevron_right';
+            }
+        }
         return;
     }
 
@@ -661,5 +770,220 @@ async function fetchAllTitles() {
         setTimeout(() => { showToast('새로고침하여 새 제목을 확인하세요.', 'info'); loadAndRenderGrouped(); }, 5000);
     } catch (error) {
         showToast('제목 가져오기 작업을 시작하지 못했습니다.', 'error');
+    }
+}
+
+// =================================================================================
+// Separators Management Modal Logic
+// =================================================================================
+
+let modalSeparatorsState = {
+    selectedNovel: '',
+    useDefaults: true,
+    customSeparators: [],
+    effectiveSeparators: [],
+    globalDefaults: [],
+    presets: []
+};
+
+async function openSeparatorsModal() {
+    if (!separatorsModal) return;
+    separatorsModal.style.display = 'flex';
+    
+    try {
+        const foldersRes = await fetch('http://127.0.0.1:8001/folders');
+        const folders = foldersRes.ok ? await foldersRes.json() : [];
+        
+        sepModalNovelSelect.innerHTML = '';
+        if (folders.length === 0) {
+            sepModalNovelSelect.innerHTML = '<option value="">(등록된 소설 폴더 없음)</option>';
+        } else {
+            folders.forEach(f => {
+                const opt = document.createElement('option');
+                opt.value = f;
+                opt.textContent = f;
+                sepModalNovelSelect.appendChild(opt);
+            });
+        }
+        
+        if (folders.length > 0) {
+            modalSeparatorsState.selectedNovel = folders[0];
+            await loadSeparatorsForModal(folders[0]);
+        }
+    } catch (e) {
+        console.error("Error loading folders for separators modal:", e);
+        showToast('소설 목록을 불러오지 못했습니다.', 'error');
+    }
+}
+
+function closeSeparatorsModal() {
+    if (separatorsModal) separatorsModal.style.display = 'none';
+}
+
+async function handleModalNovelChange(e) {
+    const novelTitle = e.target.value;
+    modalSeparatorsState.selectedNovel = novelTitle;
+    await loadSeparatorsForModal(novelTitle);
+}
+
+async function loadSeparatorsForModal(novelTitle) {
+    if (!novelTitle) return;
+    try {
+        const res = await fetch(`http://127.0.0.1:8001/api/separators?novel_title=${encodeURIComponent(novelTitle)}`);
+        if (res.ok) {
+            const data = await res.json();
+            modalSeparatorsState.useDefaults = data.use_defaults;
+            modalSeparatorsState.customSeparators = data.custom_separators || [];
+            modalSeparatorsState.effectiveSeparators = data.effective_separators || [];
+            modalSeparatorsState.globalDefaults = data.global_defaults || [];
+            modalSeparatorsState.presets = data.presets || [];
+            renderModalSeparators();
+        }
+    } catch (e) {
+        console.error("Error fetching separators for modal:", e);
+        showToast('구분선 설정을 불러오지 못했습니다.', 'error');
+    }
+}
+
+function renderModalSeparators() {
+    if (sepModalUseDefaults) {
+        sepModalUseDefaults.checked = modalSeparatorsState.useDefaults !== false;
+    }
+
+    if (sepModalActiveTags) {
+        sepModalActiveTags.innerHTML = '';
+        if (modalSeparatorsState.effectiveSeparators.length === 0) {
+            sepModalActiveTags.innerHTML = '<span style="color:#94a3b8; font-style:italic; font-size:12px;">적용된 구분선이 없습니다.</span>';
+        } else {
+            modalSeparatorsState.effectiveSeparators.forEach(sep => {
+                const isDefault = modalSeparatorsState.globalDefaults.includes(sep);
+                const tag = document.createElement('span');
+                tag.style.cssText = `display:inline-flex; align-items:center; background:${isDefault ? '#e0e7ff' : '#fef3c7'}; color:${isDefault ? '#3730a3' : '#92400e'}; border:${isDefault ? '1px solid #c7d2fe' : '1px solid #fde68a'}; padding:3px 8px; border-radius:12px; font-size:12px; font-weight:500;`;
+                tag.innerHTML = `<span>${escapeHtml(sep)}</span><span style="margin-left:5px; cursor:pointer; color:#ef4444; font-weight:bold;" title="제거">&times;</span>`;
+                tag.querySelector('span:last-child').addEventListener('click', () => {
+                    removeModalSeparator(sep);
+                });
+                sepModalActiveTags.appendChild(tag);
+            });
+        }
+    }
+
+    if (sepModalPresets) {
+        sepModalPresets.innerHTML = '';
+        modalSeparatorsState.presets.forEach(preset => {
+            const isAdded = modalSeparatorsState.effectiveSeparators.includes(preset);
+            const btn = document.createElement('button');
+            btn.className = 'btn btn-outline btn-sm';
+            btn.style.cssText = `padding:2px 8px; font-size:11px; margin:0; ${isAdded ? 'border-color:#10b981; color:#059669; opacity:0.6;' : ''}`;
+            btn.textContent = (isAdded ? '✓ ' : '+ ') + preset;
+            btn.addEventListener('click', () => {
+                if (!isAdded) {
+                    addModalSeparator(preset);
+                } else {
+                    removeModalSeparator(preset);
+                }
+            });
+            sepModalPresets.appendChild(btn);
+        });
+    }
+}
+
+function addModalSeparator(sep) {
+    sep = sep.trim();
+    if (!sep) return;
+    if (!modalSeparatorsState.effectiveSeparators.includes(sep)) {
+        modalSeparatorsState.effectiveSeparators.push(sep);
+        if (!modalSeparatorsState.customSeparators.includes(sep)) {
+            modalSeparatorsState.customSeparators.push(sep);
+        }
+        renderModalSeparators();
+    }
+}
+
+function removeModalSeparator(sep) {
+    modalSeparatorsState.effectiveSeparators = modalSeparatorsState.effectiveSeparators.filter(s => s !== sep);
+    modalSeparatorsState.customSeparators = modalSeparatorsState.customSeparators.filter(s => s !== sep);
+    renderModalSeparators();
+}
+
+function handleModalAddSeparator() {
+    if (!sepModalNewInput) return;
+    const val = sepModalNewInput.value.trim();
+    if (val) {
+        addModalSeparator(val);
+        sepModalNewInput.value = '';
+    }
+}
+
+function handleModalUseDefaultsChange(e) {
+    const checked = e.target.checked;
+    modalSeparatorsState.useDefaults = checked;
+    if (checked) {
+        modalSeparatorsState.globalDefaults.forEach(d => {
+            if (!modalSeparatorsState.effectiveSeparators.includes(d)) {
+                modalSeparatorsState.effectiveSeparators.push(d);
+            }
+        });
+    } else {
+        modalSeparatorsState.effectiveSeparators = modalSeparatorsState.effectiveSeparators.filter(s => !modalSeparatorsState.globalDefaults.includes(s));
+    }
+    renderModalSeparators();
+}
+
+async function saveModalSeparators() {
+    const novelTitle = modalSeparatorsState.selectedNovel;
+    if (!novelTitle) {
+        showToast('소설을 선택해주세요.', 'error');
+        return;
+    }
+
+    try {
+        const customOnly = modalSeparatorsState.effectiveSeparators.filter(s => !modalSeparatorsState.globalDefaults.includes(s));
+        const resp = await fetch('http://127.0.0.1:8001/api/separators', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                novel_title: novelTitle,
+                separators: customOnly,
+                use_defaults: modalSeparatorsState.useDefaults
+            })
+        });
+
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        
+        const cacheKey = `separators_${novelTitle}`;
+        await chrome.storage.local.set({
+            [cacheKey]: {
+                useDefaults: modalSeparatorsState.useDefaults,
+                customSeparators: customOnly,
+                effectiveSeparators: modalSeparatorsState.effectiveSeparators
+            }
+        });
+
+        showToast(`'${novelTitle}' 구분선 설정이 저장되었습니다.`, 'success');
+        closeSeparatorsModal();
+    } catch (e) {
+        console.error("Error saving separators:", e);
+        showToast(`저장 실패: ${e.message}`, 'error');
+    }
+}
+
+async function resetModalSeparators() {
+    const novelTitle = modalSeparatorsState.selectedNovel;
+    if (!novelTitle) return;
+    if (!confirm(`'${novelTitle}'의 구분선 설정을 기본값으로 복원하시겠습니까?`)) return;
+
+    try {
+        await fetch(`http://127.0.0.1:8001/api/separators?novel_title=${encodeURIComponent(novelTitle)}`, {
+            method: 'DELETE'
+        });
+        const cacheKey = `separators_${novelTitle}`;
+        await chrome.storage.local.remove(cacheKey);
+
+        showToast(`'${novelTitle}' 구분선 설정이 기본값으로 복원되었습니다.`, 'success');
+        await loadSeparatorsForModal(novelTitle);
+    } catch (e) {
+        console.error("Error resetting separators:", e);
+        showToast(`복원 실패: ${e.message}`, 'error');
     }
 }

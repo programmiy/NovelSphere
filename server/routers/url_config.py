@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import List, Optional
 from server.database import get_sqlite_conn
+from server.utils import normalize_url
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -30,25 +31,29 @@ class UrlMetadataBatchUpdate(BaseModel):
 def toggle_apply_url(req: ApplyUrlRequest):
     conn = get_sqlite_conn()
     cursor = conn.cursor()
-    clean_url = req.url.split('#')[0].rstrip('/')
+    clean_url = normalize_url(req.url)
     
     if req.apply:
         cursor.execute("INSERT OR IGNORE INTO applied_urls (url) VALUES (?)", (clean_url,))
     else:
-        urls_to_delete = set()
-        urls_to_delete.add(clean_url)
-        urls_to_delete.add(clean_url + '/')
+        urls_to_delete = {clean_url, clean_url + '/'}
+        raw_clean = req.url.split('#')[0].rstrip('/')
+        urls_to_delete.add(raw_clean)
+        urls_to_delete.add(raw_clean + '/')
         no_protocol_url = re.sub(r'^https?://', '', clean_url)
-        urls_to_delete.add('http://' + no_protocol_url)
-        urls_to_delete.add('https://' + no_protocol_url)
-        urls_to_delete.add('http://' + no_protocol_url + '/')
-        urls_to_delete.add('https://' + no_protocol_url + '/')
+        urls_to_delete.update([
+            'http://' + no_protocol_url,
+            'https://' + no_protocol_url,
+            'http://' + no_protocol_url + '/',
+            'https://' + no_protocol_url + '/'
+        ])
         
         placeholders = ', '.join('?' * len(urls_to_delete))
         cursor.execute(f"DELETE FROM applied_urls WHERE url IN ({placeholders})", list(urls_to_delete))
 
     conn.commit()
     conn.close()
+    return {"message": "Success", "applied": req.apply}
 
 @router.put(
     "/api/url_metadata",
@@ -107,33 +112,30 @@ def get_apply_status(url: str):
     conn = get_sqlite_conn()
     cursor = conn.cursor()
 
-    urls_to_check = set()
-    clean_url = url.split('#')[0]
-    urls_to_check.add(clean_url.rstrip('/'))
-    urls_to_check.add(clean_url.rstrip('/') + '/')
-    no_protocol_url = re.sub(r'^https?://', '', clean_url).rstrip('/')
-    urls_to_check.add('http://' + no_protocol_url)
-    urls_to_check.add('http://' + no_protocol_url + '/')
-    urls_to_check.add('https://' + no_protocol_url)
-    urls_to_check.add('https://' + no_protocol_url + '/')
-    if no_protocol_url.startswith('www.'):
-        no_www_url = no_protocol_url.replace('www.', '', 1)
-        urls_to_check.add('http://' + no_www_url)
-        urls_to_check.add('http://' + no_www_url + '/')
-        urls_to_check.add('https://' + no_www_url)
-        urls_to_check.add('https://' + no_www_url + '/')
+    normalized = normalize_url(url)
+    raw_clean = url.split('#')[0].rstrip('/')
+    urls_to_check = {normalized, normalized + '/', raw_clean, raw_clean + '/'}
+    
+    no_protocol = re.sub(r'^https?://', '', normalized)
+    urls_to_check.update([
+        'http://' + no_protocol,
+        'https://' + no_protocol,
+        'http://' + no_protocol + '/',
+        'https://' + no_protocol + '/'
+    ])
+    
+    if no_protocol.startswith('www.'):
+        no_www = no_protocol.replace('www.', '', 1)
+        urls_to_check.update(['http://' + no_www, 'https://' + no_www, 'http://' + no_www + '/', 'https://' + no_www + '/'])
     else:
-        with_www_url = 'www.' + no_protocol_url
-        urls_to_check.add('http://' + with_www_url)
-        urls_to_check.add('http://' + with_www_url + '/')
-        urls_to_check.add('https://' + with_www_url)
-        urls_to_check.add('https://' + with_www_url + '/')
-    if 'kakuyomu.jp/works/' in clean_url:
-        match = re.match(r'(https?://kakuyomu.jp/works/\d+)', clean_url)
+        with_www = 'www.' + no_protocol
+        urls_to_check.update(['http://' + with_www, 'https://' + with_www, 'http://' + with_www + '/', 'https://' + with_www + '/'])
+        
+    if 'kakuyomu.jp/works/' in url:
+        match = re.match(r'(https?://kakuyomu.jp/works/\d+)', url)
         if match:
             work_url = match.group(1)
-            urls_to_check.add(work_url)
-            urls_to_check.add(work_url + '/')
+            urls_to_check.update([work_url, work_url + '/', normalize_url(work_url)])
 
     url_list = list(urls_to_check)
     placeholders = ', '.join('?' * len(url_list))
