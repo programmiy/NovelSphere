@@ -261,6 +261,8 @@ LLM 호출 없이 순수 유니코드와 정규식으로 100% 결정론적으로
 
 ### `extension/content.js`
 - 소설 제목 감지 및 구분선 매칭(`checkSeparatorMatch`).
+- 소설별 구분선 설정 기반 기존 번역 자동 제외(`checkAndExcludeSeparatorTranslations` -> `POST /translations/exclude`) 및 사이드바/캐시/DOM 자동 정리.
+- 검수탭 스타일의 구분선 제외 알림 패널 렌더링(`renderSeparatorExcludePanel`, 하단 로그 비출력 정책 준수).
 - 알림 센터 연계 재번역 검수 배너 및 PID 하이라이트.
 - 본문 텍스트 DOM 한국어 치환/원복(`applyTranslationsToPage`, `restoreOriginalPage`).
 - 플로팅 사이드바 주입 및 단락 인터랙션.
@@ -292,6 +294,7 @@ LLM 호출 없이 순수 유니코드와 정규식으로 100% 결정론적으로
 | **"원문에 「 」 괄호가 있는데 번역문에 없어" / "대사 괄호 복원해줘" / "괄호 누락 주기적으로 검사해줘"** | `server/rule_classifier.py` (`restore_brackets`, `batch_restore_brackets_in_db`)<br>`server/routers/translation.py` (`translate_texts`)<br>`server/routers/data_crud.py` (`upsert_translations`)<br>`server/routers/admin.py` (`admin_restore_brackets`)<br>`server/server.py` (`periodic_bracket_restoration_task`) | 원문이 `「%」`인 대사 문장에만 한정 적용. 따옴표 치환 및 누락 괄호 복원. 30분 주기 백그라운드 자동 복구 및 실시간 적재 시 자동 복원. |
 | **"원문 복붙된 것들 다 지워줘" / "일본어가 그대로 번역이라고 나와"** | `server/rule_classifier.py` (`is_verbatim_copy`)<br>`server/routers/translation.py` (`handle_verbatim_cleanup_items`)<br>`server/routers/data_crud.py` (`get_cleanup_queue`, `delete_cleanup_queue`) | 원문 복붙 단락은 `TranslationTrash`로 이동되고 `CleanupNotification`에 등록되어 7일간 보존되며, 알림 센터에서 복원 가능. |
 | **"번역 품질 이상한 것들(다른 언어나 미번역) 검사해줘"** | `server/rule_classifier.py` (`classify_translation`)<br>`server/routers/data_crud.py` (`get_abnormal_translations`)<br>`server/static/admin.js` (`loadAndRenderAbnormal`) | 규칙 3(타언어/간체자), 규칙 4(한국어 내 가나 잔류)를 유니코드 정규식으로 100% 탐지. |
+| **"구분선 설정에 번역된게 있으면 제외해줘" / "번역된 페이지 접속 시 구분선 번역 제외하고 검수탭처럼 알려줘"** | `extension/content.js` (`checkAndExcludeSeparatorTranslations`, `renderSeparatorExcludePanel`)<br>`server/routers/translation.py` (`exclude_translations`) | 번역 완료 페이지 접속 시 구분선 매칭 번역을 서버 `/translations/exclude`로 삭제 및 제외 등록. 검수탭 스타일 패널 알림 출력(하단 로그 출력 금지). |
 | **"후기나 광고 나오면 번역 멈추게 해줘" / "구분선 밑으로 번역 안 되게 해줘"** | `server/routers/separators.py`<br>`extension/content.js` (`checkSeparatorMatch`, `translateAllPTags`) | `activeSeparators` 매칭 시 `translateAllPTags` 루프를 `break`하여 그 아래 문단 번역을 완전 차단. |
 | **"오후 5시 넘었는데 번역이 멈췄어" / "5시 자동 중지 조건 확인해줘"** | `server/routers/translation.py` (`translate_texts`) | 오후 4시대에 시작된 프로세스가 17시를 넘기면 스레드 안전 락 하에서 503 에러를 던져 중단됨. |
 | **"Gemini 모델 바꿔줘" / "재번역할 때 다른 모델 쓰게 해줘"** | `server/settings.py` (`gemini_default_model`, `gemini_retranslation_model`)<br>`server/routers/translation.py` (`selected_model` 분기) | 일반 번역은 `gemini-3.5-flash-lite`, 단락 재번역(`is_retranslation=True`)은 `gemini-3.8-flash` 사용. |

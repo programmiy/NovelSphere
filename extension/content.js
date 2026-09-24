@@ -12,6 +12,7 @@ let resolveResume = null; // 번역 재개를 위한 전역 resolver
 let translationCache = new Map(); // Cache for original translation objects
 let exclusionSet = new Set(); // Cache for excluded original texts
 let isPageApplied = false; // 웹페이지 본문 번역 적용 여부 상태
+let translationsLoadedPromise = null; // 저장된 번역 로드 완료 보장 Promise
 
 // Circuit Breaker logic is now managed by background.js
 
@@ -44,6 +45,11 @@ let separatorConfig = {
 // 알림 센터 연계 재번역 검수 상태
 let reviewTargetsData = null;
 let reviewTargetPids = new Set();
+let isReviewSession = false;
+
+function isReviewMode() {
+    return isReviewSession || window.location.hash.includes('lanovel_review') || (reviewTargetPids && reviewTargetPids.size > 0);
+}
 
 function getCleanUrl() {
     return window.location.href.split('#')[0];
@@ -270,10 +276,13 @@ async function checkAndLoadReviewTargets() {
         const cleanUrl = getCleanUrl();
         let batchId = null;
         if (window.location.hash.includes('lanovel_review=')) {
+            isReviewSession = true;
             const hashMatch = window.location.hash.match(/lanovel_review=([^&]+)/);
             if (hashMatch) {
                 batchId = decodeURIComponent(hashMatch[1]);
             }
+        } else if (window.location.hash.includes('lanovel_review')) {
+            isReviewSession = true;
         }
 
         let apiUrl = `http://127.0.0.1:8001/cleanup/review_targets?url=${encodeURIComponent(cleanUrl)}`;
@@ -286,6 +295,7 @@ async function checkAndLoadReviewTargets() {
         const data = await res.json();
 
         if (data.has_targets && Array.isArray(data.targets) && data.targets.length > 0) {
+            isReviewSession = true;
             reviewTargetsData = data;
             reviewTargetPids = new Set(data.targets.map(t => t.pid).filter(Boolean));
             console.log(`[ReviewTargets] 재번역 검수 대상 ${reviewTargetPids.size}개 감지:`, Array.from(reviewTargetPids));
@@ -377,16 +387,26 @@ function renderReviewTargetPanel() {
             try {
                 dismissBtn.disabled = true;
                 dismissBtn.textContent = '처리 중...';
-                const res = await fetch(`http://127.0.0.1:8001/cleanup/notifications/${notifId}/dismiss`, { method: 'POST' });
+                const cleanUrl = getCleanUrl();
+                const res = await fetch(`http://127.0.0.1:8001/cleanup/notifications/${notifId}/dismiss?url=${encodeURIComponent(cleanUrl)}`, { method: 'POST' });
                 if (res.ok) {
                     dismissBtn.textContent = '해제됨!';
-                    logToSidebar("알림 센터의 해당 삭제 알림이 해제되었습니다.");
+                    logToSidebar("알림 센터의 해당 삭제 알림이 성공적으로 해제되었습니다.");
+                    try {
+                        await chrome.storage.local.set({ lastNotificationDismissed: Date.now() });
+                    } catch (storageErr) {
+                        // ignore storage error
+                    }
                     setTimeout(() => {
                         panel.style.display = 'none';
                     }, 1000);
+                } else {
+                    dismissBtn.disabled = false;
+                    dismissBtn.textContent = '해제 실패';
                 }
             } catch (err) {
                 console.error('알림 해제 실패:', err);
+                dismissBtn.disabled = false;
                 dismissBtn.textContent = '해제 실패';
             }
         });
@@ -436,6 +456,259 @@ function highlightReviewTargetDOMs() {
     });
 }
 
+// =================================================================================
+// 구분선 설정 기반 번역 자동 제외 및 검수 패널 (Auto Exclude Separator Translations)
+// =================================================================================
+
+let separatorExcludedItems = [];
+
+async function checkAndExcludeSeparatorTranslations(translationsList) {
+    if (!translationsList || !Array.isArray(translationsList) || translationsList.length === 0) return;
+    if (!activeSeparators || activeSeparators.length === 0) return;
+
+    // 본문 문단 DOM 매핑 (pid -> HTMLElement)
+    const paragraphs = getTargetParagraphs();
+    const pMap = new Map();
+    paragraphs.forEach(p => {
+        if (p.id) pMap.set(p.id, p);
+    });
+
+    const targetsToExclude = [];
+    const targetIds = [];
+
+    translationsList.forEach(t => {
+        if (!t || !t.id) return;
+        // 이미 제외 목록에 있는 것은 건너뜀
+        if (exclusionSet && exclusionSet.has(t.original)) return;
+
+        let matchedSep = null;
+
+        // 1. 번역 객체의 original 원문 텍스트 검사
+        if (t.original) {
+            matchedSep = checkSeparatorMatch(t.original.trim(), activeSeparators);
+        }
+
+        // 2. 본문 DOM의 해당 pid 문단 텍스트 검사 (HTML 태그 제거 후)
+        if (!matchedSep && t.pid && pMap.has(t.pid)) {
+            const p = pMap.get(t.pid);
+            const pText = p.innerHTML.replace(/<br\s*\/?>/gi, " ").replace(/<[^>]*>/g, "").trim();
+            matchedSep = checkSeparatorMatch(pText, activeSeparators);
+        }
+
+        // 구분선 설정에 일치하고 유효한 번역문이 존재하는 경우 제외 대상 선정
+        if (matchedSep && t.translated && t.translated.trim()) {
+            targetsToExclude.push({
+                id: t.id,
+                pid: t.pid,
+                original: t.original,
+                translated: t.translated,
+                matchedSep: matchedSep
+            });
+            targetIds.push(t.id);
+        }
+    });
+
+    if (targetsToExclude.length === 0) return;
+
+    console.log(`[SeparatorExclude] 구분선 설정과 일치하는 기존 번역 ${targetsToExclude.length}건 감지. 자동 제외 실행:`, targetsToExclude);
+
+    try {
+        // 관리페이지의 "제외" 기능과 동일하게 POST /translations/exclude 호출
+        const response = await fetch('http://127.0.0.1:8001/translations/exclude', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids: targetIds })
+        });
+
+        if (!response.ok) {
+            console.error(`[SeparatorExclude] 서버 제외 처리 실패 (상태 코드: ${response.status})`);
+            return;
+        }
+
+        // 1. 제외 목록(exclusionSet) 및 번역 캐시 동기화
+        targetsToExclude.forEach(item => {
+            if (item.original) {
+                exclusionSet.add(item.original);
+                const cleaned = item.original.replace(/([あアいイうウえエおオ])\1{2,}/g, '$1ー');
+                exclusionSet.add(cleaned);
+            }
+            if (item.pid) {
+                translationCache.delete(item.pid);
+            }
+        });
+
+        // 2. translationsList 배열에서 제외된 번역 항목 제거
+        const targetIdSet = new Set(targetIds);
+        for (let i = translationsList.length - 1; i >= 0; i--) {
+            if (targetIdSet.has(translationsList[i].id)) {
+                translationsList.splice(i, 1);
+            }
+        }
+
+        // 3. 사이드바 테이블에서 해당 행 제거
+        targetsToExclude.forEach(item => {
+            if (item.pid) {
+                const row = document.querySelector(`tr[data-pid="${item.pid}"]`);
+                if (row) row.remove();
+            }
+        });
+        updateEmptyState();
+
+        // 4. 본문 DOM에서 번역문이 이미 적용되어 있다면 원문으로 복원
+        targetsToExclude.forEach(item => {
+            if (item.pid) {
+                const p = document.getElementById(item.pid);
+                if (p) {
+                    if (p.dataset.lanovelOriginalHtml) {
+                        p.innerHTML = p.dataset.lanovelOriginalHtml;
+                        p.setAttribute('style', p.dataset.lanovelOriginalStyle || '');
+                        delete p.dataset.lanovelOriginalHtml;
+                        delete p.dataset.lanovelOriginalStyle;
+                    } else if (item.original) {
+                        p.innerHTML = item.original;
+                    }
+                    p.classList.remove('japanese-translated', 'lanovel-applied-text', 'review-target-dom');
+                }
+            }
+        });
+
+        // 5. 검수탭과 유사한 상단 알림 패널 렌더링
+        separatorExcludedItems = targetsToExclude;
+        renderSeparatorExcludePanel(targetsToExclude);
+
+        // 6. 사용자가 알림을 확인할 수 있도록 사이드바 오픈
+        showSidebar();
+
+        // ⚠️ 중요: (하단로그는 x) 요구사항에 따라 logToSidebar는 일체 호출하지 않음
+    } catch (err) {
+        console.error('[SeparatorExclude] 자동 제외 처리 중 에러 발생:', err);
+    }
+}
+
+function renderSeparatorExcludePanel(items) {
+    const panel = document.getElementById('separator-exclude-panel');
+    if (!panel || !items || items.length === 0) {
+        if (panel) panel.style.display = 'none';
+        return;
+    }
+
+    panel.style.display = 'block';
+    panel.innerHTML = `
+        <div class="separator-exclude-header">
+            <span class="separator-exclude-title">
+                <span>🛡️</span>
+                <span>구분선 번역 자동 제외 (<strong id="sep-exclude-count">${items.length}</strong>건)</span>
+            </span>
+            <div class="separator-exclude-actions">
+                <button id="close-sep-exclude-btn" class="sep-exclude-close-btn" title="알림 닫기">&times;</button>
+            </div>
+        </div>
+        <div class="separator-exclude-desc">
+            소설 구분선 설정과 일치하여 번역에서 영구 제외 및 삭제되었습니다.
+        </div>
+        <div class="separator-exclude-body" id="separator-exclude-cards">
+            ${items.map(item => `
+                <div class="separator-exclude-card" data-pid="${escapeHtml(item.pid || '')}">
+                    <div class="sep-card-pid">
+                        <span>문장 ID: ${escapeHtml(item.pid || '알 수 없음')}</span>
+                        <span class="sep-card-match">(구분선: "${escapeHtml(item.matchedSep || '')}")</span>
+                    </div>
+                    <div class="sep-card-ori" title="${escapeHtml(item.original || '')}">원문: ${escapeHtml(item.original || '')}</div>
+                    <div class="sep-card-tra" title="${escapeHtml(item.translated || '')}">제외된 번역: <del>${escapeHtml(item.translated || '')}</del></div>
+                </div>
+            `).join('')}
+        </div>
+    `;
+
+    const closeBtn = document.getElementById('close-sep-exclude-btn');
+    if (closeBtn) {
+        closeBtn.addEventListener('click', () => {
+            panel.style.display = 'none';
+        });
+    }
+
+    const cardContainer = document.getElementById('separator-exclude-cards');
+    if (cardContainer) {
+        cardContainer.addEventListener('click', (e) => {
+            const card = e.target.closest('.separator-exclude-card');
+            if (card && card.dataset.pid) {
+                focusAndScrollToPid(card.dataset.pid);
+            }
+        });
+    }
+}
+
+// =================================================================================
+// Strict Load-Before-Translate Synchronization
+// =================================================================================
+
+async function ensureTranslationsLoaded() {
+    if (translationsLoadedPromise) {
+        return translationsLoadedPromise;
+    }
+
+    translationsLoadedPromise = (async () => {
+        const url = getCleanUrl();
+        logToSidebar("저장된 번역을 서버에서 불러오는 중...");
+        try {
+            const [translations, excluded] = await Promise.all([
+                fetchTranslationsForUrl(url),
+                fetchExclusionsForUrl(url)
+            ]);
+
+            if (excluded) {
+                exclusionSet = new Set(excluded);
+            }
+
+            if (translations && Array.isArray(translations) && translations.length > 0) {
+                translationCache.clear();
+                translations.forEach(t => {
+                    if (t.translated && t.translated.trim()) {
+                        translationCache.set(t.pid, t);
+                    }
+                });
+                populateSidebar(translations);
+                logToSidebar(`서버에서 ${translations.length}개의 저장된 번역을 불러왔습니다.`);
+            } else {
+                logToSidebar("서버에 저장된 기존 번역이 없습니다.");
+            }
+            return translations;
+        } catch (e) {
+            console.error("[ensureTranslationsLoaded] 번역 로드 실패:", e);
+            logToSidebar(`저장된 번역 로드 실패: ${e.message}`, "log-error");
+            return null;
+        }
+    })();
+
+    return translationsLoadedPromise;
+}
+
+function hasUntranslatedParagraphs() {
+    const paragraphs = getTargetParagraphs();
+    for (const p of paragraphs) {
+        if (p.id === 'tagCount' || /^(la|lp)\d+$/i.test(p.id)) continue;
+        const text = p.innerHTML.replace(/<br\s*\/?>/gi, " ").replace(/<[^>]*>/g, "").trim();
+        if (!text) continue;
+
+        const matchedSep = checkSeparatorMatch(text, activeSeparators);
+        if (matchedSep) break; // 구분선 이후는 번역 대상 아님
+
+        // 이미 유효한 번역이 캐시에 있으면 스킵
+        const cached = translationCache.get(p.id);
+        if (cached && cached.translated && cached.translated.trim()) {
+            continue;
+        }
+
+        const cleanedText = text.replace(/([あアいイうウえエおオ])\1{2,}/g, '$1ー');
+        if (exclusionSet.has(cleanedText)) continue;
+
+        if (JAPANESE_REGEX.test(cleanedText)) {
+            return true; // 번역할 문장이 실제로 존재함
+        }
+    }
+    return false; // 모든 문장이 이미 번역되어 있음
+}
+
 async function init() {
     try {
         // 0. Check if the current origin is allowed
@@ -464,31 +737,15 @@ async function init() {
         await loadNovelSeparators(currentNovelTitle);
         renderSeparatorSettingsPanel();
 
-        // 1. Fetch existing translations and exclusion list in parallel
+        // 1. [핵심] 저장된 번역을 무조건 100% 먼저 불러와 캐시와 사이드바를 구축
         const url = getCleanUrl();
-        const [translations, excluded] = await Promise.all([
-            fetchTranslationsForUrl(url),
-            fetchExclusionsForUrl(url)
-        ]);
+        const translations = await ensureTranslationsLoaded();
 
-        if (excluded) {
-            exclusionSet = new Set(excluded);
-        }
+        // 1.5. 확장 구분선 설정 기반 번역 자동 제외 및 검수 패널
+        await checkAndExcludeSeparatorTranslations(translations);
 
         // 2. 알림 센터 연계 재번역 검수 대상 먼저 조회하여 reviewTargetPids 사전 확보
         await checkAndLoadReviewTargets();
-
-        if (translations) {
-            // 2.5. Populate cache and sidebar with existing data (단, 빈 번역문은 유효 번역 캐시에서 제외)
-            translationCache.clear();
-            translations.forEach(t => {
-                if (t.translated && t.translated.trim()) {
-                    translationCache.set(t.pid, t);
-                }
-            });
-            populateSidebar(translations);
-            logToSidebar(`서버에서 ${translations.length}개의 저장된 번역을 불러왔습니다.`);
-        }
 
         // 3. Check if translations should be applied to the page content
         let initialApplied = false;
@@ -520,10 +777,12 @@ async function init() {
         // 본문 문단 클릭 연동 활성화
         setupParagraphInteraction();
 
-        // 4. Scan for and translate any new paragraphs
-        const hasJapanesePTags = await scanForJapanesePTags();
-        if (hasJapanesePTags) {
+        // 4. 실제로 아직 번역되지 않은 문단이 있는 경우에만 사이드바를 열고 번역 진행
+        const needsTranslation = hasUntranslatedParagraphs();
+        if (needsTranslation) {
             showSidebar(); // This will trigger translateAllPTags for new content
+        } else {
+            console.log("[init] 모든 문장이 이미 저장되어 있어 추가 번역을 수행하지 않습니다.");
         }
 
     } catch (error) {
@@ -830,6 +1089,7 @@ function injectSidebar() {
             </button>
         </div>
         <div id="review-target-panel" class="review-target-panel" style="display: none;"></div>
+        <div id="separator-exclude-panel" class="separator-exclude-panel" style="display: none;"></div>
         <div class="sidebar-content">
             <table id="translation-table">
                 <thead>
@@ -1127,6 +1387,12 @@ function setupEventListeners() {
                 await saveNovelSeparators(currentNovelTitle, customOnly, useDefs);
                 saveSeparatorsBtn.textContent = '✅ 저장됨!';
                 logToSidebar(`[${currentNovelTitle}] 구분선 설정 저장 완료 (적용 중: ${activeSeparators.length}개)`);
+
+                // 새로 저장된 구분선 설정을 감안하여 현재 메모리 내 번역에 매칭되는 항목이 있으면 즉시 자동 제외 및 알림 처리
+                if (translationCache.size > 0) {
+                    const currentTranslations = Array.from(translationCache.values());
+                    await checkAndExcludeSeparatorTranslations(currentTranslations);
+                }
                 setTimeout(() => {
                     saveSeparatorsBtn.textContent = '💾 설정 저장';
                     saveSeparatorsBtn.disabled = false;
@@ -1179,6 +1445,10 @@ function setupEventListeners() {
         document.getElementById('resume-translation-btn').style.display = 'none';
         document.getElementById('retry-translation-btn').style.display = 'inline-block';
         updateSidebarWithCancelled();
+        try {
+            const novelKey = (currentNovelTitle || 'default').trim().replace(/[^a-zA-Z0-9가-힣_]/g, '_');
+            chrome.storage.local.remove(`lanovel_batch_count_${novelKey}`).catch(() => {});
+        } catch (e) {}
     });
 
     document.getElementById('resume-translation-btn').addEventListener('click', () => {
@@ -1197,6 +1467,7 @@ function setupEventListeners() {
         const tableBody = document.getElementById('translation-table-body');
         tableBody.innerHTML = ''; 
         translationCache.clear();
+        translationsLoadedPromise = null;
         hasScannedForP_Tags = false;
         translateAllPTags(true);
         showSidebar();
@@ -1310,10 +1581,63 @@ function chunkArray(array, size) {
     return chunks;
 }
 
+// =================================================================================
+// ntfy Push Notifications
+// =================================================================================
+
+async function sendNtfyProgress(novelTitle, episodeTitle, current, total, percentage, url, episodeCount = null) {
+    try {
+        const payload = {
+            novel_title: novelTitle || '',
+            episode_title: episodeTitle || '',
+            current: current,
+            total: total,
+            percentage: percentage,
+            url: url || ''
+        };
+        if (episodeCount !== null && episodeCount !== undefined) {
+            payload.episode_count = episodeCount;
+        }
+        await fetch('http://127.0.0.1:8001/api/notifications/progress', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+    } catch (e) {
+        // 알림 전송 실패는 메인 프로세스를 방해하지 않음
+    }
+}
+
+async function sendNtfyComplete(novelTitle, episodeTitle, totalCount, url, episodeCount = null) {
+    try {
+        const payload = {
+            novel_title: novelTitle || '',
+            episode_title: episodeTitle || '',
+            total_count: totalCount,
+            url: url || ''
+        };
+        if (episodeCount !== null && episodeCount !== undefined) {
+            payload.episode_count = episodeCount;
+        }
+        await fetch('http://127.0.0.1:8001/api/notifications/complete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+    } catch (e) {
+        // 알림 전송 실패는 메인 프로세스를 방해하지 않음
+    }
+}
+
 async function translateAllPTags(isRetranslation = false) {
     isTranslationCancelled = false;
     document.getElementById('stop-translation-btn').style.display = 'inline-block';
     document.getElementById('retry-translation-btn').style.display = 'none';
+
+    // [핵심 보장] 일반 번역 시 반드시 서버에서 저장된 번역을 먼저 완벽히 불러와 캐시를 채운 후에만 진행
+    if (!isRetranslation) {
+        await ensureTranslationsLoaded();
+    }
 
     const paragraphs = getTargetParagraphs();
     const textsToTranslate = [];
@@ -1378,6 +1702,12 @@ async function translateAllPTags(isRetranslation = false) {
     
     addPlaceholderRows(textsToTranslate);
 
+    function checkAndReportMilestone(currentProcessed, totalItems) {
+        // [100% 완료 시에만 알림 정책] 회차 내부의 자잘한 진행 알림(25%, 50%, 75%)은 차단합니다.
+        // 각 화가 100% 완료된 후 10화 단위 마일스톤에 도달할 때만 알림이 전송됩니다.
+        return;
+    }
+
     async function translateChunk(items, chunkSize) {
         if (isTranslationCancelled) return;
     
@@ -1436,8 +1766,56 @@ async function translateAllPTags(isRetranslation = false) {
                         });
                     }
 
-                    const successes = response.translations.filter(t => t.translated !== null && !t.translated.includes('번역 실패'));
-                    const failures = response.translations.filter(t => t.translated === null || t.translated.includes('번역 실패'));
+                    // [원문 복붙/변형 감지 알림 & UI 처리]
+                    const verbatimItems = response.translations.filter(t => 
+                        Boolean(t.verbatim) || (t.translated && checkIsVerbatimOrParaphrased(t.original, t.translated))
+                    );
+                    if (verbatimItems.length > 0) {
+                        verbatimItems.forEach(item => {
+                            const preview = item.original ? (item.original.length > 25 ? item.original.slice(0, 25) + '...' : item.original) : '';
+                            logToSidebar(`⚠️ [원문 복제·변형 감지] 문장(ID: ${item.id})이 원문과 동일/변형되어 자동 삭제 및 휴지통으로 이전되었습니다. (원문: ${preview})`, 'log-error');
+                            translationCache.delete(item.id);
+
+                            // 본문 pTag 원상복구
+                            if (isPageApplied) {
+                                const pTag = document.getElementById(item.id);
+                                if (pTag && pTag.dataset.lanovelOriginalHtml) {
+                                    pTag.innerHTML = pTag.dataset.lanovelOriginalHtml;
+                                    pTag.classList.remove('lanovel-applied-text');
+                                    pTag.removeAttribute('style');
+                                    if (pTag.dataset.lanovelOriginalStyle) {
+                                        pTag.setAttribute('style', pTag.dataset.lanovelOriginalStyle);
+                                    }
+                                }
+                            }
+
+                            const row = document.querySelector(`tr[data-pid="${item.id}"]`);
+                            if (row) {
+                                const cell = row.querySelector('.translated-text');
+                                if (cell) {
+                                    cell.textContent = '';
+                                    cell.setAttribute('contenteditable', 'true');
+                                }
+                                const saveBtn = row.querySelector('.save-btn');
+                                if (saveBtn) saveBtn.disabled = false;
+                                const retransBtn = row.querySelector('.retranslate-row-btn');
+                                if (retransBtn) retransBtn.disabled = false;
+                            }
+                            const panelTraEl = document.getElementById(`review-tra-${item.id}`);
+                            if (panelTraEl) {
+                                panelTraEl.textContent = '번역: (원문 복제·변형 감지되어 자동 삭제됨)';
+                                panelTraEl.classList.add('waiting');
+                            }
+                        });
+                    }
+
+                    const verbatimIdSet = new Set(verbatimItems.map(v => String(v.id)));
+                    const successes = response.translations.filter(t => 
+                        !verbatimIdSet.has(String(t.id)) && t.translated !== null && !t.translated.includes('번역 실패')
+                    );
+                    const failures = response.translations.filter(t => 
+                        !verbatimIdSet.has(String(t.id)) && (t.translated === null || t.translated.includes('번역 실패'))
+                    );
     
                     if (successes.length > 0) {
                         updateSidebarWithTranslations(successes);
@@ -1585,9 +1963,11 @@ async function translateAllPTags(isRetranslation = false) {
         if (isTranslationCancelled) break;
         logToSidebar(`긴 문장 번역 중 (${index + 1}/${longTexts.length})...`);
         await translateChunk([item], 1);
-                    if (index < longTexts.length - 1) {
-                        await new Promise(resolve => setTimeout(resolve, 5000)); // 5초 대기
-                    }    }
+        checkAndReportMilestone(index + 1, textsToTranslate.length);
+        if (index < longTexts.length - 1) {
+            await new Promise(resolve => setTimeout(resolve, 5000)); // 5초 대기
+        }
+    }
 
     // Then, process normal texts in batches
     if (!isTranslationCancelled && normalTexts.length > 0) {
@@ -1635,6 +2015,7 @@ async function translateAllPTags(isRetranslation = false) {
             progress += chunk.length;
             logToSidebar(`(${progress}/${normalTexts.length}) 일반 문장 번역 진행 중...`);
             await translateChunk(chunk, initialChunkSize);
+            checkAndReportMilestone(longTexts.length + progress, textsToTranslate.length);
 
             if (index < chunks.length - 1) {
                 logToSidebar(`${dynamicDelay / 1000}초 후 다음 묶음을 번역합니다.`);
@@ -1650,10 +2031,52 @@ async function translateAllPTags(isRetranslation = false) {
     logToSidebar("모든 번역 작업이 완료되었습니다.");
 
     if (!isTranslationCancelled) {
+        // [알림 센터 검수 모드: 다음 페이지 자동 넘기기 차단 및 회차 카운트 제외]
+        if (isReviewMode()) {
+            logToSidebar("🔔 [알림 센터 검수 모드] 재번역 검수 회차이므로 다음 페이지 자동 넘기기가 비활성화되었습니다.");
+            return;
+        }
+
+        // [10화 단위 번역 진행 알림 (100% 완료 시에만)]
+        // chrome.storage.local에 소설별 누적 완료 회차 수를 저장합니다.
+        const novelKey = (currentNovelTitle || 'default').trim().replace(/[^a-zA-Z0-9가-힣_]/g, '_');
+        const countKey = `lanovel_batch_count_${novelKey}`;
+        let currentBatchCount = 1;
+
+        try {
+            const stored = await chrome.storage.local.get(countKey);
+            currentBatchCount = (stored && typeof stored[countKey] === 'number' ? stored[countKey] : 0) + 1;
+            await chrome.storage.local.set({ [countKey]: currentBatchCount });
+        } catch (storageErr) {
+            console.warn('[ntfy] Failed to access chrome.storage:', storageErr);
+        }
+
+        logToSidebar(`[번역 진행 카운터] 현재 소설 누적 번역 완료: ${currentBatchCount}화`);
+
+        // 10의 배수(10, 20, 30, ...) 화가 100% 완료되었을 때만 진행 알림 발송!
+        if (currentBatchCount % 10 === 0) {
+            logToSidebar(`🔔 [ntfy] ${currentBatchCount}화 달성! 10화 단위 번역 진행 알림을 발송합니다.`);
+            sendNtfyProgress(
+                currentNovelTitle,
+                document.title || '',
+                textsToTranslate.length,
+                textsToTranslate.length,
+                100,
+                getCleanUrl(),
+                currentBatchCount
+            );
+        } else {
+            logToSidebar(`[ntfy] 10화 단위 알림 정책 적용 중 (현재: ${currentBatchCount}화, 다음 알림: ${Math.ceil(currentBatchCount / 10) * 10}화)`);
+        }
+
         const scrollDelay = 60000; // 60-second delay
         const currentUrl = getCleanUrl(); // Get the current clean URL
 
         const startAutoScroll = () => {
+            if (isReviewMode()) {
+                logToSidebar("🔔 [알림 센터 검수 모드] 다음 페이지 자동 넘기기가 비활성화되어 있습니다.");
+                return;
+            }
             logToSidebar(`번역 완료. ${scrollDelay / 1000}초 후 페이지 끝으로 자동 스크롤합니다.`);
 
             setTimeout(() => {
@@ -1671,14 +2094,23 @@ async function translateAllPTags(isRetranslation = false) {
                     if ((window.innerHeight + window.scrollY) >= document.body.scrollHeight - 10) {
                         clearInterval(checkScrollEndInterval);
                         
-                        if (currentUrl.includes('novel18.syosetu.com')) {
-                            logToSidebar("'novel18.syosetu.com'입니다. '次へ' 버튼을 찾아서 클릭합니다.");
-                            const nextButton = document.querySelector('a.c-pager__item.c-pager__item--next');
+                        if (currentUrl.includes('novel18.syosetu.com') || currentUrl.includes('syosetu.com')) {
+                            logToSidebar("소설 사이트 '次へ' 버튼을 찾아서 클릭합니다.");
+                            const nextButton = document.querySelector('a.c-pager__item.c-pager__item--next') || document.querySelector('a.novelview_pager-next');
                             if (nextButton && nextButton.href) {
                                 logToSidebar(`다음 페이지로 이동: ${nextButton.href}`);
                                 window.location.href = nextButton.href;
                             } else {
-                                logToSidebar("다음 페이지 버튼을 찾을 수 없습니다.");
+                                logToSidebar("다음 페이지 버튼을 찾을 수 없습니다. (소설 연속 번역 종료)");
+                                // 마지막 화에 도달하여 다음 화가 없으므로 최종 완료 알림 발송 후 카운터 리셋
+                                sendNtfyComplete(
+                                    currentNovelTitle,
+                                    document.title || '',
+                                    textsToTranslate.length,
+                                    getCleanUrl(),
+                                    currentBatchCount
+                                );
+                                chrome.storage.local.remove(countKey).catch(() => {});
                             }
                         } else if (currentUrl.includes('kakuyomu.jp')) {
                             logToSidebar("'kakuyomu.jp'입니다. 'PageDown' 키를 누릅니다.");
@@ -1742,6 +2174,33 @@ function populateSidebar(translations) {
     updateApplyButtonUI(isPageApplied);
 }
 
+function checkIsVerbatimOrParaphrased(original, translated) {
+    if (!original || !translated) return false;
+    const cleanOri = original.trim();
+    const cleanTra = translated.trim();
+    if (!cleanTra) return false;
+
+    // 원문에 일본어 문자(가나/한자)가 있는지 검사
+    if (!JAPANESE_REGEX.test(cleanOri)) return false;
+
+    // 1. 공백 제거 후 완전 일치
+    const noSpaceOri = cleanOri.replace(/\s+/g, '');
+    const noSpaceTra = cleanTra.replace(/\s+/g, '');
+    if (noSpaceOri === noSpaceTra) return true;
+
+    // 2. 한글이 전혀 없고 일본어 가나가 포함된 경우 (원문 변형 및 패러프레이징)
+    const hasHangul = /[\uac00-\ud7af\u1100-\u11ff\u3130-\u318f]/.test(cleanTra);
+    const hasKana = /[\u3040-\u309f\u30a0-\u30fa\u30fd-\u30ff]/.test(cleanTra);
+    if (!hasHangul && hasKana) {
+        if (noSpaceOri.includes(noSpaceTra) || noSpaceTra.includes(noSpaceOri)) {
+            return true;
+        }
+        return true;
+    }
+
+    return false;
+}
+
 async function retranslateSingleRow(pid, originalText) {
     const row = document.querySelector(`tr[data-pid="${pid}"]`);
     if (!row) return;
@@ -1767,8 +2226,46 @@ async function retranslateSingleRow(pid, originalText) {
         });
 
         if (response && response.translations && response.translations.length > 0) {
-            const newTranslated = response.translations[0].translated;
-            if (newTranslated) {
+            const transItem = response.translations[0];
+            const newTranslated = transItem.translated || '';
+            const isVerbatim = Boolean(transItem.verbatim) || (newTranslated && checkIsVerbatimOrParaphrased(originalText, newTranslated));
+
+            if (isVerbatim) {
+                // 원문 복제/변형 감지: 자동 삭제 처리 및 즉시 피드백
+                translatedCell.textContent = '';
+                translatedCell.setAttribute('contenteditable', 'true');
+                translatedCell.style.color = '';
+
+                // 캐시에서 삭제
+                translationCache.delete(pid);
+
+                // 본문 적용 복원 (원문 HTML로 되돌림)
+                if (isPageApplied) {
+                    const pTag = document.getElementById(pid);
+                    if (pTag && pTag.dataset.lanovelOriginalHtml) {
+                        pTag.innerHTML = pTag.dataset.lanovelOriginalHtml;
+                        pTag.classList.remove('lanovel-applied-text');
+                        pTag.removeAttribute('style');
+                        if (pTag.dataset.lanovelOriginalStyle) {
+                            pTag.setAttribute('style', pTag.dataset.lanovelOriginalStyle);
+                        }
+                    }
+                }
+
+                // 상단 검수 패널 실시간 갱신
+                const panelTraEl = document.getElementById(`review-tra-${pid}`);
+                if (panelTraEl) {
+                    panelTraEl.textContent = '번역: (원문 복제·변형 감지되어 자동 삭제됨)';
+                    panelTraEl.classList.add('waiting');
+                }
+
+                // 서버 DB에서도 삭제 및 휴지통/알림에 등록되도록 보장
+                if (newTranslated) {
+                    await saveSingleTranslation(pid, originalText, newTranslated);
+                }
+
+                logToSidebar(`⚠️ (pid: ${pid}) 원문 복제·변형이 감지되어 번역문이 자동 삭제 및 휴지통으로 이동되었습니다.`, 'log-error');
+            } else if (newTranslated) {
                 translatedCell.textContent = newTranslated;
                 translatedCell.style.color = '';
                 translatedCell.setAttribute('contenteditable', 'true');
@@ -1790,6 +2287,13 @@ async function retranslateSingleRow(pid, originalText) {
 
                 // translationCache 갱신
                 translationCache.set(pid, { pid: pid, original: originalText, translated: newTranslated });
+
+                // 상단 검수 패널 실시간 갱신
+                const panelTraEl = document.getElementById(`review-tra-${pid}`);
+                if (panelTraEl) {
+                    panelTraEl.textContent = `번역: ${newTranslated}`;
+                    panelTraEl.classList.remove('waiting');
+                }
 
                 // DB에 즉시 저장
                 await saveSingleTranslation(pid, originalText, newTranslated);
@@ -1871,9 +2375,13 @@ function updateSidebarWithTranslations(translations) {
 
         const isError = item.translated.includes('번역 실패') || item.translated.includes('API 오류');
         const isCensored = item.censored || item.translated.includes('[검열로 인해 번역 생략]');
+        const isVerbatim = Boolean(item.verbatim) || (item.translated && checkIsVerbatimOrParaphrased(item.original, item.translated));
 
-        // 성공한 번역은 캐시에 반영
-        if (!isError) {
+        // 성공한 번역은 캐시에 반영, 원문 복붙/변형은 캐시에서 제거
+        if (isVerbatim) {
+            translationCache.delete(item.id);
+            item.translated = '';
+        } else if (!isError) {
             translationCache.set(item.id, { pid: item.id, original: item.original, translated: item.translated });
         }
 
@@ -1888,8 +2396,13 @@ function updateSidebarWithTranslations(translations) {
                 // 상단 검수 패널 내 실시간 번역문 업데이트
                 const panelTraEl = document.getElementById(`review-tra-${item.id}`);
                 if (panelTraEl) {
-                    panelTraEl.textContent = `번역: ${item.translated || '(빈 번역문)'}`;
-                    panelTraEl.classList.remove('waiting');
+                    if (isVerbatim) {
+                        panelTraEl.textContent = '번역: (원문 복제·변형 감지되어 자동 삭제됨)';
+                        panelTraEl.classList.add('waiting');
+                    } else {
+                        panelTraEl.textContent = `번역: ${item.translated || '(빈 번역문)'}`;
+                        if (item.translated) panelTraEl.classList.remove('waiting');
+                    }
                 }
             }
 

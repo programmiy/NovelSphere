@@ -261,3 +261,119 @@ tr.review-target-row:hover {
     transition: background-color 0.3s ease;
 }
 
+/* =================================================================================
+ * 구분선 자동 제외 패널 & 카드 스타일 (검수탭 유사 알림 배너)
+ * ================================================================================= */
+.separator-exclude-panel {
+    background: linear-gradient(135deg, #fff7ed 0%, #ffedd5 100%);
+    border: 1.5px solid #f97316;
+    border-radius: 8px;
+    margin: 8px 12px;
+    padding: 10px 12px;
+    box-shadow: 0 2px 8px rgba(249, 115, 22, 0.15);
+    font-size: 12px;
+    font-family: inherit;
+    color: #9a3412;
+}
+
+.separator-exclude-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 4px;
+}
+
+.separator-exclude-title {
+    font-weight: 700;
+    font-size: 13px;
+    color: #c2410c;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.separator-exclude-actions {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+}
+
+.sep-exclude-close-btn {
+    background: none;
+    border: none;
+    font-size: 16px;
+    cursor: pointer;
+    color: #c2410c;
+    line-height: 1;
+}
+
+.separator-exclude-desc {
+    font-size: 11px;
+    color: #9a3412;
+    margin-bottom: 8px;
+    opacity: 0.9;
+}
+
+.separator-exclude-body {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 180px;
+    overflow-y: auto;
+}
+
+.separator-exclude-card {
+    background: #ffffff;
+    border: 1px solid #fed7aa;
+    border-left: 3px solid #f97316;
+    border-radius: 6px;
+    padding: 6px 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.separator-exclude-card:hover {
+    background: #fffaf5;
+    border-color: #ea580c;
+    transform: translateX(2px);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+.sep-card-pid {
+    font-size: 10px;
+    font-weight: 700;
+    color: #ea580c;
+    margin-bottom: 2px;
+    display: flex;
+    justify-content: space-between;
+}
+
+.sep-card-match {
+    font-weight: normal;
+    color: #9a3412;
+    font-size: 10px;
+}
+
+.sep-card-ori {
+    color: #4b5563;
+    font-size: 11px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-bottom: 2px;
+}
+
+.sep-card-tra {
+    color: #dc2626;
+    font-weight: 500;
+    font-size: 11px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.sep-card-tra del {
+    color: #b91c1c;
+}
+
+
