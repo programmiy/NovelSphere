@@ -66,10 +66,54 @@ class Settings(BaseSettings):
     autostart: bool = Field(default=False, description="애플리케이션 자동 시작 활성화")
     gemini_api_delay_seconds: int = Field(default=20, description="Gemini API 호출 전 지연 시간 (초)")
 
+    # --- ntfy Push Notification Settings ---
+    ntfy_enabled: bool = Field(default=True, description="ntfy 푸시 알림 활성화 여부")
+    ntfy_server: str = Field(default="https://ntfy.sh", description="ntfy 서버 URL")
+    ntfy_topic: str = Field(default="NovelSphere", description="ntfy 토픽 이름")
+    ntfy_progress_step: int = Field(default=100, description="번역 진행도 알림 주기 (100은 100% 완료 시에만 알림, 25/50은 중간 진행률 알림)")
+
 
 # 설정 객체 인스턴스화
 # 이 객체를 다른 모듈에서 import하여 사용합니다.
 settings = Settings()
+
+# settings.json 오버라이드 로드
+SETTINGS_JSON_PATH = os.path.join(APP_ROOT, "server", "settings.json")
+def load_runtime_settings():
+    if os.path.exists(SETTINGS_JSON_PATH):
+        try:
+            import json
+            with open(SETTINGS_JSON_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                if "autostart" in data:
+                    settings.autostart = bool(data["autostart"])
+                if "ntfy_enabled" in data:
+                    settings.ntfy_enabled = bool(data["ntfy_enabled"])
+                if "ntfy_server" in data and data["ntfy_server"]:
+                    settings.ntfy_server = str(data["ntfy_server"]).strip()
+                if "ntfy_topic" in data:
+                    settings.ntfy_topic = str(data["ntfy_topic"]).strip()
+                if "ntfy_progress_step" in data:
+                    settings.ntfy_progress_step = int(data["ntfy_progress_step"])
+        except Exception:
+            pass
+
+def save_runtime_settings(updates: dict):
+    data = {}
+    if os.path.exists(SETTINGS_JSON_PATH):
+        try:
+            import json
+            with open(SETTINGS_JSON_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception:
+            data = {}
+    data.update(updates)
+    import json
+    with open(SETTINGS_JSON_PATH, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=4, ensure_ascii=False)
+    load_runtime_settings()
+
+load_runtime_settings()
 
 # 필요한 디렉토리 생성
 os.makedirs(settings.log_dir, exist_ok=True)

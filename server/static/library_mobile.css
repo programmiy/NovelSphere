@@ -1,0 +1,1220 @@
+/* ==========================================================================
+   LANOVEL Mobile Dedicated Stylesheet (library_mobile.css)
+   v2.1 - Mobile-Optimized Standalone App Architecture
+   ========================================================================== */
+
+:root {
+    --font-primary: "Pretendard", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    
+    /* Light Mode Palette */
+    --bg-color: #f8fafc;
+    --card-bg: #ffffff;
+    --card-bg-elevated: #ffffff;
+    --border-color: #e2e8f0;
+    --border-light: #f1f5f9;
+    --primary-color: #3b82f6;
+    --primary-hover: #2563eb;
+    --primary-light: #eff6ff;
+    --primary-border: #bfdbfe;
+    --text-color: #0f172a;
+    --text-secondary: #334155;
+    --text-muted: #64748b;
+    --danger-color: #ef4444;
+    --danger-light: #fef2f2;
+    --success-color: #10b981;
+    --success-light: #ecfdf5;
+    --warning-color: #f59e0b;
+    --warning-light: #fffbeb;
+    
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.08), 0 2px 4px -2px rgba(0, 0, 0, 0.04);
+    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.05);
+    --bottom-nav-height: 58px;
+}
+
+body.dark-mode {
+    --bg-color: #090d16;
+    --card-bg: #111827;
+    --card-bg-elevated: #1e293b;
+    --border-color: #1e293b;
+    --border-light: #161f33;
+    --primary-color: #60a5fa;
+    --primary-hover: #3b82f6;
+    --primary-light: rgba(59, 130, 246, 0.15);
+    --primary-border: rgba(96, 165, 250, 0.3);
+    --text-color: #f8fafc;
+    --text-secondary: #cbd5e1;
+    --text-muted: #94a3b8;
+    --danger-color: #f87171;
+    --danger-light: rgba(239, 68, 68, 0.15);
+    --success-color: #34d399;
+    --success-light: rgba(16, 185, 129, 0.15);
+    --warning-color: #fbbf24;
+    --warning-light: rgba(245, 158, 11, 0.15);
+    
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4);
+    --shadow-md: 0 4px 10px rgba(0, 0, 0, 0.5);
+    --shadow-lg: 0 10px 20px rgba(0, 0, 0, 0.6);
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    -webkit-tap-highlight-color: transparent;
+}
+
+html, body {
+    width: 100%;
+    height: 100%;
+    font-family: var(--font-primary);
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+}
+
+/* Base App Layout with Bottom Nav clearance */
+.m-app-container {
+    width: 100%;
+    min-height: 100vh;
+    padding: 10px 14px calc(var(--bottom-nav-height) + env(safe-area-inset-bottom, 16px) + 20px);
+    display: flex;
+    flex-direction: column;
+}
+
+/* ==========================================================================
+   1. Offline Indicator Banner
+   ========================================================================== */
+.offline-banner {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background: var(--warning-light);
+    color: var(--warning-color);
+    border: 1px solid rgba(245, 158, 11, 0.35);
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 600;
+    margin-bottom: 10px;
+    animation: fadeIn 0.2s ease;
+}
+
+.offline-banner .material-icons {
+    font-size: 16px;
+}
+
+/* ==========================================================================
+   2. Mobile Slim Header (1줄)
+   ========================================================================== */
+.m-header {
+    height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+}
+
+.m-brand {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.brand-icon {
+    font-size: 24px;
+    color: var(--primary-color);
+}
+
+.brand-title {
+    font-size: 18px;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    color: var(--text-color);
+}
+
+.m-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.m-icon-btn {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background-color: var(--card-bg);
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background 0.15s ease;
+}
+
+.m-icon-btn:active {
+    background-color: var(--border-light);
+    transform: scale(0.95);
+}
+
+.m-icon-btn .material-icons {
+    font-size: 20px;
+}
+
+/* ==========================================================================
+   3. 1-Line Stats Horizontal Scroll Strip (세로 200px 공간 절약)
+   ========================================================================== */
+.m-stats-strip {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    padding: 4px 0 10px;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+}
+
+.m-stats-strip::-webkit-scrollbar {
+    display: none;
+}
+
+.m-stat-chip {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    border-radius: 20px;
+    background-color: var(--card-bg);
+    border: 1px solid var(--border-color);
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    white-space: nowrap;
+}
+
+.m-stat-chip.active {
+    background-color: var(--primary-light);
+    border-color: var(--primary-border);
+    color: var(--primary-color);
+}
+
+.m-stat-chip:active {
+    transform: scale(0.96);
+}
+
+.chip-val {
+    font-weight: 800;
+    color: var(--text-color);
+}
+
+.m-stat-chip.active .chip-val {
+    color: var(--primary-color);
+}
+
+/* ==========================================================================
+   4. Compact Hero Continue Reading Banner (높이 ~80px 슬림 카드)
+   ========================================================================== */
+.m-hero-section {
+    margin-bottom: 14px;
+}
+
+.m-hero-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 14px;
+    background: linear-gradient(135deg, var(--card-bg) 0%, var(--primary-light) 100%);
+    border: 1px solid var(--primary-border);
+    border-radius: 12px;
+    box-shadow: var(--shadow-sm);
+    position: relative;
+    overflow: hidden;
+}
+
+.m-hero-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+    flex-grow: 1;
+}
+
+.m-hero-thumb {
+    width: 44px;
+    height: 60px;
+    background: linear-gradient(145deg, #1e293b, #0f172a);
+    border-radius: 4px;
+    box-shadow: 1px 2px 6px rgba(0, 0, 0, 0.25);
+    border-left: 3px solid var(--primary-color);
+    padding: 4px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    flex-shrink: 0;
+}
+
+.m-hero-thumb.completed {
+    border-left-color: var(--success-color);
+}
+
+.m-hero-thumb-title {
+    font-size: 8px;
+    font-weight: 700;
+    color: #f8fafc;
+    line-height: 1.1;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.m-hero-thumb-badge {
+    font-size: 7px;
+    font-weight: 700;
+    color: #60a5fa;
+    align-self: flex-start;
+}
+
+.m-hero-info {
+    min-width: 0;
+    flex-grow: 1;
+}
+
+.m-hero-tag {
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--primary-color);
+    margin-bottom: 2px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.m-hero-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text-color);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1.2;
+    cursor: pointer;
+}
+
+.m-hero-chapter {
+    font-size: 11px;
+    color: var(--text-secondary);
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-top: 2px;
+}
+
+.m-hero-progress-track {
+    width: 100%;
+    height: 4px;
+    background-color: var(--border-color);
+    border-radius: 2px;
+    overflow: hidden;
+    margin-top: 5px;
+}
+
+.m-hero-progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--primary-color), var(--success-color));
+    border-radius: 2px;
+}
+
+.m-hero-right {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.m-hero-play-btn {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--primary-color), #4f46e5);
+    color: #ffffff;
+    border: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.4);
+    cursor: pointer;
+}
+
+.m-hero-play-btn:active {
+    transform: scale(0.92);
+}
+
+.m-hero-play-btn .material-icons {
+    font-size: 22px;
+}
+
+/* ==========================================================================
+   5. Mobile Toolbar (Search, Sort, View Toggle, Tags)
+   ========================================================================== */
+.m-toolbar {
+    margin-bottom: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.m-search-box-wrap {
+    position: relative;
+    width: 100%;
+    display: flex;
+    align-items: center;
+}
+
+.m-search-box-wrap .search-icon {
+    position: absolute;
+    left: 12px;
+    font-size: 18px;
+    color: var(--text-muted);
+    pointer-events: none;
+}
+
+.m-search-input {
+    width: 100%;
+    height: 40px;
+    padding: 0 34px 0 38px;
+    border-radius: 10px;
+    background-color: var(--card-bg);
+    border: 1px solid var(--border-color);
+    color: var(--text-color);
+    font-size: 13px;
+    outline: none;
+    transition: border-color 0.15s ease;
+}
+
+.m-search-input:focus {
+    border-color: var(--primary-color);
+}
+
+.m-search-clear {
+    position: absolute;
+    right: 10px;
+    background: none;
+    border: none;
+    font-size: 18px;
+    color: var(--text-muted);
+    cursor: pointer;
+    line-height: 1;
+}
+
+.m-toolbar-subrow {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.m-sort-wrap {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background-color: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 0 8px;
+    height: 34px;
+    flex-grow: 1;
+}
+
+.m-sort-wrap .sort-icon {
+    font-size: 16px;
+    color: var(--text-muted);
+}
+
+.m-select {
+    width: 100%;
+    height: 100%;
+    background: none;
+    border: none;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-color);
+    outline: none;
+    cursor: pointer;
+}
+
+.m-view-toggle {
+    display: inline-flex;
+    background-color: var(--border-light);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 2px;
+}
+
+.m-view-btn {
+    width: 32px;
+    height: 30px;
+    border-radius: 6px;
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+
+.m-view-btn.active {
+    background-color: var(--card-bg);
+    color: var(--primary-color);
+    box-shadow: var(--shadow-sm);
+}
+
+.m-view-btn .material-icons {
+    font-size: 18px;
+}
+
+/* Tag Filter Bar (가로 스와이프 칩) */
+.m-tag-filter-bar {
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 2px;
+}
+
+.m-tag-filter-bar::-webkit-scrollbar {
+    display: none;
+}
+
+.m-tag-filter {
+    flex-shrink: 0;
+    padding: 4px 10px;
+    border-radius: 14px;
+    font-size: 11px;
+    font-weight: 500;
+    background-color: var(--card-bg);
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.m-tag-filter.active {
+    background-color: var(--primary-light);
+    border-color: var(--primary-border);
+    color: var(--primary-color);
+    font-weight: 700;
+}
+
+/* ==========================================================================
+   6. Mobile Bookshelf: 2-Column Grid (모바일 표준) vs 1-Column List
+   ========================================================================== */
+.m-book-shelf.grid-mode {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+}
+
+.m-book-shelf.list-mode {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+/* 2-Column Grid Card */
+.m-book-card {
+    background-color: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: var(--shadow-sm);
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    transition: transform 0.15s ease;
+}
+
+.m-book-card:active {
+    transform: scale(0.98);
+}
+
+.m-card-spine {
+    height: 4px;
+    width: 100%;
+    background: linear-gradient(90deg, var(--primary-color), #6366f1);
+}
+
+.m-card-spine.completed {
+    background: linear-gradient(90deg, var(--success-color), #059669);
+}
+
+.m-card-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 10px 4px;
+}
+
+.m-badge {
+    font-size: 9px;
+    font-weight: 700;
+    padding: 1px 5px;
+    border-radius: 6px;
+    line-height: 1.3;
+}
+
+.m-badge.completed {
+    background: var(--success-light);
+    color: var(--success-color);
+}
+
+.m-badge.reading {
+    background: var(--primary-light);
+    color: var(--primary-color);
+}
+
+.m-badge.unread {
+    background: var(--border-light);
+    color: var(--text-muted);
+}
+
+.m-pin-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--text-muted);
+    font-size: 16px;
+    line-height: 1;
+}
+
+.m-pin-btn.pinned {
+    color: var(--warning-color);
+}
+
+.m-pin-btn .material-icons {
+    font-size: 18px;
+}
+
+.m-card-body {
+    padding: 6px 10px 10px;
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+.m-card-title {
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1.3;
+    color: var(--text-color);
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    min-height: 34px;
+    cursor: pointer;
+}
+
+.m-card-chapter {
+    font-size: 11px;
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-top: 4px;
+}
+
+.m-card-progress-track {
+    width: 100%;
+    height: 3px;
+    background-color: var(--border-color);
+    border-radius: 2px;
+    overflow: hidden;
+    margin-top: 6px;
+}
+
+.m-card-progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--primary-color), var(--success-color));
+    border-radius: 2px;
+}
+
+.m-card-meta {
+    display: flex;
+    justify-content: space-between;
+    font-size: 10px;
+    color: var(--text-muted);
+    margin-top: 3px;
+}
+
+.m-card-actions {
+    margin-top: auto;
+    padding-top: 8px;
+    display: flex;
+    gap: 4px;
+}
+
+.m-btn-read {
+    flex-grow: 1;
+    height: 32px;
+    border-radius: 6px;
+    background-color: var(--primary-color);
+    color: #ffffff;
+    border: none;
+    font-size: 11px;
+    font-weight: 700;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    cursor: pointer;
+}
+
+.m-btn-icon-sub {
+    width: 32px;
+    height: 32px;
+    border-radius: 6px;
+    background-color: var(--card-bg);
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+
+.m-btn-icon-sub .material-icons {
+    font-size: 16px;
+}
+
+/* 1-Column Compact List Row */
+.m-list-row {
+    display: grid;
+    grid-template-columns: 28px 1fr auto;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    background-color: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    box-shadow: var(--shadow-sm);
+}
+
+.m-list-row:active {
+    background-color: var(--border-light);
+}
+
+.m-list-info {
+    min-width: 0;
+}
+
+.m-list-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text-color);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1.2;
+}
+
+.m-list-sub {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 10px;
+    color: var(--text-muted);
+    margin-top: 2px;
+}
+
+.m-list-progress-bar {
+    width: 60px;
+    height: 3px;
+    background-color: var(--border-color);
+    border-radius: 2px;
+    overflow: hidden;
+}
+
+.m-list-progress-fill {
+    height: 100%;
+    background: var(--primary-color);
+}
+
+.m-list-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+/* Empty Shelf Notice */
+.m-empty-shelf {
+    grid-column: 1 / -1;
+    text-align: center;
+    padding: 40px 16px;
+    background: var(--card-bg);
+    border: 1px dashed var(--border-color);
+    border-radius: 12px;
+    color: var(--text-muted);
+}
+
+.m-empty-shelf .material-icons {
+    font-size: 36px;
+    margin-bottom: 6px;
+}
+
+/* ==========================================================================
+   7. Mobile Bottom Navigation Bar (엄지손가락 고정 바)
+   ========================================================================== */
+.m-bottom-nav {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: calc(var(--bottom-nav-height) + env(safe-area-inset-bottom, 0px));
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    background-color: var(--card-bg);
+    border-top: 1px solid var(--border-color);
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    z-index: 900;
+    box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.05);
+}
+
+.nav-tab {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    text-decoration: none;
+    color: var(--text-muted);
+    transition: color 0.15s ease;
+}
+
+.nav-tab.active {
+    color: var(--primary-color);
+}
+
+.nav-tab .material-icons {
+    font-size: 22px;
+}
+
+.nav-tab .tab-label {
+    font-size: 10px;
+    font-weight: 600;
+}
+
+/* ==========================================================================
+   8. Mobile Action Sheet / Bottom Sheet Modal
+   ========================================================================== */
+.m-sheet-backdrop, .m-modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(2px);
+    z-index: 1000;
+    animation: fadeIn 0.2s ease;
+}
+
+.m-action-sheet, .m-bottom-sheet-content {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: var(--card-bg);
+    border-top-left-radius: 20px;
+    border-top-right-radius: 20px;
+    box-shadow: var(--shadow-lg);
+    z-index: 1010;
+    max-height: 85vh;
+    display: flex;
+    flex-direction: column;
+    animation: slideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    padding-bottom: env(safe-area-inset-bottom, 16px);
+}
+
+.m-bottom-sheet-content.full-height {
+    max-height: 92vh;
+    height: 92vh;
+}
+
+.sheet-handle {
+    width: 36px;
+    height: 4px;
+    background-color: var(--border-color);
+    border-radius: 2px;
+    margin: 10px auto 4px;
+    flex-shrink: 0;
+}
+
+.sheet-header, .m-modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 18px;
+    border-bottom: 1px solid var(--border-light);
+}
+
+.sheet-title, .m-modal-title-wrap h2 {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--text-color);
+}
+
+.sheet-close-btn, .m-modal-close-btn {
+    background: none;
+    border: none;
+    font-size: 24px;
+    color: var(--text-muted);
+    cursor: pointer;
+    line-height: 1;
+}
+
+.sheet-menu-list {
+    display: flex;
+    flex-direction: column;
+    padding: 8px 12px;
+}
+
+.sheet-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 12px 14px;
+    border-radius: 10px;
+    text-decoration: none;
+    background: none;
+    border: none;
+    text-align: left;
+    color: var(--text-color);
+    cursor: pointer;
+}
+
+.sheet-menu-item:active {
+    background-color: var(--border-light);
+}
+
+.sheet-menu-item.highlight {
+    background-color: var(--primary-light);
+    color: var(--primary-color);
+    margin-top: 6px;
+}
+
+.sheet-menu-item .material-icons {
+    font-size: 22px;
+    color: var(--primary-color);
+}
+
+.menu-item-text .item-main {
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.menu-item-text .item-sub {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 1px;
+}
+
+/* Modal Body & Forms */
+.m-modal-body {
+    padding: 14px 18px;
+    overflow-y: auto;
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.m-book-target-name {
+    font-size: 15px;
+    font-weight: 800;
+    color: var(--primary-color);
+    padding-bottom: 4px;
+    border-bottom: 1px solid var(--border-light);
+}
+
+.m-toggle-box {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px;
+    background: var(--border-light);
+    border-radius: 10px;
+}
+
+.toggle-title {
+    display: block;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text-color);
+}
+
+.toggle-desc {
+    display: block;
+    font-size: 10px;
+    color: var(--text-muted);
+}
+
+/* Switch slider */
+.switch {
+    position: relative;
+    display: inline-block;
+    width: 44px;
+    height: 24px;
+    flex-shrink: 0;
+}
+
+.switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background-color: #cbd5e1;
+    transition: 0.3s;
+    border-radius: 24px;
+}
+
+.slider:before {
+    position: absolute;
+    content: "";
+    height: 18px;
+    width: 18px;
+    left: 3px;
+    bottom: 3px;
+    background-color: white;
+    transition: 0.3s;
+    border-radius: 50%;
+}
+
+input:checked + .slider {
+    background-color: var(--success-color);
+}
+
+input:checked + .slider:before {
+    transform: translateX(20px);
+}
+
+.m-form-section {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.m-section-label {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-secondary);
+}
+
+.m-tag-chips-picker {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    max-height: 110px;
+    overflow-y: auto;
+    padding: 6px;
+    background-color: var(--border-light);
+    border-radius: 8px;
+}
+
+.m-tag-chip-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
+    border-radius: 12px;
+    background-color: var(--card-bg);
+    border: 1px solid var(--border-color);
+    font-size: 11px;
+}
+
+.m-new-tag-row {
+    display: flex;
+    gap: 6px;
+    margin-top: 4px;
+}
+
+.m-new-tag-row input {
+    flex-grow: 1;
+    height: 32px;
+    border-radius: 6px;
+    border: 1px solid var(--border-color);
+    background: var(--card-bg);
+    color: var(--text-color);
+    padding: 0 10px;
+    font-size: 12px;
+}
+
+.btn-sub {
+    padding: 0 12px;
+    height: 32px;
+    border-radius: 6px;
+    background: var(--border-light);
+    border: 1px solid var(--border-color);
+    color: var(--text-color);
+    font-weight: 600;
+    font-size: 11px;
+}
+
+textarea#m-book-notes-summary {
+    width: 100%;
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+    background: var(--card-bg);
+    color: var(--text-color);
+    padding: 8px 10px;
+    font-size: 12px;
+    resize: none;
+    outline: none;
+}
+
+.m-modal-footer {
+    display: flex;
+    gap: 10px;
+    padding: 12px 18px;
+    border-top: 1px solid var(--border-light);
+}
+
+.btn-cancel {
+    flex: 1;
+    height: 42px;
+    border-radius: 8px;
+    background-color: var(--border-light);
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    font-weight: 700;
+}
+
+.btn-save {
+    flex: 2;
+    height: 42px;
+    border-radius: 8px;
+    background-color: var(--primary-color);
+    color: #ffffff;
+    border: none;
+    font-weight: 700;
+}
+
+/* TOC Modal */
+.m-toc-search-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    background-color: var(--border-light);
+    border-bottom: 1px solid var(--border-color);
+}
+
+.m-toc-search-bar input {
+    flex-grow: 1;
+    height: 32px;
+    border-radius: 6px;
+    border: 1px solid var(--border-color);
+    background: var(--card-bg);
+    color: var(--text-color);
+    padding: 0 8px;
+    font-size: 12px;
+}
+
+.m-toc-stats {
+    font-size: 11px;
+    color: var(--text-muted);
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.m-url-list-scroll {
+    flex-grow: 1;
+    overflow-y: auto;
+    padding: 8px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.m-toc-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px;
+    background-color: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    text-decoration: none;
+    color: var(--text-color);
+}
+
+.m-toc-row:active {
+    background-color: var(--border-light);
+}
+
+.m-toc-row-title {
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    padding-right: 10px;
+}
+
+.m-toc-row-count {
+    font-size: 10px;
+    color: var(--text-muted);
+    background-color: var(--border-light);
+    padding: 2px 6px;
+    border-radius: 4px;
+    flex-shrink: 0;
+}
+
+/* Toast */
+.m-toast {
+    position: fixed;
+    top: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(15, 23, 42, 0.95);
+    color: #ffffff;
+    padding: 8px 16px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    z-index: 2000;
+    box-shadow: var(--shadow-lg);
+    white-space: nowrap;
+    animation: toastSlideDown 0.2s ease;
+}
+
+/* Animations */
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@keyframes slideUp {
+    from { transform: translateY(100%); }
+    to { transform: translateY(0); }
+}
+
+@keyframes toastSlideDown {
+    from { transform: translate(-50%, -20px); opacity: 0; }
+    to { transform: translate(-50%, 0); opacity: 1; }
+}

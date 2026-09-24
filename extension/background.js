@@ -103,9 +103,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === 'batchTranslate') {
         (async () => {
             try {
+                const rawUrl = sender.tab?.url || '';
+                const cleanTabUrl = rawUrl.split('#')[0].trim();
                 const translations = await handleBatchTranslate(
                     request.items, 
-                    sender.tab?.url, 
+                    cleanTabUrl, 
                     request.isRetranslation || false, 
                     request.model || null
                 );
@@ -192,7 +194,8 @@ async function fetchPageTitle(url) {
 
 async function handleBatchTranslate(items, sourceUrl, isRetranslation = false, model = null) {
     try {
-        const bodyPayload = { items: items, url: sourceUrl };
+        const cleanSourceUrl = (sourceUrl || '').split('#')[0].trim();
+        const bodyPayload = { items: items, url: cleanSourceUrl };
         if (isRetranslation) {
             bodyPayload.is_retranslation = true;
         }

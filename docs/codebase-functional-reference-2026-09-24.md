@@ -28,7 +28,8 @@
    - `server/routers/system.py` (시스템 상태, 로그 조회, CORS)
    - `server/routers/db_editor.py` (웹 DB 관리자 및 레코드 수정)
    - `server/routers/admin.py` (URL 조각/특수 PID 정리, 룰베이스 괄호 일괄 복원)
-   - `server/routers/ui.py` (템플릿 서빙 라우터)
+   - `server/routers/notifications.py` (ntfy 실시간 푸시 알림 설정 및 테스트 발송)
+   - `server/routers/ui.py` (템플릿 서빙 라우터 및 모바일 자동 감지/라우팅)
 5. [크롬 확장 프로그램 세부 함수 동작 (Chrome Extension)](#5-크롬-확장-프로그램-세부-함수-동작-chrome-extension)
    - `extension/background.js`
    - `extension/content.js`
@@ -149,6 +150,12 @@ LLM 호출 없이 순수 유니코드와 정규식으로 100% 결정론적으로
 ### `server/celery_app.py`
 - Celery 애플리케이션 인스턴스 초기화 (`server.celery_app`). Redis 브로커 연동.
 
+### `server/notifications.py`
+- HTTP pub-sub 기반 오픈소스 푸시 서비스 ntfy(`ntfy.sh` 또는 자체 호스팅) 연동 모듈.
+- `send_ntfy(...)`: 백그라운드 데몬 스레드 비동기 알림 발송 (논블로킹).
+- `notify_translation_progress(...)`: 번역 완료 및 진행률 스마트폰 푸시 알림.
+- `notify_task_event(...)`: 백그라운드 태스크(누락 제목 수집 등) 완료 알림.
+
 ---
 
 ## 3. FastAPI 서버 코어 및 라이프사이클
@@ -248,7 +255,15 @@ LLM 호출 없이 순수 유니코드와 정규식으로 100% 결정론적으로
 - `POST /admin/cleanup_pids`: 카쿠요무 특수 PID(`la`, `lp`) 제외 처리.
 - **`POST /admin/restore_brackets`: 원문 대사 괄호(「%」) 룰베이스 일괄 복원 온디맨드 실행.**
 
-### `server/routers/ui.py` (템플릿 서빙)
+### `server/routers/notifications.py` (ntfy 푸시 알림 API)
+- `GET /api/notifications/settings`: 현재 ntfy 토픽, 서버, 알림 활성화 여부 조회.
+- `POST /api/notifications/settings`: ntfy 설정 실시간 변경 및 `settings.json` 저장.
+- `POST /api/notifications/test`: 테스트 푸시 알림 발송.
+
+### `server/routers/ui.py` (템플릿 서빙 및 모바일 라우팅)
+- `is_mobile_request(request)`: 쿼리 파라미터(`?view=mobile/pc`), 쿠키(`lanovel_view_mode`), User-Agent 헤더 순서로 모바일 접속 환경 자동 판별.
+- `serve_library_view(request)`: 모바일 감지 시 `library_mobile.html`, 데스크톱 환경 시 `library.html` 동적 서빙.
+- `GET /m`: 스마트폰 전용 서재 뷰 엔드포인트.
 - `/book`, `/viewer`, `/admin`, `/logs`, `/library`, `/`: Jinja2 템플릿 서빙.
 
 ---
@@ -304,3 +319,5 @@ LLM 호출 없이 순수 유니코드와 정규식으로 100% 결정론적으로
 | **"서버 켜질 때 백업 어떻게 돌아가?"** | `server/server.py` (`backup_check_task`, `perform_sqlite_backup`, `rotate_backups`) | 24시간 가동 시마다 SQLite 온라인 백업 실행, 최신 7개 유지 롤링. |
 | **"특정 단어 전체 찾아바꾸기 해줘"** | `server/routers/translation.py` (`find_replace_all`)<br>`server/static/admin.js` (`executeGlobalFindReplace`) | 폴더 범위, 원문 조건, 정규식, 대소문자 구분을 지원하여 DB 전체 치환. |
 | **"책을 파일 하나로 저장해서 인터넷 없이 보고 싶어"** | `server/routers/books.py` (`export_book_as_html`) | CSS/JS와 소설 JSON 데이터를 인라인 결합한 단일 HTML 파일 내보내기. |
+| **"번역 끝나면 폰으로 알림 오게 해줘" / "푸시 알림 설정해줘"** | `server/notifications.py` (`send_ntfy`, `notify_translation_progress`)<br>`server/routers/notifications.py`<br>`server/static/admin.js` | ntfy pub-sub 프로토콜을 사용해 스마트폰/브라우저로 실시간 번역 진행 및 완료 푸시 전송. |
+| **"스마트폰(모바일)에서 서재 편하게 보고 싶어" / "모바일 전용 화면 보여줘"** | `server/routers/ui.py` (`is_mobile_request`, `serve_library_view`)<br>`server/templates/library_mobile.html`<br>`server/static/library_mobile.js` | 모바일 접속 시 터치 최적화된 모바일 전용 서재 뷰(`library_mobile.html`) 자동 서빙 및 쿠키 기반 PC/모바일 모드 전환. |

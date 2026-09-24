@@ -10,6 +10,7 @@ from typing import List
 from server.celery_app import celery_app
 from celery.result import AsyncResult
 from server.database import get_sqlite_conn
+from server.notifications import notify_task_event
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -85,6 +86,7 @@ def _process_urls_fallback_worker(urls: List[str], task_id: str):
         'status': 'Completed'
     }
     logger.info(f"Finished fallback in-process task {task_id}.")
+    notify_task_event("누락 제목 가져오기", f"총 {total_urls}개 URL의 제목 수집이 완료되었습니다.")
 
 @celery_app.task(bind=True)
 def process_urls_in_background_task(self, urls: List[str]):
@@ -97,6 +99,7 @@ def process_urls_in_background_task(self, urls: List[str]):
         _fetch_and_update_title_worker(url)
         time.sleep(1)
     logger.info(f"Finished Celery task {self.request.id}.")
+    notify_task_event("누락 제목 가져오기", f"총 {total_urls}개 URL의 제목 수집이 완료되었습니다.")
     return {'current': total_urls, 'total': total_urls, 'percentage': 100, 'status': 'Completed'}
 
 @router.post(

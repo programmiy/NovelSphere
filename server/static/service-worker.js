@@ -1,7 +1,8 @@
-const CACHE_NAME = 'lanovel-cache-v2-__GIT_HASH__';
+const CACHE_NAME = 'lanovel-cache-v3-__GIT_HASH__';
 // App Shell: Core files needed for the app to run offline
 const APP_SHELL_URLS = [
-    '/', // This should map to the root, which is library.html
+    '/', // Root (library.html or library_mobile.html depending on UA)
+    '/m', // Direct mobile entrypoint
     '/book', // Endpoint for book_ui.html
     '/viewer',
     '/admin',
@@ -14,6 +15,8 @@ const APP_SHELL_URLS = [
     '/static/book_ui.js',
     '/static/library.css',
     '/static/library.js',
+    '/static/library_mobile.css',
+    '/static/library_mobile.js',
     '/static/viewer.css',
     '/static/viewer.js'
 ];

@@ -21,8 +21,11 @@ let rawCleanupData = null;
 
 // DOM element cache
 let historyContainer, emptyState, searchBox, darkModeToggle, fetchAllTitlesBtn, bulkActionsPanel, selectionCount, deleteSelectedBtn, moveSelectedToFolderDropdown, findReplaceModal, closeFindReplaceModalBtn, cancelFindReplaceBtn, executeFindReplaceBtn, openGlobalFindReplaceBtn, createFolderButton, newFolderNameInput, findEmptyBtn, findText, replaceText, findCount, conditionText, folderScope, useRegex, caseSensitive, autoStartCheckbox, enableDragDropCheckbox;
-let cleanupQueueBtn, openRestoreCenterBtn, notifBadge, abnormalFilterBar, filterAbnormalAll, filterAbnormalPartial, filterAbnormalOther, moveToCleanupBtn, whitelistSelectedAbnormalBtn, cleanupSectionBar, cleanupSummaryText, deleteSelectedCleanupBtn, deleteAllCleanupBtn, cleanupRestoreModal, closeRestoreCenterModalBtn, closeRestoreCenterBottomBtn, tabBtnNotifications, tabBtnTrash, tabBtnAbnormalWhitelist, modalNotifBadge, modalTrashBadge, modalWhitelistBadge, tabContentNotifications, tabContentTrash, tabContentAbnormalWhitelist, notificationsTableBody, trashTableBody, whitelistTableBody, clearAllWhitelistBtn, dismissAllNotifsBtn, restoreAllTrashBtn, toggleDismissedHistory, dismissedHistoryContainer, dismissedTableBody, dismissedNotifsCount, similarRecommendPanel, recommendKeyword, recommendCardsContainer, closeRecommendPanelBtn;
+let cleanupQueueBtn, openRestoreCenterBtn, notifBadge, abnormalFilterBar, filterAbnormalAll, filterAbnormalPartial, filterAbnormalOther, moveToCleanupBtn, whitelistSelectedAbnormalBtn, cleanupSectionBar, cleanupSummaryText, deleteSelectedCleanupBtn, deleteAllCleanupBtn, cleanupRestoreModal, closeRestoreCenterModalBtn, closeRestoreCenterBottomBtn, tabBtnNotifications, tabBtnTrash, tabBtnAbnormalWhitelist, modalNotifBadge, modalTrashBadge, modalWhitelistBadge, tabContentNotifications, tabContentTrash, tabContentAbnormalWhitelist, notificationsTableBody, trashTableBody, whitelistTableBody, clearAllWhitelistBtn, dismissAllNotifsBtn, refreshNotifsBtn, restoreAllTrashBtn, toggleDismissedHistory, dismissedHistoryContainer, dismissedTableBody, dismissedNotifsCount, similarRecommendPanel, recommendKeyword, recommendCardsContainer, closeRecommendPanelBtn;
+let modalAutoRefreshTimer = null;
+let currentRestoreTab = 'notifications';
 let deselectAllBtn, retranslateSelectedBtn, copySelectedOriginalBtn, bulkFindReplaceBtn, bulkWhitelistAbnormalBtn, bulkMoveToCleanupBtn, exportSelectedPdfBtn, exportSelectedJsonBtn, excludeSelectedBtn, exportPdfBtn, exportJsonBtn;
+let openNtfySettingsBtn, ntfySettingsModal, closeNtfySettingsBtn, closeNtfySettingsBottomBtn, ntfyEnabledCheckbox, ntfyServerInput, ntfyTopicInput, ntfyProgressStepSelect, sendNtfyTestBtn, saveNtfySettingsBtn, ntfyTopicLink, ntfyTestResult;
 
 // Debounce timer
 let searchTimeout;
@@ -100,6 +103,7 @@ function cacheDOMElements() {
     whitelistTableBody = document.getElementById('whitelistTableBody');
     clearAllWhitelistBtn = document.getElementById('clearAllWhitelistBtn');
     dismissAllNotifsBtn = document.getElementById('dismissAllNotifsBtn');
+    refreshNotifsBtn = document.getElementById('refreshNotifsBtn');
     restoreAllTrashBtn = document.getElementById('restoreAllTrashBtn');
     toggleDismissedHistory = document.getElementById('toggleDismissedHistory');
     dismissedHistoryContainer = document.getElementById('dismissedHistoryContainer');
@@ -122,6 +126,20 @@ function cacheDOMElements() {
     excludeSelectedBtn = document.getElementById('excludeSelectedBtn');
     exportPdfBtn = document.getElementById('exportPdfBtn');
     exportJsonBtn = document.getElementById('exportJsonBtn');
+
+    // ntfy settings modal elements
+    openNtfySettingsBtn = document.getElementById('openNtfySettingsBtn');
+    ntfySettingsModal = document.getElementById('ntfySettingsModal');
+    closeNtfySettingsBtn = document.getElementById('closeNtfySettingsBtn');
+    closeNtfySettingsBottomBtn = document.getElementById('closeNtfySettingsBottomBtn');
+    ntfyEnabledCheckbox = document.getElementById('ntfyEnabledCheckbox');
+    ntfyServerInput = document.getElementById('ntfyServerInput');
+    ntfyTopicInput = document.getElementById('ntfyTopicInput');
+    ntfyProgressStepSelect = document.getElementById('ntfyProgressStepSelect');
+    sendNtfyTestBtn = document.getElementById('sendNtfyTestBtn');
+    saveNtfySettingsBtn = document.getElementById('saveNtfySettingsBtn');
+    ntfyTopicLink = document.getElementById('ntfyTopicLink');
+    ntfyTestResult = document.getElementById('ntfyTestResult');
 }
 
 async function loadAndRenderGrouped() {
@@ -568,6 +586,7 @@ function setupEventListeners() {
     if (tabBtnTrash) tabBtnTrash.addEventListener('click', () => switchRestoreTab('trash'));
     if (tabBtnAbnormalWhitelist) tabBtnAbnormalWhitelist.addEventListener('click', () => switchRestoreTab('whitelist'));
     if (dismissAllNotifsBtn) dismissAllNotifsBtn.addEventListener('click', dismissAllNotifications);
+    if (refreshNotifsBtn) refreshNotifsBtn.addEventListener('click', () => loadAndRenderNotifications(false));
     if (restoreAllTrashBtn) restoreAllTrashBtn.addEventListener('click', restoreAllTrash);
     if (clearAllWhitelistBtn) clearAllWhitelistBtn.addEventListener('click', clearAllAbnormalWhitelist);
     if (toggleDismissedHistory) toggleDismissedHistory.addEventListener('click', toggleDismissedHistoryView);
@@ -613,6 +632,15 @@ function setupEventListeners() {
         });
     }
 
+    // ntfy settings modal listeners
+    if (openNtfySettingsBtn) openNtfySettingsBtn.addEventListener('click', openNtfyModal);
+    if (closeNtfySettingsBtn) closeNtfySettingsBtn.addEventListener('click', closeNtfyModal);
+    if (closeNtfySettingsBottomBtn) closeNtfySettingsBottomBtn.addEventListener('click', closeNtfyModal);
+    if (saveNtfySettingsBtn) saveNtfySettingsBtn.addEventListener('click', saveNtfySettings);
+    if (sendNtfyTestBtn) sendNtfyTestBtn.addEventListener('click', sendNtfyTest);
+    if (ntfyTopicInput) ntfyTopicInput.addEventListener('input', updateNtfyTopicLink);
+    if (ntfyServerInput) ntfyServerInput.addEventListener('input', updateNtfyTopicLink);
+
     // Translation drag / text selection listener for similar recommendations
     document.addEventListener('mouseup', handleDocumentMouseUp);
     document.addEventListener('keyup', (e) => {
@@ -620,6 +648,96 @@ function setupEventListeners() {
             handleDocumentMouseUp(e);
         }
     });
+}
+
+// --- ntfy Push Notification Modal & Actions ---
+function updateNtfyTopicLink() {
+    if (!ntfyTopicLink) return;
+    const server = (ntfyServerInput ? ntfyServerInput.value : 'https://ntfy.sh').trim().replace(/\/+$/, '');
+    const topic = (ntfyTopicInput ? ntfyTopicInput.value : 'NovelSphere').trim();
+    ntfyTopicLink.href = topic ? `${server}/${encodeURIComponent(topic)}` : server;
+}
+
+async function openNtfyModal() {
+    if (!ntfySettingsModal) return;
+    if (ntfyTestResult) ntfyTestResult.innerHTML = '';
+    
+    try {
+        const res = await fetch('/api/notifications/config');
+        if (res.ok) {
+            const config = await res.json();
+            if (ntfyEnabledCheckbox) ntfyEnabledCheckbox.checked = !!config.ntfy_enabled;
+            if (ntfyServerInput) ntfyServerInput.value = config.ntfy_server || 'https://ntfy.sh';
+            if (ntfyTopicInput) ntfyTopicInput.value = config.ntfy_topic || 'NovelSphere';
+            if (ntfyProgressStepSelect) ntfyProgressStepSelect.value = String(config.ntfy_progress_step || 100);
+            updateNtfyTopicLink();
+        }
+    } catch (e) {
+        console.warn('Failed to load ntfy config:', e);
+    }
+    ntfySettingsModal.style.display = 'block';
+}
+
+function closeNtfyModal() {
+    if (ntfySettingsModal) ntfySettingsModal.style.display = 'none';
+}
+
+async function saveNtfySettings() {
+    const payload = {
+        ntfy_enabled: ntfyEnabledCheckbox ? ntfyEnabledCheckbox.checked : true,
+        ntfy_server: ntfyServerInput ? ntfyServerInput.value.trim() : 'https://ntfy.sh',
+        ntfy_topic: ntfyTopicInput ? ntfyTopicInput.value.trim() : 'NovelSphere',
+        ntfy_progress_step: ntfyProgressStepSelect ? parseInt(ntfyProgressStepSelect.value, 10) : 100
+    };
+
+    try {
+        const res = await fetch('/api/notifications/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        if (!res.ok) throw new Error('설정 저장 실패');
+        showToast('ntfy 알림 설정이 저장되었습니다.', 'success');
+        closeNtfyModal();
+    } catch (err) {
+        showToast(`설정 저장 중 오류: ${err.message}`, 'error');
+    }
+}
+
+async function sendNtfyTest() {
+    if (!sendNtfyTestBtn || !ntfyTestResult) return;
+    const topic = (ntfyTopicInput ? ntfyTopicInput.value : '').trim();
+    const server = (ntfyServerInput ? ntfyServerInput.value : '').trim();
+
+    if (!topic) {
+        ntfyTestResult.innerHTML = '<span style="color: var(--danger-color, #dc3545);">토픽명을 입력해주세요.</span>';
+        return;
+    }
+
+    sendNtfyTestBtn.disabled = true;
+    ntfyTestResult.innerHTML = '<span style="color: var(--primary-color, #0d6efd);">알림 발송 중...</span>';
+
+    try {
+        const res = await fetch('/api/notifications/test', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ topic, server })
+        });
+
+        const data = await res.json();
+        if (res.ok && data.success) {
+            ntfyTestResult.innerHTML = `<span style="color: var(--success-color, #28a745);">✅ 발송 성공! 스마트폰 ntfy 앱이나 웹 피드를 확인하세요.</span>`;
+            showToast('테스트 알림이 성공적으로 발송되었습니다.', 'success');
+        } else {
+            throw new Error(data.detail || '전송 실패');
+        }
+    } catch (err) {
+        ntfyTestResult.innerHTML = `<span style="color: var(--danger-color, #dc3545);">❌ 실패: ${err.message}</span>`;
+        showToast(`테스트 알림 발송 실패: ${err.message}`, 'error');
+    } finally {
+        sendNtfyTestBtn.disabled = false;
+    }
 }
 
 async function loadAndRenderAbnormal() {
@@ -910,14 +1028,61 @@ function openRestoreCenterModal(defaultTab = 'notifications') {
     if (!cleanupRestoreModal) return;
     cleanupRestoreModal.style.display = 'flex';
     switchRestoreTab(defaultTab);
+    startModalAutoRefresh();
 }
 
 function closeRestoreCenterModal() {
     if (!cleanupRestoreModal) return;
     cleanupRestoreModal.style.display = 'none';
+    stopModalAutoRefresh();
+}
+
+function startModalAutoRefresh() {
+    stopModalAutoRefresh();
+    modalAutoRefreshTimer = setInterval(() => {
+        if (!cleanupRestoreModal || cleanupRestoreModal.style.display === 'none') {
+            stopModalAutoRefresh();
+            return;
+        }
+        if (currentRestoreTab === 'notifications') {
+            loadAndRenderNotifications(true);
+        }
+    }, 4000);
+}
+
+function stopModalAutoRefresh() {
+    if (modalAutoRefreshTimer) {
+        clearInterval(modalAutoRefreshTimer);
+        modalAutoRefreshTimer = null;
+    }
+}
+
+function refreshRestoreCenterIfVisible() {
+    if (cleanupRestoreModal && cleanupRestoreModal.style.display !== 'none') {
+        if (currentRestoreTab === 'notifications') {
+            loadAndRenderNotifications(true);
+        }
+    }
+}
+
+async function updateGlobalNotifBadge() {
+    try {
+        const res = await fetch(`/cleanup/notifications?t=${Date.now()}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        const activeCount = (data.active_notifications || []).length;
+        if (modalNotifBadge) modalNotifBadge.textContent = activeCount;
+        if (notifBadge) {
+            notifBadge.textContent = activeCount;
+            notifBadge.style.display = activeCount > 0 ? 'inline-flex' : 'none';
+        }
+    } catch (e) {
+        // silent fail
+    }
 }
 
 function switchRestoreTab(tab) {
+    currentRestoreTab = tab;
     if (tab === 'notifications') {
         if (tabBtnNotifications) tabBtnNotifications.classList.add('active');
         if (tabBtnTrash) tabBtnTrash.classList.remove('active');
@@ -925,8 +1090,10 @@ function switchRestoreTab(tab) {
         if (tabContentNotifications) tabContentNotifications.style.display = 'block';
         if (tabContentTrash) tabContentTrash.style.display = 'none';
         if (tabContentAbnormalWhitelist) tabContentAbnormalWhitelist.style.display = 'none';
-        loadAndRenderNotifications();
+        loadAndRenderNotifications(false);
+        startModalAutoRefresh();
     } else if (tab === 'trash') {
+        stopModalAutoRefresh();
         if (tabBtnNotifications) tabBtnNotifications.classList.remove('active');
         if (tabBtnTrash) tabBtnTrash.classList.add('active');
         if (tabBtnAbnormalWhitelist) tabBtnAbnormalWhitelist.classList.remove('active');
@@ -935,6 +1102,7 @@ function switchRestoreTab(tab) {
         if (tabContentAbnormalWhitelist) tabContentAbnormalWhitelist.style.display = 'none';
         loadAndRenderTrash();
     } else if (tab === 'whitelist') {
+        stopModalAutoRefresh();
         if (tabBtnNotifications) tabBtnNotifications.classList.remove('active');
         if (tabBtnTrash) tabBtnTrash.classList.remove('active');
         if (tabBtnAbnormalWhitelist) tabBtnAbnormalWhitelist.classList.add('active');
@@ -945,9 +1113,11 @@ function switchRestoreTab(tab) {
     }
 }
 
-async function loadAndRenderNotifications() {
+async function loadAndRenderNotifications(silent = false) {
     if (!notificationsTableBody) return;
-    notificationsTableBody.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 20px;">알림 불러오는 중...</td></tr>';
+    if (!silent) {
+        notificationsTableBody.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 20px;">알림 불러오는 중...</td></tr>';
+    }
 
     try {
         const res = await fetch(`/cleanup/notifications?t=${Date.now()}`);
@@ -1008,9 +1178,23 @@ async function loadAndRenderNotifications() {
 
     } catch (err) {
         console.error('알림 로딩 실패:', err);
-        notificationsTableBody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: var(--danger-color); padding: 20px;">알림 로딩 실패</td></tr>';
+        if (!silent) {
+            notificationsTableBody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: var(--danger-color); padding: 20px;">알림 로딩 실패</td></tr>';
+        }
     }
 }
+
+// 브라우저 창 포커스 또는 가시성 변경 시 알림 및 뱃지 자동 동기화
+window.addEventListener('focus', () => {
+    refreshRestoreCenterIfVisible();
+    updateGlobalNotifBadge();
+});
+document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) {
+        refreshRestoreCenterIfVisible();
+        updateGlobalNotifBadge();
+    }
+});
 
 async function dismissNotification(id) {
     try {

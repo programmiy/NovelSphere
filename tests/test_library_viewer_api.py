@@ -91,3 +91,49 @@ def test_library_ui_elements():
     assert "btnViewList" in response.text
     assert "statUnreadBooks" in response.text
     assert "countUnread" in response.text
+
+def test_mobile_library_detection_and_pc_preservation():
+    # 1. Desktop User-Agent -> Serves 100% untouched PC library.html
+    desktop_ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    pc_res = client.get("/", headers={"User-Agent": desktop_ua})
+    assert pc_res.status_code == 200
+    assert "library.css" in pc_res.text
+    assert "library.js" in pc_res.text
+    assert "hero-continue-reading" in pc_res.text
+    assert "m-bottom-nav" not in pc_res.text
+
+    # 2. Mobile User-Agent (iPhone / Android) -> Serves library_mobile.html
+    mobile_ua_iphone = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
+    mobile_res = client.get("/", headers={"User-Agent": mobile_ua_iphone})
+    assert mobile_res.status_code == 200
+    assert "library_mobile.css" in mobile_res.text
+    assert "library_mobile.js" in mobile_res.text
+    assert "m-bottom-nav" in mobile_res.text
+    assert "mBookShelf" in mobile_res.text
+    assert "offline-banner" in mobile_res.text
+
+    # 3. Direct /m route -> Always serves mobile template
+    m_direct_res = client.get("/m")
+    assert m_direct_res.status_code == 200
+    assert "library_mobile.css" in m_direct_res.text
+    assert "m-bottom-nav" in m_direct_res.text
+
+    # 4. Desktop with ?view=mobile query param -> Serves mobile template and sets cookie
+    forced_mobile_res = client.get("/?view=mobile", headers={"User-Agent": desktop_ua})
+    assert forced_mobile_res.status_code == 200
+    assert "library_mobile.css" in forced_mobile_res.text
+    assert "lanovel_view_mode=mobile" in forced_mobile_res.headers.get("set-cookie", "")
+
+    # 5. Mobile with ?view=pc query param -> Serves PC template and sets cookie
+    forced_pc_res = client.get("/?view=pc", headers={"User-Agent": mobile_ua_iphone})
+    assert forced_pc_res.status_code == 200
+    assert "library.css" in forced_pc_res.text
+    assert "hero-continue-reading" in forced_pc_res.text
+    assert "lanovel_view_mode=pc" in forced_pc_res.headers.get("set-cookie", "")
+
+    # 6. Mobile device with lanovel_view_mode=pc cookie -> Serves PC template
+    cookie_pc_res = client.get("/", headers={"User-Agent": mobile_ua_iphone}, cookies={"lanovel_view_mode": "pc"})
+    assert cookie_pc_res.status_code == 200
+    assert "library.css" in cookie_pc_res.text
+    assert "m-bottom-nav" not in cookie_pc_res.text
+

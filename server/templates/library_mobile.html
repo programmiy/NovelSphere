@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="theme-color" content="#0f172a">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="manifest" href="/static/manifest.json">
+    <link rel="icon" href="data:,">
+    <title>LANOVEL 서재 (모바일)</title>
+    <!-- Fonts & Icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <link rel="stylesheet" href="/static/library_mobile.css?v=2.1">
+</head>
+<body>
+    <div class="m-app-container">
+        <!-- 오프라인 상태 알림 칩 배너 (서버 연결 끊김/비행기 모드 시 표시) -->
+        <div id="offline-banner" class="offline-banner" style="display: none;">
+            <span class="material-icons">cloud_off</span>
+            <span>오프라인 모드: 기기에 저장된 서재를 표시 중입니다.</span>
+        </div>
+
+        <!-- 모바일 슬림 상단 헤더 -->
+        <header class="m-header">
+            <div class="m-brand">
+                <span class="material-icons brand-icon">local_library</span>
+                <h1 class="brand-title">나의 서재</h1>
+            </div>
+
+            <div class="m-header-actions">
+                <button id="mDarkModeToggle" class="m-icon-btn" title="다크 모드 토글">
+                    <span class="material-icons">dark_mode</span>
+                </button>
+                <button id="mMenuToggleBtn" class="m-icon-btn" title="메뉴 더보기">
+                    <span class="material-icons">more_vert</span>
+                </button>
+            </div>
+        </header>
+
+        <!-- 모바일 더보기 액션 시트 (바텀시트 드롭다운) -->
+        <div id="mActionSheetBackdrop" class="m-sheet-backdrop" style="display: none;"></div>
+        <div id="mActionSheet" class="m-action-sheet" style="display: none;">
+            <div class="sheet-handle"></div>
+            <div class="sheet-header">
+                <span class="sheet-title">서재 도구 & 메뉴</span>
+                <button id="mActionSheetClose" class="sheet-close-btn">&times;</button>
+            </div>
+            <div class="sheet-menu-list">
+                <button id="m-fetch-missing-titles-btn" class="sheet-menu-item">
+                    <span class="material-icons">sync</span>
+                    <div class="menu-item-text">
+                        <div class="item-main">누락된 제목 가져오기</div>
+                        <div class="item-sub">원문 사이트에서 비어있는 회차명 자동 수집</div>
+                    </div>
+                </button>
+                <button id="m-download-all-btn" class="sheet-menu-item">
+                    <span class="material-icons">cloud_download</span>
+                    <div class="menu-item-text">
+                        <div class="item-main">오프라인 전체 다운로드</div>
+                        <div class="item-sub">인터넷 없이도 읽을 수 있게 전체 챕터 캐싱</div>
+                    </div>
+                </button>
+                <a href="/admin" class="sheet-menu-item">
+                    <span class="material-icons">dashboard_customize</span>
+                    <div class="menu-item-text">
+                        <div class="item-main">번역 관리 페이지</div>
+                        <div class="item-sub">번역 작업, 규칙 및 시스템 관리</div>
+                    </div>
+                </a>
+                <a href="/db_editor" class="sheet-menu-item">
+                    <span class="material-icons">table_chart</span>
+                    <div class="menu-item-text">
+                        <div class="item-main">DB 편집기</div>
+                        <div class="item-sub">데이터베이스 문장 및 용어 검색/수정</div>
+                    </div>
+                </a>
+                <a href="/?view=pc" class="sheet-menu-item highlight">
+                    <span class="material-icons">desktop_windows</span>
+                    <div class="menu-item-text">
+                        <div class="item-main">PC 데스크톱 버전으로 보기</div>
+                        <div class="item-sub">넓은 화면용 오리지널 서재 레이아웃으로 전환</div>
+                    </div>
+                </a>
+            </div>
+        </div>
+
+        <!-- 1줄 가로 스와이프 통계 스트립 (1번 요구사항: 세로 공간 200px 절약) -->
+        <section class="m-stats-strip" id="mStatsStrip">
+            <button class="m-stat-chip active" data-status="all">
+                <span class="chip-label">전체</span>
+                <span class="chip-val" id="statTotalBooks">0</span>
+            </button>
+            <button class="m-stat-chip" data-status="pinned">
+                <span class="chip-label">⭐ 즐겨찾기</span>
+                <span class="chip-val" id="statPinnedBooks">0</span>
+            </button>
+            <button class="m-stat-chip" data-status="reading">
+                <span class="chip-label">📖 읽는 중</span>
+                <span class="chip-val" id="statReadingBooks">0</span>
+            </button>
+            <button class="m-stat-chip" data-status="unread">
+                <span class="chip-label">✨ 미열람</span>
+                <span class="chip-val" id="statUnreadBooks">0</span>
+            </button>
+            <button class="m-stat-chip" data-status="completed">
+                <span class="chip-label">🏆 완결</span>
+                <span class="chip-val" id="statCompletedBooks">0</span>
+            </button>
+        </section>
+
+        <!-- 스마트 이어보기 Hero 콤팩트 슬림 카드 (높이 ~80px) -->
+        <section id="mobile-hero-continue" class="m-hero-section" style="display: none;">
+            <!-- JavaScript 동적 주입 -->
+        </section>
+
+        <!-- 모바일 툴바 (검색창 + 정렬/뷰토글) -->
+        <section class="m-toolbar">
+            <div class="m-search-box-wrap">
+                <span class="material-icons search-icon">search</span>
+                <input type="text" id="mBookSearchInput" class="m-search-input" placeholder="소설 제목, 줄거리, 태그 검색...">
+                <button id="mSearchClearBtn" class="m-search-clear" style="display: none;">&times;</button>
+            </div>
+
+            <div class="m-toolbar-subrow">
+                <div class="m-sort-wrap">
+                    <span class="material-icons sort-icon">sort</span>
+                    <select id="mSortDropdown" class="m-select">
+                        <option value="recent">최근 읽은 순</option>
+                        <option value="pinned">즐겨찾기 우선</option>
+                        <option value="name_asc">가나다순</option>
+                        <option value="chapters_desc">회차 많은 순</option>
+                    </select>
+                </div>
+
+                <!-- 2열 그리드 ↔ 1열 콤팩트 리스트 토글 -->
+                <div class="m-view-toggle">
+                    <button id="mBtnViewGrid" class="m-view-btn active" data-mode="grid" title="2열 그리드 뷰">
+                        <span class="material-icons">grid_view</span>
+                    </button>
+                    <button id="mBtnViewList" class="m-view-btn" data-mode="list" title="콤팩트 리스트 뷰">
+                        <span class="material-icons">view_list</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- 태그 가로 스와이프 필터 바 -->
+            <div id="m-tag-filter-bar" class="m-tag-filter-bar">
+                <!-- 동적 태그 칩 -->
+            </div>
+        </section>
+
+        <!-- 모바일 책장 본문 (기본: 2열 콤팩트 그리드) -->
+        <main id="mBookShelf" class="m-book-shelf grid-mode">
+            <!-- 책 카드 동적 렌더링 -->
+        </main>
+
+        <!-- 모바일 엄지손가락 하단 고정 내비게이션 바 -->
+        <nav class="m-bottom-nav">
+            <a href="/m" class="nav-tab active">
+                <span class="material-icons">local_library</span>
+                <span class="tab-label">서재</span>
+            </a>
+            <a href="/admin" class="nav-tab">
+                <span class="material-icons">dashboard_customize</span>
+                <span class="tab-label">관리</span>
+            </a>
+            <a href="/db_editor" class="nav-tab">
+                <span class="material-icons">table_chart</span>
+                <span class="tab-label">DB편집</span>
+            </a>
+            <a href="/?view=pc" class="nav-tab">
+                <span class="material-icons">desktop_windows</span>
+                <span class="tab-label">PC버전</span>
+            </a>
+        </nav>
+    </div>
+
+    <!-- 책 정보 & 태그 모바일 바텀시트 모달 -->
+    <div id="m-tag-editor-modal" class="m-modal-overlay" style="display: none;">
+        <div class="m-bottom-sheet-content">
+            <div class="sheet-handle"></div>
+            <header class="m-modal-header">
+                <div class="m-modal-title-wrap">
+                    <span class="material-icons">edit_note</span>
+                    <h2 id="m-tag-editor-title">책 정보 & 설정</h2>
+                </div>
+                <button id="m-tag-editor-close" class="m-modal-close-btn">&times;</button>
+            </header>
+
+            <div class="m-modal-body">
+                <div class="m-book-target-name" id="m-tag-editor-book-name">소설 제목</div>
+
+                <!-- 완결 지정 토글 -->
+                <div class="m-toggle-box">
+                    <div class="toggle-text">
+                        <span class="toggle-title">완결 작품 지정</span>
+                        <span class="toggle-desc">완결된 작품으로 표시하고 완결 뱃지를 부여합니다.</span>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" id="m-book-is-completed-toggle">
+                        <span class="slider round"></span>
+                    </label>
+                </div>
+
+                <!-- 태그 목록 -->
+                <div class="m-form-section">
+                    <label class="m-section-label">태그 선택</label>
+                    <div id="m-tag-checkbox-form" class="m-tag-chips-picker"></div>
+                    <form id="m-new-tag-form" class="m-new-tag-row">
+                        <input type="text" id="m-new-tag-name" placeholder="새 태그 이름..." maxlength="20">
+                        <button type="submit" class="btn-sub">+ 추가</button>
+                    </form>
+                </div>
+
+                <!-- 줄거리 메모 -->
+                <div class="m-form-section">
+                    <label class="m-section-label">줄거리 및 개인 메모</label>
+                    <textarea id="m-book-notes-summary" rows="3" placeholder="소설 줄거리나 감상 메모를 입력하세요..."></textarea>
+                </div>
+            </div>
+
+            <footer class="m-modal-footer">
+                <button id="m-tag-editor-cancel" class="btn-cancel">취소</button>
+                <button id="m-tag-editor-save" class="btn-save">저장하기</button>
+            </footer>
+        </div>
+    </div>
+
+    <!-- 모바일 목차(TOC) 모달 바텀시트 -->
+    <div id="m-url-list-modal" class="m-modal-overlay" style="display: none;">
+        <div class="m-bottom-sheet-content full-height">
+            <div class="sheet-handle"></div>
+            <header class="m-modal-header">
+                <h2 id="m-url-list-title" class="m-toc-modal-title">회차 목차</h2>
+                <button id="m-url-list-close" class="m-modal-close-btn">&times;</button>
+            </header>
+
+            <div class="m-toc-search-bar">
+                <span class="material-icons">search</span>
+                <input type="text" id="m-urlSearchInput" placeholder="회차 검색...">
+                <span id="m-urlListStats" class="m-toc-stats">총 0화</span>
+            </div>
+
+            <div id="m-urlListBody" class="m-url-list-scroll">
+                <!-- 회차 리스트 동적 주입 -->
+            </div>
+        </div>
+    </div>
+
+    <!-- 전역 토스트 -->
+    <div id="m-global-toast" class="m-toast" style="display: none;"></div>
+
+    <script src="/static/library_mobile.js?v=2.1"></script>
+    <script>
+        // PWA Service Worker 등록
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/service-worker.js')
+                    .then(reg => console.log('Mobile PWA Service Worker Registered', reg.scope))
+                    .catch(err => console.warn('Service Worker registration failed:', err));
+            });
+        }
+    </script>
+</body>
+</html>

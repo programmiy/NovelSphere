@@ -10,7 +10,7 @@ from server.routers.translation import (
     TRANSLATION_SYSTEM_INSTRUCTION,
     TranslationItemInput
 )
-from server.routers.data_crud import upsert_translations, TranslationItem, get_cleanup_review_targets
+from server.routers.data_crud import upsert_translations, TranslationItem, get_cleanup_review_targets, dismiss_notification
 
 # 인메모리 SQLite DB로 테스트 세션 격리
 @pytest.fixture
@@ -201,4 +201,152 @@ def test_get_cleanup_review_targets_empty(db_session):
     assert res["has_targets"] is False
     assert res["notif_id"] is None
     assert len(res["targets"]) == 0
+
+def test_get_cleanup_review_targets_with_hash_url_and_numeric_id(db_session):
+    """해시가 포함된 URL 및 숫자 형태의 ID로 조회 시에도 정상 매칭 검증"""
+    clean_url = "https://kakuyomu.jp/works/abc/episodes/101"
+    now_ms = int(time.time() * 1000)
+
+    notif = CleanupNotification(
+        batch_id="manual_cleanup_1",
+        novel_title="테스트 소설",
+        episode_title="101화",
+        url=clean_url,
+        deleted_count=1,
+        is_dismissed=0,
+        created_at=now_ms
+    )
+    db_session.add(notif)
+    db_session.commit()
+
+    trash = TranslationTrash(
+        url=clean_url,
+        pid="p1",
+        original="日本語原文",
+        translated="",
+        timestamp=int(time.time()),
+        deleted_at=now_ms,
+        cleanup_batch_id="manual_cleanup_1",
+        reason_category="verbatim"
+    )
+    db_session.add(trash)
+    db_session.commit()
+
+    # 1. URL에 해시가 붙어있고 batch_id로 알림의 PK 숫자 ID가 전달된 경우
+    hash_url = f"{clean_url}#lanovel_review={notif.id}"
+    res = get_cleanup_review_targets(url=hash_url, batch_id=str(notif.id), db=db_session)
+    assert res["has_targets"] is True
+    assert res["notif_id"] == notif.id
+    assert res["novel_title"] == "테스트 소설"
+    assert len(res["targets"]) == 1
+
+def test_dismiss_notification_with_url_clears_all_episode_notifications(db_session):
+    """url 파라미터와 함께 dismiss 호출 시 동일 회차의 다른 활성 알림들도 일괄 해제 검증"""
+    clean_url = "https://kakuyomu.jp/works/abc/episodes/202"
+    now = int(time.time())
+
+    # 동일 회차에 생성된 2개의 활성 알림
+    n1 = CleanupNotification(
+        batch_id="b1",
+        novel_title="소설A",
+        episode_title="202화",
+        url=clean_url,
+        deleted_count=2,
+        is_dismissed=0,
+        created_at=now - 100
+    )
+    n2 = CleanupNotification(
+        batch_id="b2",
+        novel_title="소설A",
+        episode_title="202화",
+        url=f"{clean_url}#lanovel_review=old",
+        deleted_count=1,
+        is_dismissed=0,
+        created_at=now
+    )
+    # 다른 회차의 알림 (해제되면 안 됨)
+    other = CleanupNotification(
+        batch_id="other_b",
+        novel_title="소설B",
+        episode_title="303화",
+        url="https://kakuyomu.jp/works/abc/episodes/303",
+        deleted_count=1,
+        is_dismissed=0,
+        created_at=now
+    )
+    db_session.add_all([n1, n2, other])
+    db_session.commit()
+
+    # n1에 대해 dismiss_notification 호출 (url 파라미터 전달)
+    res = dismiss_notification(notif_id=n1.id, url=clean_url, db=db_session)
+    assert res["success"] is True
+
+    # n1과 n2는 모두 is_dismissed == 1 이어야 함
+    db_session.refresh(n1)
+    db_session.refresh(n2)
+    db_session.refresh(other)
+
+    assert n1.is_dismissed == 1
+    assert n2.is_dismissed == 1
+    assert other.is_dismissed == 0  # 다른 회차는 유지
+
+def test_upsert_translations_cleans_hash_in_url(db_session):
+    """upsert_translations 호출 시 URL 해시가 깨끗이 제거되어 정규화되는지 검증"""
+    raw_url = "https://kakuyomu.jp/works/abc/episodes/303#lanovel_review=some_batch"
+    clean_url = "https://kakuyomu.jp/works/abc/episodes/303"
+
+    items = [
+        TranslationItem(
+            url=raw_url,
+            pid="p1",
+            original="こんにちは",
+            translated="안녕하세요",
+            timestamp=int(time.time())
+        )
+    ]
+    upsert_translations(items, db=db_session)
+
+    saved = db_session.query(Translation).filter(Translation.pid == "p1").first()
+    assert saved is not None
+    assert saved.url == clean_url
+    assert "#" not in saved.url
+
+def test_upsert_translations_blocks_paraphrased_jp(db_session):
+    """upsert_translations 호출 시 일본어 변형(가나 포함, 한글 없음) 텍스트도 원문 변형으로 차단 및 TranslationTrash 격리 검증"""
+    url = "https://kakuyomu.jp/works/123/episodes/900"
+    items = [
+        TranslationItem(
+            url=url,
+            pid="p1",
+            original="あいつは本当にバカだ。",
+            translated="あいつはバカなやつだ。", # 원문 변형(가나 포함, 한글 없음: paraphrased_jp)
+            timestamp=int(time.time())
+        ),
+        TranslationItem(
+            url=url,
+            pid="p2",
+            original="風が吹いていた。",
+            translated="바람이 불고 있었다.", # 정상 번역
+            timestamp=int(time.time())
+        )
+    ]
+
+    res = upsert_translations(items, db=db_session)
+    assert res["inserted"] == 1
+    assert res.get("verbatim_count") == 1
+
+    # 1. p1은 Translation 테이블에 저장되지 않음
+    row_p1 = db_session.query(Translation).filter(Translation.url == url, Translation.pid == "p1").first()
+    assert row_p1 is None
+
+    # 2. p1은 TranslationTrash에 이유가 기록되어 저장됨
+    trash_p1 = db_session.query(TranslationTrash).filter(TranslationTrash.url == url, TranslationTrash.pid == "p1").first()
+    assert trash_p1 is not None
+    assert trash_p1.reason_category == "paraphrased_jp"
+
+    # 3. p2는 Translation 테이블에 정상 저장됨
+    row_p2 = db_session.query(Translation).filter(Translation.url == url, Translation.pid == "p2").first()
+    assert row_p2 is not None
+    assert row_p2.translated == "바람이 불고 있었다."
+
 
