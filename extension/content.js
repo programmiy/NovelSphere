@@ -466,43 +466,72 @@ async function checkAndExcludeSeparatorTranslations(translationsList) {
     if (!translationsList || !Array.isArray(translationsList) || translationsList.length === 0) return;
     if (!activeSeparators || activeSeparators.length === 0) return;
 
-    // 본문 문단 DOM 매핑 (pid -> HTMLElement)
-    const paragraphs = getTargetParagraphs();
-    const pMap = new Map();
-    paragraphs.forEach(p => {
-        if (p.id) pMap.set(p.id, p);
+    // 본문 문단 DOM 매핑 (유효한 텍스트를 가진 실제 문단 목록 순서대로 추출)
+    const allParagraphs = getTargetParagraphs();
+    const validParagraphs = [];
+    allParagraphs.forEach(p => {
+        if (!p || p.id === 'tagCount' || /^(la|lp)\d+$/i.test(p.id)) return;
+        const text = p.innerHTML.replace(/<br\s*\/?>/gi, " ").replace(/<[^>]*>/g, "").trim();
+        if (text) {
+            validParagraphs.push({ element: p, text: text, pid: p.id });
+        }
     });
+
+    // 구분선 단락 및 그 다음 단락들 pid 매핑 (pid -> { matchedSep, isSubsequent: boolean })
+    const excludedPidMap = new Map();
+
+    for (let i = 0; i < validParagraphs.length; i++) {
+        const item = validParagraphs[i];
+        const matchedSep = checkSeparatorMatch(item.text, activeSeparators);
+        if (matchedSep) {
+            // 해당 구분선 단락 등록
+            if (!excludedPidMap.has(item.pid)) {
+                excludedPidMap.set(item.pid, { matchedSep: matchedSep, isSubsequent: false });
+            }
+
+            // 조건: "이 단락이 첫번째에 있지않는 이상, 그 다음단락들도 같이 제외되어야해"
+            // 첫 번째 유효 단락(i === 0)이 아닐 때만 그 이후의 모든 단락들을 같이 제외 대상에 포함
+            if (i > 0) {
+                for (let j = i + 1; j < validParagraphs.length; j++) {
+                    const nextItem = validParagraphs[j];
+                    if (!excludedPidMap.has(nextItem.pid)) {
+                        excludedPidMap.set(nextItem.pid, { matchedSep: matchedSep, isSubsequent: true });
+                    }
+                }
+                break; // 이후 단락들을 모두 제외 집합에 넣었으므로 루프 종료
+            }
+        }
+    }
 
     const targetsToExclude = [];
     const targetIds = [];
 
     translationsList.forEach(t => {
         if (!t || !t.id) return;
-        // 이미 제외 목록에 있는 것은 건너뜀
         if (exclusionSet && exclusionSet.has(t.original)) return;
 
-        let matchedSep = null;
+        let matchInfo = null;
 
-        // 1. 번역 객체의 original 원문 텍스트 검사
-        if (t.original) {
-            matchedSep = checkSeparatorMatch(t.original.trim(), activeSeparators);
+        // 1. 본문 순서 기반 제외 맵에서 pid 확인 (구분선 및 그 다음 단락들)
+        if (t.pid && excludedPidMap.has(t.pid)) {
+            matchInfo = excludedPidMap.get(t.pid);
+        } else if (t.original) {
+            // 2. DOM에 매핑되지 않은 경우라도 원문 텍스트가 구분선에 직접 일치하는 경우
+            const sep = checkSeparatorMatch(t.original.trim(), activeSeparators);
+            if (sep) {
+                matchInfo = { matchedSep: sep, isSubsequent: false };
+            }
         }
 
-        // 2. 본문 DOM의 해당 pid 문단 텍스트 검사 (HTML 태그 제거 후)
-        if (!matchedSep && t.pid && pMap.has(t.pid)) {
-            const p = pMap.get(t.pid);
-            const pText = p.innerHTML.replace(/<br\s*\/?>/gi, " ").replace(/<[^>]*>/g, "").trim();
-            matchedSep = checkSeparatorMatch(pText, activeSeparators);
-        }
-
-        // 구분선 설정에 일치하고 유효한 번역문이 존재하는 경우 제외 대상 선정
-        if (matchedSep && t.translated && t.translated.trim()) {
+        // 구분선 또는 구분선 이후 단락에 해당하고 유효한 번역문이 존재하는 경우 제외 대상 선정
+        if (matchInfo && t.translated && t.translated.trim()) {
             targetsToExclude.push({
                 id: t.id,
                 pid: t.pid,
                 original: t.original,
                 translated: t.translated,
-                matchedSep: matchedSep
+                matchedSep: matchInfo.matchedSep,
+                isSubsequent: matchInfo.isSubsequent
             });
             targetIds.push(t.id);
         }
@@ -510,7 +539,7 @@ async function checkAndExcludeSeparatorTranslations(translationsList) {
 
     if (targetsToExclude.length === 0) return;
 
-    console.log(`[SeparatorExclude] 구분선 설정과 일치하는 기존 번역 ${targetsToExclude.length}건 감지. 자동 제외 실행:`, targetsToExclude);
+    console.log(`[SeparatorExclude] 구분선 및 후속 단락 번역 ${targetsToExclude.length}건 감지. 자동 제외 실행:`, targetsToExclude);
 
     try {
         // 관리페이지의 "제외" 기능과 동일하게 POST /translations/exclude 호출
@@ -597,26 +626,31 @@ function renderSeparatorExcludePanel(items) {
         <div class="separator-exclude-header">
             <span class="separator-exclude-title">
                 <span>🛡️</span>
-                <span>구분선 번역 자동 제외 (<strong id="sep-exclude-count">${items.length}</strong>건)</span>
+                <span>구분선 및 후기 단락 자동 제외 (<strong id="sep-exclude-count">${items.length}</strong>건)</span>
             </span>
             <div class="separator-exclude-actions">
                 <button id="close-sep-exclude-btn" class="sep-exclude-close-btn" title="알림 닫기">&times;</button>
             </div>
         </div>
         <div class="separator-exclude-desc">
-            소설 구분선 설정과 일치하여 번역에서 영구 제외 및 삭제되었습니다.
+            소설 구분선 설정과 일치하여 해당 단락 및 후속 단락이 번역에서 영구 제외·삭제되었습니다.
         </div>
         <div class="separator-exclude-body" id="separator-exclude-cards">
-            ${items.map(item => `
-                <div class="separator-exclude-card" data-pid="${escapeHtml(item.pid || '')}">
-                    <div class="sep-card-pid">
-                        <span>문장 ID: ${escapeHtml(item.pid || '알 수 없음')}</span>
-                        <span class="sep-card-match">(구분선: "${escapeHtml(item.matchedSep || '')}")</span>
+            ${items.map(item => {
+                const matchBadge = item.isSubsequent 
+                    ? `(구분선 '${escapeHtml(item.matchedSep || '')}' 이후 단락)` 
+                    : `(일치 구분선: "${escapeHtml(item.matchedSep || '')}")`;
+                return `
+                    <div class="separator-exclude-card" data-pid="${escapeHtml(item.pid || '')}">
+                        <div class="sep-card-pid">
+                            <span>문장 ID: ${escapeHtml(item.pid || '알 수 없음')}</span>
+                            <span class="sep-card-match">${matchBadge}</span>
+                        </div>
+                        <div class="sep-card-ori" title="${escapeHtml(item.original || '')}">원문: ${escapeHtml(item.original || '')}</div>
+                        <div class="sep-card-tra" title="${escapeHtml(item.translated || '')}">제외된 번역: <del>${escapeHtml(item.translated || '')}</del></div>
                     </div>
-                    <div class="sep-card-ori" title="${escapeHtml(item.original || '')}">원문: ${escapeHtml(item.original || '')}</div>
-                    <div class="sep-card-tra" title="${escapeHtml(item.translated || '')}">제외된 번역: <del>${escapeHtml(item.translated || '')}</del></div>
-                </div>
-            `).join('')}
+                `;
+            }).join('')}
         </div>
     `;
 

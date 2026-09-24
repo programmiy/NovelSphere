@@ -16,13 +16,17 @@
 
 ## 2. 주요 구현 내용
 
-### 2-1. 구분선 일치 번역 자동 감지 및 제외 (`checkAndExcludeSeparatorTranslations`)
+### 2-1. 구분선 일치 번역 및 후속 단락 자동 감지·제외 (`checkAndExcludeSeparatorTranslations`)
 - **실행 시점**:
   1. `init()` 단계에서 `ensureTranslationsLoaded()` 완료 직후 (번역 완료 페이지 접속 시).
   2. 사이드바 구분선 설정 패널에서 `[💾 설정 저장]` 클릭 직후.
 - **감지 로직**:
-  - 불러온 `translations` 목록을 순회하며 원문 텍스트(`t.original`) 및 본문 DOM 문단 텍스트(HTML 태그 제거)가 `checkSeparatorMatch(text, activeSeparators)`에 매칭되는지 확인.
-  - 유효한 번역문(`t.translated`)이 존재하는 항목들을 선별.
+  - 본문 문단 DOM에서 실제 텍스트를 가진 문단 목록(`validParagraphs`)을 순차적으로 탐색.
+  - 구분선(`checkSeparatorMatch`)을 만났을 때:
+    - **해당 구분선 단락 자체**를 제외 대상에 등록.
+    - **후속 단락 일괄 제외**: 만약 해당 구분선 단락이 **첫 번째 단락(`i === 0`)이 아닌 경우**, 소설 본문이 종료되고 후기/작가의 말 영역이 시작된 것으로 판단하여 **그 다음 단락들(`j = i + 1`부터 끝까지)도 모두 제외 대상에 포함**.
+    - 단, 구분선이 **첫 번째 단락(`i === 0`)에 위치하는 경우**에는 그 뒤의 본문이 훼손되지 않도록 다음 단락들을 제외하지 않고 보호합니다.
+  - `translations` 목록 중 위 제외 대상 PID에 해당하고 유효한 번역문(`t.translated`)이 존재하는 항목들을 선별.
 - **관리페이지 "제외" 기능 연계 (`POST /translations/exclude`)**:
   - 선별된 번역 ID 목록을 서버의 `/translations/exclude` 엔드포인트로 전송.
   - 서버에서 해당 레코드를 `ExcludedSentence`에 영구 등록하고 `Translation` 테이블에서 안전하게 삭제.
