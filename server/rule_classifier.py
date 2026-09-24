@@ -155,3 +155,142 @@ def classify_translation(original: str, translated: Optional[str]) -> str:
         return 'other_language'
         
     return 'normal'
+
+
+QUOTE_PAIRS = [
+    ('"', '"'),
+    ("'", "'"),
+    ('“', '”'),
+    ('‘', '’'),
+    ('«', '»'),
+    ('「', '»'),
+]
+
+def count_leading_brackets(s: str, char: str = '「') -> int:
+    """문자열 시작 부분의 특정 괄호 문자 개수를 반환합니다."""
+    count = 0
+    for c in s:
+        if c == char:
+            count += 1
+        else:
+            break
+    return count
+
+def count_trailing_brackets(s: str, char: str = '」') -> int:
+    """문자열 끝 부분의 특정 괄호 문자 개수를 반환합니다."""
+    count = 0
+    for c in reversed(s):
+        if c == char:
+            count += 1
+        else:
+            break
+    return count
+
+def restore_brackets(original: Optional[str], translated: Optional[str]) -> Optional[str]:
+    """
+    원문이 「%」로 시작하고 끝나는 대사 문장인데
+    번역문에 「」 괄호가 누락되었거나 일반 따옴표("", '', “”, ‘’, «»)로 치환/누락된 경우,
+    결정론적 룰베이스로 「」 괄호를 복원/추가합니다.
+
+    사용자 규칙:
+    - 문장의 처음과 끝부분이 「%」인 대사 문장에만 한정 적용 (문장 중간 괄호나 독백 제외).
+    """
+    if not original or not translated:
+        return translated
+
+    o = original.strip()
+    t = str(translated).strip()
+    if not t:
+        return translated
+
+    # 원문 조건: 반드시 「로 시작하고 」로 끝나야 함
+    if not (o.startswith('「') and o.endswith('」')):
+        return translated
+
+    o_open = count_leading_brackets(o, '「')
+    o_close = count_trailing_brackets(o, '」')
+    if o_open == 0 or o_close == 0:
+        return translated
+
+    k = min(o_open, o_close)
+    target_open = '「' * k
+    target_close = '」' * k
+
+    # 이미 「와 」로 둘러싸여 있는 경우
+    if t.startswith('「') and t.endswith('」'):
+        return translated
+
+    # HTML 태그(<span> 등)로 감싸져 있는 경우 내부 텍스트 재귀 처리
+    html_match = re.match(r'^(<[a-zA-Z0-9]+[^>]*>)(.*)(</[a-zA-Z0-9]+>)$', t, re.DOTALL)
+    if html_match:
+        tag_open, inner, tag_close = html_match.groups()
+        fixed_inner = restore_brackets(o, inner)
+        return f"{tag_open}{fixed_inner}{tag_close}"
+
+    # 화자 표기 접두어가 있는 경우 (예: 쿄코「...」)
+    if '「' in t and t.endswith('」'):
+        return translated
+
+    # 따옴표("", '', “”, ‘’, «», 「»)로 둘러싸인 경우 해당 따옴표 제거 후 「」로 치환
+    for q_open, q_close in QUOTE_PAIRS:
+        if t.startswith(q_open) and t.endswith(q_close) and len(t) >= len(q_open) + len(q_close):
+            inner = t[len(q_open):-len(q_close)].strip()
+            return f"{target_open}{inner}{target_close}"
+
+    # 마침표/물음표 등으로 닫는 괄호 뒤에 붙은 경우 (예: 「...」.)
+    if t.startswith('「') and t.rstrip('.!? ').endswith('」'):
+        return translated
+
+    # 시작만 「인 경우: 닫는 괄호 」가 없으면 추가
+    if t.startswith('「') and not t.endswith('」'):
+        if t.count('「') > t.count('」'):
+            return f"{t}{target_close * (t.count('「') - t.count('」'))}"
+        return translated
+
+    # 끝만 」인 경우: 여는 괄호 「가 없으면 추가
+    if t.endswith('」') and not t.startswith('「'):
+        if '「' not in t:
+            return f"{target_open}{t}"
+        return translated
+
+    # 양쪽 모두 괄호가 없는 경우 (일반 텍스트)
+    if '「' not in t and '」' not in t:
+        return f"{target_open}{t}{target_close}"
+
+    return translated
+
+def batch_restore_brackets_in_db(db_conn) -> Tuple[int, int]:
+    """
+    SQLite 데이터베이스 커넥션을 전달받아,
+    original이 「%」로 시작하고 끝나지만 translated에 괄호가 누락/변형된 레코드를
+    스캔하여 룰베이스로 일괄 복원합니다.
+    반환값: (scanned_count, updated_count)
+    """
+    cursor = db_conn.cursor()
+    cursor.execute('''
+        SELECT id, original, translated FROM translations 
+        WHERE original LIKE '「%」'
+          AND (translated NOT LIKE '「%」' OR translated IS NULL)
+    ''')
+    rows = cursor.fetchall()
+    
+    updated_items = []
+    for row in rows:
+        if isinstance(row, dict):
+            r_id, orig, trans = row['id'], row['original'], row['translated']
+        else:
+            r_id, orig, trans = row[0], row[1], row[2]
+            
+        fixed = restore_brackets(orig, trans)
+        if fixed != trans:
+            updated_items.append((fixed, r_id))
+            
+    if updated_items:
+        cursor.executemany(
+            'UPDATE translations SET translated = ? WHERE id = ?',
+            updated_items
+        )
+        db_conn.commit()
+        
+    return len(rows), len(updated_items)
+

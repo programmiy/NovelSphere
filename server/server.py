@@ -140,6 +140,39 @@ async def backup_check_task():
             except Exception as e:
                 logger.error(f"Error during backup: {e}")
 
+def run_sync_bracket_restoration():
+    """DB 커넥션을 열어 룰베이스 대사 괄호 누락 복원을 1회 실행합니다."""
+    from server.database import get_sqlite_conn
+    from server.rule_classifier import batch_restore_brackets_in_db
+    conn = get_sqlite_conn()
+    try:
+        scanned, updated = batch_restore_brackets_in_db(conn)
+        if updated > 0:
+            logger.info(f"[주기적 괄호 복원] 대상 {scanned}건 검사 중 {updated}건의 누락 괄호 복원 완료.")
+        else:
+            logger.debug(f"[주기적 괄호 복원] 괄호 누락 없음 (검사: {scanned}건).")
+    except Exception as e:
+        logger.error(f"[주기적 괄호 복원] 실행 중 오류 발생: {e}")
+    finally:
+        conn.close()
+
+async def periodic_bracket_restoration_task(interval_seconds: int = 1800):
+    """
+    주기적으로 DB를 스캔하여 원문 대사 괄호(「%」) 누락 및 변형 번역문을 자동 복구합니다.
+    - 서버 시작 10초 후 1차 즉시 검사 실행
+    - 이후 설정된 주기(기본 30분=1800초)마다 자동 실행
+    """
+    await asyncio.sleep(10)
+    while True:
+        try:
+            await asyncio.to_thread(run_sync_bracket_restoration)
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.error(f"[주기적 괄호 복원] 태스크 오류: {e}")
+        
+        await asyncio.sleep(interval_seconds)
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global APP_START_TIME, SERVER_METADATA
@@ -153,6 +186,7 @@ async def lifespan(app: FastAPI):
     APP_START_TIME = time.time()
     
     backup_task = asyncio.create_task(backup_check_task())
+    bracket_task = asyncio.create_task(periodic_bracket_restoration_task(interval_seconds=1800))
 
     Base.metadata.create_all(bind=engine)
     try:
@@ -206,11 +240,12 @@ async def lifespan(app: FastAPI):
     logger.info("Server startup complete. Runtime tracking and backup task started.")
     yield
     
-    # Graceful shutdown: cancel backup task
+    # Graceful shutdown: cancel background tasks
     backup_task.cancel()
+    bracket_task.cancel()
     try:
-        await backup_task
-    except asyncio.CancelledError:
+        await asyncio.gather(backup_task, bracket_task, return_exceptions=True)
+    except Exception:
         pass
 
     if APP_START_TIME:
@@ -291,7 +326,7 @@ async def redirect_service_worker():
     return RedirectResponse(url="/service-worker.js")
 
 # --- Routers ---
-from server.routers import ui, translation, data_crud, books, system, tasks, admin, url_config, db_editor, toc_importer, separators
+from server.routers import ui, translation, data_crud, books, system, tasks, admin, url_config, db_editor, toc_importer, separators, notifications
 app.include_router(ui.router)
 app.include_router(translation.router)
 app.include_router(data_crud.router)
@@ -303,3 +338,4 @@ app.include_router(url_config.router)
 app.include_router(db_editor.router)
 app.include_router(toc_importer.router)
 app.include_router(separators.router)
+app.include_router(notifications.router)

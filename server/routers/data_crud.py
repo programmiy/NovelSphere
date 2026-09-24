@@ -17,7 +17,7 @@ import uuid
 from server.settings import settings
 from server.database import get_db, get_sqlite_conn, dict_factory, get_db_path
 from server.models import Translation, UrlMetadata, AppliedUrl, TranslationTrash, CleanupNotification, CleanupQueuedItem, AbnormalWhitelist
-from server.rule_classifier import classify_translation, extract_untranslated_keywords, is_verbatim_copy
+from server.rule_classifier import classify_translation, extract_untranslated_keywords, is_verbatim_copy, restore_brackets
 from server.utils import natural_sort_key
 from server.routers.translation import handle_verbatim_cleanup_items
 import time
@@ -157,6 +157,11 @@ def upsert_translations(items: List[TranslationItem], db: Session = Depends(get_
     updated_count = 0
     inserted_count = 0
 
+    # 0. 모든 항목의 URL에서 #lanovel_review 등 해시를 완벽히 제거하여 정규화
+    for item in items:
+        if item.url:
+            item.url = item.url.split('#')[0].strip()
+
     # 1. 처리할 모든 URL 수집 및 새 메타데이터 일괄 등록
     urls_in_batch = {item.url for item in items}
     existing_metadata = db.query(UrlMetadata).filter(UrlMetadata.url.in_(urls_in_batch)).all()
@@ -179,15 +184,22 @@ def upsert_translations(items: List[TranslationItem], db: Session = Depends(get_
         existing_translation = existing_map.get(key)
 
         target_trans = item.translated
-        # 원문 복붙(글자만 일치) 방어: DB에 일본어 원문이 번역문으로 적재되는 것을 차단하고 알림/휴지통 처리
-        if target_trans and is_verbatim_copy(item.original, target_trans):
+        # 룰베이스 원문 괄호(「%」) 누락 복원
+        if target_trans:
+            target_trans = restore_brackets(item.original, target_trans)
+
+        # 원문 복붙(글자만 일치) 및 원문 변형(한국어 없이 일본어 패러프레이징) 방어: DB에 일본어 원문/변형이 번역문으로 적재되는 것을 차단하고 알림/휴지통 처리
+        cls_cat = classify_translation(item.original, target_trans)
+        if target_trans and (is_verbatim_copy(item.original, target_trans) or cls_cat in ('verbatim_or_empty', 'paraphrased_jp')):
+            item_cat = 'verbatim' if (is_verbatim_copy(item.original, target_trans) or cls_cat == 'verbatim_or_empty') else 'paraphrased_jp'
             verbatim_items_to_clean.append({
                 "id": item.pid,
                 "original": item.original,
                 "translated": target_trans,
                 "url": item.url,
                 "folderName": item.folderName,
-                "title": item.title
+                "title": item.title,
+                "category": item_cat
             })
             if existing_translation:
                 db.delete(existing_translation)
@@ -236,14 +248,23 @@ def upsert_translations(items: List[TranslationItem], db: Session = Depends(get_
             handle_verbatim_cleanup_items(
                 db=db,
                 url=v_url,
-                verbatim_items=[{"id": x["id"], "original": x["original"], "translated": x["translated"]} for x in v_items],
+                verbatim_items=[{
+                    "id": x["id"],
+                    "original": x["original"],
+                    "translated": x["translated"],
+                    "category": x.get("category", "verbatim")
+                } for x in v_items],
                 folder_name=v_items[0]["folderName"],
                 title=v_items[0]["title"]
             )
 
     # 단일 트랜잭션으로 원자적(Atomic) 커밋
     db.commit()
-    return {"inserted": inserted_count, "updated": updated_count}
+    return {
+        "inserted": inserted_count,
+        "updated": updated_count,
+        "verbatim_count": len(verbatim_items_to_clean)
+    }
 
 CHUNK_SIZE = 500
 
@@ -942,12 +963,41 @@ def get_cleanup_notifications(db: Session = Depends(get_db)):
     tags=["Data CRUD"],
     summary="삭제 알림 개별 해제"
 )
-def dismiss_notification(notif_id: int, db: Session = Depends(get_db)):
+def dismiss_notification(
+    notif_id: int,
+    url: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
     notif = db.query(CleanupNotification).filter(CleanupNotification.id == notif_id).first()
-    if not notif:
+    now = int(time.time())
+
+    target_clean_url = None
+    if notif:
+        notif.is_dismissed = 1
+        notif.dismissed_at = now
+        target_clean_url = (notif.url or "").split('#')[0].strip()
+
+    if url:
+        param_clean_url = (url or "").split('#')[0].strip()
+        if param_clean_url:
+            target_clean_url = param_clean_url
+
+    # 해당 회차(동일 URL)에 남아있는 다른 활성 알림(중복 생성되었거나 해시 포함 URL)도 함께 일괄 해제
+    if target_clean_url:
+        related_notifs = db.query(CleanupNotification).filter(
+            CleanupNotification.is_dismissed == 0,
+            (
+                (CleanupNotification.url == target_clean_url) |
+                (CleanupNotification.url.startswith(target_clean_url + "#"))
+            )
+        ).all()
+        for rn in related_notifs:
+            rn.is_dismissed = 1
+            rn.dismissed_at = now
+
+    if not notif and not target_clean_url:
         raise HTTPException(status_code=404, detail="알림을 찾을 수 없습니다.")
-    notif.is_dismissed = 1
-    notif.dismissed_at = int(time.time())
+
     db.commit()
     return {"success": True}
 
@@ -980,17 +1030,43 @@ def get_cleanup_review_targets(
     if not clean_url:
         return {"has_targets": False, "targets": [], "notif_id": None}
 
-    # 1. 해당 URL에 대한 활성 알림 조회
+    # 1. 해당 URL에 대한 활성 알림 조회 (클린 URL 일치 또는 과거 해시가 포함되어 저장된 URL 포용)
+    url_condition = (
+        (CleanupNotification.url == clean_url) |
+        (CleanupNotification.url.startswith(clean_url + "#"))
+    )
     notif_query = db.query(CleanupNotification).filter(
-        CleanupNotification.url == clean_url,
+        url_condition,
         CleanupNotification.is_dismissed == 0
     )
+
+    active_notif = None
     if batch_id:
-        notif_query = notif_query.filter(CleanupNotification.batch_id == batch_id)
-    active_notif = notif_query.order_by(CleanupNotification.created_at.desc()).first()
+        int_id = None
+        try:
+            int_id = int(batch_id)
+        except ValueError:
+            pass
+
+        if int_id is not None:
+            batch_query = notif_query.filter(
+                (CleanupNotification.batch_id == batch_id) | (CleanupNotification.id == int_id)
+            )
+        else:
+            batch_query = notif_query.filter(CleanupNotification.batch_id == batch_id)
+
+        active_notif = batch_query.order_by(CleanupNotification.created_at.desc()).first()
+
+    # batch_id로 매칭되지 않았거나 batch_id가 없는 경우 해당 URL의 가장 최근 활성 알림을 fallback으로 매칭
+    if not active_notif:
+        active_notif = notif_query.order_by(CleanupNotification.created_at.desc()).first()
 
     # 2. TranslationTrash에서 해당 URL의 삭제 이력 조회
-    trash_query = db.query(TranslationTrash).filter(TranslationTrash.url == clean_url)
+    trash_url_condition = (
+        (TranslationTrash.url == clean_url) |
+        (TranslationTrash.url.startswith(clean_url + "#"))
+    )
+    trash_query = db.query(TranslationTrash).filter(trash_url_condition)
     if active_notif:
         trash_query = trash_query.filter(TranslationTrash.cleanup_batch_id == active_notif.batch_id)
     elif batch_id:
@@ -1018,12 +1094,16 @@ def get_cleanup_review_targets(
         })
 
     # 3. Translation 테이블에 남아있는 빈 번역문(None 또는 '') 또는 원문 복붙 미완성 문장도 검수 대상에 포함
+    trans_url_condition = (
+        (Translation.url == clean_url) |
+        (Translation.url.startswith(clean_url + "#"))
+    )
     empty_or_bad_trans = db.query(Translation).filter(
-        Translation.url == clean_url,
+        trans_url_condition,
         (Translation.translated.is_(None) | (Translation.translated == ""))
     ).all()
 
-    sample_meta = db.query(Translation.folderName, Translation.title).filter(Translation.url == clean_url).first()
+    sample_meta = db.query(Translation.folderName, Translation.title).filter(trans_url_condition).first()
     novel_title = active_notif.novel_title if active_notif else (sample_meta[0] if sample_meta else None)
     episode_title = active_notif.episode_title if active_notif else (sample_meta[1] if sample_meta else None)
 

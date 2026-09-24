@@ -13,33 +13,10 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 from server.database import get_db
 from server.models import Translation, ExcludedSentence, TranslationTrash, CleanupNotification
-from server.rule_classifier import classify_translation, is_verbatim_copy, normalize_text
+from server.rule_classifier import classify_translation, is_verbatim_copy, normalize_text, restore_brackets
 
 from urllib.parse import urlparse
-try:
-    from win10toast_persist import ToastNotifier
-    def _safe_toast_on_destroy(self, hwnd, msg, wparam, lparam):
-        try:
-            from win32gui import Shell_NotifyIcon, NIM_DELETE
-            from win32api import PostQuitMessage
-            nid = (self.hwnd, 0)
-            Shell_NotifyIcon(NIM_DELETE, nid)
-            PostQuitMessage(0)
-        except Exception:
-            pass
-        return 0
-    ToastNotifier.on_destroy = _safe_toast_on_destroy
-
-    orig_show_toast = ToastNotifier._show_toast
-    def _safe_show_toast_thread(self, *args, **kwargs):
-        try:
-            orig_show_toast(self, *args, **kwargs)
-        except Exception:
-            pass
-    ToastNotifier._show_toast = _safe_show_toast_thread
-except Exception:
-    ToastNotifier = None
-
+from server.notifications import notify_verbatim_cleanup, notify_api_error
 import threading
 from server.settings import settings
 
@@ -427,9 +404,13 @@ def handle_verbatim_cleanup_items(
     if not verbatim_items:
         return ""
 
-    sample_meta = db.query(Translation.folderName, Translation.title).filter(Translation.url == url).first()
+    clean_url = (url or "").split('#')[0].strip()
+
+    sample_meta = db.query(Translation.folderName, Translation.title).filter(
+        (Translation.url == clean_url) | (Translation.url == url)
+    ).first()
     novel_title = folder_name or (sample_meta[0] if sample_meta else None) or "미분류"
-    episode_title = title or (sample_meta[1] if sample_meta else None) or url
+    episode_title = title or (sample_meta[1] if sample_meta else None) or clean_url
 
     target_pids = {str(item.get("id")) for item in verbatim_items if item.get("id")}
     target_origs = {item.get("original") for item in verbatim_items if item.get("original")}
@@ -439,7 +420,7 @@ def handle_verbatim_cleanup_items(
 
     # 기존 DB에 해당 원문 또는 pid가 이미 적재되어 있는 경우 휴지통으로 이동 후 삭제
     existing_targets = db.query(Translation).filter(
-        Translation.url == url,
+        (Translation.url == clean_url) | (Translation.url == url),
         (Translation.pid.in_(target_pids) | Translation.original.in_(target_origs))
     ).all()
 
@@ -452,9 +433,12 @@ def handle_verbatim_cleanup_items(
         if t.original:
             existing_orig_set.add(t.original)
 
+        matched_item = next((x for x in verbatim_items if str(x.get("id")) == str(t.pid) or x.get("original") == t.original), None)
+        item_cat = (matched_item.get("category") if matched_item else None) or 'verbatim'
+
         trash_item = TranslationTrash(
             original_translation_id=t.id,
-            url=t.url,
+            url=clean_url,
             pid=t.pid,
             original=t.original,
             translated=t.translated,
@@ -462,7 +446,7 @@ def handle_verbatim_cleanup_items(
             folderName=t.folderName,
             title=t.title,
             toc_sort_order=t.toc_sort_order,
-            reason_category='verbatim',
+            reason_category=item_cat,
             deleted_at=now_ms,
             cleanup_batch_id=batch_id
         )
@@ -476,9 +460,10 @@ def handle_verbatim_cleanup_items(
         if (pid and pid in existing_pid_set) or (orig and orig in existing_orig_set):
             continue
 
+        item_cat = item.get("category") or 'verbatim'
         trash_item = TranslationTrash(
             original_translation_id=None,
-            url=url,
+            url=clean_url,
             pid=pid,
             original=orig,
             translated=item.get("translated") or "",
@@ -486,7 +471,7 @@ def handle_verbatim_cleanup_items(
             folderName=novel_title,
             title=episode_title,
             toc_sort_order=None,
-            reason_category='verbatim',
+            reason_category=item_cat,
             deleted_at=now_ms,
             cleanup_batch_id=batch_id
         )
@@ -497,7 +482,7 @@ def handle_verbatim_cleanup_items(
         batch_id=batch_id,
         novel_title=novel_title,
         episode_title=episode_title,
-        url=url,
+        url=clean_url,
         deleted_count=len(verbatim_items),
         is_dismissed=0,
         created_at=now_ms,
@@ -507,21 +492,18 @@ def handle_verbatim_cleanup_items(
     db.commit()
 
     logger.warning(
-        f"[원문 복사 즉시 삭제] URL: '{url}'에서 {len(verbatim_items)}개 원문 복붙 문장을 "
+        f"[원문 복사 즉시 삭제] URL: '{clean_url}'에서 {len(verbatim_items)}개 원문 복붙 문장을 "
         f"즉시 삭제하고 알림 시스템(배치 ID: {batch_id})으로 이전했습니다."
     )
 
-    if ToastNotifier:
-        try:
-            toaster = ToastNotifier()
-            toaster.show_toast(
-                "미번역 원문 복사 감지",
-                f"[{novel_title}] {len(verbatim_items)}개 문장의 원문 복붙이 즉시 삭제되어 알림 센터로 이동되었습니다.",
-                duration=5,
-                threaded=True
-            )
-        except Exception as toast_err:
-            logger.debug(f"데스크톱 알림 전송 생략: {toast_err}")
+    # ntfy 푸시 알림 전송
+    notify_verbatim_cleanup(
+        novel_title=novel_title,
+        episode_title=episode_title,
+        count=len(verbatim_items),
+        url=url,
+        batch_id=batch_id
+    )
 
     return batch_id
 
@@ -729,10 +711,14 @@ def translate_texts(req: TranslateRequest, db: Session = Depends(get_db)):
             logger.critical("오후 5시가 되어, 5시 이전에 시작된 자동 번역 프로세스를 중지합니다.")
             raise HTTPException(status_code=503, detail="오후 5시가 되어 자동 번역을 중지합니다. 새로고침 후 다시 시도해주세요.")
 
+    # URL에서 #lanovel_review 등 해시를 완벽히 제거하여 정규화
+    clean_url = (req.url or "").split('#')[0].strip()
+    req.url = clean_url
+
     translatable_items = [item for item in req.items if item.id != 'tagCount']
     
     if translatable_items:
-        excluded_originals = _get_excluded_sentences_for_url(req.url, db)
+        excluded_originals = _get_excluded_sentences_for_url(clean_url, db)
         items_to_translate = [item for item in translatable_items if item.text not in excluded_originals]
     else:
         items_to_translate = []
@@ -766,20 +752,22 @@ def translate_texts(req: TranslateRequest, db: Session = Depends(get_db)):
             last_exception = e
             if e.response.status_code == 503:
                 logger.error("503 Overload 에러가 발생하여 재시도 없이 즉시 실패 처리합니다. (RPM 소모 방지)")
-                try:
-                    toaster = ToastNotifier()
-                    toaster.show_toast(
-                        "번역 API 과부하",
-                        "API 과부하(503)로 요청이 실패했습니다. RPM 한도를 확인하거나 잠시 후 다시 시도하세요.",
-                        duration=10,
-                        threaded=True
-                    )
-                except Exception as toast_error:
-                    logger.error(f"데스크톱 알림을 보내는 데 실패했습니다: {toast_error}")
+                notify_api_error(
+                    error_title="번역 API 과부하 (503)",
+                    message="API 과부하(503)로 요청이 실패했습니다. RPM 한도를 확인하거나 잠시 후 다시 시도하세요.",
+                    error_type="503 OVERLOAD",
+                    url=req.url
+                )
                 raise HTTPException(status_code=503, detail="API 과부하(503) 에러입니다. RPM 소모 방지를 위해 재시도하지 않습니다.")
             
             logger.warning(f"HTTP 오류 발생 (시도 {attempt + 1}/{max_attempts}): {e}")
             if e.response.status_code == 429:
+                notify_api_error(
+                    error_title="번역 API 요청 한도 초과 (429)",
+                    message="Gemini API 요청 한도를 초과했습니다. 잠시 후 다시 시도해주세요.",
+                    error_type="429 RATE LIMIT",
+                    url=req.url
+                )
                 raise HTTPException(status_code=429, detail="API 요청 한도 초과. 잠시 후 다시 시도해주세요.")
         
         except requests.exceptions.RequestException as e:
@@ -845,23 +833,31 @@ def translate_texts(req: TranslateRequest, db: Session = Depends(get_db)):
                 else:
                     translated_text = raw_trans
 
+                is_verbatim = False
+                verbatim_cat = None
                 if not is_censored and translated_text:
                     translated_text = process_repeated_chars(translated_text)
-                    if is_verbatim_copy(item.text, translated_text):
-                        logger.warning(f"[검열 분할 중 원문 복붙 감지] ID: {item.id} -> 번역문을 즉시 삭제합니다.")
+                    translated_text = restore_brackets(item.text, translated_text)
+                    cls_cat = classify_translation(item.text, translated_text)
+                    if is_verbatim_copy(item.text, translated_text) or cls_cat in ('verbatim_or_empty', 'paraphrased_jp'):
+                        verbatim_cat = 'verbatim' if (is_verbatim_copy(item.text, translated_text) or cls_cat == 'verbatim_or_empty') else 'paraphrased_jp'
+                        logger.warning(f"[검열 분할 중 {verbatim_cat} 감지] ID: {item.id} -> 번역문을 즉시 삭제합니다.")
                         verbatim_detected_items.append({
                             "id": item.id,
                             "original": item.text,
-                            "translated": translated_text
+                            "translated": translated_text,
+                            "category": verbatim_cat
                         })
                         translated_text = ""
-                        is_censored = True
+                        is_verbatim = True
 
                 translated_results[str(item.id)] = {
                     "id": item.id,
                     "original": item.text,
                     "translated": translated_text,
-                    "censored": is_censored
+                    "censored": is_censored,
+                    "verbatim": is_verbatim,
+                    "verbatim_category": verbatim_cat
                 }
 
             if verbatim_detected_items:
@@ -876,7 +872,9 @@ def translate_texts(req: TranslateRequest, db: Session = Depends(get_db)):
                         "id": item.id,
                         "original": item.text,
                         "translated": "",
-                        "censored": False
+                        "censored": False,
+                        "verbatim": False,
+                        "verbatim_category": None
                     })
 
             return {"translations": final_translations}
@@ -933,28 +931,34 @@ def translate_texts(req: TranslateRequest, db: Session = Depends(get_db)):
                 translated_text = raw_trans
 
             is_censored = False
+            is_verbatim = False
+            verbatim_cat = None
             if translated_text:
                 translated_text = process_repeated_chars(translated_text)
-                # 원문을 그대로 복붙한 경우 (글자만 일치) 감지:
-                # 즉시 삭제 처리하고 알림 시스템으로 이전
-                if is_verbatim_copy(item.text, translated_text):
-                    logger.warning(f"[원문 복붙 감지] ID: {item.id}, 원문: '{item.text[:40]}...' -> 번역문을 즉시 삭제합니다.")
+                translated_text = restore_brackets(item.text, translated_text)
+                cls_cat = classify_translation(item.text, translated_text)
+                if is_verbatim_copy(item.text, translated_text) or cls_cat in ('verbatim_or_empty', 'paraphrased_jp'):
+                    verbatim_cat = 'verbatim' if (is_verbatim_copy(item.text, translated_text) or cls_cat == 'verbatim_or_empty') else 'paraphrased_jp'
+                    logger.warning(f"[{verbatim_cat} 감지] ID: {item.id}, 원문: '{item.text[:40]}...' -> 번역문을 즉시 삭제합니다.")
                     verbatim_detected_items.append({
                         "id": item.id,
                         "original": item.text,
-                        "translated": translated_text
+                        "translated": translated_text,
+                        "category": verbatim_cat
                     })
                     translated_text = ""
-                    is_censored = True
+                    is_verbatim = True
 
             translated_results[str(item.id)] = {
                 "id": item.id,
                 "original": item.text,
                 "translated": translated_text,
-                "censored": is_censored
+                "censored": is_censored,
+                "verbatim": is_verbatim,
+                "verbatim_category": verbatim_cat
             }
 
-        # 원문 복붙 항목이 있는 경우 즉시 삭제 및 알림 시스템으로 이전
+        # 원문 복붙/변형 항목이 있는 경우 즉시 삭제 및 알림 시스템으로 이전
         if verbatim_detected_items:
             handle_verbatim_cleanup_items(db, req.url, verbatim_detected_items)
 
@@ -967,7 +971,9 @@ def translate_texts(req: TranslateRequest, db: Session = Depends(get_db)):
                     "id": item.id,
                     "original": item.text,
                     "translated": "",
-                    "censored": False
+                    "censored": False,
+                    "verbatim": False,
+                    "verbatim_category": None
                 })
 
         return {"translations": final_translations}
