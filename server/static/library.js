@@ -34,6 +34,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const countReading = document.getElementById('countReading');
     const countUnread = document.getElementById('countUnread');
     const countCompleted = document.getElementById('countCompleted');
+    const countHidden = document.getElementById('countHidden');
 
     // Task & Action Elements
     const fetchMissingTitlesBtn = document.getElementById('fetch-missing-titles-btn');
@@ -46,6 +47,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Tag Editor Modal Elements
     const tagModal = document.getElementById('tag-editor-modal');
     const tagModalBookName = document.getElementById('tag-editor-book-name');
+    const isVisibleToggle = document.getElementById('book-is-visible-toggle');
     const isCompletedToggle = document.getElementById('book-is-completed-toggle');
     const tagCheckboxForm = document.getElementById('tag-checkbox-form');
     const newTagForm = document.getElementById('new-tag-form');
@@ -134,7 +136,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- Data Fetching ---
     async function fetchBooks() {
         try {
-            const response = await fetch(`/api/books?_t=${Date.now()}`, {
+            const response = await fetch(`/api/books?include_hidden=true&_t=${Date.now()}`, {
                 cache: 'no-cache',
                 headers: {
                     'Cache-Control': 'no-cache, no-store, must-revalidate',
@@ -159,11 +161,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Stats Bar Update ---
     function updateStatsBar() {
-        const total = allBooks.length;
-        const pinned = allBooks.filter(b => b.pinned).length;
-        const unread = allBooks.filter(b => !b.activity || (!b.activity.last_read_pid && !b.activity.last_read_chapter_title)).length;
-        const completed = allBooks.filter(b => b.activity && (b.activity.is_completed === 1 || b.activity.is_completed === true)).length;
-        const reading = allBooks.filter(b => b.activity && (b.activity.last_read_pid || b.activity.last_read_chapter_title) && !(b.activity.is_completed === 1 || b.activity.is_completed === true)).length;
+        const visibleBooks = allBooks.filter(b => b.is_visible !== 0);
+        const hiddenCount = allBooks.filter(b => b.is_visible === 0).length;
+
+        const total = visibleBooks.length;
+        const pinned = visibleBooks.filter(b => b.pinned).length;
+        const unread = visibleBooks.filter(b => !b.activity || (!b.activity.last_read_pid && !b.activity.last_read_chapter_title)).length;
+        const completed = visibleBooks.filter(b => b.activity && (b.activity.is_completed === 1 || b.activity.is_completed === true)).length;
+        const reading = visibleBooks.filter(b => b.activity && (b.activity.last_read_pid || b.activity.last_read_chapter_title) && !(b.activity.is_completed === 1 || b.activity.is_completed === true)).length;
 
         if (statTotalBooks) statTotalBooks.textContent = total;
         if (statPinnedBooks) statPinnedBooks.textContent = pinned;
@@ -176,6 +181,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (countReading) countReading.textContent = reading;
         if (countUnread) countUnread.textContent = unread;
         if (countCompleted) countCompleted.textContent = completed;
+        if (countHidden) countHidden.textContent = hiddenCount;
     }
 
     // --- Progress & Reading State Calculation (5번 기능) ---
@@ -351,14 +357,20 @@ document.addEventListener('DOMContentLoaded', () => {
         let list = [...allBooks];
 
         // 1. Status Filter
-        if (activeStatusFilter === 'pinned') {
-            list = list.filter(b => b.pinned);
-        } else if (activeStatusFilter === 'reading') {
-            list = list.filter(b => b.activity && (b.activity.last_read_pid || b.activity.last_read_chapter_title) && !(b.activity.is_completed === 1 || b.activity.is_completed === true));
-        } else if (activeStatusFilter === 'unread') {
-            list = list.filter(b => !b.activity || (!b.activity.last_read_pid && !b.activity.last_read_chapter_title));
-        } else if (activeStatusFilter === 'completed') {
-            list = list.filter(b => b.activity && (b.activity.is_completed === 1 || b.activity.is_completed === true));
+        if (activeStatusFilter === 'hidden') {
+            list = list.filter(b => b.is_visible === 0);
+        } else {
+            list = list.filter(b => b.is_visible !== 0);
+
+            if (activeStatusFilter === 'pinned') {
+                list = list.filter(b => b.pinned);
+            } else if (activeStatusFilter === 'reading') {
+                list = list.filter(b => b.activity && (b.activity.last_read_pid || b.activity.last_read_chapter_title) && !(b.activity.is_completed === 1 || b.activity.is_completed === true));
+            } else if (activeStatusFilter === 'unread') {
+                list = list.filter(b => !b.activity || (!b.activity.last_read_pid && !b.activity.last_read_chapter_title));
+            } else if (activeStatusFilter === 'completed') {
+                list = list.filter(b => b.activity && (b.activity.is_completed === 1 || b.activity.is_completed === true));
+            }
         }
 
         // 2. Tag Filter
@@ -629,6 +641,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const isCompletedFlag = activity?.is_completed === 1 || activity?.is_completed === true;
         isCompletedToggle.checked = isCompletedFlag || hasCompletedTag;
 
+        const isVisibleFlag = currentEditingBook.is_visible !== 0 && activity?.is_visible !== 0;
+        if (isVisibleToggle) isVisibleToggle.checked = isVisibleFlag;
+
         const currentSummary = activity?.summary || activity?.notes || '';
         const currentSourceUrl = activity?.summary_source_url || '';
         notesSummaryTextarea.value = currentSummary;
@@ -657,6 +672,7 @@ document.addEventListener('DOMContentLoaded', () => {
             initialModalState = {
                 tags: new Set([...tagCheckboxForm.querySelectorAll('input:checked')].map(cb => parseInt(cb.value))),
                 isCompleted: isCompletedToggle.checked,
+                isVisible: isVisibleToggle ? isVisibleToggle.checked : true,
                 summary: currentSummary,
                 sourceUrl: currentSourceUrl,
             };
@@ -682,12 +698,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const summaryChanged = initialModalState.summary !== notesSummaryTextarea.value;
         const sourceUrlChanged = initialModalState.sourceUrl !== summarySourceUrlInput.value;
         const completedChanged = initialModalState.isCompleted !== isCompletedToggle.checked;
+        const visibleChanged = isVisibleToggle && (initialModalState.isVisible !== isVisibleToggle.checked);
         const tagsChanged = initialModalState.tags && (
             initialModalState.tags.size !== currentTags.size ||
             [...initialModalState.tags].some(id => !currentTags.has(id))
         );
 
-        if (tagsChanged || summaryChanged || sourceUrlChanged || completedChanged) {
+        if (tagsChanged || summaryChanged || sourceUrlChanged || completedChanged || visibleChanged) {
             if (confirm('저장하지 않은 변경사항이 있습니다. 정말로 닫으시겠습니까?')) {
                 closeEditModal();
             }
@@ -700,6 +717,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!currentEditingBook) return;
 
         const is_completed = isCompletedToggle.checked;
+        const is_visible = isVisibleToggle ? isVisibleToggle.checked : true;
         const selectedCheckboxes = [...tagCheckboxForm.querySelectorAll('input[type="checkbox"]:checked')];
         let selectedTagIds = selectedCheckboxes.map(cb => parseInt(cb.value));
 
@@ -732,7 +750,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 summary,
                 summary_source_url,
                 notes: summary,
-                is_completed: is_completed
+                is_completed: is_completed,
+                is_visible: is_visible
             }),
         });
 
@@ -746,6 +765,9 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!currentEditingBook.activity) {
                 currentEditingBook.activity = { folderName: currentEditingBook.name };
             }
+            currentEditingBook.activity.is_completed = is_completed ? 1 : 0;
+            currentEditingBook.activity.is_visible = is_visible ? 1 : 0;
+            currentEditingBook.is_visible = is_visible ? 1 : 0;
             currentEditingBook.activity.is_completed = is_completed ? 1 : 0;
             currentEditingBook.activity.summary = summary;
             currentEditingBook.activity.notes = summary;

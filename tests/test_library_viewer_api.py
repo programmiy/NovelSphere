@@ -137,3 +137,53 @@ def test_mobile_library_detection_and_pc_preservation():
     assert "library.css" in cookie_pc_res.text
     assert "m-bottom-nav" not in cookie_pc_res.text
 
+
+def test_book_visibility_toggle_and_hidden_filtering():
+    """책 숨김 토글(is_visible) 및 /api/books 필터링 동작 검증"""
+    test_folder = "숨김_테스트_전용_소설"
+
+    # 1. 초기 등록
+    act_res = client.put(f"/api/books/{test_folder}/activity", json={"notes": "숨김 검증용"})
+    assert act_res.status_code == 200
+
+    # 기본 노출 확인
+    books_res = client.get("/api/books")
+    assert books_res.status_code == 200
+    book_names = [b["name"] for b in books_res.json()]
+    assert test_folder in book_names
+
+    # 2. 서재에서 숨기기 (is_visible = False)
+    vis_res = client.put(f"/api/books/{test_folder}/visibility", json={"is_visible": False})
+    assert vis_res.status_code == 200
+    assert vis_res.json()["is_visible"] is False
+
+    # 3. 기본 /api/books 및 /folders 조회 시 목록에서 완전히 제외되어야 함
+    books_hidden_res = client.get("/api/books")
+    assert books_hidden_res.status_code == 200
+    hidden_names = [b["name"] for b in books_hidden_res.json()]
+    assert test_folder not in hidden_names
+
+    folders_hidden_res = client.get("/folders")
+    assert folders_hidden_res.status_code == 200
+    folder_names = [f["name"] for f in folders_hidden_res.json()]
+    assert test_folder not in folder_names
+
+    # 4. include_hidden=True 조회 시에는 포함되어야 함
+    all_books_res = client.get("/api/books?include_hidden=true")
+    assert all_books_res.status_code == 200
+    all_books = all_books_res.json()
+    target_book = next((b for b in all_books if b["name"] == test_folder), None)
+    assert target_book is not None
+    assert target_book.get("is_visible") == 0
+
+    # 5. 다시 보이기 (is_visible = True)
+    restore_res = client.put(f"/api/books/{test_folder}/visibility", json={"is_visible": True})
+    assert restore_res.status_code == 200
+    assert restore_res.json()["is_visible"] is True
+
+    # 6. 기본 목록에 정상 복구 확인
+    restored_books_res = client.get("/api/books")
+    restored_names = [b["name"] for b in restored_books_res.json()]
+    assert test_folder in restored_names
+
+

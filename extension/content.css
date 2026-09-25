@@ -376,4 +376,141 @@ tr.review-target-row:hover {
     color: #b91c1c;
 }
 
+/* =================================================================================
+ * 쾌속모드(Turbo Mode) 배너 및 스위치 컨트롤 스타일
+ * ================================================================================= */
+.sidebar-turbo-banner {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 12px;
+    background: #ffffff;
+    border-bottom: 1px solid #e2e8f0;
+    font-size: 12px;
+    flex-shrink: 0;
+    transition: all 0.25s ease;
+}
+
+.sidebar-turbo-banner.active {
+    background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
+    border-bottom: 1px solid #fcd34d;
+    box-shadow: inset 0 1px 2px rgba(245, 158, 11, 0.1);
+}
+
+.turbo-info {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    overflow: hidden;
+    flex: 1;
+}
+
+.turbo-icon {
+    font-size: 14px;
+    line-height: 1;
+}
+
+.turbo-label {
+    font-weight: 700;
+    color: #475569;
+    letter-spacing: -0.2px;
+}
+
+.sidebar-turbo-banner.active .turbo-label {
+    color: #b45309;
+}
+
+.turbo-desc {
+    font-size: 11px;
+    color: #64748b;
+    white-space: nowrap;
+}
+
+.sidebar-turbo-banner.active .turbo-desc {
+    color: #d97706;
+    font-weight: 500;
+}
+
+.turbo-controls {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    flex-shrink: 0;
+}
+
+.turbo-cutoff-badge {
+    background: #f1f5f9;
+    color: #475569;
+    padding: 2px 7px;
+    border-radius: 4px;
+    font-size: 11px;
+    cursor: pointer;
+    border: 1px solid #cbd5e1;
+    user-select: none;
+    transition: all 0.2s ease;
+}
+
+.turbo-cutoff-badge:hover {
+    background: #e2e8f0;
+    border-color: #94a3b8;
+}
+
+.sidebar-turbo-banner.active .turbo-cutoff-badge {
+    background: #fef3c7;
+    color: #92400e;
+    border-color: #f59e0b;
+    font-weight: 600;
+}
+
+/* 쾌속모드 슬라이더 스위치 */
+.turbo-switch {
+    position: relative;
+    display: inline-block;
+    width: 40px;
+    height: 22px;
+    margin: 0;
+    flex-shrink: 0;
+}
+
+.turbo-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.turbo-slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: #cbd5e1;
+    transition: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    border-radius: 22px;
+}
+
+.turbo-slider:before {
+    position: absolute;
+    content: "";
+    height: 16px;
+    width: 16px;
+    left: 3px;
+    bottom: 3px;
+    background-color: white;
+    transition: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    border-radius: 50%;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+
+.turbo-switch input:checked + .turbo-slider {
+    background-color: #f59e0b;
+    box-shadow: 0 0 8px rgba(245, 158, 11, 0.4);
+}
+
+.turbo-switch input:checked + .turbo-slider:before {
+    transform: translateX(18px);
+}
+
+
 

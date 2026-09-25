@@ -40,10 +40,14 @@ class BookActivityUpdate(BaseModel):
     last_read_pid: Optional[str] = None
     last_read_chapter_title: Optional[str] = None
     is_completed: Optional[bool] = None
+    is_visible: Optional[bool] = None
     is_bookmarked: Optional[bool] = None
     notes: Optional[str] = None
     summary: Optional[str] = None
     summary_source_url: Optional[str] = None
+
+class BookVisibilityUpdate(BaseModel):
+    is_visible: bool
 
 class TocUrlItem(BaseModel):
     title: str
@@ -111,9 +115,9 @@ def update_book_urls_order(folder_name: str, req: TocUrlUpdate):
     "/folders",
     tags=["Books"],
     summary="모든 폴더(책) 목록 조회",
-    description="모든 폴더(책) 목록과 각 폴더의 고정 상태, 태그, 활동 정보를 조회합니다."
+    description="모든 폴더(책) 목록과 각 폴더의 고정 상태, 태그, 활동 정보를 조회합니다. include_hidden=True 지정 시 숨김 처리된 책도 포함합니다."
 )
-def get_folders():
+def get_folders(include_hidden: bool = False):
     conn = get_sqlite_conn(as_dict=True)
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM book_activity")
@@ -136,6 +140,15 @@ def get_folders():
     if cursor.fetchone():
         all_folders_set.add("폴더 추가 대기 상태")
 
+    # 숨김 처리된 폴더 (is_visible == 0) 필터링 (Zero overhead on translations table)
+    hidden_folders = {
+        row['folderName']
+        for row in activity_map.values()
+        if row.get('is_visible') == 0
+    }
+    if not include_hidden:
+        all_folders_set = {f for f in all_folders_set if f not in hidden_folders}
+
     cursor.execute("SELECT folderName, COUNT(DISTINCT title) as chapter_count FROM translations WHERE folderName IS NOT NULL AND title IS NOT NULL GROUP BY folderName")
     chapter_counts = {row['folderName']: row['chapter_count'] for row in cursor.fetchall()}
     cursor.execute("SELECT COUNT(DISTINCT title) as chapter_count FROM translations WHERE folderName IS NULL AND title IS NOT NULL")
@@ -150,7 +163,8 @@ def get_folders():
             'pinned': f in pinned_set,
             'tags': book_tags_map.get(f, []),
             'activity': activity_map.get(f),
-            'chapter_count': chapter_counts.get(f, 0)
+            'chapter_count': chapter_counts.get(f, 0),
+            'is_visible': 0 if f in hidden_folders else 1
         } for f in all_folders_set
     ]
     sorted_folders = sorted(folder_objects, key=lambda x: (not x['pinned'], x['name']))
@@ -168,8 +182,8 @@ def get_folders():
     summary="모든 책 목록 조회 (폴더와 동일)",
     description="모든 책 목록을 조회합니다. 이는 /folders 엔드포인트와 동일한 기능을 제공합니다."
 )
-def get_books():
-    return get_folders()
+def get_books(include_hidden: bool = False):
+    return get_folders(include_hidden=include_hidden)
 
 @router.post(
     "/api/folders",
@@ -442,7 +456,7 @@ def update_book_tags(folder_name: str, req: BookTagUpdate):
     "/api/books/{folder_name}/activity",
     tags=["Books"],
     summary="책 활동 정보 업데이트",
-    description="지정된 폴더(책)의 마지막 읽은 시간, PID, 북마크 여부, 노트, 요약 등 활동 정보를 업데이트합니다."
+    description="지정된 폴더(책)의 마지막 읽은 시간, PID, 북마크 여부, 완료 여부, 노출 여부, 노트, 요약 등 활동 정보를 업데이트합니다."
 )
 def update_book_activity(folder_name: str, req: BookActivityUpdate):
     decoded_folder_name = unquote(folder_name)
@@ -451,7 +465,7 @@ def update_book_activity(folder_name: str, req: BookActivityUpdate):
     cursor.execute("SELECT * FROM book_activity WHERE folderName = ?", (decoded_folder_name,))
     activity = cursor.fetchone()
     if not activity:
-        activity = {'folderName': decoded_folder_name}
+        activity = {'folderName': decoded_folder_name, 'is_visible': 1}
     if hasattr(req, "model_dump"):
         update_data = req.model_dump(exclude_unset=True)
     else:
@@ -459,17 +473,26 @@ def update_book_activity(folder_name: str, req: BookActivityUpdate):
     activity.update(update_data)
     is_bookmarked_int = 1 if activity.get('is_bookmarked') else 0
     is_completed_int = 1 if activity.get('is_completed') else 0
+    
+    # is_visible: 명시적으로 False/0인 경우 0, 그 외(None 등)는 기존 값 또는 기본 1
+    raw_visible = activity.get('is_visible')
+    if raw_visible is not None:
+        is_visible_int = 0 if not raw_visible else 1
+    else:
+        is_visible_int = 1
+
     cursor.execute("""
         INSERT OR REPLACE INTO book_activity (
             folderName, last_read_timestamp, last_read_pid, last_read_chapter_title, 
-            is_completed, is_bookmarked, notes, summary, summary_source_url
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            is_completed, is_visible, is_bookmarked, notes, summary, summary_source_url
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         decoded_folder_name, 
         activity.get('last_read_timestamp'), 
         activity.get('last_read_pid'), 
         activity.get('last_read_chapter_title'),
         is_completed_int,
+        is_visible_int,
         is_bookmarked_int, 
         activity.get('notes'), 
         activity.get('summary'), 
@@ -478,8 +501,32 @@ def update_book_activity(folder_name: str, req: BookActivityUpdate):
     conn.commit()
     conn.close()
     activity['is_completed'] = is_completed_int
+    activity['is_visible'] = is_visible_int
     activity['is_bookmarked'] = is_bookmarked_int
     return {"message": f"Activity for '{decoded_folder_name}' updated.", "activity": activity}
+
+@router.put(
+    "/api/books/{folder_name}/visibility",
+    tags=["Books"],
+    summary="책 숨김/표시 상태 업데이트",
+    description="지정된 폴더(책)의 is_visible 상태를 변경하여 서재 및 목록에서 숨기거나 다시 표시합니다."
+)
+def update_book_visibility(folder_name: str, req: BookVisibilityUpdate):
+    decoded_folder_name = unquote(folder_name)
+    conn = get_sqlite_conn(as_dict=True)
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT * FROM book_activity WHERE folderName = ?", (decoded_folder_name,))
+        activity = cursor.fetchone()
+        is_visible_int = 1 if req.is_visible else 0
+        if activity:
+            cursor.execute("UPDATE book_activity SET is_visible = ? WHERE folderName = ?", (is_visible_int, decoded_folder_name))
+        else:
+            cursor.execute("INSERT INTO book_activity (folderName, is_visible) VALUES (?, ?)", (decoded_folder_name, is_visible_int))
+        conn.commit()
+    finally:
+        conn.close()
+    return {"message": f"'{decoded_folder_name}'의 표시 상태가 변경되었습니다.", "is_visible": req.is_visible}
 
 @router.get(
     "/api/books/{folder_name}/activity",

@@ -19,8 +19,7 @@
     "<all_urls>"
   ],
   "action": {
-    "default_popup": "popup.html",
-    "default_title": "일본어 번역기"
+    "default_title": "일본어 번역기 (번역 기록 열기)"
   },
   "content_scripts": [
     {

@@ -40,11 +40,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const statReadingBooks = document.getElementById('statReadingBooks');
     const statUnreadBooks = document.getElementById('statUnreadBooks');
     const statCompletedBooks = document.getElementById('statCompletedBooks');
+    const statHiddenBooks = document.getElementById('statHiddenBooks');
     const mStatChips = document.querySelectorAll('.m-stat-chip');
 
     // Tag Editor Modal Elements
     const tagModal = document.getElementById('m-tag-editor-modal');
     const tagModalBookName = document.getElementById('m-tag-editor-book-name');
+    const isVisibleToggle = document.getElementById('m-book-is-visible-toggle');
     const isCompletedToggle = document.getElementById('m-book-is-completed-toggle');
     const tagCheckboxForm = document.getElementById('m-tag-checkbox-form');
     const newTagForm = document.getElementById('m-new-tag-form');
@@ -223,7 +225,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function syncBooksFromServer() {
         try {
-            const response = await fetch(`/api/books?_t=${Date.now()}`, {
+            const response = await fetch(`/api/books?include_hidden=true&_t=${Date.now()}`, {
                 cache: 'no-cache',
                 headers: {
                     'Cache-Control': 'no-cache, no-store, must-revalidate',
@@ -259,17 +261,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Stats Bar Update ---
     function updateStatsBar() {
-        const total = allBooks.length;
-        const pinned = allBooks.filter(b => b.pinned).length;
-        const unread = allBooks.filter(b => !b.activity || (!b.activity.last_read_pid && !b.activity.last_read_chapter_title)).length;
-        const completed = allBooks.filter(b => b.activity && (b.activity.is_completed === 1 || b.activity.is_completed === true)).length;
-        const reading = allBooks.filter(b => b.activity && (b.activity.last_read_pid || b.activity.last_read_chapter_title) && !(b.activity.is_completed === 1 || b.activity.is_completed === true)).length;
+        const visibleBooks = allBooks.filter(b => b.is_visible !== 0);
+        const hiddenCount = allBooks.filter(b => b.is_visible === 0).length;
+
+        const total = visibleBooks.length;
+        const pinned = visibleBooks.filter(b => b.pinned).length;
+        const unread = visibleBooks.filter(b => !b.activity || (!b.activity.last_read_pid && !b.activity.last_read_chapter_title)).length;
+        const completed = visibleBooks.filter(b => b.activity && (b.activity.is_completed === 1 || b.activity.is_completed === true)).length;
+        const reading = visibleBooks.filter(b => b.activity && (b.activity.last_read_pid || b.activity.last_read_chapter_title) && !(b.activity.is_completed === 1 || b.activity.is_completed === true)).length;
 
         if (statTotalBooks) statTotalBooks.textContent = total;
         if (statPinnedBooks) statPinnedBooks.textContent = pinned;
         if (statReadingBooks) statReadingBooks.textContent = reading;
         if (statUnreadBooks) statUnreadBooks.textContent = unread;
         if (statCompletedBooks) statCompletedBooks.textContent = completed;
+        if (statHiddenBooks) statHiddenBooks.textContent = hiddenCount;
     }
 
     // --- Tag Filters ---
@@ -298,14 +304,20 @@ document.addEventListener('DOMContentLoaded', () => {
         let list = [...allBooks];
 
         // 1. Status Filter
-        if (activeStatusFilter === 'pinned') {
-            list = list.filter(b => b.pinned);
-        } else if (activeStatusFilter === 'reading') {
-            list = list.filter(b => b.activity && (b.activity.last_read_pid || b.activity.last_read_chapter_title) && !(b.activity.is_completed === 1 || b.activity.is_completed === true));
-        } else if (activeStatusFilter === 'unread') {
-            list = list.filter(b => !b.activity || (!b.activity.last_read_pid && !b.activity.last_read_chapter_title));
-        } else if (activeStatusFilter === 'completed') {
-            list = list.filter(b => b.activity && (b.activity.is_completed === 1 || b.activity.is_completed === true));
+        if (activeStatusFilter === 'hidden') {
+            list = list.filter(b => b.is_visible === 0);
+        } else {
+            list = list.filter(b => b.is_visible !== 0);
+
+            if (activeStatusFilter === 'pinned') {
+                list = list.filter(b => b.pinned);
+            } else if (activeStatusFilter === 'reading') {
+                list = list.filter(b => b.activity && (b.activity.last_read_pid || b.activity.last_read_chapter_title) && !(b.activity.is_completed === 1 || b.activity.is_completed === true));
+            } else if (activeStatusFilter === 'unread') {
+                list = list.filter(b => !b.activity || (!b.activity.last_read_pid && !b.activity.last_read_chapter_title));
+            } else if (activeStatusFilter === 'completed') {
+                list = list.filter(b => b.activity && (b.activity.is_completed === 1 || b.activity.is_completed === true));
+            }
         }
 
         // 2. Tag Filter
@@ -594,6 +606,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const { name, tags = [], activity = {} } = currentEditingBook;
         tagModalBookName.textContent = name;
         isCompletedToggle.checked = activity?.is_completed === 1 || activity?.is_completed === true;
+        const isVisibleFlag = currentEditingBook.is_visible !== 0 && activity?.is_visible !== 0;
+        if (isVisibleToggle) isVisibleToggle.checked = isVisibleFlag;
         notesSummaryTextarea.value = activity?.summary || activity?.notes || '';
 
         tagModal.style.display = 'block';
@@ -612,6 +626,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             initialModalState = {
                 isCompleted: isCompletedToggle.checked,
+                isVisible: isVisibleToggle ? isVisibleToggle.checked : true,
                 summary: notesSummaryTextarea.value
             };
         } catch (e) {
@@ -631,6 +646,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!currentEditingBook) return;
 
         const is_completed = isCompletedToggle.checked;
+        const is_visible = isVisibleToggle ? isVisibleToggle.checked : true;
         const selectedTagIds = [...tagCheckboxForm.querySelectorAll('input:checked')].map(cb => parseInt(cb.value));
         const summary = notesSummaryTextarea.value;
 
@@ -649,7 +665,8 @@ document.addEventListener('DOMContentLoaded', () => {
             body: JSON.stringify({
                 summary,
                 notes: summary,
-                is_completed: is_completed
+                is_completed: is_completed,
+                is_visible: is_visible
             })
         });
 
@@ -662,6 +679,8 @@ document.addEventListener('DOMContentLoaded', () => {
             // Optimistic UI Update & Cache Refresh
             if (!currentEditingBook.activity) currentEditingBook.activity = {};
             currentEditingBook.activity.is_completed = is_completed ? 1 : 0;
+            currentEditingBook.activity.is_visible = is_visible ? 1 : 0;
+            currentEditingBook.is_visible = is_visible ? 1 : 0;
             currentEditingBook.activity.summary = summary;
             currentEditingBook.activity.notes = summary;
 

@@ -158,6 +158,9 @@
                 <button class="status-tab-btn" data-status="completed">
                     🏆 완결작 (<span id="countCompleted">0</span>)
                 </button>
+                <button class="status-tab-btn" data-status="hidden" id="tabHiddenBooks" title="서재에서 숨겨진 소설 목록">
+                    👁️ 숨김 (<span id="countHidden">0</span>)
+                </button>
             </div>
 
             <!-- 태그 필터 바 -->
@@ -187,6 +190,18 @@
                 <div class="meta-preview-box">
                     <span class="meta-label">대상 소설:</span>
                     <span id="tag-editor-book-name" class="meta-book-name"></span>
+                </div>
+
+                <!-- 서재 표시 / 숨김 토글 -->
+                <div class="setting-toggle-row">
+                    <div class="toggle-info">
+                        <label for="book-is-visible-toggle" class="toggle-title">서재에 표시</label>
+                        <span class="toggle-desc">비활성화하면 서재 메인 화면에서 이 소설이 숨겨집니다. (테스트용/완독 소설 정리 등)</span>
+                    </div>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="book-is-visible-toggle" checked>
+                        <span class="slider"></span>
+                    </label>
                 </div>
 
                 <!-- 완결 여부 토글 (Phase 2 스포일러 방지 사전용) -->

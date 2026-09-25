@@ -200,6 +200,14 @@ async def lifespan(app: FastAPI):
                 connection.exec_driver_sql("ALTER TABLE book_activity ADD COLUMN is_completed INTEGER DEFAULT 0")
             except Exception:
                 pass
+            try:
+                connection.exec_driver_sql("ALTER TABLE book_activity ADD COLUMN is_visible INTEGER DEFAULT 1")
+            except Exception:
+                pass
+            try:
+                connection.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_book_activity_is_visible ON book_activity (is_visible)")
+            except Exception:
+                pass
 
             connection.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_title ON translations (title)")
             connection.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_folder_title ON translations (folderName, title)")

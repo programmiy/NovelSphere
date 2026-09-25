@@ -58,10 +58,15 @@ class BookActivity(Base):
     last_read_pid = Column(Text)
     last_read_chapter_title = Column(Text)
     is_completed = Column(Integer, default=0)
+    is_visible = Column(Integer, default=1)
     is_bookmarked = Column(Integer, default=0)
     notes = Column(Text)
     summary = Column(Text)
     summary_source_url = Column(Text)
+
+    __table_args__ = (
+        Index('ix_book_activity_is_visible', 'is_visible'),
+    )
 
 class AppliedUrl(Base):
     __tablename__ = 'applied_urls'

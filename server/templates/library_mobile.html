@@ -108,6 +108,10 @@
                 <span class="chip-label">🏆 완결</span>
                 <span class="chip-val" id="statCompletedBooks">0</span>
             </button>
+            <button class="m-stat-chip" data-status="hidden" id="mTabHiddenBooks" title="숨겨진 소설 목록">
+                <span class="chip-label">👁️ 숨김</span>
+                <span class="chip-val" id="statHiddenBooks">0</span>
+            </button>
         </section>
 
         <!-- 스마트 이어보기 Hero 콤팩트 슬림 카드 (높이 ~80px) -->
@@ -191,6 +195,18 @@
 
             <div class="m-modal-body">
                 <div class="m-book-target-name" id="m-tag-editor-book-name">소설 제목</div>
+
+                <!-- 서재 표시 / 숨김 토글 -->
+                <div class="m-toggle-box">
+                    <div class="toggle-text">
+                        <span class="toggle-title">서재에 표시</span>
+                        <span class="toggle-desc">비활성화하면 서재 메인 화면에서 이 소설이 숨겨집니다.</span>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" id="m-book-is-visible-toggle" checked>
+                        <span class="slider round"></span>
+                    </label>
+                </div>
 
                 <!-- 완결 지정 토글 -->
                 <div class="m-toggle-box">

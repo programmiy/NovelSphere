@@ -16,7 +16,7 @@ import uuid
 
 from server.settings import settings
 from server.database import get_db, get_sqlite_conn, dict_factory, get_db_path
-from server.models import Translation, UrlMetadata, AppliedUrl, TranslationTrash, CleanupNotification, CleanupQueuedItem, AbnormalWhitelist
+from server.models import Translation, UrlMetadata, AppliedUrl, TranslationTrash, CleanupNotification, CleanupQueuedItem, AbnormalWhitelist, BookActivity
 from server.rule_classifier import classify_translation, extract_untranslated_keywords, is_verbatim_copy, restore_brackets
 from server.utils import natural_sort_key
 from server.routers.translation import handle_verbatim_cleanup_items
@@ -351,11 +351,12 @@ def get_paged_translations(page: int = 1, per_page: int = 20):
     "/translations_by_folder",
     tags=["Data CRUD"],
     summary="폴더별 번역 기록 조회",
-    description="데이터베이스에서 모든 번역 기록을 폴더와 URL별로 그룹화하고 조회합니다. folder 지정 시 해당 폴더만 필터링하며, light=True 지정 시 본문 텍스트를 제외하여 전송 성능을 높입니다."
+    description="데이터베이스에서 모든 번역 기록을 폴더와 URL별로 그룹화하고 조회합니다. folder 지정 시 해당 폴더만 필터링하며, light=True 지정 시 본문 텍스트를 제외하여 전송 성능을 높입니다. include_hidden=True 지정 시 숨겨진 폴더도 포함합니다."
 )
 def get_translations_by_folder(
     light: bool = False,
     folder: Optional[str] = None,
+    include_hidden: bool = False,
     db: Session = Depends(get_db)
 ):
     
@@ -390,6 +391,14 @@ def get_translations_by_folder(
             query = query.filter(Translation.folderName.is_(None))
         else:
             query = query.filter(Translation.folderName == folder)
+    elif not include_hidden:
+        # 숨겨진 폴더 (is_visible == 0) 제외
+        hidden_tuples = db.query(BookActivity.folderName).filter(BookActivity.is_visible == 0).all()
+        hidden_folders = [h[0] for h in hidden_tuples if h[0]]
+        if hidden_folders:
+            query = query.filter(
+                (Translation.folderName.is_(None)) | (~Translation.folderName.in_(hidden_folders))
+            )
 
     translations = query.all()
 
