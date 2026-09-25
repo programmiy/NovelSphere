@@ -131,6 +131,45 @@ function checkCutoffTimeReached() {
     return Date.now() >= turboTargetTimestamp;
 }
 
+// ⚡ 쾌속모드 온/오프 상태 변화에 실시간 반응하는 동적 지연 함수
+let currentDelayResolver = null;
+let currentDelayStart = 0;
+
+function sleepResponsive(getDelayFn) {
+    return new Promise(resolve => {
+        currentDelayStart = Date.now();
+        const checkInterval = 50; // 50ms마다 경과 시간 및 모드 변화 체크
+
+        const intervalId = setInterval(() => {
+            if (isTranslationCancelled) {
+                clearInterval(intervalId);
+                currentDelayResolver = null;
+                resolve();
+                return;
+            }
+
+            const elapsed = Date.now() - currentDelayStart;
+            const targetDelay = typeof getDelayFn === 'function' ? getDelayFn() : getDelayFn;
+
+            if (elapsed >= targetDelay) {
+                clearInterval(intervalId);
+                currentDelayResolver = null;
+                resolve();
+            }
+        }, checkInterval);
+
+        currentDelayResolver = () => {
+            const elapsed = Date.now() - currentDelayStart;
+            const targetDelay = typeof getDelayFn === 'function' ? getDelayFn() : getDelayFn;
+            if (elapsed >= targetDelay) {
+                clearInterval(intervalId);
+                currentDelayResolver = null;
+                resolve();
+            }
+        };
+    });
+}
+
 // 저장소에서 쾌속모드 상태 로드
 async function loadTurboModeState() {
     try {
@@ -175,6 +214,11 @@ async function setTurboMode(enabled, manual = true) {
 
     updateTurboModeUI(isTurboMode);
     updateTurboBadgeUI();
+
+    // 현재 진행 중인 대기(5초 -> 2초, 60초 -> 8초)가 있다면 즉시 단축 반응
+    if (currentDelayResolver) {
+        currentDelayResolver();
+    }
 
     if (manual) {
         if (isTurboMode) {
@@ -283,6 +327,9 @@ chrome.storage.onChanged.addListener((changes, namespace) => {
         if (newTurbo !== isTurboMode) {
             isTurboMode = newTurbo;
             updateTurboModeUI(isTurboMode);
+            if (currentDelayResolver) {
+                currentDelayResolver();
+            }
         }
     }
     if (changes.lanovel_turbo_cutoff) {
@@ -2309,8 +2356,9 @@ async function translateAllPTags(isRetranslation = false) {
         await translateChunk([item], 1);
         checkAndReportMilestone(index + 1, textsToTranslate.length);
         if (index < longTexts.length - 1) {
-            const delay = isTurboMode ? 2000 : 5000;
-            await new Promise(resolve => setTimeout(resolve, delay));
+            const currentDelay = isTurboMode ? 2000 : 5000;
+            logToSidebar(`${currentDelay / 1000}초 후 다음 긴 문장을 번역합니다.`);
+            await sleepResponsive(() => isTurboMode ? 2000 : 5000);
             if (isTurboMode && checkCutoffTimeReached()) {
                 await abortTurboMode("초기화 시간 도달");
                 break;
@@ -2356,10 +2404,9 @@ async function translateAllPTags(isRetranslation = false) {
         const chunks = chunkArray(normalTexts, initialChunkSize);
         let progress = 0;
 
-        const dynamicDelay = isTurboMode ? 2000 : 5000;
         logToSidebar(isTurboMode 
-            ? `⚡ [쾌속모드] 번역 묶음 간 대기 시간을 ${dynamicDelay / 1000}초로 단축하여 번역을 진행합니다.` 
-            : `RPM 제한을 피하기 위해 묶음 간 대기 시간을 ${dynamicDelay / 1000}초로 설정합니다.`);
+            ? `⚡ [쾌속모드] 번역 묶음 간 대기 시간을 2초로 단축하여 번역을 진행합니다.` 
+            : `RPM 제한을 피하기 위해 묶음 간 대기 시간을 5초로 설정합니다.`);
 
         for (const [index, chunk] of chunks.entries()) {
             if (isTranslationCancelled) break;
@@ -2369,8 +2416,9 @@ async function translateAllPTags(isRetranslation = false) {
             checkAndReportMilestone(longTexts.length + progress, textsToTranslate.length);
 
             if (index < chunks.length - 1) {
-                logToSidebar(`${dynamicDelay / 1000}초 후 다음 묶음을 번역합니다.`);
-                await new Promise(resolve => setTimeout(resolve, dynamicDelay));
+                const currentDelay = isTurboMode ? 2000 : 5000;
+                logToSidebar(`${currentDelay / 1000}초 후 다음 묶음을 번역합니다.`);
+                await sleepResponsive(() => isTurboMode ? 2000 : 5000);
                 if (isTurboMode && checkCutoffTimeReached()) {
                     await abortTurboMode("초기화 시간 도달");
                     break;
@@ -2424,84 +2472,82 @@ async function translateAllPTags(isRetranslation = false) {
             logToSidebar(`[ntfy] 10화 단위 알림 정책 적용 중 (현재: ${currentBatchCount}화, 다음 알림: ${Math.ceil(currentBatchCount / 10) * 10}화)`);
         }
 
-        const scrollDelay = isTurboMode ? 8000 : 60000;
         const currentUrl = getCleanUrl(); // Get the current clean URL
 
-        const startAutoScroll = () => {
+        const startAutoScroll = async () => {
             if (isReviewMode()) {
-                logToSidebar("🔔 [알림 센터 검수 모드] 다음 페이지 자동 넘기기가 비활성화되어 있습니다.");
+                logToSidebar("🔔 [알림 센터 검수 모드] 재번역 검수 회차이므로 다음 페이지 자동 넘기기가 비활성화되었습니다.");
                 return;
             }
             logToSidebar(isTurboMode 
-                ? `⚡ [쾌속모드] 번역 완료. ${scrollDelay / 1000}초 후 다음 페이지로 이동합니다.` 
-                : `번역 완료. ${scrollDelay / 1000}초 후 페이지 끝으로 자동 스크롤합니다.`);
+                ? `⚡ [쾌속모드] 번역 완료. 8초 후 다음 페이지로 이동합니다.` 
+                : `번역 완료. 60초 후 페이지 끝으로 자동 스크롤합니다.`);
 
-            setTimeout(async () => {
-                if (isTranslationCancelled) return;
+            await sleepResponsive(() => isTurboMode ? 8000 : 60000);
+            if (isTranslationCancelled) return;
 
-                if (isTurboMode && checkCutoffTimeReached()) {
-                    await abortTurboMode("초기화 시간 도달");
+            if (isTurboMode && checkCutoffTimeReached()) {
+                await abortTurboMode("초기화 시간 도달");
+                return;
+            }
+
+            logToSidebar("페이지 끝으로 스크롤 후 다음 페이지 액션을 실행합니다.");
+            window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+
+            const checkScrollEndInterval = setInterval(() => {
+                if (isTranslationCancelled) {
+                    clearInterval(checkScrollEndInterval);
                     return;
                 }
-
-                logToSidebar("페이지 끝으로 스크롤 후 다음 페이지 액션을 실행합니다.");
-                window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
-
-                const checkScrollEndInterval = setInterval(() => {
-                    if (isTranslationCancelled) {
-                        clearInterval(checkScrollEndInterval);
-                        return;
-                    }
+                
+                if ((window.innerHeight + window.scrollY) >= document.body.scrollHeight - 10) {
+                    clearInterval(checkScrollEndInterval);
                     
-                    if ((window.innerHeight + window.scrollY) >= document.body.scrollHeight - 10) {
-                        clearInterval(checkScrollEndInterval);
-                        
-                        if (currentUrl.includes('novel18.syosetu.com') || currentUrl.includes('syosetu.com')) {
-                            logToSidebar("소설 사이트 '次へ' 버튼을 찾아서 클릭합니다.");
-                            const nextButton = document.querySelector('a.c-pager__item.c-pager__item--next') || document.querySelector('a.novelview_pager-next');
-                            if (nextButton && nextButton.href) {
-                                logToSidebar(`다음 페이지로 이동: ${nextButton.href}`);
-                                window.location.href = nextButton.href;
-                            } else {
-                                logToSidebar("다음 페이지 버튼을 찾을 수 없습니다. (소설 연속 번역 종료)");
-                                // 마지막 화에 도달하여 다음 화가 없으므로 최종 완료 알림 발송 후 카운터 리셋
-                                sendNtfyComplete(
-                                    currentNovelTitle,
-                                    extractEpisodeTitle() || document.title || '',
-                                    textsToTranslate.length,
-                                    getCleanUrl(),
-                                    currentBatchCount
-                                );
-                                chrome.storage.local.remove(countKey).catch(() => {});
-                            }
-                        } else if (currentUrl.includes('kakuyomu.jp')) {
-                            logToSidebar("'kakuyomu.jp'입니다. 'PageDown' 키를 누릅니다.");
-                            const pageDownDelay = isTurboMode ? 500 : 4000;
-                            setTimeout(() => {
-                                document.body.dispatchEvent(new KeyboardEvent('keydown', {
-                                    key: 'PageDown',
-                                    code: 'PageDown',
-                                    bubbles: true,
-                                    cancelable: true,
-                                    keyCode: 34
-                                }));
-                            }, pageDownDelay);
+                    if (currentUrl.includes('novel18.syosetu.com') || currentUrl.includes('syosetu.com')) {
+                        logToSidebar("소설 사이트 '次へ' 버튼을 찾아서 클릭합니다.");
+                        const nextButton = document.querySelector('a.c-pager__item.c-pager__item--next') || document.querySelector('a.novelview_pager-next');
+                        if (nextButton && nextButton.href) {
+                            logToSidebar(`다음 페이지로 이동: ${nextButton.href}`);
+                            window.location.href = nextButton.href;
                         } else {
-                            logToSidebar("지원되지 않는 사이트입니다. 기본 'PageDown' 키를 누릅니다.");
-                            const pageDownDelay = isTurboMode ? 500 : 4000;
-                            setTimeout(() => {
-                                document.body.dispatchEvent(new KeyboardEvent('keydown', {
-                                    key: 'PageDown',
-                                    code: 'PageDown',
-                                    bubbles: true,
-                                    cancelable: true,
-                                    keyCode: 34
-                                }));
-                            }, pageDownDelay);
+                            logToSidebar("다음 페이지 버튼을 찾을 수 없습니다. (소설 연속 번역 종료)");
+                            // 마지막 화에 도달하여 다음 화가 없으므로 최종 완료 알림 발송 후 카운터 리셋
+                            sendNtfyComplete(
+                                currentNovelTitle,
+                                extractEpisodeTitle() || document.title || '',
+                                textsToTranslate.length,
+                                getCleanUrl(),
+                                currentBatchCount
+                            );
+                            chrome.storage.local.remove(countKey).catch(() => {});
                         }
+                    } else if (currentUrl.includes('kakuyomu.jp')) {
+                        logToSidebar("'kakuyomu.jp'입니다. 'PageDown' 키를 누릅니다.");
+                        const pageDownDelay = isTurboMode ? 500 : 4000;
+                        setTimeout(() => {
+                            document.body.dispatchEvent(new KeyboardEvent('keydown', {
+                                key: 'PageDown',
+                                code: 'PageDown',
+                                bubbles: true,
+                                cancelable: true,
+                                keyCode: 34
+                            }));
+                        }, pageDownDelay);
+                    } else {
+                        logToSidebar("지원되지 않는 사이트입니다. 기본 'PageDown' 키를 누릅니다.");
+                        const pageDownDelay = isTurboMode ? 500 : 4000;
+                        setTimeout(() => {
+                            document.body.dispatchEvent(new KeyboardEvent('keydown', {
+                                key: 'PageDown',
+                                code: 'PageDown',
+                                bubbles: true,
+                                cancelable: true,
+                                keyCode: 34
+                            }));
+                        }, pageDownDelay);
                     }
-                }, 100);
-            }, scrollDelay);
+                }
+            }, 100);
         };
 
         if (document.visibilityState === 'visible') {
