@@ -117,6 +117,12 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (localStorage.getItem('showOriginalText') === 'true') {
                 prefs.showOriginal = true;
             }
+            const savedMobileNav = localStorage.getItem('mobileNavMode');
+            if (savedMobileNav) {
+                mobileNavMode = savedMobileNav;
+                const radio = document.querySelector(`input[name="mobile-nav"][value="${savedMobileNav}"]`);
+                if (radio) radio.checked = true;
+            }
         } catch (e) {
             console.warn('Failed to load reader preferences:', e);
         }
@@ -403,8 +409,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         const hasOriginal = Boolean(item.original);
         let itemHtml = `<div class="translation-item" data-id="${item.id}" data-pid="${item.pid}" data-original="${escapeHtml(item.original)}">`;
 
-        // Edit trigger button
-        itemHtml += `<button class="paragraph-edit-btn" title="단락 번역문 수정 (더블클릭 가능)"><span class="material-icons" style="font-size: 16px;">edit</span></button>`;
+        // Edit trigger button (PC hover)
+        itemHtml += `<button class="paragraph-edit-btn" title="단락 번역문 수정 (PC: 더블클릭 / 모바일: 길게 누르기)"><span class="material-icons" style="font-size: 16px;">edit</span></button>`;
 
         if (prefs.showOriginal && hasOriginal) {
             itemHtml += `<p class="original-text">${escapeHtml(item.original)}</p>`;
@@ -653,14 +659,19 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!actionBox) {
             actionBox = document.createElement('div');
             actionBox.className = 'inline-edit-actions';
+            const isTouchUI = isMobile || window.innerWidth <= 768;
             actionBox.innerHTML = `
-                <button class="btn btn-sm btn-outline cancel-edit-btn">취소 (Esc)</button>
-                <button class="btn btn-sm btn-primary save-edit-btn">저장 (Ctrl+Enter)</button>
+                <button class="btn btn-sm btn-outline cancel-edit-btn">${isTouchUI ? '취소' : '취소 (Esc)'}</button>
+                <button class="btn btn-sm btn-primary save-edit-btn">${isTouchUI ? '저장' : '저장 (Ctrl+Enter)'}</button>
             `;
             translationItem.appendChild(actionBox);
 
-            actionBox.querySelector('.save-edit-btn').onclick = () => saveParagraphChanges(translationItem);
-            actionBox.querySelector('.cancel-edit-btn').onclick = () => {
+            actionBox.querySelector('.save-edit-btn').onclick = (e) => {
+                e.stopPropagation();
+                saveParagraphChanges(translationItem);
+            };
+            actionBox.querySelector('.cancel-edit-btn').onclick = (e) => {
+                e.stopPropagation();
                 translatedTextElement.textContent = originalText;
                 disableEditing(translationItem);
             };
@@ -805,9 +816,21 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     // --- Touch & Click Handlers ---
+    let longPressTimer = null;
+    let isLongPressTriggered = false;
+    let suppressNextClick = false;
+
     function handleBookClick(e) {
+        if (suppressNextClick) {
+            suppressNextClick = false;
+            return;
+        }
+        // Block page turning if an edit session is currently active
+        if (document.querySelector('.translation-item.editing')) {
+            return;
+        }
         if (isMobile && mobileNavMode === 'swipe') return;
-        if (e.target.closest('.editing') || !window.getSelection().isCollapsed || e.target.closest('.paragraph-edit-btn')) {
+        if (!window.getSelection().isCollapsed || e.target.closest('.paragraph-edit-btn')) {
             return;
         }
 
@@ -822,20 +845,65 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
-    // Touch Swipe
+    // Touch Swipe & Mobile Long-Press (0.5s) to Edit
     bookContainer.addEventListener('touchstart', (e) => {
+        if (e.touches.length !== 1) {
+            clearTimeout(longPressTimer);
+            longPressTimer = null;
+            return;
+        }
+
         touchStartX = e.touches[0].clientX;
         touchStartY = e.touches[0].clientY;
+        isLongPressTriggered = false;
+
+        // Long press detection for translation items on mobile/touch
+        const item = e.target.closest('.translation-item');
+        if (item && !item.classList.contains('editing') && !e.target.closest('.inline-edit-actions')) {
+            longPressTimer = setTimeout(() => {
+                isLongPressTriggered = true;
+                suppressNextClick = true;
+                if (navigator.vibrate) {
+                    try { navigator.vibrate(50); } catch (_) {}
+                }
+                enableEditing(item);
+                showToast('단락 번역문 수정 모드가 열렸습니다.');
+                setTimeout(() => {
+                    suppressNextClick = false;
+                }, 400);
+            }, 500);
+        } else {
+            longPressTimer = null;
+        }
     }, { passive: true });
 
     bookContainer.addEventListener('touchmove', (e) => {
+        const currentX = e.touches[0].clientX;
+        const currentY = e.touches[0].clientY;
+        const deltaX = currentX - touchStartX;
+        const deltaY = currentY - touchStartY;
+
+        // Cancel long press if finger moved noticeably (scrolling or swiping)
+        if (Math.abs(deltaX) > 8 || Math.abs(deltaY) > 8) {
+            clearTimeout(longPressTimer);
+            longPressTimer = null;
+        }
+
         if (mobileNavMode === 'tap') return;
-        if (Math.abs(e.touches[0].clientX - touchStartX) > Math.abs(e.touches[0].clientY - touchStartY)) {
+        if (Math.abs(deltaX) > Math.abs(deltaY)) {
             if (prefs.mode !== 'scroll') e.preventDefault();
         }
     }, { passive: false });
 
     bookContainer.addEventListener('touchend', (e) => {
+        clearTimeout(longPressTimer);
+        longPressTimer = null;
+
+        if (isLongPressTriggered) {
+            isLongPressTriggered = false;
+            return;
+        }
+
         if (mobileNavMode === 'tap') return;
         const touchEndX = e.changedTouches[0].clientX;
         const touchEndY = e.changedTouches[0].clientY;
@@ -843,25 +911,35 @@ document.addEventListener('DOMContentLoaded', async () => {
         const deltaY = touchEndY - touchStartY;
 
         if (Math.abs(deltaX) > 50 && Math.abs(deltaY) < 60) {
+            suppressNextClick = true;
+            setTimeout(() => { suppressNextClick = false; }, 350);
             if (deltaX > 0) showPrevPage();
             else showNextPage();
         }
+    }, { passive: true });
+
+    bookContainer.addEventListener('touchcancel', () => {
+        clearTimeout(longPressTimer);
+        longPressTimer = null;
+        isLongPressTriggered = false;
     }, { passive: true });
 
     // --- Event Listeners Setup ---
     document.addEventListener('keydown', handleKeyPress);
     bookContainer.addEventListener('click', handleBookClick);
 
-    // Double click to edit paragraph
+    // Double click to edit paragraph (PC only: prevent accidental edits on mobile rapid taps)
     contentArea.addEventListener('dblclick', (e) => {
+        if (isMobile || window.innerWidth <= 768) return;
         const item = e.target.closest('.translation-item');
         if (item) enableEditing(item);
     });
 
-    // Hover edit button click
+    // Hover edit button click (PC only: hidden on mobile)
     contentArea.addEventListener('click', (e) => {
         const editBtn = e.target.closest('.paragraph-edit-btn');
         if (editBtn) {
+            if (isMobile || window.innerWidth <= 768) return;
             e.stopPropagation();
             const item = editBtn.closest('.translation-item');
             if (item) enableEditing(item);

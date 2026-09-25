@@ -12,7 +12,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&family=Nanum+Myeongjo:wght@400;700&family=Noto+Sans+KR:wght@400;500;700&family=Noto+Serif+KR:wght@400;600&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
-    <link rel="stylesheet" href="/static/viewer.css?v=2.0">
+    <link rel="stylesheet" href="/static/viewer.css?v=2.1">
 </head>
 <body class="theme-paper">
     <!-- 독서 진행률 표시줄 -->
@@ -288,6 +288,14 @@
                         <kbd>?</kbd>
                         <span>단축키 안내창 표시</span>
                     </div>
+                    <div class="shortcut-item">
+                        <kbd>더블클릭 (PC)</kbd>
+                        <span>단락 번역문 즉시 편집</span>
+                    </div>
+                    <div class="shortcut-item">
+                        <kbd>길게 누르기 (모바일)</kbd>
+                        <span>단락 0.5초 길게 눌러 번역문 수정</span>
+                    </div>
                 </div>
             </div>
             <footer class="modal-footer">
@@ -302,7 +310,7 @@
     <!-- 뷰어 토스트 메시지 -->
     <div id="viewer-toast" class="toast" style="display: none;"></div>
 
-    <script type="module" src="/static/viewer.js?v=2.0"></script>
+    <script type="module" src="/static/viewer.js?v=2.1"></script>
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {

@@ -328,10 +328,13 @@ body.scroll-mode .nav-arrow {
     padding: 4px 8px;
     border-radius: 6px;
     transition: background-color 0.2s ease;
+    -webkit-tap-highlight-color: transparent;
 }
 
-.translation-item:hover {
-    background-color: var(--hover-bg-color);
+@media (hover: hover) {
+    .translation-item:hover {
+        background-color: var(--hover-bg-color);
+    }
 }
 
 .original-text {
@@ -356,6 +359,7 @@ body.scroll-mode .nav-arrow {
     top: 4px;
     right: 6px;
     opacity: 0;
+    pointer-events: none;
     background: none;
     border: none;
     color: var(--text-muted);
@@ -365,13 +369,23 @@ body.scroll-mode .nav-arrow {
     transition: opacity 0.15s ease, color 0.15s ease;
 }
 
-.translation-item:hover .paragraph-edit-btn {
-    opacity: 0.7;
+@media (hover: hover) {
+    .translation-item:hover .paragraph-edit-btn {
+        opacity: 0.7;
+        pointer-events: auto;
+    }
+
+    .paragraph-edit-btn:hover {
+        opacity: 1 !important;
+        color: var(--primary-color);
+    }
 }
 
-.paragraph-edit-btn:hover {
-    opacity: 1 !important;
-    color: var(--primary-color);
+@media (hover: none), (max-width: 768px) {
+    .paragraph-edit-btn {
+        display: none !important;
+        pointer-events: none !important;
+    }
 }
 
 .translation-item.editing {
@@ -1117,5 +1131,23 @@ kbd {
 
     .nav-arrow {
         width: 16%;
+    }
+
+    /* Mobile: completely hide hover edit button to prevent page-turning overlap */
+    .paragraph-edit-btn {
+        display: none !important;
+        pointer-events: none !important;
+    }
+
+    /* Mobile inline edit buttons */
+    .inline-edit-actions {
+        margin-top: 12px;
+        gap: 10px;
+    }
+
+    .inline-edit-actions .btn {
+        padding: 8px 16px;
+        font-size: 13px;
+        min-height: 40px;
     }
 }
