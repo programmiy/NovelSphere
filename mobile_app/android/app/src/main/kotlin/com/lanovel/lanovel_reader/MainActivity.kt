@@ -1,0 +1,5 @@
+package com.lanovel.lanovel_reader
+
+import io.flutter.embedding.android.FlutterActivity
+
+class MainActivity: FlutterActivity()

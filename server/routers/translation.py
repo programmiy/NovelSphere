@@ -23,10 +23,38 @@ from server.settings import settings
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-# --- Global State for 5 PM Stop Condition ---
-process_started_before_5pm = False
+# --- Global State for Quota Reset Stop Condition ---
+process_started_before_cutoff = False
+process_started_before_5pm = False  # Backward compatibility alias
 _stop_lock = threading.Lock()
 _gemini_session = requests.Session()
+
+
+def is_us_dst(dt: Optional[datetime.datetime] = None) -> bool:
+    """
+    미국 써머타임(Daylight Saving Time, PDT) 적용 여부 판별.
+    시작: 3월 둘째 주 일요일 02:00
+    종료: 11월 첫째 주 일요일 02:00
+    """
+    if dt is None:
+        dt = datetime.datetime.now()
+    year = dt.year
+    first_sun_mar = (6 - datetime.date(year, 3, 1).weekday()) % 7 + 1
+    dst_start = datetime.datetime(year, 3, first_sun_mar + 7, 2, 0)
+
+    first_sun_nov = (6 - datetime.date(year, 11, 1).weekday()) % 7 + 1
+    dst_end = datetime.datetime(year, 11, first_sun_nov, 2, 0)
+
+    return dst_start <= dt < dst_end
+
+
+def get_quota_reset_hour(dt: Optional[datetime.datetime] = None) -> int:
+    """
+    Gemini API 일일 쿼터 초기화 시점(미국 태평양 자정)의 한국 시간(KST) 시간(hour) 반환:
+    - 써머타임(PDT, UTC-7): 한국(UTC+9) 기준 오후 4시 (16시)
+    - 표준시(PST, UTC-8): 한국(UTC+9) 기준 오후 5시 (17시)
+    """
+    return 16 if is_us_dst(dt) else 17
 
 
 
@@ -695,21 +723,29 @@ def _translate_sub_batch_with_safety_split(
     description="Gemini API를 호출하여 텍스트를 번역합니다. ID 기반 매칭과 재시도 로직으로 안정성을 높였습니다."
 )
 def translate_texts(req: TranslateRequest, db: Session = Depends(get_db)):
-    global process_started_before_5pm
+    global process_started_before_cutoff, process_started_before_5pm
     now = datetime.datetime.now()
+    cutoff_hour = get_quota_reset_hour(now)
 
-    # --- 5 PM Boundary-Crossing Logic (Thread-safe) ---
+    # --- Quota Reset Boundary-Crossing Logic (Thread-safe) ---
     with _stop_lock:
-        if now.hour < 16:
+        if now.hour < (cutoff_hour - 1):
+            process_started_before_cutoff = False
             process_started_before_5pm = False
 
-        if now.hour < 17:
+        if now.hour < cutoff_hour:
+            process_started_before_cutoff = True
             process_started_before_5pm = True
 
-        if process_started_before_5pm and now.hour >= 17:
+        if (process_started_before_cutoff or process_started_before_5pm) and now.hour >= cutoff_hour:
+            process_started_before_cutoff = False
             process_started_before_5pm = False
-            logger.critical("오후 5시가 되어, 5시 이전에 시작된 자동 번역 프로세스를 중지합니다.")
-            raise HTTPException(status_code=503, detail="오후 5시가 되어 자동 번역을 중지합니다. 새로고침 후 다시 시도해주세요.")
+            display_hour = cutoff_hour if cutoff_hour <= 12 else cutoff_hour - 12
+            logger.critical(f"초기화 시간(오후 {display_hour}시)이 되어, 이전에 시작된 자동 번역 프로세스를 중지합니다.")
+            raise HTTPException(
+                status_code=503,
+                detail=f"오후 {display_hour}시(쿼터 초기화 시간)가 되어 자동 번역을 중지합니다. 새로고침 후 다시 시도해주세요."
+            )
 
     # URL에서 #lanovel_review 등 해시를 완벽히 제거하여 정규화
     clean_url = (req.url or "").split('#')[0].strip()

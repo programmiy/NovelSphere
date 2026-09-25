@@ -1,0 +1,45 @@
+name: lanovel_reader
+description: "LANOVEL 모바일 완전 독립 서재 앱 - 오프라인 퍼스트 & 양방향 압축 동기화 전자책 리더"
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  
+  # Local Storage & Hybrid SQLite Database
+  sqflite: ^2.3.0
+  path_provider: ^2.1.1
+  path: ^1.8.3
+  shared_preferences: ^2.2.2
+
+  # High-performance Compression (zlib, gzip)
+  archive: ^3.4.9
+
+  # Networking & Wi-Fi Detection (지정된 2개 Wi-Fi 환경 감지용)
+  http: ^1.1.0
+  network_info_plus: ^5.0.1
+
+  # Typography & Korean/Japanese Fonts
+  google_fonts: ^6.1.0
+
+  # Hardware integration (화면 꺼짐 방지, 오디오)
+  wakelock_plus: ^1.1.4
+  audioplayers: ^5.2.1
+
+  # UI Utilities
+  intl: ^0.18.1
+  cupertino_icons: ^1.0.6
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^2.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/fonts/

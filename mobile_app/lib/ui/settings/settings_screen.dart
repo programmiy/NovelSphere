@@ -1,0 +1,399 @@
+import 'package:flutter/material.dart';
+import 'package:network_info_plus/network_info_plus.dart';
+
+import '../../services/preferences_service.dart';
+import '../../services/sync_service.dart';
+import '../themes/reader_themes.dart';
+
+class SettingsScreen extends StatefulWidget {
+  final VoidCallback onThemeChanged;
+
+  const SettingsScreen({super.key, required this.onThemeChanged});
+
+  @override
+  State<SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends State<SettingsScreen> {
+  final TextEditingController _wifi1Controller = TextEditingController();
+  final TextEditingController _wifi2Controller = TextEditingController();
+  final TextEditingController _serverUrlController = TextEditingController();
+
+  String _currentWifiSsid = '확인 중...';
+  bool _isTrustedWifi = false;
+  bool _isCheckingServer = false;
+  String _serverStatusText = '확인 전';
+  Color _serverStatusColor = Colors.grey;
+
+  bool _isSyncing = false;
+  double _syncProgress = 0.0;
+  String _syncStatusMessage = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _wifi1Controller.text = PreferencesService.trustedWifi1;
+    _wifi2Controller.text = PreferencesService.trustedWifi2;
+    _serverUrlController.text = PreferencesService.serverUrl;
+    _checkCurrentWifi();
+  }
+
+  Future<void> _checkCurrentWifi() async {
+    final info = NetworkInfo();
+    try {
+      String? ssid = await info.getWifiName();
+      ssid = ssid?.replaceAll('"', '').trim() ?? '연결 안 됨 / 모바일 데이터';
+      final isTrusted = await SyncService.isConnectedToTrustedWifi();
+      setState(() {
+        _currentWifiSsid = ssid!;
+        _isTrustedWifi = isTrusted;
+      });
+    } catch (_) {
+      setState(() {
+        _currentWifiSsid = '확인 불가';
+        _isTrustedWifi = false;
+      });
+    }
+  }
+
+  Future<void> _saveSettings() async {
+    final normalized = PreferencesService.normalizeServerUrl(_serverUrlController.text.trim());
+    _serverUrlController.text = normalized;
+    await PreferencesService.setTrustedWifi1(_wifi1Controller.text.trim());
+    await PreferencesService.setTrustedWifi2(_wifi2Controller.text.trim());
+    await PreferencesService.setServerUrl(normalized);
+    await _checkCurrentWifi();
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('동기화 및 Wi-Fi 설정이 저장되었습니다.')),
+      );
+    }
+  }
+
+  Future<void> _testServerPing() async {
+    final typedUrl = PreferencesService.normalizeServerUrl(_serverUrlController.text.trim());
+    _serverUrlController.text = typedUrl;
+    await PreferencesService.setServerUrl(typedUrl);
+
+    setState(() {
+      _isCheckingServer = true;
+      _serverStatusText = '연결 확인 중...';
+      _serverStatusColor = Colors.orange;
+    });
+
+    final isAlive = await SyncService.pingServer(typedUrl);
+
+    setState(() {
+      _isCheckingServer = false;
+      if (isAlive) {
+        _serverStatusText = '온라인 (PC 서버 정상 응답)';
+        _serverStatusColor = Colors.green;
+      } else {
+        _serverStatusText = '오프라인 (서버 응답 없음 - IP/포트 확인)';
+        _serverStatusColor = Colors.redAccent;
+      }
+    });
+  }
+
+  Future<void> _runFullSeedDownload() async {
+    final typedUrl = PreferencesService.normalizeServerUrl(_serverUrlController.text.trim());
+    _serverUrlController.text = typedUrl;
+    await PreferencesService.setServerUrl(typedUrl);
+
+    setState(() {
+      _isSyncing = true;
+      _syncProgress = 0.0;
+      _syncStatusMessage = 'PC 서버에서 23만 문장 압축 패키지 생성 및 다운로드 중...';
+    });
+
+    final result = await SyncService.downloadFullSeed(
+      ignoreWifiCheck: true,
+      onProgress: (progress) {
+        setState(() => _syncProgress = progress);
+      },
+    );
+
+    setState(() {
+      _isSyncing = false;
+      _syncStatusMessage = result.message;
+    });
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(result.message),
+          backgroundColor: result.success ? Colors.green : Colors.redAccent,
+        ),
+      );
+    }
+  }
+
+  Future<void> _runIncrementalSync() async {
+    final typedUrl = PreferencesService.normalizeServerUrl(_serverUrlController.text.trim());
+    _serverUrlController.text = typedUrl;
+    await PreferencesService.setServerUrl(typedUrl);
+
+    setState(() {
+      _isSyncing = true;
+      _syncStatusMessage = '양방향 증분 동기화 진행 중...';
+    });
+
+    final result = await SyncService.performIncrementalSync(ignoreWifiCheck: true);
+
+    setState(() {
+      _isSyncing = false;
+      _syncStatusMessage = result.message;
+    });
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(result.message),
+          backgroundColor: result.success ? Colors.green : Colors.redAccent,
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = ReaderThemes.getTheme(PreferencesService.theme);
+
+    return Scaffold(
+      backgroundColor: theme.background,
+      appBar: AppBar(
+        backgroundColor: theme.surfaceColor,
+        elevation: 0,
+        title: Text(
+          '동기화 & 앱 설정',
+          style: TextStyle(color: theme.textColor, fontSize: 18, fontWeight: FontWeight.bold),
+        ),
+        actions: [
+          TextButton(
+            onPressed: _saveSettings,
+            child: Text('저장', style: TextStyle(color: theme.accentColor, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+      body: ListView(
+        padding: const EdgeInsets.all(20),
+        children: [
+          // 1. 신뢰 Wi-Fi 2개 설정 섹션 (사용자 코멘트 반영)
+          _buildSectionHeader(theme, '신뢰 Wi-Fi 동기화 보안 (최대 2개 등록)', Icons.wifi_lock_rounded),
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: theme.surfaceColor,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: theme.borderColor),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(
+                      _isTrustedWifi ? Icons.check_circle : Icons.warning_amber_rounded,
+                      color: _isTrustedWifi ? Colors.green : Colors.orange,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        '현재 접속 Wi-Fi: $_currentWifiSsid',
+                        style: TextStyle(color: theme.textColor, fontWeight: FontWeight.w600, fontSize: 13),
+                      ),
+                    ),
+                    IconButton(
+                      icon: Icon(Icons.refresh, color: theme.subTextColor, size: 20),
+                      onPressed: _checkCurrentWifi,
+                    ),
+                  ],
+                ),
+                Text(
+                  _isTrustedWifi
+                      ? '등록된 신뢰 Wi-Fi에 연결되어 있어 자동/백그라운드 동기화가 활성화됩니다.'
+                      : '등록되지 않은 네트워크입니다. 배터리 소모 방지를 위해 동기화가 차단됩니다.',
+                  style: TextStyle(color: theme.subTextColor, fontSize: 11),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: _wifi1Controller,
+                  style: TextStyle(color: theme.textColor, fontSize: 14),
+                  decoration: InputDecoration(
+                    labelText: '신뢰 Wi-Fi 1 (SSID)',
+                    labelStyle: TextStyle(color: theme.subTextColor),
+                    hintText: '예: MyHome_5G',
+                    suffixIcon: IconButton(
+                      icon: const Icon(Icons.input_rounded, size: 18),
+                      tooltip: '현재 Wi-Fi 입력',
+                      onPressed: () {
+                        if (_currentWifiSsid.isNotEmpty && !_currentWifiSsid.contains('연결 안 됨')) {
+                          _wifi1Controller.text = _currentWifiSsid;
+                        }
+                      },
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _wifi2Controller,
+                  style: TextStyle(color: theme.textColor, fontSize: 14),
+                  decoration: InputDecoration(
+                    labelText: '신뢰 Wi-Fi 2 (SSID)',
+                    labelStyle: TextStyle(color: theme.subTextColor),
+                    hintText: '예: Office_WiFi',
+                    suffixIcon: IconButton(
+                      icon: const Icon(Icons.input_rounded, size: 18),
+                      tooltip: '현재 Wi-Fi 입력',
+                      onPressed: () {
+                        if (_currentWifiSsid.isNotEmpty && !_currentWifiSsid.contains('연결 안 됨')) {
+                          _wifi2Controller.text = _currentWifiSsid;
+                        }
+                      },
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
+
+          // 2. PC 서버 연결 섹션
+          _buildSectionHeader(theme, 'PC LANOVEL 서버 연동', Icons.computer_rounded),
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: theme.surfaceColor,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: theme.borderColor),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TextField(
+                  controller: _serverUrlController,
+                  style: TextStyle(color: theme.textColor, fontSize: 14),
+                  decoration: InputDecoration(
+                    labelText: 'PC 서버 주소 (IP:포트)',
+                    labelStyle: TextStyle(color: theme.subTextColor),
+                    hintText: 'http://192.168.219.103:8001',
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  children: [
+                    ActionChip(
+                      avatar: const Icon(Icons.computer, size: 14),
+                      label: const Text('현재 PC 자동입력 (192.168.219.103:8001)', style: TextStyle(fontSize: 11)),
+                      onPressed: () {
+                        setState(() {
+                          _serverUrlController.text = 'http://192.168.219.103:8001';
+                        });
+                      },
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          width: 10,
+                          height: 10,
+                          decoration: BoxDecoration(color: _serverStatusColor, shape: BoxShape.circle),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(_serverStatusText, style: TextStyle(color: theme.subTextColor, fontSize: 12)),
+                      ],
+                    ),
+                    OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: theme.accentColor,
+                        side: BorderSide(color: theme.accentColor),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                      onPressed: _isCheckingServer ? null : _testServerPing,
+                      icon: const Icon(Icons.network_ping_rounded, size: 16),
+                      label: const Text('연결 테스트'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
+
+          // 3. 수동 동기화 트리거
+          _buildSectionHeader(theme, '수동 동기화 작업', Icons.sync_rounded),
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: theme.surfaceColor,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: theme.borderColor),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (_isSyncing) ...[
+                  LinearProgressIndicator(
+                    value: _syncProgress > 0 ? _syncProgress : null,
+                    color: theme.accentColor,
+                    backgroundColor: theme.borderColor,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(_syncStatusMessage, style: TextStyle(color: theme.subTextColor, fontSize: 12)),
+                  const SizedBox(height: 16),
+                ],
+                ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: theme.accentColor,
+                    foregroundColor: Colors.white,
+                    minimumSize: const Size(double.infinity, 46),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                  onPressed: _isSyncing ? null : _runIncrementalSync,
+                  icon: const Icon(Icons.sync_alt_rounded),
+                  label: const Text('양방향 증분 동기화 (최신 번역문 & 진도 반영)'),
+                ),
+                const SizedBox(height: 12),
+                OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: theme.textColor,
+                    side: BorderSide(color: theme.borderColor),
+                    minimumSize: const Size(double.infinity, 44),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                  onPressed: _isSyncing ? null : _runFullSeedDownload,
+                  icon: const Icon(Icons.cloud_download_outlined),
+                  label: const Text('전체 서재 시드 다운로드 (최초 1회, 약 26MB)'),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSectionHeader(ReaderThemeData theme, String title, IconData icon) {
+    return Row(
+      children: [
+        Icon(icon, color: theme.accentColor, size: 18),
+        const SizedBox(width: 8),
+        Text(
+          title,
+          style: TextStyle(color: theme.textColor, fontSize: 14, fontWeight: FontWeight.bold),
+        ),
+      ],
+    );
+  }
+}

@@ -280,19 +280,27 @@ def get_book_urls(folder_name: str):
     conn = get_sqlite_conn(as_dict=True)
     cursor = conn.cursor()
 
-    base_query = """SELECT url, title, COUNT(*) as count, MIN(toc_sort_order) as toc_sort_order
-                  FROM translations
-                  WHERE {folder_clause}
-                  GROUP BY url, title"""
+    folder_clause = "folderName IS NULL" if decoded_folder_name == "미분류" else "folderName = ?"
+    params = [] if decoded_folder_name == "미분류" else [decoded_folder_name]
 
-    if decoded_folder_name == "미분류":
-        query = base_query.format(folder_clause="folderName IS NULL")
-        params = []
-    else:
-        query = base_query.format(folder_clause="folderName = ?")
-        params = [decoded_folder_name]
+    query = f"""
+        SELECT 
+            url, 
+            COALESCE(
+                (SELECT t2.title FROM translations t2 
+                 WHERE t2.url = t1.url AND ({folder_clause}) AND t2.title IS NOT NULL AND t2.title != ''
+                 ORDER BY t2.timestamp DESC LIMIT 1),
+                title,
+                url
+            ) as title,
+            COUNT(*) as count, 
+            MIN(toc_sort_order) as toc_sort_order
+        FROM translations t1
+        WHERE {folder_clause}
+        GROUP BY url
+    """
 
-    cursor.execute(query, tuple(params))
+    cursor.execute(query, tuple(params + params))
     urls = cursor.fetchall()
     conn.close()
 
@@ -322,19 +330,30 @@ def get_book_chapters(folder_name: str):
     conn = get_sqlite_conn(as_dict=True)
     cursor = conn.cursor()
 
-    base_query = """SELECT title, MIN(COALESCE(toc_sort_order, 999999)) as sort_order, MIN(url) as min_url
-                    FROM translations
-                    WHERE {folder_clause} AND title IS NOT NULL
-                    GROUP BY title"""
+    folder_clause = "folderName IS NULL" if decoded_folder_name == "미분류" else "folderName = ?"
+    params = [] if decoded_folder_name == "미분류" else [decoded_folder_name]
 
-    if decoded_folder_name == "미분류":
-        query = base_query.format(folder_clause="folderName IS NULL")
-        params = []
-    else:
-        query = base_query.format(folder_clause="folderName = ?")
-        params = [decoded_folder_name]
+    # 관리자 페이지와 동일하게: URL(회차) 기준으로 그룹화하여 챕터 목록을 구성
+    # URL 내 단락별 제목 불일치가 있더라도 단일 회차로 병합되며 최신 제목을 대표 제목으로 사용
+    query = f"""
+        SELECT 
+            COALESCE(url, title) as chapter_key,
+            url,
+            COALESCE(
+                (SELECT t2.title FROM translations t2 
+                 WHERE t2.url = t1.url AND ({folder_clause}) AND t2.title IS NOT NULL AND t2.title != ''
+                 ORDER BY t2.timestamp DESC LIMIT 1),
+                title,
+                url
+            ) as title,
+            MIN(COALESCE(toc_sort_order, 999999)) as sort_order,
+            MIN(url) as min_url
+        FROM translations t1
+        WHERE {folder_clause} AND (title IS NOT NULL OR url IS NOT NULL)
+        GROUP BY COALESCE(url, title)
+    """
 
-    cursor.execute(query, tuple(params))
+    cursor.execute(query, tuple(params + params))
     rows = cursor.fetchall()
     conn.close()
 
@@ -350,8 +369,14 @@ def get_book_chapters(folder_name: str):
         )
 
     rows.sort(key=chapter_sort_key)
-    chapters = [row['title'] for row in rows]
-    return chapters
+    chapters = [row['title'] for row in rows if row.get('title')]
+
+    headers = {
+        "Cache-Control": "no-cache, no-store, must-revalidate",
+        "Pragma": "no-cache",
+        "Expires": "0",
+    }
+    return JSONResponse(content=chapters, headers=headers)
 
 @router.get(
     "/api/books/{folder_name}/chapter",
@@ -359,24 +384,47 @@ def get_book_chapters(folder_name: str):
     summary="특정 챕터 내용 조회",
     description="지정된 폴더(책)의 특정 챕터 내용을 조회합니다."
 )
-def get_chapter_content(folder_name: str, title: str):
+def get_chapter_content(folder_name: str, title: str, url: Optional[str] = None):
     decoded_folder_name = unquote(folder_name)
-    decoded_title = unquote(title)
+    decoded_title = unquote(title) if title else ""
+    decoded_url = unquote(url) if url else None
     conn = get_sqlite_conn(as_dict=True)
     cursor = conn.cursor()
 
     order_by_clause = "ORDER BY CASE WHEN lower(pid) LIKE 'p%' OR lower(pid) LIKE 'l%' THEN CAST(SUBSTR(pid, 2) AS INTEGER) ELSE 999999 END ASC, timestamp ASC"
+    folder_filter = "folderName IS NULL" if decoded_folder_name == "미분류" else "folderName = ?"
+    folder_params = [] if decoded_folder_name == "미분류" else [decoded_folder_name]
 
-    query = f"SELECT * FROM translations WHERE folderName = ? AND title = ? {order_by_clause}"
-    params = [decoded_folder_name, decoded_title]
-    if decoded_folder_name == "미분류":
-        query = f"SELECT * FROM translations WHERE folderName IS NULL AND title = ? {order_by_clause}"
-        params = [decoded_title]
+    # 관리자 페이지와 데이터 불러오기 일치화:
+    # URL이 직접 지정되었거나, title을 통해 해당 회차의 URL을 조회하여 해당 URL의 모든 단락을 함께 불러옴
+    matched_urls = []
+    if decoded_url:
+        matched_urls = [decoded_url]
+    elif decoded_title:
+        cursor.execute(
+            f"SELECT DISTINCT url FROM translations WHERE {folder_filter} AND title = ? AND url IS NOT NULL AND url != ''",
+            tuple(folder_params + [decoded_title])
+        )
+        matched_urls = [row['url'] for row in cursor.fetchall() if row['url']]
+
+    if matched_urls:
+        placeholders = ', '.join(['?'] * len(matched_urls))
+        query = f"SELECT * FROM translations WHERE {folder_filter} AND (url IN ({placeholders}) OR title = ?) {order_by_clause}"
+        params = folder_params + matched_urls + [decoded_title]
+    else:
+        query = f"SELECT * FROM translations WHERE {folder_filter} AND title = ? {order_by_clause}"
+        params = folder_params + [decoded_title]
 
     cursor.execute(query, tuple(params))
     content = cursor.fetchall()
     conn.close()
-    return content
+
+    headers = {
+        "Cache-Control": "no-cache, no-store, must-revalidate",
+        "Pragma": "no-cache",
+        "Expires": "0",
+    }
+    return JSONResponse(content=content, headers=headers)
 
 @router.get(
     "/api/books/{folder_name}/export",

@@ -1,0 +1,304 @@
+import 'dart:convert';
+import 'dart:io';
+import 'package:archive/archive.dart';
+import 'package:http/http.dart' as http;
+import 'package:network_info_plus/network_info_plus.dart';
+
+import 'preferences_service.dart';
+import 'local_db_service.dart';
+
+enum SyncStatus {
+  idle,
+  checkingWifi,
+  notInTrustedWifi,
+  serverUnreachable,
+  syncing,
+  completed,
+  failed,
+}
+
+class SyncResult {
+  final bool success;
+  final String message;
+  final int updatedTranslations;
+  final int updatedActivities;
+
+  SyncResult({
+    required this.success,
+    required this.message,
+    this.updatedTranslations = 0,
+    this.updatedActivities = 0,
+  });
+}
+
+class SyncService {
+  static final NetworkInfo _networkInfo = NetworkInfo();
+
+  /// 현재 연결된 Wi-Fi가 사용자가 지정한 2개의 신뢰 Wi-Fi 중 하나인지 확인
+  static Future<bool> isConnectedToTrustedWifi() async {
+    final wifi1 = PreferencesService.trustedWifi1.trim();
+    final wifi2 = PreferencesService.trustedWifi2.trim();
+
+    // 사용자가 등록한 신뢰 Wi-Fi가 없는 경우(미설정 시 기본 허용 또는 경고)
+    if (wifi1.isEmpty && wifi2.isEmpty) {
+      return true;
+    }
+
+    try {
+      String? currentSsid = await _networkInfo.getWifiName();
+      if (currentSsid != null && currentSsid.isNotEmpty && !currentSsid.contains('unknown')) {
+        // 따옴표 제거 (Android/iOS에서 "SSID" 형태로 오는 경우 처리)
+        currentSsid = currentSsid.replaceAll('"', '').trim();
+
+        if (wifi1.isNotEmpty && currentSsid.toLowerCase() == wifi1.toLowerCase()) {
+          return true;
+        }
+        if (wifi2.isNotEmpty && currentSsid.toLowerCase() == wifi2.toLowerCase()) {
+          return true;
+        }
+      }
+      // Android 위치 권한 미허용 등으로 SSID가 unknown인 경우, PC 서버와 직접 핑 가능 여부로 로컬 Wi-Fi 판별
+      return await pingServer();
+    } catch (e) {
+      return await pingServer();
+    }
+  }
+
+  /// PC 서버와의 연결 상태 확인 (Ping)
+  static Future<bool> pingServer([String? customUrl]) async {
+    final raw = customUrl ?? PreferencesService.serverUrl;
+    final serverUrl = PreferencesService.normalizeServerUrl(raw);
+    try {
+      final res = await http.get(
+        Uri.parse('$serverUrl/api/sync/ping'),
+      ).timeout(const Duration(seconds: 4));
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+        return data['status'] == 'online';
+      }
+    } catch (_) {}
+    return false;
+  }
+
+  /// [최초 1회 전체 동기화] PC 서버에서 최적화 모바일 DB 시드를 다운받아 로컬 DB로 구축하고,
+  /// 다운로드 확인 즉시 PC 서버의 임시 파일을 삭제 요청합니다. (사용자 코멘트 반영)
+  static Future<SyncResult> downloadFullSeed({Function(double)? onProgress, bool ignoreWifiCheck = true}) async {
+    if (!ignoreWifiCheck) {
+      final isWifiAllowed = await isConnectedToTrustedWifi();
+      if (!isWifiAllowed) {
+        return SyncResult(
+          success: false,
+          message: '지정된 신뢰 Wi-Fi 환경이 아닙니다. 배터리 및 데이터 보호를 위해 동기화가 제한됩니다.',
+        );
+      }
+    }
+
+    final serverUrl = PreferencesService.normalizeServerUrl(PreferencesService.serverUrl);
+    final uri = Uri.parse('$serverUrl/api/sync/full-pack');
+
+    try {
+      final request = http.Request('GET', uri);
+      final response = await http.Client().send(request).timeout(const Duration(seconds: 60));
+
+      if (response.statusCode != 200) {
+        return SyncResult(success: false, message: '서버 시드 다운로드 실패 (HTTP ${response.statusCode})');
+      }
+
+      final packId = response.headers['x-pack-id'] ?? '';
+      final contentLength = response.contentLength ?? 0;
+      List<int> bytes = [];
+
+      int received = 0;
+      await for (var chunk in response.stream) {
+        bytes.addAll(chunk);
+        received += chunk.length;
+        if (contentLength > 0 && onProgress != null) {
+          onProgress(received / contentLength);
+        }
+      }
+
+      // Gzip 압축 해제
+      final decompressed = GZipDecoder().decodeBytes(bytes);
+
+      // 로컬 DB 파일 덮어쓰기
+      final localDbPath = await LocalDbService.getDbPath();
+      final tempFile = File('$localDbPath.download.tmp');
+      await tempFile.writeAsBytes(decompressed, flush: true);
+
+      // 기존 DB 닫기 및 교체
+      final oldDb = await LocalDbService.database;
+      await oldDb.close();
+
+      final targetFile = File(localDbPath);
+      if (await targetFile.exists()) {
+        await targetFile.delete();
+      }
+      await tempFile.rename(localDbPath);
+
+      // 로컬 DB 재오픈
+      await LocalDbService.database;
+
+      // 동기화 시간 저장
+      final nowTs = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+      await PreferencesService.setLastSyncedTimestamp(nowTs);
+
+      // [핵심] 전송 확인 후 PC 서버 임시 파일 즉시 삭제 요청 (사용자 코멘트 반영)
+      if (packId.isNotEmpty) {
+        try {
+          await http.delete(Uri.parse('$serverUrl/api/sync/full-pack/$packId'));
+        } catch (_) {}
+      }
+
+      return SyncResult(
+        success: true,
+        message: '전체 소설 서재 동기화 완료! (23만 문장 로컬 저장소 구축)',
+      );
+    } catch (e) {
+      return SyncResult(success: false, message: '동기화 중 오류 발생: $e');
+    }
+  }
+
+  /// [양방향 증분 동기화]
+  /// 1. 앱에서 편집한 번역문, 독서 진도, 찾아바꾸기 룰을 압축하여 PC로 업로드 (Push)
+  /// 2. PC에서 추가/수정된 데이터를 다운로드하여 로컬에 반영 (Pull)
+  static Future<SyncResult> performIncrementalSync({bool ignoreWifiCheck = false}) async {
+    if (!ignoreWifiCheck) {
+      final isWifiAllowed = await isConnectedToTrustedWifi();
+      if (!isWifiAllowed) {
+        return SyncResult(
+          success: false,
+          message: '지정된 신뢰 Wi-Fi에 연결되어 있지 않아 동기화를 진행하지 않습니다.',
+        );
+      }
+    }
+
+    final isAlive = await pingServer();
+    if (!isAlive) {
+      return SyncResult(
+        success: false,
+        message: 'PC 서버에 연결할 수 없습니다. PC 서버가 켜져 있는지 확인하세요.',
+      );
+    }
+
+    final serverUrl = PreferencesService.normalizeServerUrl(PreferencesService.serverUrl);
+
+    try {
+      // --- Step 1: Push (모바일 -> PC) ---
+      final pendingChanges = await LocalDbService.getPendingChanges();
+      int pushedTransCount = 0;
+      int pushedActCount = 0;
+
+      if (pendingChanges.isNotEmpty) {
+        List<Map<String, dynamic>> modifiedTrans = [];
+        List<Map<String, dynamic>> activities = [];
+        List<Map<String, dynamic>> glossaryRules = [];
+        List<int> processedQueueIds = [];
+
+        for (var change in pendingChanges) {
+          final qId = change['id'] as int;
+          final type = change['change_type'] as String;
+          final payload = jsonDecode(change['payload_json'] as String);
+
+          if (type == 'translation_edit') {
+            modifiedTrans.add(payload);
+          } else if (type == 'activity') {
+            activities.add(payload);
+          } else if (type == 'glossary_rule') {
+            glossaryRules.add(payload);
+          }
+          processedQueueIds.add(qId);
+        }
+
+        final pushPayload = {
+          'push_timestamp': DateTime.now().millisecondsSinceEpoch ~/ 1000,
+          'modified_translations': modifiedTrans,
+          'activities': activities,
+          'glossary_rules': glossaryRules,
+        };
+
+        // Gzip 압축 후 전송
+        final rawBytes = utf8.encode(jsonEncode(pushPayload));
+        final compressedBytes = GZipEncoder().encode(rawBytes);
+
+        final pushRes = await http.post(
+          Uri.parse('$serverUrl/api/sync/push'),
+          headers: {
+            'Content-Type': 'application/json',
+            'Content-Encoding': 'gzip',
+          },
+          body: compressedBytes,
+        ).timeout(const Duration(seconds: 15));
+
+        if (pushRes.statusCode == 200) {
+          final pushData = jsonDecode(pushRes.body);
+          pushedTransCount = pushData['updated_translations'] ?? 0;
+          pushedActCount = pushData['updated_activities'] ?? 0;
+          // 성공한 큐 항목 비우기
+          await LocalDbService.clearPendingChanges(processedQueueIds);
+        }
+      }
+
+      // --- Step 2: Pull (PC -> 모바일) ---
+      final sinceTs = PreferencesService.lastSyncedTimestamp;
+      final pullRes = await http.get(
+        Uri.parse('$serverUrl/api/sync/pull?since=$sinceTs'),
+      ).timeout(const Duration(seconds: 20));
+
+      int pulledTransCount = 0;
+      if (pullRes.statusCode == 200) {
+        // Gzip 압축 해제
+        final decompressed = GZipDecoder().decodeBytes(pullRes.bodyBytes);
+        final pullData = jsonDecode(utf8.decode(decompressed));
+
+        final newTranslations = pullData['translations'] as List? ?? [];
+        final activities = pullData['activities'] as List? ?? [];
+
+        pulledTransCount = newTranslations.length;
+
+        // PC의 활동 정보를 로컬 DB에 반영
+        final db = await LocalDbService.database;
+        for (var act in activities) {
+          final fName = act['folderName'];
+          if (fName == null) continue;
+          await db.rawInsert('''
+            INSERT INTO books (
+              folder_name, last_read_timestamp, last_read_pid, last_read_chapter_title,
+              is_completed, is_visible, is_bookmarked, notes, summary
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(folder_name) DO UPDATE SET
+              last_read_timestamp = COALESCE(excluded.last_read_timestamp, books.last_read_timestamp),
+              last_read_pid = COALESCE(excluded.last_read_pid, books.last_read_pid),
+              last_read_chapter_title = COALESCE(excluded.last_read_chapter_title, books.last_read_chapter_title),
+              is_completed = excluded.is_completed,
+              is_visible = excluded.is_visible,
+              is_bookmarked = excluded.is_bookmarked,
+              notes = COALESCE(excluded.notes, books.notes),
+              summary = COALESCE(excluded.summary, books.summary);
+          ''', [
+            fName,
+            act['last_read_timestamp'],
+            act['last_read_pid'],
+            act['last_read_chapter_title'],
+            act['is_completed'] ?? 0,
+            act['is_visible'] ?? 1,
+            act['is_bookmarked'] ?? 0,
+            act['notes'],
+            act['summary'],
+          ]);
+        }
+
+        final syncTime = pullData['sync_time'] as int? ?? (DateTime.now().millisecondsSinceEpoch ~/ 1000);
+        await PreferencesService.setLastSyncedTimestamp(syncTime);
+      }
+
+      return SyncResult(
+        success: true,
+        message: '동기화 완료 (업로드: ${pushedTransCount}문장 / 다운로드: ${pulledTransCount}문장)',
+        updatedTranslations: pushedTransCount + pulledTransCount,
+        updatedActivities: pushedActCount,
+      );
+    } catch (e) {
+      return SyncResult(success: false, message: '증분 동기화 실패: $e');
+    }
+  }
+}

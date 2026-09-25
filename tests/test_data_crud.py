@@ -13,6 +13,7 @@ def override_settings(tmp_path_factory):
     os.environ["DATABASE_URL"] = test_db_url
 
     from server.settings import settings
+    orig_database_url = settings.database_url
     settings.database_url = test_db_url
 
     import server.database as sdb
@@ -54,6 +55,7 @@ def override_settings(tmp_path_factory):
     yield
     
     del os.environ["DATABASE_URL"]
+    settings.database_url = orig_database_url
     sdb.engine.dispose()
     sdb.engine = orig_engine
     sdb.SessionLocal = orig_session_local

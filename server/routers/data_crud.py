@@ -147,6 +147,34 @@ def get_translations(skip: int = 0, limit: int = 100, folder: Optional[str] = No
         "translations": translations
     })
 
+def clean_chapter_title(title: Optional[str], url: Optional[str] = None) -> Optional[str]:
+    """
+    웹 소설 사이트의 제목에서 소설 제목, 작가명, 사이트명(- カクヨム 등) 접미사를 정제하여
+    순수 회차(에피소드) 제목을 추출합니다.
+    """
+    if not title:
+        return title
+    t = title.strip()
+    # 1. Kakuyomu patterns
+    if (url and 'kakuyomu.jp' in url) or '- カクヨム' in t:
+        t = re.sub(r'\s*-\s*カクヨム.*$', '', t, flags=re.IGNORECASE).strip()
+        parts = re.split(r'\s*-\s*', t)
+        if len(parts) > 1 and parts[0].strip():
+            return parts[0].strip()
+        return t
+
+    # 2. Syosetu patterns
+    if (url and ('syosetu.com' in url or 'novel18.syosetu.com' in url)) or '- 小説家になろう' in t:
+        t = re.sub(r'\s*-\s*(小説家になろう|ノクターンノベルズ|ムーンライトノベルズ|ミッドナイトノベルズ).*$', '', t, flags=re.IGNORECASE).strip()
+        parts = re.split(r'\s*-\s*', t)
+        if len(parts) > 1 and parts[-1].strip():
+            return parts[-1].strip()
+        return t
+
+    # 3. General fallback: strip known site suffixes
+    t = re.sub(r'\s*-\s*(カクヨム|小説家になろう|ノクターンノベルズ|ムーンライトノベルズ|ミッドナイトノベルズ).*$', '', t, flags=re.IGNORECASE).strip()
+    return t or title
+
 @router.post(
     "/translations/upsert",
     tags=["Data CRUD"],
@@ -178,10 +206,23 @@ def upsert_translations(items: List[TranslationItem], db: Session = Depends(get_
     existing_translations = db.query(Translation).filter(Translation.url.in_(urls_in_batch)).all()
     existing_map = {(t.url, t.pid): t for t in existing_translations}
 
+    # URL별 기존 제목 맵 및 이번 배치에서 새로 적용할 최신 제목 맵 구성
+    url_to_title = {}
+    for t in existing_translations:
+        if t.url and t.title and t.url not in url_to_title:
+            url_to_title[t.url] = t.title
+
+    for item in items:
+        if item.url and item.title:
+            cleaned_title = clean_chapter_title(item.title, item.url)
+            if cleaned_title:
+                url_to_title[item.url] = cleaned_title
+
     verbatim_items_to_clean = []
     for item in items:
         key = (item.url, item.pid)
         existing_translation = existing_map.get(key)
+        target_title = url_to_title.get(item.url) if item.url else (clean_chapter_title(item.title, item.url) if item.title else None)
 
         target_trans = item.translated
         # 룰베이스 원문 괄호(「%」) 누락 복원
@@ -198,7 +239,7 @@ def upsert_translations(items: List[TranslationItem], db: Session = Depends(get_
                 "translated": target_trans,
                 "url": item.url,
                 "folderName": item.folderName,
-                "title": item.title,
+                "title": target_title or item.title,
                 "category": item_cat
             })
             if existing_translation:
@@ -221,8 +262,8 @@ def upsert_translations(items: List[TranslationItem], db: Session = Depends(get_
             existing_translation.timestamp = item.timestamp
             if item.folderName is not None:
                 existing_translation.folderName = item.folderName
-            if item.title:
-                existing_translation.title = item.title
+            if target_title:
+                existing_translation.title = target_title
             updated_count += 1
         else:
             # 새 데이터 삽입
@@ -233,11 +274,20 @@ def upsert_translations(items: List[TranslationItem], db: Session = Depends(get_
                 translated=target_trans,
                 timestamp=item.timestamp,
                 folderName=item.folderName,
-                title=item.title
+                title=target_title or item.title
             )
             db.add(new_translation)
             existing_map[key] = new_translation  # 배치 내 중복 항목 대비
             inserted_count += 1
+
+    # 동일 URL을 공유하는 모든 단락의 제목을 최신 title로 원자적 동기화
+    # (과거/현재 HTML 구조 차이나 단일 단락 수정으로 인한 회차 분리 및 단락 실종 원천 차단)
+    for u, resolved_title in url_to_title.items():
+        if resolved_title:
+            db.query(Translation).filter(Translation.url == u).update(
+                {Translation.title: resolved_title},
+                synchronize_session=False
+            )
 
     # 복붙 감지 항목이 있다면 handle_verbatim_cleanup_items를 통해 휴지통 및 알림에 등록
     if verbatim_items_to_clean:

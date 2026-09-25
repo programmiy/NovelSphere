@@ -329,9 +329,14 @@ body.scroll-mode .nav-arrow {
     border-radius: 6px;
     transition: background-color 0.2s ease;
     -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+    user-select: none;
 }
 
 @media (hover: hover) {
+    .translation-item {
+        user-select: text;
+    }
     .translation-item:hover {
         background-color: var(--hover-bg-color);
     }
@@ -391,6 +396,9 @@ body.scroll-mode .nav-arrow {
 .translation-item.editing {
     background-color: var(--hover-bg-color);
     box-shadow: 0 0 0 2px var(--primary-color);
+    user-select: text !important;
+    -webkit-user-select: text !important;
+    -webkit-touch-callout: default !important;
 }
 
 .translated-text[contenteditable="true"] {
@@ -399,6 +407,8 @@ body.scroll-mode .nav-arrow {
     background-color: var(--card-bg);
     border-radius: 4px;
     margin-top: 4px;
+    user-select: text !important;
+    -webkit-user-select: text !important;
 }
 
 .inline-edit-actions {

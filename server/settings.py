@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     debug: bool = Field(default=False, description="디버그 모드 활성화")
 
     # --- Server Settings ---
-    server_host: str = "127.0.0.1"
+    server_host: str = "0.0.0.0"
     server_port: int = 8001
     
     # --- API Keys & Models ---
@@ -47,7 +47,11 @@ class Settings(BaseSettings):
         "https://novel18.syosetu.com",
         "http://novel18.syosetu.com",
         "https://syosetu.com",
-        "http://syosetu.com"
+        "http://syosetu.com",
+        "https://ncode.syosetu.com",
+        "http://ncode.syosetu.com",
+        "http://192.168.219.103",
+        "http://192.168.219.103:8001"
     ]
 
     # --- Celery Settings ---
@@ -55,6 +59,7 @@ class Settings(BaseSettings):
     celery_always_eager: bool = Field(default=False, description="Celery 작업을 즉시 실행하여 테스트 환경에서 사용")
 
     # --- Path Settings ---
+    data_dir: str = os.path.join(APP_ROOT, "server", "data")
     log_dir: str = os.path.join(APP_ROOT, "logs")
     backup_dir: str = os.path.join(APP_ROOT, "server", "backups")
     static_dir: str = os.path.join(APP_ROOT, "server", "static")

@@ -56,10 +56,213 @@ function getCleanUrl() {
 }
 
 // =================================================================================
+// ⚡ 쾌속모드 (Turbo Mode) 상태 관리 및 정각 도달 감지
+// =================================================================================
+let isTurboMode = false;
+let turboCutoffHour = null; // null: 자동 판별, 16: 16시 고정, 17: 17시 고정
+let turboTargetTimestamp = 0; // 다음 목표 정각 타임스탬프 (ms)
+
+// 미국 써머타임 공식 룰 (3월 둘째 일요일 02시 ~ 11월 첫째 일요일 02시)
+function isUsDstRule(d) {
+    const year = d.getFullYear();
+    const march1 = new Date(year, 2, 1);
+    const firstSunMarch = (7 - march1.getDay()) % 7 + 1;
+    const secondSunMarch = firstSunMarch + 7;
+    const dstStart = new Date(year, 2, secondSunMarch, 2, 0, 0);
+
+    const nov1 = new Date(year, 10, 1);
+    const firstSunNov = (7 - nov1.getDay()) % 7 + 1;
+    const dstEnd = new Date(year, 10, firstSunNov, 2, 0, 0);
+
+    return d >= dstStart && d < dstEnd;
+}
+
+// ⚡ 쾌속모드 초기화 기준 시각(정각) 감지
+function detectCutoffInfo() {
+    // 1. 수동 강제 설정이 있는 경우
+    if (turboCutoffHour === 16) {
+        return { hour: 16, isDst: true, label: "16:00 (수동)" };
+    }
+    if (turboCutoffHour === 17) {
+        return { hour: 17, isDst: false, label: "17:00 (수동)" };
+    }
+
+    // 2. 미국 태평양(America/Los_Angeles) 시간대 자동 판별
+    // PDT(써머타임): 한국 시간 16:00 (오후 4시)에 태평양 자정(API 쿼터 초기화) 도달
+    // PST(표준시): 한국 시간 17:00 (오후 5시)에 태평양 자정(API 쿼터 초기화) 도달
+    try {
+        const parts = new Intl.DateTimeFormat('en-US', {
+            timeZone: 'America/Los_Angeles',
+            timeZoneName: 'short'
+        }).formatToParts(new Date());
+        const tzName = parts.find(p => p.type === 'timeZoneName')?.value || '';
+        const isDst = tzName.includes('PDT') || (!tzName.includes('PST') && isUsDstRule(new Date()));
+        return {
+            hour: isDst ? 16 : 17,
+            isDst: isDst,
+            label: isDst ? "16:00 (써머타임)" : "17:00 (표준시)"
+        };
+    } catch (e) {
+        const isDst = isUsDstRule(new Date());
+        return {
+            hour: isDst ? 16 : 17,
+            isDst: isDst,
+            label: isDst ? "16:00 (써머타임)" : "17:00 (표준시)"
+        };
+    }
+}
+
+// 기준 정각의 다음 타임스탬프 계산 (오늘 이미 지났으면 내일 정각)
+function calculateNextCutoffTimestamp(cutoffHour) {
+    const now = new Date();
+    let target = new Date(now.getFullYear(), now.getMonth(), now.getDate(), cutoffHour, 0, 0, 0);
+    if (now.getTime() >= target.getTime()) {
+        target.setDate(target.getDate() + 1);
+    }
+    return target.getTime();
+}
+
+// ⚡ 대기시간(2초/8초) 경과 후 초기화 정각 도달 여부 판정
+function checkCutoffTimeReached() {
+    if (!turboTargetTimestamp) {
+        const info = detectCutoffInfo();
+        turboTargetTimestamp = calculateNextCutoffTimestamp(info.hour);
+    }
+    return Date.now() >= turboTargetTimestamp;
+}
+
+// 저장소에서 쾌속모드 상태 로드
+async function loadTurboModeState() {
+    try {
+        const stored = await chrome.storage.local.get(['lanovel_turbo_mode', 'lanovel_turbo_cutoff', 'lanovel_turbo_target']);
+        isTurboMode = !!stored.lanovel_turbo_mode;
+        turboCutoffHour = stored.lanovel_turbo_cutoff || null;
+        turboTargetTimestamp = stored.lanovel_turbo_target || 0;
+
+        if (isTurboMode) {
+            if (!turboTargetTimestamp || Date.now() >= turboTargetTimestamp) {
+                // 이미 정각이 지났다면 즉시 자동 OFF
+                await abortTurboMode("초기화 시간 도달");
+                return;
+            }
+        }
+        updateTurboModeUI(isTurboMode);
+        updateTurboBadgeUI();
+    } catch (e) {
+        console.warn('[TurboMode] Error loading state from storage:', e);
+    }
+}
+
+// ⚡ 쾌속모드 활성화/비활성화
+async function setTurboMode(enabled, manual = true) {
+    isTurboMode = enabled;
+    const info = detectCutoffInfo();
+    if (enabled) {
+        turboTargetTimestamp = calculateNextCutoffTimestamp(info.hour);
+    } else {
+        turboTargetTimestamp = 0;
+    }
+
+    try {
+        await chrome.storage.local.set({
+            lanovel_turbo_mode: isTurboMode,
+            lanovel_turbo_cutoff: turboCutoffHour,
+            lanovel_turbo_target: turboTargetTimestamp
+        });
+    } catch (e) {
+        console.warn('[TurboMode] Failed to save state:', e);
+    }
+
+    updateTurboModeUI(isTurboMode);
+    updateTurboBadgeUI();
+
+    if (manual) {
+        if (isTurboMode) {
+            const targetDate = new Date(turboTargetTimestamp);
+            const targetTimeStr = `${targetDate.getHours()}:${String(targetDate.getMinutes()).padStart(2, '0')}`;
+            logToSidebar(`⚡ [쾌속모드 활성화] 번역간 대기 2초, 다음화 넘어가기 8초로 설정되었습니다. (초기화 기준: ${info.label}, ${targetTimeStr} 정각 도달 시 즉시 중단)`);
+        } else {
+            logToSidebar(`⚡ [쾌속모드 비활성화] 일반 번역 모드(대기 5초 / 60초)로 전환되었습니다.`);
+        }
+    }
+}
+
+// ⚡ 쾌속모드 즉시 중단 및 자동 OFF
+async function abortTurboMode(reason = "초기화 시간 도달") {
+    isTranslationCancelled = true;
+    isTurboMode = false;
+    turboTargetTimestamp = 0;
+    try {
+        await chrome.storage.local.set({
+            lanovel_turbo_mode: false,
+            lanovel_turbo_target: 0
+        });
+    } catch (e) {}
+
+    updateTurboModeUI(false);
+
+    const stopBtn = document.getElementById('stop-translation-btn');
+    if (stopBtn) stopBtn.style.display = 'none';
+    const retryBtn = document.getElementById('retry-translation-btn');
+    if (retryBtn) retryBtn.style.display = 'inline-block';
+
+    const info = detectCutoffInfo();
+    logToSidebar(`⏰ [초기화 시간(${info.label}) 정각 도달] 쾌속 번역 및 다음 화 이동을 즉시 중단하고 쾌속모드를 종료합니다.`, "log-error");
+}
+
+function updateTurboModeUI(enabled) {
+    const banner = document.getElementById('sidebar-turbo-banner');
+    const toggle = document.getElementById('sidebar-turbo-toggle');
+    const desc = document.getElementById('turbo-desc-text');
+    if (toggle) toggle.checked = enabled;
+    if (banner) {
+        if (enabled) {
+            banner.classList.add('active');
+        } else {
+            banner.classList.remove('active');
+        }
+    }
+    if (desc) {
+        desc.textContent = enabled ? '쾌속 진행 중 (2초/8초)' : '대기: 2초 / 8초';
+    }
+}
+
+function updateTurboBadgeUI() {
+    const badge = document.getElementById('turbo-cutoff-badge');
+    if (badge) {
+        const info = detectCutoffInfo();
+        badge.textContent = `기준 ${info.label}`;
+    }
+}
+
+async function cycleTurboCutoff() {
+    // 자동 -> 16:00 -> 17:00 -> 자동 순환
+    if (turboCutoffHour === null) {
+        turboCutoffHour = 16;
+    } else if (turboCutoffHour === 16) {
+        turboCutoffHour = 17;
+    } else {
+        turboCutoffHour = null;
+    }
+    const info = detectCutoffInfo();
+    if (isTurboMode) {
+        turboTargetTimestamp = calculateNextCutoffTimestamp(info.hour);
+    }
+    try {
+        await chrome.storage.local.set({
+            lanovel_turbo_cutoff: turboCutoffHour,
+            lanovel_turbo_target: turboTargetTimestamp
+        });
+    } catch (e) {}
+    updateTurboBadgeUI();
+    logToSidebar(`⚡ [쾌속모드 기준 변경] 중단 기준 시각이 '${info.label}'(으)로 설정되었습니다.`);
+}
+
+// =================================================================================
 // Initialization & Event Listeners
 // =================================================================================
 
-// Listen for changes in storage (e.g., from the history page)
+// Listen for changes in storage (e.g., from the history page or other tabs)
 chrome.storage.onChanged.addListener((changes, namespace) => {
     if (namespace !== 'local') return;
 
@@ -73,6 +276,21 @@ chrome.storage.onChanged.addListener((changes, namespace) => {
             console.log(`[storage] Apply status changed to ${targetApplied}. Updating page smoothly.`);
             setPageApplyStatus(targetApplied, false);
         }
+    }
+
+    if (changes.lanovel_turbo_mode) {
+        const newTurbo = !!changes.lanovel_turbo_mode.newValue;
+        if (newTurbo !== isTurboMode) {
+            isTurboMode = newTurbo;
+            updateTurboModeUI(isTurboMode);
+        }
+    }
+    if (changes.lanovel_turbo_cutoff) {
+        turboCutoffHour = changes.lanovel_turbo_cutoff.newValue;
+        updateTurboBadgeUI();
+    }
+    if (changes.lanovel_turbo_target) {
+        turboTargetTimestamp = changes.lanovel_turbo_target.newValue || 0;
     }
 });
 
@@ -765,6 +983,9 @@ async function init() {
         injectSidebar();
         setupEventListeners();
 
+        // 0.2. ⚡ 쾌속모드 상태 로드 및 정각 도달 여부 확인
+        await loadTurboModeState();
+
         // 0.5. 소설 제목 감지 및 해당 소설의 구분선 설정 로드
         currentNovelTitle = await detectNovelTitle();
         updateNovelTitleUI(currentNovelTitle);
@@ -812,11 +1033,16 @@ async function init() {
         setupParagraphInteraction();
 
         // 4. 실제로 아직 번역되지 않은 문단이 있는 경우에만 사이드바를 열고 번역 진행
-        const needsTranslation = hasUntranslatedParagraphs();
-        if (needsTranslation) {
-            showSidebar(); // This will trigger translateAllPTags for new content
+        if (isTurboMode && checkCutoffTimeReached()) {
+            await abortTurboMode("초기화 시간 도달");
+            console.log("[init] 쾌속모드 정각 도달로 자동 번역을 시작하지 않습니다.");
         } else {
-            console.log("[init] 모든 문장이 이미 저장되어 있어 추가 번역을 수행하지 않습니다.");
+            const needsTranslation = hasUntranslatedParagraphs();
+            if (needsTranslation) {
+                showSidebar(); // This will trigger translateAllPTags for new content
+            } else {
+                console.log("[init] 모든 문장이 이미 저장되어 있어 추가 번역을 수행하지 않습니다.");
+            }
         }
 
     } catch (error) {
@@ -1111,6 +1337,20 @@ function injectSidebar() {
                 </div>
             </div>
         </div>
+        <div id="sidebar-turbo-banner" class="sidebar-turbo-banner">
+            <div class="turbo-info">
+                <span class="turbo-icon">⚡</span>
+                <span class="turbo-label">쾌속모드</span>
+                <span class="turbo-desc" id="turbo-desc-text">대기: 2초 / 8초</span>
+            </div>
+            <div class="turbo-controls">
+                <span id="turbo-cutoff-badge" class="turbo-cutoff-badge" title="클릭하여 기준 시간 변경 (자동 / 16:00 / 17:00)">기준 16:00 (써머타임)</span>
+                <label class="turbo-switch" title="쾌속모드 ON/OFF (초기화 정각까지 빠른 번역)">
+                    <input type="checkbox" id="sidebar-turbo-toggle">
+                    <span class="turbo-slider round"></span>
+                </label>
+            </div>
+        </div>
         <div id="sidebar-apply-banner" class="sidebar-apply-banner">
             <div class="apply-status-info">
                 <span id="apply-status-dot" class="status-dot"></span>
@@ -1361,6 +1601,21 @@ function setupEventListeners() {
     if (applyToggleBtn) {
         applyToggleBtn.addEventListener('click', togglePageApplyStatus);
     }
+
+    // ⚡ 쾌속모드 토글 스위치 및 기준 시간 배지 이벤트 연결
+    const turboToggle = document.getElementById('sidebar-turbo-toggle');
+    if (turboToggle) {
+        turboToggle.addEventListener('change', (e) => {
+            setTurboMode(e.target.checked, true);
+        });
+    }
+
+    const turboCutoffBadge = document.getElementById('turbo-cutoff-badge');
+    if (turboCutoffBadge) {
+        turboCutoffBadge.addEventListener('click', () => {
+            cycleTurboCutoff();
+        });
+    }
     
     // 구분선 설정 패널 이벤트 연결
     const sepSettingsBtn = document.getElementById('separator-settings-btn');
@@ -1514,9 +1769,57 @@ function setupEventListeners() {
 
 
 
+function extractEpisodeTitle() {
+    const host = window.location.hostname;
+
+    // 1. Kakuyomu DOM extraction
+    if (host.includes('kakuyomu.jp')) {
+        const epEl = document.querySelector('.widget-episodeTitle, [class*="widget-episodeTitle"], h1[class*="episodeTitle"]');
+        if (epEl && epEl.textContent.trim()) {
+            return epEl.textContent.trim();
+        }
+        if (document.title) {
+            const clean = document.title.replace(/\s*-\s*カクヨム.*$/i, '').trim();
+            const parts = clean.split(/\s*-\s*/);
+            if (parts.length > 1 && parts[0].trim()) {
+                return parts[0].trim();
+            }
+            if (parts[0].trim()) return parts[0].trim();
+        }
+    }
+
+    // 2. Syosetu DOM extraction
+    if (host.includes('syosetu.com')) {
+        const epEl = document.querySelector('.p-novel__title, .novel_subtitle, [class*="novel__title"]');
+        if (epEl && epEl.textContent.trim()) {
+            return epEl.textContent.trim();
+        }
+        if (document.title) {
+            const clean = document.title.replace(/\s*-\s*(小説家になろう|ノクターンノベルズ|ムーンライトノベルズ|ミッドナイトノベルズ).*$/i, '').trim();
+            const parts = clean.split(/\s*-\s*/);
+            if (parts.length > 1 && parts[parts.length - 1].trim()) {
+                return parts[parts.length - 1].trim();
+            }
+            if (parts[0].trim()) return parts[0].trim();
+        }
+    }
+
+    // 3. General Fallback
+    if (document.title) {
+        let clean = document.title.replace(/\s*-\s*(カクヨム|小説家になろう|ノクターンノベルズ|ムーンライトノベルズ|ミッドナイトノベルズ).*$/i, '').trim();
+        const parts = clean.split(/\s*-\s*/);
+        if (parts.length > 1 && parts[0].trim()) {
+            return parts[0].trim();
+        }
+        return clean;
+    }
+
+    return '';
+}
+
 async function saveSingleTranslation(pid, original, translated) {
     const url = getCleanUrl();
-    const title = document.title;
+    const title = extractEpisodeTitle() || document.title;
     const record = {
         url: url,
         pid: pid,
@@ -1567,7 +1870,7 @@ async function saveAllTranslations(itemsToSave) {
     if (validItems.length === 0) return;
 
     const url = getCleanUrl();
-    const title = document.title;
+    const title = extractEpisodeTitle() || document.title;
     const records = validItems.map(item => ({
         url: url,
         pid: item.id,
@@ -1668,6 +1971,12 @@ async function translateAllPTags(isRetranslation = false) {
     document.getElementById('stop-translation-btn').style.display = 'inline-block';
     document.getElementById('retry-translation-btn').style.display = 'none';
 
+    // ⚡ 쾌속모드 활성 상태에서 이미 정각에 도달했는지 선제 검사
+    if (isTurboMode && checkCutoffTimeReached()) {
+        await abortTurboMode("초기화 시간 도달");
+        return;
+    }
+
     // [핵심 보장] 일반 번역 시 반드시 서버에서 저장된 번역을 먼저 완벽히 불러와 캐시를 채운 후에만 진행
     if (!isRetranslation) {
         await ensureTranslationsLoaded();
@@ -1725,7 +2034,8 @@ async function translateAllPTags(isRetranslation = false) {
     const sepCount = activeSeparators.length;
     const sepPreview = sepCount > 0 ? activeSeparators.slice(0, 3).join(', ') + (sepCount > 3 ? ` 외 ${sepCount - 3}개` : '') : '없음';
     const modelDesc = isRetranslation ? "고성능 모델(Gemini 3.0 Flash)" : "기본 엔진";
-    logToSidebar(`[소설: ${currentNovelTitle || '기본'}] 총 ${textsToTranslate.length}개의 문장 번역을 시작합니다. (${modelDesc}, 구분선: ${sepPreview})`);
+    const turboDesc = isTurboMode ? " ⚡쾌속모드" : "";
+    logToSidebar(`[소설: ${currentNovelTitle || '기본'}] 총 ${textsToTranslate.length}개의 문장 번역을 시작합니다. (${modelDesc}${turboDesc}, 구분선: ${sepPreview})`);
     
     const longTexts = textsToTranslate.filter(item => item.text.length > LONG_TEXT_THRESHOLD);
     const normalTexts = textsToTranslate.filter(item => item.text.length <= LONG_TEXT_THRESHOLD);
@@ -1999,7 +2309,12 @@ async function translateAllPTags(isRetranslation = false) {
         await translateChunk([item], 1);
         checkAndReportMilestone(index + 1, textsToTranslate.length);
         if (index < longTexts.length - 1) {
-            await new Promise(resolve => setTimeout(resolve, 5000)); // 5초 대기
+            const delay = isTurboMode ? 2000 : 5000;
+            await new Promise(resolve => setTimeout(resolve, delay));
+            if (isTurboMode && checkCutoffTimeReached()) {
+                await abortTurboMode("초기화 시간 도달");
+                break;
+            }
         }
     }
 
@@ -2041,8 +2356,10 @@ async function translateAllPTags(isRetranslation = false) {
         const chunks = chunkArray(normalTexts, initialChunkSize);
         let progress = 0;
 
-        const dynamicDelay = 5000; // 5초 고정 대기
-        logToSidebar(`RPM 제한을 피하기 위해 묶음 간 대기 시간을 ${dynamicDelay / 1000}초로 설정합니다.`);
+        const dynamicDelay = isTurboMode ? 2000 : 5000;
+        logToSidebar(isTurboMode 
+            ? `⚡ [쾌속모드] 번역 묶음 간 대기 시간을 ${dynamicDelay / 1000}초로 단축하여 번역을 진행합니다.` 
+            : `RPM 제한을 피하기 위해 묶음 간 대기 시간을 ${dynamicDelay / 1000}초로 설정합니다.`);
 
         for (const [index, chunk] of chunks.entries()) {
             if (isTranslationCancelled) break;
@@ -2054,6 +2371,10 @@ async function translateAllPTags(isRetranslation = false) {
             if (index < chunks.length - 1) {
                 logToSidebar(`${dynamicDelay / 1000}초 후 다음 묶음을 번역합니다.`);
                 await new Promise(resolve => setTimeout(resolve, dynamicDelay));
+                if (isTurboMode && checkCutoffTimeReached()) {
+                    await abortTurboMode("초기화 시간 도달");
+                    break;
+                }
             }
         }
     }
@@ -2092,7 +2413,7 @@ async function translateAllPTags(isRetranslation = false) {
             logToSidebar(`🔔 [ntfy] ${currentBatchCount}화 달성! 10화 단위 번역 진행 알림을 발송합니다.`);
             sendNtfyProgress(
                 currentNovelTitle,
-                document.title || '',
+                extractEpisodeTitle() || document.title || '',
                 textsToTranslate.length,
                 textsToTranslate.length,
                 100,
@@ -2103,7 +2424,7 @@ async function translateAllPTags(isRetranslation = false) {
             logToSidebar(`[ntfy] 10화 단위 알림 정책 적용 중 (현재: ${currentBatchCount}화, 다음 알림: ${Math.ceil(currentBatchCount / 10) * 10}화)`);
         }
 
-        const scrollDelay = 60000; // 60-second delay
+        const scrollDelay = isTurboMode ? 8000 : 60000;
         const currentUrl = getCleanUrl(); // Get the current clean URL
 
         const startAutoScroll = () => {
@@ -2111,10 +2432,17 @@ async function translateAllPTags(isRetranslation = false) {
                 logToSidebar("🔔 [알림 센터 검수 모드] 다음 페이지 자동 넘기기가 비활성화되어 있습니다.");
                 return;
             }
-            logToSidebar(`번역 완료. ${scrollDelay / 1000}초 후 페이지 끝으로 자동 스크롤합니다.`);
+            logToSidebar(isTurboMode 
+                ? `⚡ [쾌속모드] 번역 완료. ${scrollDelay / 1000}초 후 다음 페이지로 이동합니다.` 
+                : `번역 완료. ${scrollDelay / 1000}초 후 페이지 끝으로 자동 스크롤합니다.`);
 
-            setTimeout(() => {
+            setTimeout(async () => {
                 if (isTranslationCancelled) return;
+
+                if (isTurboMode && checkCutoffTimeReached()) {
+                    await abortTurboMode("초기화 시간 도달");
+                    return;
+                }
 
                 logToSidebar("페이지 끝으로 스크롤 후 다음 페이지 액션을 실행합니다.");
                 window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
@@ -2139,7 +2467,7 @@ async function translateAllPTags(isRetranslation = false) {
                                 // 마지막 화에 도달하여 다음 화가 없으므로 최종 완료 알림 발송 후 카운터 리셋
                                 sendNtfyComplete(
                                     currentNovelTitle,
-                                    document.title || '',
+                                    extractEpisodeTitle() || document.title || '',
                                     textsToTranslate.length,
                                     getCleanUrl(),
                                     currentBatchCount
@@ -2148,6 +2476,7 @@ async function translateAllPTags(isRetranslation = false) {
                             }
                         } else if (currentUrl.includes('kakuyomu.jp')) {
                             logToSidebar("'kakuyomu.jp'입니다. 'PageDown' 키를 누릅니다.");
+                            const pageDownDelay = isTurboMode ? 500 : 4000;
                             setTimeout(() => {
                                 document.body.dispatchEvent(new KeyboardEvent('keydown', {
                                     key: 'PageDown',
@@ -2156,10 +2485,11 @@ async function translateAllPTags(isRetranslation = false) {
                                     cancelable: true,
                                     keyCode: 34
                                 }));
-                            }, 4000); // Small delay to ensure PageDown is registered
+                            }, pageDownDelay);
                         } else {
                             logToSidebar("지원되지 않는 사이트입니다. 기본 'PageDown' 키를 누릅니다.");
-                             setTimeout(() => {
+                            const pageDownDelay = isTurboMode ? 500 : 4000;
+                            setTimeout(() => {
                                 document.body.dispatchEvent(new KeyboardEvent('keydown', {
                                     key: 'PageDown',
                                     code: 'PageDown',
@@ -2167,7 +2497,7 @@ async function translateAllPTags(isRetranslation = false) {
                                     cancelable: true,
                                     keyCode: 34
                                 }));
-                            }, 4000);
+                            }, pageDownDelay);
                         }
                     }
                 }, 100);

@@ -227,7 +227,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const activityData = activityRes.ok ? await activityRes.json() : {};
 
             // 2. Fetch chapter titles
-            const chaptersRes = await fetch(`/api/books/${encodeURIComponent(bookName)}/chapters`);
+            const chaptersRes = await fetch(`/api/books/${encodeURIComponent(bookName)}/chapters?_t=${Date.now()}`, { cache: 'no-store' });
             if (!chaptersRes.ok) throw new Error(`챕터 목록 로딩 실패: ${chaptersRes.status}`);
             chapterTitles = await chaptersRes.json();
 
@@ -284,7 +284,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         updateActiveTocItem();
 
         try {
-            const contentRes = await fetch(`/api/books/${encodeURIComponent(bookName)}/chapter?title=${encodeURIComponent(chapterTitle)}`);
+            const contentRes = await fetch(`/api/books/${encodeURIComponent(bookName)}/chapter?title=${encodeURIComponent(chapterTitle)}&_t=${Date.now()}`, { cache: 'no-store' });
             if (!contentRes.ok) throw new Error(`챕터 내용을 불러오지 못했습니다: ${contentRes.status}`);
 
             currentChapterItems = await contentRes.json();
@@ -655,6 +655,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         translatedTextElement.contentEditable = 'true';
         translatedTextElement.focus();
 
+        setTimeout(() => {
+            translationItem.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 150);
+
         let actionBox = translationItem.querySelector('.inline-edit-actions');
         if (!actionBox) {
             actionBox = document.createElement('div');
@@ -820,6 +824,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     let isLongPressTriggered = false;
     let suppressNextClick = false;
 
+    // Capture-phase click interceptor to suppress phantom clicks right after long-press or swipe
+    document.addEventListener('click', (e) => {
+        if (suppressNextClick) {
+            e.stopPropagation();
+            e.preventDefault();
+        }
+    }, true);
+
     function handleBookClick(e) {
         if (suppressNextClick) {
             suppressNextClick = false;
@@ -862,15 +874,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (item && !item.classList.contains('editing') && !e.target.closest('.inline-edit-actions')) {
             longPressTimer = setTimeout(() => {
                 isLongPressTriggered = true;
-                suppressNextClick = true;
                 if (navigator.vibrate) {
                     try { navigator.vibrate(50); } catch (_) {}
                 }
                 enableEditing(item);
                 showToast('단락 번역문 수정 모드가 열렸습니다.');
-                setTimeout(() => {
-                    suppressNextClick = false;
-                }, 400);
             }, 500);
         } else {
             longPressTimer = null;
@@ -901,6 +909,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         if (isLongPressTriggered) {
             isLongPressTriggered = false;
+            suppressNextClick = true;
+            setTimeout(() => {
+                suppressNextClick = false;
+            }, 400);
             return;
         }
 
@@ -923,6 +935,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         longPressTimer = null;
         isLongPressTriggered = false;
     }, { passive: true });
+
+    // Prevent default context menu on long press or when editing
+    bookContainer.addEventListener('contextmenu', (e) => {
+        if (isLongPressTriggered || suppressNextClick) {
+            e.preventDefault();
+        }
+    });
 
     // --- Event Listeners Setup ---
     document.addEventListener('keydown', handleKeyPress);
@@ -1099,7 +1118,20 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Window Resize Handling
     let resizeTimer;
+    let lastWindowWidth = window.innerWidth;
     window.addEventListener('resize', () => {
+        // 1. Never repaginate while an editing session is in progress (keyboard appearance triggers resize!)
+        if (document.querySelector('.translation-item.editing')) {
+            return;
+        }
+
+        // 2. On mobile devices, virtual keyboard or address bar toggle changes height only.
+        // We only want to repaginate if viewport width actually changed (e.g. screen orientation change).
+        if (window.innerWidth === lastWindowWidth) {
+            return;
+        }
+        lastWindowWidth = window.innerWidth;
+
         clearTimeout(resizeTimer);
         resizeTimer = setTimeout(() => {
             if (prefs.mode === 'paging') repaginateAndRender();

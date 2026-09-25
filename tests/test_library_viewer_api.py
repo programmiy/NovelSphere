@@ -186,4 +186,61 @@ def test_book_visibility_toggle_and_hidden_filtering():
     restored_names = [b["name"] for b in restored_books_res.json()]
     assert test_folder in restored_names
 
+def test_viewer_chapter_content_and_url_title_unification():
+    folder = "회차_통합_테스트_소설"
+    url = "https://kakuyomu.jp/works/12345/episodes/99999"
+    
+    # 1. 2개의 단락을 서로 다른 제목으로 upsert (하나는 클린 제목, 하나는 사이트 접미사 포함)
+    items = [
+        {
+            "url": url,
+            "pid": "p1",
+            "original": "段落１の本文です。",
+            "translated": "단락 1의 본문입니다.",
+            "timestamp": 1000,
+            "folderName": folder,
+            "title": "제1화 시작"
+        },
+        {
+            "url": url,
+            "pid": "p2",
+            "original": "段落２の本文です。",
+            "translated": "단락 2의 본문입니다.",
+            "timestamp": 1001,
+            "folderName": folder,
+            "title": "제1화 시작 - 소설제목 - カクヨム"
+        }
+    ]
+    upsert_res = client.post("/translations/upsert", json=items)
+    assert upsert_res.status_code == 200
+
+    # 2. 챕터 목록(/chapters) 조회 시 회차가 분리되지 않고 정확히 1개만 조회되어야 함
+    chapters_res = client.get(f"/api/books/{folder}/chapters")
+    assert chapters_res.status_code == 200
+    assert "no-cache" in chapters_res.headers.get("cache-control", "").lower()
+    chapters = chapters_res.json()
+    assert len(chapters) == 1
+    assert chapters[0] == "제1화 시작"
+
+    # 3. 챕터 내용(/chapter) 조회 시 p1, p2 두 단락이 누락 없이 모두 반환되어야 함
+    content_res = client.get(f"/api/books/{folder}/chapter?title={chapters[0]}")
+    assert content_res.status_code == 200
+    assert "no-cache" in content_res.headers.get("cache-control", "").lower()
+    content = content_res.json()
+    assert len(content) == 2
+    pids = [row["pid"] for row in content]
+    assert "p1" in pids
+    assert "p2" in pids
+    # 두 단락의 제목이 모두 클린 제목으로 동기화되어 있어야 함
+    assert all(row["title"] == "제1화 시작" for row in content)
+
+    # 4. URL 목록(/urls)에서도 해당 URL이 1개로 그룹화되고 단락 수가 2개여야 함
+    urls_res = client.get(f"/api/books/{folder}/urls")
+    assert urls_res.status_code == 200
+    urls_data = urls_res.json()
+    assert len(urls_data) == 1
+    assert urls_data[0]["count"] == 2
+    assert urls_data[0]["title"] == "제1화 시작"
+
+
 
