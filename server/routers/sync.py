@@ -186,11 +186,11 @@ def _build_mobile_optimized_db(temp_db_path: str):
     for row in src_cursor.fetchall():
         tags_map.setdefault(row['book_folderName'], []).append(row['name'])
 
-    # 책별 챕터 수 및 책 목록 취합
+    # 책별 챕터 수 및 책 목록 취합 (URL 고유 개수 기준)
     src_cursor.execute("""
-        SELECT folderName, COUNT(DISTINCT title) as chap_count 
+        SELECT folderName, COUNT(DISTINCT url) as chap_count 
         FROM translations 
-        WHERE folderName IS NOT NULL AND title IS NOT NULL 
+        WHERE folderName IS NOT NULL AND url IS NOT NULL AND url != ''
         GROUP BY folderName
     """)
     book_chap_counts = {row['folderName']: row['chap_count'] for row in src_cursor.fetchall()}
@@ -221,13 +221,23 @@ def _build_mobile_optimized_db(temp_db_path: str):
     """, book_rows)
 
     # 3. 챕터별 문장 추출 및 Zlib BLOB 압축 패킹
-    # 챕터별로 정렬하여 한 챕터의 문장들을 묶어서 압축
+    # URL(회차) 기준으로 그룹화하여 압축 (회차 분리 및 단락 실종 원천 차단)
     src_cursor.execute("""
-        SELECT folderName, title, url, MIN(COALESCE(toc_sort_order, 999999)) as sort_order
-        FROM translations
-        WHERE folderName IS NOT NULL AND title IS NOT NULL
-        GROUP BY folderName, title
-        ORDER BY folderName, sort_order ASC
+        SELECT 
+            t1.folderName, 
+            t1.url,
+            COALESCE(
+                (SELECT t2.title FROM translations t2 
+                 WHERE t2.url = t1.url AND t2.folderName = t1.folderName AND t2.title IS NOT NULL AND t2.title != ''
+                 ORDER BY t2.timestamp DESC LIMIT 1),
+                t1.title,
+                t1.url
+            ) as title,
+            MIN(COALESCE(t1.toc_sort_order, 999999)) as sort_order
+        FROM translations t1
+        WHERE t1.folderName IS NOT NULL AND t1.url IS NOT NULL AND t1.url != ''
+        GROUP BY t1.folderName, t1.url
+        ORDER BY t1.folderName, sort_order ASC
     """)
     chapters_meta = src_cursor.fetchall()
 
@@ -237,15 +247,15 @@ def _build_mobile_optimized_db(temp_db_path: str):
         c_url = chap['url']
         s_order = chap['sort_order']
 
-        # 해당 챕터의 문장들 로드
+        # 해당 회차(URL)의 모든 문장 로드 (동일 URL에 속한 모든 단락을 온전히 묶음)
         src_cursor.execute("""
             SELECT id, pid, original, translated, timestamp
             FROM translations
-            WHERE folderName = ? AND title = ?
+            WHERE folderName = ? AND url = ?
             ORDER BY CASE WHEN lower(pid) LIKE 'p%' OR lower(pid) LIKE 'l%' 
                           THEN CAST(SUBSTR(pid, 2) AS INTEGER) 
                           ELSE 999999 END ASC, timestamp ASC
-        """, (b_name, c_title))
+        """, (b_name, c_url))
         sentences = src_cursor.fetchall()
 
         # 문장 리스트를 가벼운 JSON으로 직렬화 후 zlib 압축 (레벨 6)
@@ -380,11 +390,56 @@ def pull_changes_from_pc(since: int = 0):
     """, (since,))
     new_translations = cursor.fetchall()
 
-    # 2. 책 활동 정보 (마지막 읽은 곳, 북마크, 완료 여부 등)
+    # 2. since 이후 신규/수정된 회차들의 완전한 챕터 BLOB 패킹 (증분 동기화 시 모바일 챕터 본문 자동 갱신)
+    import base64
+    updated_url_tuples = list({(t['folderName'], t['url']) for t in new_translations if t.get('folderName') and t.get('url')})
+    updated_chapters = []
+    for f_name, c_url in updated_url_tuples:
+        cursor.execute("""
+            SELECT 
+                COALESCE(
+                    (SELECT t2.title FROM translations t2 
+                     WHERE t2.url = ? AND t2.folderName = ? AND t2.title IS NOT NULL AND t2.title != ''
+                     ORDER BY t2.timestamp DESC LIMIT 1),
+                    MIN(title),
+                    ?
+                ) as title,
+                MIN(COALESCE(toc_sort_order, 999999)) as sort_order
+            FROM translations
+            WHERE folderName = ? AND url = ?
+        """, (c_url, f_name, c_url, f_name, c_url))
+        meta = cursor.fetchone()
+        if not meta or not meta['title']:
+            continue
+        c_title = meta['title']
+        s_order = meta['sort_order']
+
+        cursor.execute("""
+            SELECT id, pid, original, translated, timestamp
+            FROM translations
+            WHERE folderName = ? AND url = ?
+            ORDER BY CASE WHEN lower(pid) LIKE 'p%' OR lower(pid) LIKE 'l%' 
+                          THEN CAST(SUBSTR(pid, 2) AS INTEGER) 
+                          ELSE 999999 END ASC, timestamp ASC
+        """, (f_name, c_url))
+        sentences = cursor.fetchall()
+
+        raw_json = json.dumps(sentences, ensure_ascii=False).encode('utf-8')
+        compressed_blob = zlib.compress(raw_json, level=6)
+        updated_chapters.append({
+            "book_name": f_name,
+            "title": c_title,
+            "url": c_url,
+            "sort_order": s_order,
+            "sentence_count": len(sentences),
+            "compressed_content": base64.b64encode(compressed_blob).decode('ascii')
+        })
+
+    # 3. 책 활동 정보 (마지막 읽은 곳, 북마크, 완료 여부 등)
     cursor.execute("SELECT * FROM book_activity WHERE last_read_timestamp > ? OR 1=1", (since,))
     activities = cursor.fetchall()
 
-    # 3. 고정된 책 및 태그
+    # 4. 고정된 책 및 태그
     cursor.execute("SELECT folderName FROM pinned_books")
     pinned = [row['folderName'] for row in cursor.fetchall()]
 
@@ -400,6 +455,7 @@ def pull_changes_from_pc(since: int = 0):
         "since": since,
         "translations_count": len(new_translations),
         "translations": new_translations,
+        "updated_chapters": updated_chapters,
         "activities": activities,
         "pinned_books": pinned,
         "book_tags": dict(book_tags)

@@ -93,4 +93,17 @@ class PreferencesService {
 
   static bool get hideServerSection => _prefs.getBool('hide_server_section') ?? false;
   static Future<void> setHideServerSection(bool value) => _prefs.setBool('hide_server_section', value);
+
+  // --- 알림 설정 ---
+  static bool get enableSystemNotification => _prefs.getBool('enable_system_notification') ?? true;
+  static Future<void> setEnableSystemNotification(bool value) => _prefs.setBool('enable_system_notification', value);
+
+  static bool get enableNtfySync => _prefs.getBool('enable_ntfy_sync') ?? true;
+  static Future<void> setEnableNtfySync(bool value) => _prefs.setBool('enable_ntfy_sync', value);
+
+  static String get ntfyServer => _prefs.getString('ntfy_server') ?? 'https://ntfy.sh';
+  static Future<void> setNtfyServer(String value) => _prefs.setString('ntfy_server', value.trim());
+
+  static String get ntfyTopic => _prefs.getString('ntfy_topic') ?? 'NovelSphere';
+  static Future<void> setNtfyTopic(String value) => _prefs.setString('ntfy_topic', value.trim());
 }

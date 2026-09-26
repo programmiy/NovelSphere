@@ -135,8 +135,9 @@ class SyncService {
       }
       await tempFile.rename(localDbPath);
 
-      // 로컬 DB 재오픈
+      // 로컬 DB 재오픈 및 자가 치유 실행
       await LocalDbService.database;
+      await LocalDbService.healDuplicateChapters();
 
       // 동기화 시간 저장
       final nowTs = DateTime.now().millisecondsSinceEpoch ~/ 1000;
@@ -251,12 +252,45 @@ class SyncService {
         final pullData = jsonDecode(utf8.decode(decompressed));
 
         final newTranslations = pullData['translations'] as List? ?? [];
-        final activities = pullData['activities'] as List? ?? [];
-
         pulledTransCount = newTranslations.length;
+        final activities = pullData['activities'] as List? ?? [];
+        final updatedChapters = pullData['updated_chapters'] as List? ?? [];
+
+        final db = await LocalDbService.database;
+
+        if (updatedChapters.isNotEmpty) {
+          for (var chap in updatedChapters) {
+            final bName = chap['book_name'] as String;
+            final cTitle = chap['title'] as String;
+            final cUrl = chap['url'] as String;
+            final sOrder = chap['sort_order'] as int? ?? 0;
+            final sCount = chap['sentence_count'] as int? ?? 0;
+            final b64Blob = chap['compressed_content'] as String;
+            final blobBytes = base64Decode(b64Blob);
+
+            // 해당 URL의 기존 챕터(과거 분리되었던 레코드 포함) 모두 제거 후 최신 통합 챕터로 저장
+            await db.delete(
+              'chapters',
+              where: 'book_name = ? AND url = ?',
+              whereArgs: [bName, cUrl],
+            );
+            await db.insert('chapters', {
+              'book_name': bName,
+              'title': cTitle,
+              'url': cUrl,
+              'sort_order': sOrder,
+              'sentence_count': sCount,
+              'compressed_content': blobBytes,
+            });
+
+            // 책의 total_chapters 갱신
+            final countRow = await db.rawQuery('SELECT COUNT(*) as cnt FROM chapters WHERE book_name = ?', [bName]);
+            final totalChaps = (countRow.first['cnt'] as num?)?.toInt() ?? 0;
+            await db.update('books', {'total_chapters': totalChaps}, where: 'folder_name = ?', whereArgs: [bName]);
+          }
+        }
 
         // PC의 활동 정보를 로컬 DB에 반영
-        final db = await LocalDbService.database;
         for (var act in activities) {
           final fName = act['folderName'];
           if (fName == null) continue;
@@ -287,13 +321,16 @@ class SyncService {
           ]);
         }
 
+        // 과거 분리된 중복 회차 자가 치유 실행
+        await LocalDbService.healDuplicateChapters();
+
         final syncTime = pullData['sync_time'] as int? ?? (DateTime.now().millisecondsSinceEpoch ~/ 1000);
         await PreferencesService.setLastSyncedTimestamp(syncTime);
       }
 
       return SyncResult(
         success: true,
-        message: '동기화 완료 (업로드: ${pushedTransCount}문장 / 다운로드: ${pulledTransCount}문장)',
+        message: '동기화 완료 (업로드: $pushedTransCount문장 / 다운로드: $pulledTransCount문장)',
         updatedTranslations: pushedTransCount + pulledTransCount,
         updatedActivities: pushedActCount,
       );

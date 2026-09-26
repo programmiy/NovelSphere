@@ -199,8 +199,118 @@ class LocalDbService {
   }
 
   // --- 챕터 (Chapters) 쿼리 및 압축 해제 엔진 ---
+  /// [자가 치유] 과거 동기화나 제목 파편화로 인해 동일 URL을 공유하면서 분리된 챕터들을 하나로 자동 병합
+  static Future<int> healDuplicateChapters([String? specificBookName]) async {
+    final db = await database;
+    String whereClause = "WHERE url IS NOT NULL AND url != ''";
+    List<dynamic> whereArgs = [];
+    if (specificBookName != null) {
+      whereClause += " AND book_name = ?";
+      whereArgs.add(specificBookName);
+    }
+
+    final dupGroups = await db.rawQuery('''
+      SELECT book_name, url, COUNT(*) as cnt
+      FROM chapters
+      $whereClause
+      GROUP BY book_name, url
+      HAVING cnt > 1
+    ''', whereArgs);
+
+    if (dupGroups.isEmpty) return 0;
+
+    int healedCount = 0;
+    for (var group in dupGroups) {
+      final bName = group['book_name'] as String;
+      final cUrl = group['url'] as String;
+
+      final rows = await db.query(
+        'chapters',
+        where: 'book_name = ? AND url = ?',
+        whereArgs: [bName, cUrl],
+        orderBy: 'id ASC',
+      );
+
+      if (rows.length < 2) continue;
+
+      Map<String, Sentence> mergedSentences = {};
+      String canonicalTitle = rows.first['title'] as String;
+      int sortOrder = rows.first['sort_order'] as int? ?? 0;
+      int keeperId = rows.first['id'] as int;
+
+      for (var r in rows) {
+        final t = (r['title'] as String? ?? '').trim();
+        if (t.isNotEmpty) {
+          final isTDirty = t.contains('- カクヨム') || t.contains('- 小説家になろう');
+          final isCanonDirty = canonicalTitle.contains('- カクヨム') || canonicalTitle.contains('- 小説家になろう');
+          if (!isTDirty && (isCanonDirty || t.length < canonicalTitle.length)) {
+            canonicalTitle = t;
+            sortOrder = r['sort_order'] as int? ?? sortOrder;
+          }
+        }
+
+        final blob = r['compressed_content'] as Uint8List?;
+        if (blob == null) continue;
+        try {
+          final decompressed = const ZLibDecoder().decodeBytes(blob);
+          final jsonStr = utf8.decode(decompressed);
+          final List<dynamic> list = jsonDecode(jsonStr);
+          for (var item in list) {
+            final s = Sentence.fromJson(item as Map<String, dynamic>);
+            final key = s.pid ?? '${s.id}';
+            mergedSentences[key] = s;
+          }
+        } catch (_) {}
+      }
+
+      final sortedList = mergedSentences.values.toList();
+      sortedList.sort((a, b) {
+        final pA = a.pid ?? '';
+        final pB = b.pid ?? '';
+        final numA = int.tryParse(pA.replaceAll(RegExp(r'[^0-9]'), '')) ?? 999999;
+        final numB = int.tryParse(pB.replaceAll(RegExp(r'[^0-9]'), '')) ?? 999999;
+        return numA.compareTo(numB);
+      });
+
+      final rawJson = jsonEncode(sortedList.map((s) => s.toJson()).toList());
+      final reCompressed = const ZLibEncoder().encode(utf8.encode(rawJson));
+
+      await db.update(
+        'chapters',
+        {
+          'title': canonicalTitle,
+          'sort_order': sortOrder,
+          'sentence_count': sortedList.length,
+          'compressed_content': reCompressed,
+        },
+        where: 'id = ?',
+        whereArgs: [keeperId],
+      );
+
+      final idsToDelete = rows.map((r) => r['id'] as int).where((id) => id != keeperId).toList();
+      if (idsToDelete.isNotEmpty) {
+        await db.delete(
+          'chapters',
+          where: 'id IN (${idsToDelete.map((_) => '?').join(',')})',
+          whereArgs: idsToDelete,
+        );
+      }
+
+      final countRow = await db.rawQuery('SELECT COUNT(*) as cnt FROM chapters WHERE book_name = ?', [bName]);
+      final totalChaps = (countRow.first['cnt'] as num?)?.toInt() ?? 0;
+      await db.update('books', {'total_chapters': totalChaps}, where: 'folder_name = ?', whereArgs: [bName]);
+
+      healedCount++;
+    }
+
+    return healedCount;
+  }
+
   static Future<List<Chapter>> getChapters(String bookName) async {
     final db = await database;
+    // URL 중복 회차가 있다면 1회 자동 자가 치유 수행
+    await healDuplicateChapters(bookName);
+
     final rows = await db.query(
       'chapters',
       columns: ['id', 'book_name', 'title', 'url', 'sort_order', 'sentence_count'],

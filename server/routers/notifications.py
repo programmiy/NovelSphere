@@ -2,9 +2,13 @@
 ntfy 알림 설정 관리 및 진행도/완료/테스트 알림을 위한 API 라우터.
 """
 
+import asyncio
+import json
 import logging
+import queue
 from typing import Optional
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from server.settings import settings, save_runtime_settings
 from server.notifications import (
@@ -13,7 +17,9 @@ from server.notifications import (
     notify_translation_complete,
     notify_episode_progress,
     get_recent_notifications,
-    clear_recent_notifications
+    clear_recent_notifications,
+    add_sse_subscriber,
+    remove_sse_subscriber
 )
 
 router = APIRouter(prefix="/api/notifications", tags=["Notifications"])
@@ -175,4 +181,41 @@ def clear_notifications_endpoint():
     """인앱 알림 센터의 모든 알림 내역을 비웁니다."""
     clear_recent_notifications()
     return {"status": "ok", "message": "알림 내역이 초기화되었습니다."}
+
+@router.get("/stream", summary="실시간 알림 SSE 스트림 (순수 로컬 / 인앱용)")
+async def notifications_stream(request: Request):
+    """모바일 앱 및 웹 클라이언트가 외부 서비스(ntfy.sh) 없이 직접 실시간 알림을 수신할 수 있는 SSE 스트림."""
+    q = queue.Queue(maxsize=50)
+    add_sse_subscriber(q)
+
+    async def event_generator():
+        try:
+            yield ": connected\n\n"
+            ping_counter = 0
+            while True:
+                if await request.is_disconnected():
+                    break
+                try:
+                    item = q.get_nowait()
+                    data_json = json.dumps(item, ensure_ascii=False)
+                    yield f"event: notification\ndata: {data_json}\n\n"
+                except queue.Empty:
+                    await asyncio.sleep(0.5)
+                    ping_counter += 1
+                    if ping_counter >= 30:  # 15초마다 keep-alive 핑
+                        ping_counter = 0
+                        yield ": ping\n\n"
+        finally:
+            remove_sse_subscriber(q)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        }
+    )
+
 

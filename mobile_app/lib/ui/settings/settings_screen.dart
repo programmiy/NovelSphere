@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:network_info_plus/network_info_plus.dart';
 
+import '../../services/notification_service.dart';
 import '../../services/preferences_service.dart';
 import '../../services/sync_service.dart';
 import '../themes/reader_themes.dart';
@@ -18,6 +19,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final TextEditingController _wifi1Controller = TextEditingController();
   final TextEditingController _wifi2Controller = TextEditingController();
   final TextEditingController _serverUrlController = TextEditingController();
+  final TextEditingController _ntfyTopicController = TextEditingController();
+  final TextEditingController _ntfyServerController = TextEditingController();
 
   String _currentWifiSsid = '확인 중...';
   bool _isTrustedWifi = false;
@@ -27,6 +30,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   bool _hideWifiSection = false;
   bool _hideServerSection = false;
+
+  bool _enableSystemNotification = true;
+  bool _enableNtfySync = true;
 
   bool _isSyncing = false;
   double _syncProgress = 0.0;
@@ -40,6 +46,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _serverUrlController.text = PreferencesService.serverUrl;
     _hideWifiSection = PreferencesService.hideWifiSection;
     _hideServerSection = PreferencesService.hideServerSection;
+    _enableSystemNotification = PreferencesService.enableSystemNotification;
+    _enableNtfySync = PreferencesService.enableNtfySync;
+    _ntfyTopicController.text = PreferencesService.ntfyTopic;
+    _ntfyServerController.text = PreferencesService.ntfyServer;
     _checkCurrentWifi();
   }
 
@@ -119,11 +129,35 @@ class _SettingsScreenState extends State<SettingsScreen> {
     await PreferencesService.setTrustedWifi1(_wifi1Controller.text.trim());
     await PreferencesService.setTrustedWifi2(_wifi2Controller.text.trim());
     await PreferencesService.setServerUrl(normalized);
+    await PreferencesService.setEnableSystemNotification(_enableSystemNotification);
+    await PreferencesService.setEnableNtfySync(_enableNtfySync);
+    await PreferencesService.setNtfyTopic(_ntfyTopicController.text.trim());
+    await PreferencesService.setNtfyServer(_ntfyServerController.text.trim());
+
+    if (_enableNtfySync) {
+      NotificationService.stopRealtimeListener();
+      NotificationService.startRealtimeListener();
+    } else {
+      NotificationService.stopRealtimeListener();
+    }
+
     await _checkCurrentWifi();
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('동기화 및 Wi-Fi 설정이 저장되었습니다.')),
+        const SnackBar(content: Text('동기화 및 알림 설정이 저장되었습니다.')),
+      );
+    }
+  }
+
+  Future<void> _sendTestNotification() async {
+    await NotificationService.sendTestNotification();
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('테스트 알림이 발송되었습니다. 스마트폰 상단바를 확인해주세요!'),
+          backgroundColor: Colors.green,
+        ),
       );
     }
   }
@@ -316,6 +350,106 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
               ],
             ),
+          ),
+          const SizedBox(height: 24),
+
+          // 4. 실시간 작업 알림 & 푸시 설정 (Phase 2)
+          _buildSectionHeader(theme, '실시간 작업 알림 & 푸시', Icons.notifications_active_rounded),
+          const SizedBox(height: 8),
+          _buildNotificationSettingsCard(theme),
+        ],
+      ),
+    );
+  }
+
+  // 알림 설정 카드 (Phase 2)
+  Widget _buildNotificationSettingsCard(ReaderThemeData theme) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: theme.surfaceColor,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: theme.borderColor),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: Text(
+              '스마트폰 시스템 상단바 알림',
+              style: TextStyle(color: theme.textColor, fontWeight: FontWeight.bold, fontSize: 13),
+            ),
+            subtitle: Text(
+              '소설 번역, 다운로드 완료 시 안드로이드 상태표시줄 푸시 알림을 띄웁니다.',
+              style: TextStyle(color: theme.subTextColor, fontSize: 11),
+            ),
+            value: _enableSystemNotification,
+            activeColor: theme.accentColor,
+            onChanged: (val) {
+              setState(() => _enableSystemNotification = val);
+            },
+          ),
+          Divider(color: theme.borderColor, height: 20),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: Text(
+              '실시간 ntfy 스트림 수신',
+              style: TextStyle(color: theme.textColor, fontWeight: FontWeight.bold, fontSize: 13),
+            ),
+            subtitle: Text(
+              '별도 ntfy 앱 설치 없이도 LANOVEL 앱이 직접 알림을 실시간 수신합니다.',
+              style: TextStyle(color: theme.subTextColor, fontSize: 11),
+            ),
+            value: _enableNtfySync,
+            activeColor: theme.accentColor,
+            onChanged: (val) {
+              setState(() => _enableNtfySync = val);
+            },
+          ),
+          if (_enableNtfySync) ...[
+            const SizedBox(height: 8),
+            Text(
+              'ntfy 토픽 이름',
+              style: TextStyle(color: theme.textColor, fontWeight: FontWeight.bold, fontSize: 12),
+            ),
+            const SizedBox(height: 6),
+            TextField(
+              controller: _ntfyTopicController,
+              style: TextStyle(color: theme.textColor, fontSize: 13),
+              decoration: InputDecoration(
+                hintText: '예: NovelSphere',
+                hintStyle: TextStyle(color: theme.subTextColor),
+                filled: true,
+                fillColor: theme.background,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide(color: theme.borderColor),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide(color: theme.borderColor),
+                ),
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'PC 서버의 ntfy_topic과 일치해야 알림을 정상 수신할 수 있습니다.',
+              style: TextStyle(color: theme.subTextColor, fontSize: 11),
+            ),
+          ],
+          const SizedBox(height: 16),
+          OutlinedButton.icon(
+            style: OutlinedButton.styleFrom(
+              foregroundColor: theme.accentColor,
+              side: BorderSide(color: theme.accentColor),
+              minimumSize: const Size(double.infinity, 42),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            onPressed: _sendTestNotification,
+            icon: const Icon(Icons.notifications_active_outlined, size: 18),
+            label: const Text('스마트폰 상단바 테스트 알림 띄우기', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
           ),
         ],
       ),

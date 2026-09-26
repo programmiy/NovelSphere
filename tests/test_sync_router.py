@@ -102,9 +102,13 @@ def test_sync_push_and_pull():
     pull_data = json.loads(decompressed.decode('utf-8'))
     assert "translations" in pull_data
     assert "activities" in pull_data
+    assert "updated_chapters" in pull_data
     # 2000 시점에 수정한 번역문이 pull 결과에 포함되어 있는지 확인
     found = any(t["id"] == trans_id for t in pull_data["translations"])
     assert found is True
+    # 수정된 회차가 updated_chapters에도 포함되어 있는지 확인
+    chap_found = any(c["url"] == "http://test.com/1" for c in pull_data["updated_chapters"])
+    assert chap_found is True
 
 def test_sync_glossary_rule():
     """모바일에서 일괄 찾아바꾸기 룰 전송 시 PC DB에도 일괄 치환되는지 검증"""

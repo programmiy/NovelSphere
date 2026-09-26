@@ -20,6 +20,29 @@ logger = logging.getLogger(__name__)
 _NOTIFICATION_HISTORY = deque(maxlen=50)
 _HISTORY_LOCK = threading.Lock()
 
+# 실시간 로컬 SSE(Server-Sent Events) 구독자 큐 관리
+_SSE_SUBSCRIBERS = set()
+_SSE_LOCK = threading.Lock()
+
+def add_sse_subscriber(subscriber_queue):
+    """실시간 로컬 알림 스트림 구독자 큐 등록."""
+    with _SSE_LOCK:
+        _SSE_SUBSCRIBERS.add(subscriber_queue)
+
+def remove_sse_subscriber(subscriber_queue):
+    """실시간 로컬 알림 스트림 구독자 큐 해제."""
+    with _SSE_LOCK:
+        _SSE_SUBSCRIBERS.discard(subscriber_queue)
+
+def broadcast_notification(item: Dict[str, Any]):
+    """연결된 모든 로컬 SSE 클라이언트로 알림 브로드캐스트."""
+    with _SSE_LOCK:
+        for q in list(_SSE_SUBSCRIBERS):
+            try:
+                q.put_nowait(item)
+            except Exception:
+                pass
+
 def record_notification(
     title: str,
     message: str,
@@ -32,7 +55,7 @@ def record_notification(
     """모바일 앱 및 웹 인앱 알림 센터 조회를 위한 알림 기록 함수."""
     with _HISTORY_LOCK:
         notif_id = f"notif_{int(time.time() * 1000)}_{len(_NOTIFICATION_HISTORY)}"
-        _NOTIFICATION_HISTORY.appendleft({
+        item = {
             "id": notif_id,
             "title": title,
             "message": message,
@@ -42,7 +65,9 @@ def record_notification(
             "click_url": click_url,
             "priority": priority,
             "timestamp": int(time.time())
-        })
+        }
+        _NOTIFICATION_HISTORY.appendleft(item)
+    broadcast_notification(item)
 
 def get_recent_notifications(limit: int = 50) -> List[Dict[str, Any]]:
     """최근 알림 목록 조회."""

@@ -241,3 +241,25 @@ def test_recent_and_clear_notifications_endpoints():
 
     res_after = client.get("/api/notifications/recent")
     assert res_after.json()["count"] == 0
+
+def test_notifications_stream_broadcasting():
+    """GET /api/notifications/stream 및 record_notification 로컬 SSE 브로드캐스팅 검증"""
+    import queue
+    from server.notifications import add_sse_subscriber, remove_sse_subscriber, record_notification
+
+    test_q = queue.Queue()
+    add_sse_subscriber(test_q)
+    try:
+        record_notification(
+            title="실시간 SSE 테스트",
+            message="스트리밍 확인",
+            event_type="test_event",
+            book_title="스트림 책"
+        )
+        assert not test_q.empty()
+        item = test_q.get_nowait()
+        assert item["title"] == "실시간 SSE 테스트"
+        assert item["book_title"] == "스트림 책"
+    finally:
+        remove_sse_subscriber(test_q)
+
