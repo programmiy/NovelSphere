@@ -132,10 +132,22 @@ def get_apply_status(url: str):
         urls_to_check.update(['http://' + with_www, 'https://' + with_www, 'http://' + with_www + '/', 'https://' + with_www + '/'])
         
     if 'kakuyomu.jp/works/' in url:
-        match = re.match(r'(https?://kakuyomu.jp/works/\d+)', url)
+        match = re.match(r'(https?://kakuyomu\.jp/works/\d+)', url)
         if match:
             work_url = match.group(1)
             urls_to_check.update([work_url, work_url + '/', normalize_url(work_url)])
+
+    if 'novelup.plus/story/' in url:
+        match = re.match(r'(https?://novelup\.plus/story/\d+)', url)
+        if match:
+            story_url = match.group(1)
+            urls_to_check.update([story_url, story_url + '/', normalize_url(story_url)])
+
+    if 'syosetu.com/' in url:
+        match = re.match(r'(https?://[^/]+\.syosetu\.com/n\w+)', url)
+        if match:
+            syosetu_work_url = match.group(1)
+            urls_to_check.update([syosetu_work_url, syosetu_work_url + '/', normalize_url(syosetu_work_url)])
 
     url_list = list(urls_to_check)
     placeholders = ', '.join('?' * len(url_list))

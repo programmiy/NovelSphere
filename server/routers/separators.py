@@ -249,12 +249,15 @@ def get_novel_info(url: str = Query(..., description="페이지 URL")):
         import re
         kakuyomu_match = re.search(r'(https?://kakuyomu\.jp/works/\d+)', url)
         syosetu_match = re.search(r'(https?://[^/]+\.syosetu\.com/n\w+)', url)
+        novelup_match = re.search(r'(https?://novelup\.plus/story/\d+)', url)
         
         base_prefix = None
         if kakuyomu_match:
             base_prefix = kakuyomu_match.group(1) + '%'
         elif syosetu_match:
             base_prefix = syosetu_match.group(1) + '%'
+        elif novelup_match:
+            base_prefix = novelup_match.group(1) + '%'
 
         if base_prefix:
             cursor.execute(

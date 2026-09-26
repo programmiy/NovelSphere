@@ -50,6 +50,8 @@ class Settings(BaseSettings):
         "http://syosetu.com",
         "https://ncode.syosetu.com",
         "http://ncode.syosetu.com",
+        "https://novelup.plus",
+        "http://novelup.plus",
         "http://192.168.219.103",
         "http://192.168.219.103:8001"
     ]

@@ -607,11 +607,18 @@ def _crawl_and_update_summary_worker(folder_name: str, url: str):
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         }
+        # NovelUp: 에피소드 URL일 경우 작품 목차 URL로 변환하여 완전한 줄거리 원문 요청
+        target_url = url
+        if "novelup.plus" in url:
+            nup_match = re.search(r'https?://novelup\.plus/story/(\d+)', url)
+            if nup_match:
+                target_url = f"https://novelup.plus/story/{nup_match.group(1)}"
+
         with requests.Session() as s:
             s.headers.update(headers)
-            if "novel18.syosetu.com" in url:
+            if "novel18.syosetu.com" in target_url:
                 s.cookies.set("over18", "yes", domain=".syosetu.com")
-            response = s.get(url, timeout=15)
+            response = s.get(target_url, timeout=15)
         response.raise_for_status()
         html_content = response.text
 
@@ -631,7 +638,15 @@ def _crawl_and_update_summary_worker(folder_name: str, url: str):
                 summary = k_html.replace('<br />', '\n').replace('<br>', '\n').replace('<br/>', '\n')
                 summary = re.sub(r'<.*?>', '', summary).strip()
 
-        # 3. Meta description 폴백
+        # 3. NovelUp 줄거리 원문 추출 (.novel_synopsis)
+        if not summary:
+            novelup_match = re.search(r'<div[^>]*class="[^"]*novel_synopsis[^"]*"[^>]*>(.*?)</div>', html_content, re.DOTALL)
+            if novelup_match:
+                n_html = novelup_match.group(1).strip()
+                summary = n_html.replace('<br />', '\n').replace('<br>', '\n').replace('<br/>', '\n')
+                summary = re.sub(r'<.*?>', '', summary).strip()
+
+        # 4. Meta description 폴백
         if not summary:
             meta_match = re.search(r'<meta\s+name=["\']description["\']\s+content=["\'](.*?)["\']', html_content, re.IGNORECASE)
             if meta_match:

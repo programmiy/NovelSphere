@@ -171,8 +171,16 @@ def clean_chapter_title(title: Optional[str], url: Optional[str] = None) -> Opti
             return parts[-1].strip()
         return t
 
-    # 3. General fallback: strip known site suffixes
-    t = re.sub(r'\s*-\s*(カクヨム|小説家になろう|ノクターンノベルズ|ムーンライトノベルズ|ミッドナイトノベルズ).*$', '', t, flags=re.IGNORECASE).strip()
+    # 3. NovelUp patterns
+    if (url and 'novelup.plus' in url) or 'ノベルアップ' in t:
+        t = re.sub(r'\s*\|\s*小説投稿サイトノベルアップ.*$', '', t, flags=re.IGNORECASE).strip()
+        parts = re.split(r'\s*-\s*', t)
+        if len(parts) > 1 and parts[-1].strip():
+            return parts[-1].strip()
+        return t
+
+    # 4. General fallback: strip known site suffixes
+    t = re.sub(r'\s*-\s*(カクヨム|小説家になろう|ノクターンノベルズ|ムーンライトノベルズ|ミッドナイトノベルズ|ノベルアップ).*$', '', t, flags=re.IGNORECASE).strip()
     return t or title
 
 @router.post(

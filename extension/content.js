@@ -13,7 +13,7 @@ let translationCache = new Map(); // Cache for original translation objects
 let exclusionSet = new Set(); // Cache for excluded original texts
 let isPageApplied = false; // 웹페이지 본문 번역 적용 여부 상태
 let translationsLoadedPromise = null; // 저장된 번역 로드 완료 보장 Promise
-let deletedTranslationPids = new Set(); // 원문 복제·변형 자동 삭제 및 사용자 삭제된 번역 PID 추적 (빈칸 보완 번역 대상에서 제외)
+let userDeletedTranslationPids = new Set(); // 사용자가 직접 번역을 삭제/비운 PID 추적 (빈칸 보완 번역 대상에서 제외)
 
 // Circuit Breaker logic is now managed by background.js
 
@@ -399,6 +399,22 @@ async function detectNovelTitle() {
         if (parts.length > 0 && parts[0].trim()) {
             return parts[0].trim();
         }
+    } else if (host.includes('novelup.plus')) {
+        // 노벨업 작품 제목 탐색
+        const novelTitleEl = document.querySelector('.episodeHeader .storyTitle') ||
+                             document.querySelector('.storyTitle') ||
+                             document.querySelector('.story_title');
+        if (novelTitleEl && novelTitleEl.textContent.trim()) {
+            return novelTitleEl.textContent.trim();
+        }
+        const titleText = document.title.replace(/\s*\|\s*小説投稿サイトノベルアップ.*$/i, '').trim();
+        const parts = titleText.split(/\s*-\s*/);
+        if (parts.length > 0 && parts[0].trim()) {
+            let novelPart = parts[0].trim();
+            novelPart = novelPart.replace(/（[^）]+）$/, '').trim();
+            novelPart = novelPart.replace(/\([^)]+\)$/, '').trim();
+            if (novelPart) return novelPart;
+        }
     }
 
     // 3. Fallback: document.title 파싱
@@ -564,11 +580,6 @@ async function checkAndLoadReviewTargets() {
             isReviewSession = true;
             reviewTargetsData = data;
             reviewTargetPids = new Set(data.targets.map(t => t.pid).filter(Boolean));
-            data.targets.forEach(t => {
-                if (t.pid && t.reason_category && t.reason_category !== 'empty') {
-                    deletedTranslationPids.add(String(t.pid));
-                }
-            });
             console.log(`[ReviewTargets] 재번역 검수 대상 ${reviewTargetPids.size}개 감지:`, Array.from(reviewTargetPids));
 
             // 상단 검수 패널 렌더링
@@ -828,7 +839,7 @@ async function checkAndExcludeSeparatorTranslations(translationsList) {
         // 1. 제외 목록(exclusionSet) 및 번역 캐시 동기화
         targetsToExclude.forEach(item => {
             if (item.pid) {
-                deletedTranslationPids.add(String(item.pid));
+                userDeletedTranslationPids.add(String(item.pid));
                 translationCache.delete(item.pid);
             }
             if (item.original) {
@@ -1015,6 +1026,48 @@ function hasUntranslatedParagraphs() {
     return false; // 모든 문장이 이미 번역되어 있음
 }
 
+// 노벨업(NovelUp+) 사이트의 경우 단일 <p id="episode_content"> 내에 줄바꿈으로 본문이 구성되어 있으므로,
+// 기존 번역 시스템(문단별 p[id] 추출, 매핑, 스타일 적용)과 완벽히 호환되도록 줄 단위 <p id="L1"> 구조로 재구성합니다.
+function prepareNovelUpContent() {
+    if (!window.location.hostname.includes('novelup.plus')) return;
+    const epContent = document.getElementById('episode_content');
+    if (!epContent || epContent.dataset.lanovelPreprocessed) return;
+
+    if (epContent.tagName.toLowerCase() === 'div' && epContent.querySelectorAll('p[id]').length > 0) {
+        return;
+    }
+
+    const rawHtml = epContent.innerHTML;
+    const lines = rawHtml.split(/\r?\n/);
+    if (lines.length <= 1 && epContent.querySelectorAll('p').length > 1) {
+        return;
+    }
+
+    const container = document.createElement('div');
+    container.id = 'episode_content';
+    container.dataset.lanovelPreprocessed = 'true';
+    container.className = epContent.className;
+    if (epContent.getAttribute('style')) {
+        container.setAttribute('style', epContent.getAttribute('style'));
+    }
+
+    lines.forEach((line, index) => {
+        const p = document.createElement('p');
+        p.id = `L${index + 1}`;
+        const trimmed = line.replace(/<[^>]*>/g, '').trim();
+        if (!trimmed) {
+            p.className = 'blank';
+            p.innerHTML = '<br>';
+        } else {
+            p.innerHTML = line;
+        }
+        container.appendChild(p);
+    });
+
+    epContent.replaceWith(container);
+    console.log(`[LANOVEL] NovelUp content transformed into ${lines.length} paragraphs for translation.`);
+}
+
 async function init() {
     try {
         // 0. Check if the current origin is allowed
@@ -1033,6 +1086,9 @@ async function init() {
         }
 
         console.log("Translator extension initializing...");
+
+        // 노벨업 본문 DOM 구조 정규화 (문단별 p[id]화)
+        prepareNovelUpContent();
 
         injectSidebar();
         setupEventListeners();
@@ -1810,7 +1866,7 @@ function setupEventListeners() {
         const tableBody = document.getElementById('translation-table-body');
         tableBody.innerHTML = ''; 
         translationCache.clear();
-        deletedTranslationPids.clear();
+        userDeletedTranslationPids.clear();
         translationsLoadedPromise = null;
         hasScannedForP_Tags = false;
         translateAllPTags(true);
@@ -1859,9 +1915,26 @@ function extractEpisodeTitle() {
         }
     }
 
-    // 3. General Fallback
+    // 3. NovelUp DOM extraction
+    if (host.includes('novelup.plus')) {
+        const epEl = document.querySelector('.episode_title, #section_episode .episode_title, h1');
+        if (epEl && epEl.textContent.trim()) {
+            return epEl.textContent.trim();
+        }
+        if (document.title) {
+            const clean = document.title.replace(/\s*\|\s*小説投稿サイトノベルアップ.*$/i, '').trim();
+            const parts = clean.split(/\s*-\s*/);
+            if (parts.length > 1 && parts[parts.length - 1].trim()) {
+                return parts[parts.length - 1].trim();
+            }
+            if (parts[0].trim()) return parts[0].trim();
+        }
+    }
+
+    // 4. General Fallback
     if (document.title) {
-        let clean = document.title.replace(/\s*-\s*(カクヨム|小説家になろう|ノクターンノベルズ|ムーンライトノベルズ|ミッドナイトノベルズ).*$/i, '').trim();
+        let clean = document.title.replace(/\s*-\s*(カクヨム|小説家になろう|ノクターンノベルズ|ムーンライトノベルズ|ミッドナイトノベルズ|ノベルアップ).*$/i, '').trim();
+        clean = clean.replace(/\s*\|\s*小説投稿サイトノベルアップ.*$/i, '').trim();
         const parts = clean.split(/\s*-\s*/);
         if (parts.length > 1 && parts[0].trim()) {
             return parts[0].trim();
@@ -2029,10 +2102,10 @@ function isItemEmptyTranslation(item) {
     if (!item || !item.id) return false;
     const pid = String(item.id);
 
-    // 1. 시스템(원문 복제·변형 자동 삭제, 구분선 등) 또는 사용자에 의해 삭제된 번역인지 확인 (번역 삭제등 한게 아니라면)
-    if (deletedTranslationPids.has(pid)) return false;
+    // 1. 사용자가 직접 삭제했거나 구분선/제외 목록에 의해 제외된 번역인지 확인 (번역 삭제등 한게 아니라면)
+    if (userDeletedTranslationPids.has(pid)) return false;
     const row = document.querySelector(`tr[data-pid="${pid}"]`);
-    if (row && (row.dataset.deleted === 'true' || row.dataset.userDeleted === 'true')) return false;
+    if (row && (row.dataset.userDeleted === 'true' || row.getAttribute('data-user-deleted') === 'true')) return false;
     if (exclusionSet.has(item.text)) return false;
     if (checkSeparatorMatch(item.text, activeSeparators)) return false;
 
@@ -2237,7 +2310,6 @@ async function translateAllPTags(isRetranslation = false) {
                     );
                     if (verbatimItems.length > 0) {
                         verbatimItems.forEach(item => {
-                            deletedTranslationPids.add(String(item.id));
                             const preview = item.original ? (item.original.length > 25 ? item.original.slice(0, 25) + '...' : item.original) : '';
                             logToSidebar(`⚠️ [원문 복제·변형 감지] 문장(ID: ${item.id})이 원문과 동일/변형되어 자동 삭제 및 휴지통으로 이전되었습니다. (원문: ${preview})`, 'log-error');
                             translationCache.delete(item.id);
@@ -2257,8 +2329,6 @@ async function translateAllPTags(isRetranslation = false) {
 
                             const row = document.querySelector(`tr[data-pid="${item.id}"]`);
                             if (row) {
-                                row.setAttribute('data-deleted', 'true');
-                                row.dataset.deleted = 'true';
                                 const cell = row.querySelector('.translated-text');
                                 if (cell) {
                                     cell.textContent = '';
@@ -2641,6 +2711,30 @@ async function translateAllPTags(isRetranslation = false) {
                             );
                             chrome.storage.local.remove(countKey).catch(() => {});
                         }
+                    } else if (currentUrl.includes('novelup.plus')) {
+                        logToSidebar("노벨업플러스 '次へ' 버튼을 찾아서 클릭합니다.");
+                        const nextLink = Array.from(document.querySelectorAll('a')).find(a => 
+                            (a.closest('.episodeHeaderPager') || a.closest('#section_episode') || a.closest('.storyIndexFooter')) &&
+                            a.textContent.includes('次へ') &&
+                            a.href && !a.textContent.includes('前へ')
+                        ) || Array.from(document.querySelectorAll('a')).find(a => 
+                            a.textContent.includes('次へ') && a.href && a.href.includes('/story/') && !a.textContent.includes('前へ')
+                        );
+
+                        if (nextLink && nextLink.href) {
+                            logToSidebar(`다음 페이지로 이동: ${nextLink.href}`);
+                            window.location.href = nextLink.href;
+                        } else {
+                            logToSidebar("다음 페이지 버튼을 찾을 수 없습니다. (소설 연속 번역 종료)");
+                            sendNtfyComplete(
+                                currentNovelTitle,
+                                extractEpisodeTitle() || document.title || '',
+                                textsToTranslate.length,
+                                getCleanUrl(),
+                                currentBatchCount
+                            );
+                            chrome.storage.local.remove(countKey).catch(() => {});
+                        }
                     } else if (currentUrl.includes('kakuyomu.jp')) {
                         logToSidebar("'kakuyomu.jp'입니다. 'PageDown' 키를 누릅니다.");
                         const pageDownDelay = isTurboMode ? 500 : 4000;
@@ -2762,9 +2856,6 @@ async function retranslateSingleRow(pid, originalText) {
 
             if (isVerbatim) {
                 // 원문 복제/변형 감지: 자동 삭제 처리 및 즉시 피드백
-                deletedTranslationPids.add(String(pid));
-                row.setAttribute('data-deleted', 'true');
-                row.dataset.deleted = 'true';
                 translatedCell.textContent = '';
                 translatedCell.setAttribute('contenteditable', 'true');
                 translatedCell.style.color = '';
@@ -2799,9 +2890,7 @@ async function retranslateSingleRow(pid, originalText) {
 
                 logToSidebar(`⚠️ (pid: ${pid}) 원문 복제·변형이 감지되어 번역문이 자동 삭제 및 휴지통으로 이동되었습니다.`, 'log-error');
             } else if (newTranslated) {
-                deletedTranslationPids.delete(String(pid));
-                row.removeAttribute('data-deleted');
-                delete row.dataset.deleted;
+                userDeletedTranslationPids.delete(String(pid));
                 row.removeAttribute('data-user-deleted');
                 delete row.dataset.userDeleted;
                 translatedCell.textContent = newTranslated;
@@ -2888,15 +2977,13 @@ function addPlaceholderRows(items) {
             e.stopPropagation();
             const editedText = translatedCell.textContent.trim();
             if (!editedText) {
-                deletedTranslationPids.add(String(item.id));
+                userDeletedTranslationPids.add(String(item.id));
                 row.setAttribute('data-user-deleted', 'true');
                 row.dataset.userDeleted = 'true';
             } else {
-                deletedTranslationPids.delete(String(item.id));
+                userDeletedTranslationPids.delete(String(item.id));
                 row.removeAttribute('data-user-deleted');
                 delete row.dataset.userDeleted;
-                row.removeAttribute('data-deleted');
-                delete row.dataset.deleted;
             }
             await saveSingleTranslation(item.id, item.text, editedText);
             saveBtn.textContent = '저장됨!';
@@ -2928,11 +3015,10 @@ function updateSidebarWithTranslations(translations) {
 
         // 성공한 번역은 캐시에 반영, 원문 복붙/변형은 캐시에서 제거
         if (isVerbatim) {
-            deletedTranslationPids.add(String(item.id));
             translationCache.delete(item.id);
             item.translated = '';
         } else if (!isError && item.translated && item.translated.trim()) {
-            deletedTranslationPids.delete(String(item.id));
+            userDeletedTranslationPids.delete(String(item.id));
             translationCache.set(item.id, { pid: item.id, original: item.original, translated: item.translated });
         } else if (!isError) {
             translationCache.set(item.id, { pid: item.id, original: item.original, translated: item.translated });
@@ -2940,12 +3026,7 @@ function updateSidebarWithTranslations(translations) {
 
         const row = document.querySelector(`tr[data-pid="${item.id}"]`);
         if (row) {
-            if (isVerbatim) {
-                row.setAttribute('data-deleted', 'true');
-                row.dataset.deleted = 'true';
-            } else if (!isError && item.translated && item.translated.trim()) {
-                row.removeAttribute('data-deleted');
-                delete row.dataset.deleted;
+            if (!isError && item.translated && item.translated.trim()) {
                 row.removeAttribute('data-user-deleted');
                 delete row.dataset.userDeleted;
             }
@@ -3003,15 +3084,13 @@ function updateSidebarWithTranslations(translations) {
                         e.stopPropagation();
                         const editedText = translatedCell.textContent.trim();
                         if (!editedText) {
-                            deletedTranslationPids.add(String(item.id));
+                            userDeletedTranslationPids.add(String(item.id));
                             row.setAttribute('data-user-deleted', 'true');
                             row.dataset.userDeleted = 'true';
                         } else {
-                            deletedTranslationPids.delete(String(item.id));
+                            userDeletedTranslationPids.delete(String(item.id));
                             row.removeAttribute('data-user-deleted');
                             delete row.dataset.userDeleted;
-                            row.removeAttribute('data-deleted');
-                            delete row.dataset.deleted;
                         }
                         await saveSingleTranslation(item.id, item.original, editedText);
                         newSaveBtn.textContent = '저장됨!';
@@ -3074,15 +3153,13 @@ function addEntryToSidebar(translation) {
         e.stopPropagation();
         const editedText = row.querySelector('.translated-text').textContent.trim();
         if (!editedText) {
-            deletedTranslationPids.add(String(translation.pid));
+            userDeletedTranslationPids.add(String(translation.pid));
             row.setAttribute('data-user-deleted', 'true');
             row.dataset.userDeleted = 'true';
         } else {
-            deletedTranslationPids.delete(String(translation.pid));
+            userDeletedTranslationPids.delete(String(translation.pid));
             row.removeAttribute('data-user-deleted');
             delete row.dataset.userDeleted;
-            row.removeAttribute('data-deleted');
-            delete row.dataset.deleted;
         }
         await saveSingleTranslation(translation.pid, translation.original, editedText);
         saveBtn.textContent = '저장됨!';

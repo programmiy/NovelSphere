@@ -13,7 +13,7 @@
       ]
     },
     "condition": {
-      "requestDomains": ["kakuyomu.jp", "novel18.syosetu.com"],
+      "requestDomains": ["kakuyomu.jp", "novel18.syosetu.com", "novelup.plus"],
       "resourceTypes": ["xmlhttprequest", "main_frame", "sub_frame"]
     }
   }

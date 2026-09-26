@@ -16,6 +16,7 @@
     "https://generativelanguage.googleapis.com/*",
     "*://*.kakuyomu.jp/*",
     "*://*.syosetu.com/*",
+    "*://*.novelup.plus/*",
     "<all_urls>"
   ],
   "action": {

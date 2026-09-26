@@ -1,3 +1,4 @@
+import re
 import requests
 import json
 import logging
@@ -16,7 +17,7 @@ class TocUrl(BaseModel):
     "/api/import-toc",
     tags=["TOC Importer"],
     summary="목차 가져오기",
-    description="Kakuyomu 또는 Syosetu URL에서 목차(Table of Contents)를 가져옵니다."
+    description="Kakuyomu, Syosetu 또는 NovelUp URL에서 목차(Table of Contents)를 가져옵니다."
 )
 async def import_toc(item: TocUrl):
     toc_url = item.toc_url.strip()
@@ -39,8 +40,11 @@ async def import_toc(item: TocUrl):
     elif "syosetu.com" in toc_url:
         return fetch_all_syosetu_chapters(toc_url, headers, cookies)
 
+    elif "novelup.plus" in toc_url:
+        return fetch_all_novelup_chapters(toc_url, headers)
+
     else:
-        raise HTTPException(status_code=400, detail="지원되지 않는 URL입니다. Kakuyomu 또는 Syosetu URL을 제공해주세요.")
+        raise HTTPException(status_code=400, detail="지원되지 않는 URL입니다. Kakuyomu, Syosetu 또는 NovelUp URL을 제공해주세요.")
 
 def parse_kakuyomu(html_content: str, base_url: str):
     soup = BeautifulSoup(html_content, 'html.parser')
@@ -202,5 +206,70 @@ def fetch_all_syosetu_chapters(start_url: str, headers: dict, cookies: dict):
             page += 1
         else:
             break
+
+    return chapters
+
+
+def fetch_all_novelup_chapters(start_url: str, headers: dict):
+    match = re.search(r'https?://novelup\.plus/story/(\d+)', start_url)
+    if not match:
+        raise HTTPException(status_code=400, detail="유효한 NovelUp 작품 URL이 아닙니다. (예: https://novelup.plus/story/...)")
+    
+    story_id = match.group(1)
+    base_story_url = f"https://novelup.plus/story/{story_id}"
+    
+    chapters = []
+    page = 1
+    max_pages = 100
+
+    while page <= max_pages:
+        url = base_story_url if page == 1 else f"{base_story_url}?p={page}"
+        try:
+            resp = requests.get(url, headers=headers, timeout=20)
+            resp.raise_for_status()
+            resp.encoding = resp.apparent_encoding
+        except requests.exceptions.RequestException as e:
+            if page > 1 and chapters:
+                logger.warning(f"NovelUp 페이지 {page} 가져오기 실패 ({e}), 지금까지 수집된 {len(chapters)}개 챕터를 반환합니다.")
+                break
+            raise HTTPException(status_code=400, detail=f"NovelUp 페이지를 가져오는 데 실패했습니다: {e}")
+
+        soup = BeautifulSoup(resp.text, 'html.parser')
+
+        ep_links = soup.select('.episodeListItem a.episodeTitle, #section_episode a.episodeTitle')
+        if not ep_links:
+            ep_links = [
+                a for a in soup.select(f'a[href*="/story/{story_id}/"]')
+                if re.search(rf'/story/{story_id}/\d+$', a.get('href', ''))
+            ]
+
+        page_chapters = []
+        for a in ep_links:
+            title = a.get_text(strip=True)
+            href = a.get('href')
+            if title and href:
+                full_url = urljoin(base_story_url, href)
+                if not any(c['url'] == full_url for c in chapters) and not any(c['url'] == full_url for c in page_chapters):
+                    page_chapters.append({"title": title, "url": full_url})
+
+        if not page_chapters:
+            if page == 1:
+                raise HTTPException(status_code=404, detail="NovelUp 목차를 찾을 수 없습니다. 지원되는 페이지 구조가 아닙니다.")
+            break
+
+        chapters.extend(page_chapters)
+
+        has_next_page = False
+        pagination_links = soup.select('.pagination a, .section_pagination a')
+        for plink in pagination_links:
+            phref = plink.get('href', '')
+            if f'p={page + 1}' in phref:
+                has_next_page = True
+                break
+
+        if not has_next_page:
+            break
+
+        page += 1
 
     return chapters

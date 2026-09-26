@@ -535,6 +535,112 @@ def handle_verbatim_cleanup_items(
 
     return batch_id
 
+def _recover_verbatim_items(
+    verbatim_detected_items: List[dict],
+    items_to_translate: List[TranslationItemInput],
+    translated_results: dict,
+    api_url: str
+) -> List[dict]:
+    """
+    배치 번역 중 기본 모델(Gemini Flash-Lite 등)의 JSON 스키마 제약으로 인해
+    원문 에코잉(verbatim)이 발생한 항목들을 동일한 기본 모델로 재시도하여 정상 복구합니다.
+    (대체 모델 사용 없이 오직 현재 요청된 기본 모델로만 복구를 수행합니다.)
+    """
+    if not verbatim_detected_items:
+        return verbatim_detected_items
+
+    recovered_ids = set()
+
+    for v_item in verbatim_detected_items:
+        orig_item = next((it for it in items_to_translate if str(it.id) == str(v_item["id"])), None)
+        if not orig_item:
+            continue
+
+        # 1차 시도: 동일 기본 모델로 단일 항목 JSON 요청
+        try:
+            single_payload = json.dumps([{"id": orig_item.id, "text": orig_item.text}], ensure_ascii=False)
+            single_prompt = (
+                "Translate this Japanese text into natural, fluent Korean.\n"
+                "Return ONLY a valid JSON array with 'id' and 'translated':\n"
+                + single_payload
+            )
+            retry_res = call_gemini_api(api_url, single_prompt)
+            cand = retry_res.get('candidates', [{}])[0]
+            cand_text = cand.get('content', {}).get('parts', [{}])[0].get('text', '')
+            parsed_map = parse_translation_response(cand_text)
+            new_trans = parsed_map.get(str(orig_item.id), "")
+
+            if '->' in new_trans or '=>' in new_trans:
+                parts = re.split(r'\s*[-=]>\s*', new_trans, maxsplit=1)
+                if len(parts) == 2 and any(ord('가') <= ord(c) <= ord('힣') for c in parts[1]):
+                    new_trans = parts[1].strip()
+
+            new_trans = process_repeated_chars(new_trans)
+            new_trans = restore_brackets(orig_item.text, new_trans)
+            cat = classify_translation(orig_item.text, new_trans)
+
+            if not (is_verbatim_copy(orig_item.text, new_trans) or cat in ('verbatim_or_empty', 'paraphrased_jp')):
+                logger.info(f"[기본모델 verbatim 복구 성공(단일 JSON)] ID: {orig_item.id} -> '{new_trans[:30]}...'")
+                translated_results[str(orig_item.id)] = {
+                    "id": orig_item.id,
+                    "original": orig_item.text,
+                    "translated": new_trans,
+                    "censored": False,
+                    "verbatim": False,
+                    "verbatim_category": None
+                }
+                recovered_ids.add(str(orig_item.id))
+                continue
+        except Exception as e:
+            logger.debug(f"[verbatim 단일 JSON 복구 시도 중 오류] ID: {orig_item.id}: {e}")
+
+        # 2차 시도: 동일 기본 모델로 JSON 스키마 제약을 해제한 단일 일반 텍스트 번역 요청 (스키마 간섭 배제)
+        try:
+            headers = {"Content-Type": "application/json"}
+            key = getattr(settings, "gemini_api_key", None)
+            if key and "key=" not in api_url:
+                headers["x-goog-api-key"] = key
+
+            plain_payload = {
+                "contents": [{
+                    "parts": [{
+                        "text": f"Translate the following Japanese text into natural Korean. Output ONLY the translated Korean text, nothing else:\n{orig_item.text}"
+                    }]
+                }],
+                "generationConfig": {
+                    "temperature": 0.3
+                }
+            }
+            res = _gemini_session.post(api_url, json=plain_payload, headers=headers, timeout=60)
+            if res.ok:
+                c_json = res.json()
+                cand = c_json.get('candidates', [{}])[0]
+                cand_text = cand.get('content', {}).get('parts', [{}])[0].get('text', '').strip()
+                if cand_text:
+                    if '->' in cand_text or '=>' in cand_text:
+                        parts = re.split(r'\s*[-=]>\s*', cand_text, maxsplit=1)
+                        if len(parts) == 2 and any(ord('가') <= ord(c) <= ord('힣') for c in parts[1]):
+                            cand_text = parts[1].strip()
+                    cand_text = process_repeated_chars(cand_text)
+                    cand_text = restore_brackets(orig_item.text, cand_text)
+                    cat = classify_translation(orig_item.text, cand_text)
+                    if not (is_verbatim_copy(orig_item.text, cand_text) or cat in ('verbatim_or_empty', 'paraphrased_jp')):
+                        logger.info(f"[기본모델 verbatim 복구 성공(단일 일반)] ID: {orig_item.id} -> '{cand_text[:30]}...'")
+                        translated_results[str(orig_item.id)] = {
+                            "id": orig_item.id,
+                            "original": orig_item.text,
+                            "translated": cand_text,
+                            "censored": False,
+                            "verbatim": False,
+                            "verbatim_category": None
+                        }
+                        recovered_ids.add(str(orig_item.id))
+                        continue
+        except Exception as e:
+            logger.debug(f"[verbatim 단일 일반 복구 시도 중 오류] ID: {orig_item.id}: {e}")
+
+    return [v for v in verbatim_detected_items if str(v["id"]) not in recovered_ids]
+
 def is_safety_blocked(data: dict) -> (bool, str):
     """Gemini API 응답에서 안전 필터/검열 차단 여부를 감지합니다 (소프트 거절 텍스트 포함)."""
     if not data:
@@ -872,6 +978,10 @@ def translate_texts(req: TranslateRequest, db: Session = Depends(get_db)):
                 is_verbatim = False
                 verbatim_cat = None
                 if not is_censored and translated_text:
+                    if '->' in translated_text or '=>' in translated_text:
+                        parts = re.split(r'\s*[-=]>\s*', translated_text, maxsplit=1)
+                        if len(parts) == 2 and any(ord('가') <= ord(c) <= ord('힣') for c in parts[1]):
+                            translated_text = parts[1].strip()
                     translated_text = process_repeated_chars(translated_text)
                     translated_text = restore_brackets(item.text, translated_text)
                     cls_cat = classify_translation(item.text, translated_text)
@@ -895,6 +1005,14 @@ def translate_texts(req: TranslateRequest, db: Session = Depends(get_db)):
                     "verbatim": is_verbatim,
                     "verbatim_category": verbatim_cat
                 }
+
+            if verbatim_detected_items:
+                verbatim_detected_items = _recover_verbatim_items(
+                    verbatim_detected_items,
+                    items_to_translate,
+                    translated_results,
+                    api_url
+                )
 
             if verbatim_detected_items:
                 handle_verbatim_cleanup_items(db, req.url, verbatim_detected_items)
@@ -970,6 +1088,10 @@ def translate_texts(req: TranslateRequest, db: Session = Depends(get_db)):
             is_verbatim = False
             verbatim_cat = None
             if translated_text:
+                if '->' in translated_text or '=>' in translated_text:
+                    parts = re.split(r'\s*[-=]>\s*', translated_text, maxsplit=1)
+                    if len(parts) == 2 and any(ord('가') <= ord(c) <= ord('힣') for c in parts[1]):
+                        translated_text = parts[1].strip()
                 translated_text = process_repeated_chars(translated_text)
                 translated_text = restore_brackets(item.text, translated_text)
                 cls_cat = classify_translation(item.text, translated_text)
@@ -994,7 +1116,16 @@ def translate_texts(req: TranslateRequest, db: Session = Depends(get_db)):
                 "verbatim_category": verbatim_cat
             }
 
-        # 원문 복붙/변형 항목이 있는 경우 즉시 삭제 및 알림 시스템으로 이전
+        # 원문 복붙/변형 항목이 있는 경우 단일 재시도 및 상위 모델 자동 복구 시도
+        if verbatim_detected_items:
+            verbatim_detected_items = _recover_verbatim_items(
+                verbatim_detected_items,
+                items_to_translate,
+                translated_results,
+                api_url
+            )
+
+        # 복구되지 않고 남은 원문 복붙/변형 항목은 즉시 삭제 및 알림 시스템으로 이전
         if verbatim_detected_items:
             handle_verbatim_cleanup_items(db, req.url, verbatim_detected_items)
 
