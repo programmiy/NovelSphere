@@ -334,7 +334,7 @@ async def redirect_service_worker():
     return RedirectResponse(url="/service-worker.js")
 
 # --- Routers ---
-from server.routers import ui, translation, data_crud, books, system, tasks, admin, url_config, db_editor, toc_importer, separators, notifications, sync
+from server.routers import ui, translation, data_crud, books, system, tasks, admin, url_config, db_editor, toc_importer, separators, notifications, sync, app_release
 app.include_router(ui.router)
 app.include_router(translation.router)
 app.include_router(data_crud.router)
@@ -348,3 +348,4 @@ app.include_router(toc_importer.router)
 app.include_router(separators.router)
 app.include_router(notifications.router)
 app.include_router(sync.router)
+app.include_router(app_release.router)

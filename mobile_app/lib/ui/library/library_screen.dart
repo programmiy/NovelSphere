@@ -9,6 +9,7 @@ import 'reading_stats_sheet.dart';
 import '../glossary/glossary_screen.dart';
 import '../settings/settings_screen.dart';
 import '../../services/notification_service.dart';
+import '../../services/app_update_service.dart';
 import 'notification_center_sheet.dart';
 
 class LibraryScreen extends StatefulWidget {
@@ -49,6 +50,14 @@ class _LibraryScreenState extends State<LibraryScreen> {
     bool serverOnline = false;
     if (trusted) {
       serverOnline = await SyncService.pingServer();
+      if (serverOnline && mounted) {
+        // 앱 실행 시 서버에 새 업데이트가 있는지 조용히 확인
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            AppUpdateService.checkForUpdate(silent: true, context: context);
+          }
+        });
+      }
     }
     setState(() {
       _isTrustedWifi = trusted;

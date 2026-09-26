@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:network_info_plus/network_info_plus.dart';
 
+import '../../services/app_update_service.dart';
 import '../../services/notification_service.dart';
 import '../../services/preferences_service.dart';
 import '../../services/sync_service.dart';
@@ -38,6 +39,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   double _syncProgress = 0.0;
   String _syncStatusMessage = '';
 
+  String _appVersionText = '확인 중...';
+  bool _isCheckingUpdate = false;
+
   @override
   void initState() {
     super.initState();
@@ -51,6 +55,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _ntfyTopicController.text = PreferencesService.ntfyTopic;
     _ntfyServerController.text = PreferencesService.ntfyServer;
     _checkCurrentWifi();
+    _loadAppVersion();
+  }
+
+  Future<void> _loadAppVersion() async {
+    try {
+      final info = await AppUpdateService.getPackageInfo();
+      if (mounted) {
+        setState(() {
+          _appVersionText = 'v${info.version} (빌드 ${info.buildNumber})';
+        });
+      }
+    } catch (_) {}
   }
 
   Future<void> _autoRegisterCurrentWifi() async {
@@ -357,6 +373,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _buildSectionHeader(theme, '실시간 작업 알림 & 푸시', Icons.notifications_active_rounded),
           const SizedBox(height: 8),
           _buildNotificationSettingsCard(theme),
+          const SizedBox(height: 24),
+
+          // 5. 앱 버전 및 무선 자동 업데이트 (OTA)
+          _buildSectionHeader(theme, '앱 버전 & 무선 자동 업데이트 (OTA)', Icons.system_update_rounded),
+          const SizedBox(height: 8),
+          _buildAppUpdateCard(theme),
         ],
       ),
     );
@@ -450,6 +472,80 @@ class _SettingsScreenState extends State<SettingsScreen> {
             onPressed: _sendTestNotification,
             icon: const Icon(Icons.notifications_active_outlined, size: 18),
             label: const Text('스마트폰 상단바 테스트 알림 띄우기', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 앱 버전 및 무선 자동 업데이트 카드
+  Widget _buildAppUpdateCard(ReaderThemeData theme) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: theme.surfaceColor,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: theme.borderColor),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.phone_android_rounded, color: theme.accentColor, size: 20),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  '현재 설치된 버전',
+                  style: TextStyle(color: theme.textColor, fontWeight: FontWeight.bold, fontSize: 13),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: theme.borderColor.withOpacity(0.5),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  _appVersionText,
+                  style: TextStyle(color: theme.textColor, fontSize: 12, fontWeight: FontWeight.bold),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'PC 서버에서 새 버전이 감지되면 수동 파일 전송 없이 앱 안에서 바로 다운로드 및 설치를 진행합니다.',
+            style: TextStyle(color: theme.subTextColor, fontSize: 11, height: 1.4),
+          ),
+          const SizedBox(height: 16),
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: theme.accentColor,
+              foregroundColor: Colors.white,
+              minimumSize: const Size(double.infinity, 44),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            onPressed: _isCheckingUpdate
+                ? null
+                : () async {
+                    setState(() => _isCheckingUpdate = true);
+                    await AppUpdateService.checkForUpdate(
+                      silent: false,
+                      context: context,
+                    );
+                    if (mounted) {
+                      setState(() => _isCheckingUpdate = false);
+                    }
+                  },
+            icon: _isCheckingUpdate
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                  )
+                : const Icon(Icons.refresh_rounded, size: 18),
+            label: Text(_isCheckingUpdate ? '서버 버전 확인 중...' : '최신 버전 확인 및 원클릭 업데이트'),
           ),
         ],
       ),
