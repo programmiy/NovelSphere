@@ -349,3 +349,9 @@ app.include_router(separators.router)
 app.include_router(notifications.router)
 app.include_router(sync.router)
 app.include_router(app_release.router)
+
+@app.get("/api/status/summary", tags=["Status"])
+def get_api_status_summary():
+    """모바일 앱 상단 대시보드 현황판용 통합 요약 엔드포인트"""
+    from server.routers.notifications import get_status_summary
+    return get_status_summary()

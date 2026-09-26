@@ -98,12 +98,6 @@ class PreferencesService {
   static bool get enableSystemNotification => _prefs.getBool('enable_system_notification') ?? true;
   static Future<void> setEnableSystemNotification(bool value) => _prefs.setBool('enable_system_notification', value);
 
-  static bool get enableNtfySync => _prefs.getBool('enable_ntfy_sync') ?? true;
-  static Future<void> setEnableNtfySync(bool value) => _prefs.setBool('enable_ntfy_sync', value);
-
-  static String get ntfyServer => _prefs.getString('ntfy_server') ?? 'https://ntfy.sh';
-  static Future<void> setNtfyServer(String value) => _prefs.setString('ntfy_server', value.trim());
-
-  static String get ntfyTopic => _prefs.getString('ntfy_topic') ?? 'NovelSphere';
-  static Future<void> setNtfyTopic(String value) => _prefs.setString('ntfy_topic', value.trim());
+  static bool get enableDashboardNotification => _prefs.getBool('enable_dashboard_notification') ?? true;
+  static Future<void> setEnableDashboardNotification(bool value) => _prefs.setBool('enable_dashboard_notification', value);
 }

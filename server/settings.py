@@ -73,8 +73,8 @@ class Settings(BaseSettings):
     autostart: bool = Field(default=False, description="애플리케이션 자동 시작 활성화")
     gemini_api_delay_seconds: int = Field(default=20, description="Gemini API 호출 전 지연 시간 (초)")
 
-    # --- ntfy Push Notification Settings ---
-    ntfy_enabled: bool = Field(default=True, description="ntfy 푸시 알림 활성화 여부")
+    # --- ntfy Push Notification Settings (완전 분리 및 기본 비활성화) ---
+    ntfy_enabled: bool = Field(default=False, description="외부 ntfy 푸시 알림 활성화 여부 (LANOVEL 자체 네이티브 SSE 알림으로 대체)")
     ntfy_server: str = Field(default="https://ntfy.sh", description="ntfy 서버 URL")
     ntfy_topic: str = Field(default="NovelSphere", description="ntfy 토픽 이름")
     ntfy_progress_step: int = Field(default=100, description="번역 진행도 알림 주기 (100은 100% 완료 시에만 알림, 25/50은 중간 진행률 알림)")

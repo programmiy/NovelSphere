@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:network_info_plus/network_info_plus.dart';
 
 import '../../services/app_update_service.dart';
+import '../../services/local_notification_service.dart';
 import '../../services/notification_service.dart';
 import '../../services/preferences_service.dart';
+import '../../services/status_dashboard_service.dart';
 import '../../services/sync_service.dart';
 import '../themes/reader_themes.dart';
 
@@ -20,8 +22,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final TextEditingController _wifi1Controller = TextEditingController();
   final TextEditingController _wifi2Controller = TextEditingController();
   final TextEditingController _serverUrlController = TextEditingController();
-  final TextEditingController _ntfyTopicController = TextEditingController();
-  final TextEditingController _ntfyServerController = TextEditingController();
 
   String _currentWifiSsid = '확인 중...';
   bool _isTrustedWifi = false;
@@ -33,7 +33,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _hideServerSection = false;
 
   bool _enableSystemNotification = true;
-  bool _enableNtfySync = true;
+  bool _enableDashboardNotification = true;
 
   bool _isSyncing = false;
   double _syncProgress = 0.0;
@@ -51,9 +51,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _hideWifiSection = PreferencesService.hideWifiSection;
     _hideServerSection = PreferencesService.hideServerSection;
     _enableSystemNotification = PreferencesService.enableSystemNotification;
-    _enableNtfySync = PreferencesService.enableNtfySync;
-    _ntfyTopicController.text = PreferencesService.ntfyTopic;
-    _ntfyServerController.text = PreferencesService.ntfyServer;
+    _enableDashboardNotification = PreferencesService.enableDashboardNotification;
     _checkCurrentWifi();
     _loadAppVersion();
   }
@@ -146,15 +144,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
     await PreferencesService.setTrustedWifi2(_wifi2Controller.text.trim());
     await PreferencesService.setServerUrl(normalized);
     await PreferencesService.setEnableSystemNotification(_enableSystemNotification);
-    await PreferencesService.setEnableNtfySync(_enableNtfySync);
-    await PreferencesService.setNtfyTopic(_ntfyTopicController.text.trim());
-    await PreferencesService.setNtfyServer(_ntfyServerController.text.trim());
+    await PreferencesService.setEnableDashboardNotification(_enableDashboardNotification);
 
-    if (_enableNtfySync) {
-      NotificationService.stopRealtimeListener();
-      NotificationService.startRealtimeListener();
+    if (_enableDashboardNotification) {
+      StatusDashboardService.start();
+      await StatusDashboardService.syncStatus();
     } else {
-      NotificationService.stopRealtimeListener();
+      StatusDashboardService.stop();
+      await LocalNotificationService.cancelDashboardNotification();
     }
 
     await _checkCurrentWifi();
@@ -164,6 +161,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
         const SnackBar(content: Text('동기화 및 알림 설정이 저장되었습니다.')),
       );
     }
+  }
+
+  Future<void> _syncDashboardNow() async {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('번역 현황판 알림을 갱신하는 중...')),
+      );
+    }
+    await StatusDashboardService.syncStatus();
   }
 
   Future<void> _sendTestNotification() async {
@@ -384,7 +390,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  // 알림 설정 카드 (Phase 2)
+  // 알림 설정 카드 (통합 현황판)
   Widget _buildNotificationSettingsCard(ReaderThemeData theme) {
     return Container(
       padding: const EdgeInsets.all(16),
@@ -416,57 +422,68 @@ class _SettingsScreenState extends State<SettingsScreen> {
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
             title: Text(
-              '실시간 ntfy 스트림 수신',
+              '번역 작업 통합 현황판 (배민 알림 스타일)',
               style: TextStyle(color: theme.textColor, fontWeight: FontWeight.bold, fontSize: 13),
             ),
             subtitle: Text(
-              '별도 ntfy 앱 설치 없이도 LANOVEL 앱이 직접 알림을 실시간 수신합니다.',
+              '화별 반복 알림 대신 단일 알림창에서 실시간 번역 진행률, 검수 대기, Gemini API 오류 현황을 표시합니다. (삼성 Now Bar/잠금화면 지원)',
               style: TextStyle(color: theme.subTextColor, fontSize: 11),
             ),
-            value: _enableNtfySync,
+            value: _enableDashboardNotification,
             activeColor: theme.accentColor,
             onChanged: (val) {
-              setState(() => _enableNtfySync = val);
+              setState(() => _enableDashboardNotification = val);
             },
           ),
-          if (_enableNtfySync) ...[
-            const SizedBox(height: 8),
-            Text(
-              'ntfy 토픽 이름',
-              style: TextStyle(color: theme.textColor, fontWeight: FontWeight.bold, fontSize: 12),
-            ),
-            const SizedBox(height: 6),
-            TextField(
-              controller: _ntfyTopicController,
-              style: TextStyle(color: theme.textColor, fontSize: 13),
-              decoration: InputDecoration(
-                hintText: '예: NovelSphere',
-                hintStyle: TextStyle(color: theme.subTextColor),
-                filled: true,
-                fillColor: theme.background,
-                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: BorderSide(color: theme.borderColor),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: BorderSide(color: theme.borderColor),
-                ),
+          if (_enableDashboardNotification) ...[
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: theme.background,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: theme.borderColor.withOpacity(0.5)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.info_outline_rounded, size: 16, color: theme.accentColor),
+                      const SizedBox(width: 6),
+                      Text(
+                        '현황판 알림 동작 안내',
+                        style: TextStyle(color: theme.textColor, fontSize: 12, fontWeight: FontWeight.bold),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    '• 번역 작업이 없고 대기 검수 및 오류가 없으면 상단바가 자동으로 정리됩니다.\n• 15분 주기 스마트 조회로 배터리 소모를 극소화합니다.\n• One UI 잠금화면 및 Now Bar에 실시간 진행 상황이 연동됩니다.',
+                    style: TextStyle(color: theme.subTextColor, fontSize: 11, height: 1.4),
+                  ),
+                ],
               ),
             ),
-            const SizedBox(height: 6),
-            Text(
-              'PC 서버의 ntfy_topic과 일치해야 알림을 정상 수신할 수 있습니다.',
-              style: TextStyle(color: theme.subTextColor, fontSize: 11),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                foregroundColor: theme.accentColor,
+                side: BorderSide(color: theme.accentColor),
+                minimumSize: const Size(double.infinity, 40),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+              onPressed: _syncDashboardNow,
+              icon: const Icon(Icons.sync_rounded, size: 18),
+              label: const Text('현황판 알림 즉시 갱신', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
             ),
           ],
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           OutlinedButton.icon(
             style: OutlinedButton.styleFrom(
-              foregroundColor: theme.accentColor,
-              side: BorderSide(color: theme.accentColor),
-              minimumSize: const Size(double.infinity, 42),
+              foregroundColor: theme.subTextColor,
+              side: BorderSide(color: theme.borderColor),
+              minimumSize: const Size(double.infinity, 40),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
             ),
             onPressed: _sendTestNotification,

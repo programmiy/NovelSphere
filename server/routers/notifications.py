@@ -19,7 +19,9 @@ from server.notifications import (
     get_recent_notifications,
     clear_recent_notifications,
     add_sse_subscriber,
-    remove_sse_subscriber
+    remove_sse_subscriber,
+    get_translation_status,
+    get_api_error_stats
 )
 
 router = APIRouter(prefix="/api/notifications", tags=["Notifications"])
@@ -124,9 +126,6 @@ def send_test_notification(req: TestNotificationRequest = None):
 @router.post("/progress", summary="번역 진행률 알림 요청")
 def receive_progress_notification(req: ProgressNotificationRequest):
     """클라이언트(확장 프로그램 등)에서 번역 진행률 알림을 서버로 전달받아 발송합니다."""
-    if not settings.ntfy_enabled:
-        return {"status": "skipped", "reason": "disabled"}
-
     # 1. 10화 단위 등 에피소드 누적 마일스톤 알림 요청 처리
     if req.episode_count is not None and req.episode_count > 0:
         notify_episode_progress(
@@ -154,9 +153,6 @@ def receive_progress_notification(req: ProgressNotificationRequest):
 @router.post("/complete", summary="번역 완료 알림 요청")
 def receive_complete_notification(req: CompleteNotificationRequest):
     """클라이언트(확장 프로그램 등)에서 번역 완료 알림을 서버로 전달받아 발송합니다."""
-    if not settings.ntfy_enabled:
-        return {"status": "skipped", "reason": "disabled"}
-
     notify_translation_complete(
         novel_title=req.novel_title,
         episode_title=req.episode_title,
@@ -217,5 +213,37 @@ async def notifications_stream(request: Request):
             "X-Accel-Buffering": "no",
         }
     )
+
+@router.get("/summary", summary="현재 번역 작업 현황 및 검수/API 오류 종합 요약")
+def get_status_summary():
+    """모바일 앱 상단 대시보드 및 라이브 현황판을 위한 초경량 종합 상태 API."""
+    from server.database import get_db
+    from server.models import CleanupNotification
+    
+    review_count = 0
+    try:
+        db = next(get_db())
+        review_count = db.query(CleanupNotification).filter(CleanupNotification.is_dismissed == 0).count()
+    except Exception:
+        pass
+
+    trans_status = get_translation_status()
+    api_errors = get_api_error_stats()
+
+    return {
+        "status": "ok",
+        "is_active": trans_status.get("is_active", False),
+        "book_title": trans_status.get("book_title"),
+        "current_episode_title": trans_status.get("current_episode_title"),
+        "current_sentence": trans_status.get("current_sentence", 0),
+        "total_sentences": trans_status.get("total_sentences", 0),
+        "percentage": trans_status.get("percentage", 0),
+        "episode_count": trans_status.get("episode_count", 0),
+        "status_text": trans_status.get("status_text", "대기 중"),
+        "review_pending_count": review_count,
+        "api_errors": api_errors,
+        "updated_at": trans_status.get("updated_at", 0)
+    }
+
 
 

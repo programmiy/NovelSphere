@@ -24,6 +24,96 @@ _HISTORY_LOCK = threading.Lock()
 _SSE_SUBSCRIBERS = set()
 _SSE_LOCK = threading.Lock()
 
+# Gemini API 오류 집계 통계
+_API_ERROR_STATS = {
+    "total": 0,
+    "by_type": {}
+}
+_API_ERROR_LOCK = threading.Lock()
+
+def record_api_error_stat(error_type: str):
+    """Gemini API 오류 통계 기록."""
+    with _API_ERROR_LOCK:
+        _API_ERROR_STATS["total"] += 1
+        clean_type = (error_type or "API_ERROR").strip()
+        _API_ERROR_STATS["by_type"][clean_type] = _API_ERROR_STATS["by_type"].get(clean_type, 0) + 1
+
+def get_api_error_stats() -> Dict[str, Any]:
+    """Gemini API 오류 통계 요약 조회."""
+    with _API_ERROR_LOCK:
+        total = _API_ERROR_STATS["total"]
+        by_type = dict(_API_ERROR_STATS["by_type"])
+        if total == 0:
+            summary_text = "오류 없음"
+        else:
+            items = [f"{k} {v}건" for k, v in by_type.items()]
+            summary_text = f"{total}건 ({', '.join(items)})"
+        return {
+            "total": total,
+            "by_type": by_type,
+            "summary_text": summary_text
+        }
+
+def reset_api_error_stats():
+    """API 오류 통계 리셋."""
+    with _API_ERROR_LOCK:
+        _API_ERROR_STATS["total"] = 0
+        _API_ERROR_STATS["by_type"].clear()
+
+# 현재 활성 번역 작업 상태 추적
+_CURRENT_TRANSLATION_STATUS: Dict[str, Any] = {
+    "is_active": False,
+    "book_title": None,
+    "current_episode_title": None,
+    "current_sentence": 0,
+    "total_sentences": 0,
+    "percentage": 0,
+    "episode_count": 0,
+    "updated_at": 0,
+    "status_text": "대기 중"
+}
+_STATUS_LOCK = threading.Lock()
+
+def update_translation_status(
+    book_title: Optional[str] = None,
+    episode_title: Optional[str] = None,
+    current_sentence: int = 0,
+    total_sentences: int = 0,
+    percentage: int = 0,
+    episode_count: Optional[int] = None,
+    is_active: bool = True,
+    status_text: Optional[str] = None
+):
+    """현재 진행 중인 번역 상태 갱신."""
+    with _STATUS_LOCK:
+        now = int(time.time())
+        _CURRENT_TRANSLATION_STATUS["is_active"] = is_active
+        if book_title:
+            _CURRENT_TRANSLATION_STATUS["book_title"] = book_title
+        if episode_title:
+            _CURRENT_TRANSLATION_STATUS["current_episode_title"] = episode_title
+        _CURRENT_TRANSLATION_STATUS["current_sentence"] = current_sentence
+        _CURRENT_TRANSLATION_STATUS["total_sentences"] = total_sentences
+        _CURRENT_TRANSLATION_STATUS["percentage"] = percentage
+        if episode_count is not None:
+            _CURRENT_TRANSLATION_STATUS["episode_count"] = episode_count
+        _CURRENT_TRANSLATION_STATUS["updated_at"] = now
+        if status_text:
+            _CURRENT_TRANSLATION_STATUS["status_text"] = status_text
+        elif is_active:
+            ep_str = f"[{episode_title}] " if episode_title else ""
+            _CURRENT_TRANSLATION_STATUS["status_text"] = f"{ep_str}{percentage}% 진행 중 ({current_sentence}/{total_sentences} 문장)"
+        else:
+            _CURRENT_TRANSLATION_STATUS["status_text"] = "번역 완료"
+
+def get_translation_status() -> Dict[str, Any]:
+    """현재 번역 상태 조회 (15분 이상 업데이트 없으면 비활성 처리)."""
+    with _STATUS_LOCK:
+        data = dict(_CURRENT_TRANSLATION_STATUS)
+        if data["is_active"] and (time.time() - data["updated_at"] > 900):
+            data["is_active"] = False
+        return data
+
 def add_sse_subscriber(subscriber_queue):
     """실시간 로컬 알림 스트림 구독자 큐 등록."""
     with _SSE_LOCK:
@@ -133,8 +223,8 @@ def send_ntfy(
     active_topic = (topic or settings.ntfy_topic or "").strip()
     active_server = (server or settings.ntfy_server or "https://ntfy.sh").strip()
 
+    # ntfy 외부 서비스 완전 분리: 설정이 비활성화되어 있으면 외부 HTTP 요청 원천 차단 (단, 명시적 topic 테스트는 허용)
     if not settings.ntfy_enabled and not topic:
-        logger.debug("[ntfy] 알림이 비활성화되어 전송을 생략합니다.")
         return False
 
     if not active_topic:
@@ -184,6 +274,15 @@ def notify_translation_progress(
     message = f"{ep_info}진행률: {percentage}% ({current}/{total} 문장)"
     click = url if url else None
 
+    update_translation_status(
+        book_title=novel_title,
+        episode_title=episode_title,
+        current_sentence=current,
+        total_sentences=total,
+        percentage=percentage,
+        is_active=True
+    )
+
     record_notification(
         title=title,
         message=message,
@@ -221,6 +320,15 @@ def notify_translation_complete(
     if url:
         click_url = f"http://127.0.0.1:{settings.server_port}/viewer?url={url}"
 
+    update_translation_status(
+        book_title=novel_title,
+        episode_title=episode_title,
+        percentage=100,
+        episode_count=episode_count,
+        is_active=False,
+        status_text="번역 완료"
+    )
+
     record_notification(
         title=title,
         message=message,
@@ -254,6 +362,14 @@ def notify_episode_progress(
     if url:
         click_url = f"http://127.0.0.1:{settings.server_port}/viewer?url={url}"
 
+    update_translation_status(
+        book_title=novel_title,
+        episode_title=episode_title,
+        episode_count=episode_count,
+        percentage=100,
+        is_active=True
+    )
+
     record_notification(
         title=title,
         message=message,
@@ -284,6 +400,8 @@ def notify_api_error(
     body = message
     if url:
         body += f"\n대상 URL: {url}"
+
+    record_api_error_stat(error_type)
 
     record_notification(
         title=title,

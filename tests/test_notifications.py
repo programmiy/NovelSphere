@@ -263,3 +263,53 @@ def test_notifications_stream_broadcasting():
     finally:
         remove_sse_subscriber(test_q)
 
+def test_status_summary_endpoint():
+    """GET /api/status/summary 및 /api/notifications/summary 종합 현황 API 검증"""
+    from server.notifications import (
+        update_translation_status,
+        notify_api_error,
+        reset_api_error_stats
+    )
+    reset_api_error_stats()
+
+    # 1. 초기 상태 확인
+    res = client.get("/api/status/summary")
+    assert res.status_code == 200
+    data = res.json()
+    assert "api_errors" in data
+    assert data["api_errors"]["total"] == 0
+    assert data["api_errors"]["summary_text"] == "오류 없음"
+
+    # 2. 번역 진행도 및 API 오류 기록
+    update_translation_status(
+        book_title="테스트 대시보드 소설",
+        episode_title="제5화",
+        current_sentence=50,
+        total_sentences=100,
+        percentage=50,
+        is_active=True
+    )
+    notify_api_error(
+        error_title="모델 과부하",
+        message="503 Overloaded",
+        error_type="503 OVERLOAD"
+    )
+    notify_api_error(
+        error_title="쿼터 소진",
+        message="429 Quota Exceeded",
+        error_type="429 QUOTA"
+    )
+
+    # 3. 갱신된 현황 조회 확인
+    res2 = client.get("/api/notifications/summary")
+    assert res2.status_code == 200
+    data2 = res2.json()
+    assert data2["is_active"] is True
+    assert data2["book_title"] == "테스트 대시보드 소설"
+    assert data2["percentage"] == 50
+    assert data2["api_errors"]["total"] == 2
+    assert "503 OVERLOAD" in data2["api_errors"]["by_type"]
+    assert "429 QUOTA" in data2["api_errors"]["by_type"]
+    assert "2건" in data2["api_errors"]["summary_text"]
+
+

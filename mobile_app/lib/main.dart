@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'services/local_notification_service.dart';
 import 'services/notification_service.dart';
 import 'services/preferences_service.dart';
+import 'services/status_dashboard_service.dart';
 import 'services/tts_audio_service.dart';
 import 'ui/library/library_screen.dart';
 import 'ui/themes/reader_themes.dart';
@@ -37,13 +38,15 @@ class _LanovelAppState extends State<LanovelApp> {
   @override
   void initState() {
     super.initState();
-    // 실시간 ntfy 스트림 리스너 시작
+    // 실시간 로컬 SSE 리스너 및 15분 주기 초절전 대시보드 현황 서비스 가동
     NotificationService.startRealtimeListener();
+    StatusDashboardService.start();
   }
 
   @override
   void dispose() {
     NotificationService.stopRealtimeListener();
+    StatusDashboardService.stop();
     super.dispose();
   }
 

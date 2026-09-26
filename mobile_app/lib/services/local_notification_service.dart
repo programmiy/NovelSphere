@@ -10,6 +10,7 @@ class LocalNotificationService {
       FlutterLocalNotificationsPlugin();
 
   static bool _isInitialized = false;
+  static const int dashboardNotificationId = 9001;
 
   /// 로컬 알림 플러그인 초기화 및 채널 등록
   static Future<void> init() async {
@@ -23,20 +24,30 @@ class LocalNotificationService {
       onDidReceiveNotificationResponse: _onNotificationTapped,
     );
 
-    // Android 고우선순위 알림 채널 생성
-    const androidChannel = AndroidNotificationChannel(
-      'lanovel_tasks_channel',
-      'LANOVEL 작업 알림',
-      description: '소설 번역, 다운로드 완료 등의 실시간 알림 채널입니다.',
-      importance: Importance.high,
-      playSound: true,
-      enableVibration: true,
-    );
-
     final androidPlugin = _notificationsPlugin.resolvePlatformSpecificImplementation<
         AndroidFlutterLocalNotificationsPlugin>();
     if (androidPlugin != null) {
+      // 1. 개별 완료 알림 채널
+      const androidChannel = AndroidNotificationChannel(
+        'lanovel_tasks_channel',
+        'LANOVEL 작업 알림',
+        description: '소설 번역, 다운로드 완료 등의 실시간 알림 채널입니다.',
+        importance: Importance.high,
+        playSound: true,
+        enableVibration: true,
+      );
       await androidPlugin.createNotificationChannel(androidChannel);
+
+      // 2. 배민 스타일 무음 고정 대시보드 현황판 채널 (진동/소리 0회, 갤럭시 Now Bar / 잠금화면 호환)
+      const dashboardChannel = AndroidNotificationChannel(
+        'lanovel_dashboard_channel',
+        'LANOVEL 작업 현황판',
+        description: '실시간 번역 작업 진행도 및 검수/API 오류 현황을 표시하는 대시보드 알림 채널입니다.',
+        importance: Importance.low,
+        playSound: false,
+        enableVibration: false,
+      );
+      await androidPlugin.createNotificationChannel(dashboardChannel);
     }
 
     _isInitialized = true;
@@ -53,7 +64,60 @@ class LocalNotificationService {
     return true;
   }
 
-  /// 안드로이드 시스템 상태표시줄 알림 팝업
+  /// 배민식 단일 대시보드 현황판 알림 갱신 (무음/무진동 갱신, 갤럭시 Now Bar 호환)
+  static Future<void> updateDashboardNotification({
+    required String title,
+    required String body,
+    required int progress,
+    required int maxProgress,
+    required List<String> detailLines,
+    String? payload,
+  }) async {
+    if (!_isInitialized) {
+      await init();
+    }
+
+    final bigTextStyle = BigTextStyleInformation(
+      detailLines.join('\n'),
+      contentTitle: title,
+      summaryText: '$progress%',
+    );
+
+    final androidDetails = AndroidNotificationDetails(
+      'lanovel_dashboard_channel',
+      'LANOVEL 작업 현황판',
+      channelDescription: '실시간 번역 작업 진행도 및 검수/API 오류 현황을 표시하는 대시보드 알림 채널입니다.',
+      importance: Importance.low,
+      priority: Priority.low,
+      playSound: false,
+      enableVibration: false,
+      ongoing: true, // 배민 알림처럼 고정
+      onlyAlertOnce: true, // 갱신 시 소리/진동 0회
+      showProgress: true,
+      maxProgress: maxProgress,
+      progress: progress,
+      category: AndroidNotificationCategory.progress, // 삼성 갤럭시 Now Bar / 잠금화면 라이브 알림 호환
+      visibility: NotificationVisibility.public,
+      styleInformation: bigTextStyle,
+      icon: '@mipmap/ic_launcher',
+    );
+
+    final details = NotificationDetails(android: androidDetails);
+    await _notificationsPlugin.show(
+      dashboardNotificationId,
+      title,
+      body,
+      details,
+      payload: payload,
+    );
+  }
+
+  /// 대시보드 현황판 알림 닫기 (작업이 없을 때 완전 숨김)
+  static Future<void> cancelDashboardNotification() async {
+    await _notificationsPlugin.cancel(dashboardNotificationId);
+  }
+
+  /// 일반 알림 팝업
   static Future<void> showNotification({
     required int id,
     required String title,
