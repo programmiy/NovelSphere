@@ -38,7 +38,7 @@ def get_app_version_info():
         "file_size": file_size,
         "file_name": f"lanovel-reader-v{version}.apk",
         "download_url": "/api/app/download",
-        "release_notes": "외부 ntfy 완전 분리, 배민 스타일 단일 번역 현황판 알림(삼성 Now Bar/잠금화면 지원, Gemini API 오류 세부 통계 표시, 저전력 스마트 폴링) 탑재",
+        "release_notes": "외부 ntfy 완전 분리, 배민 스타일 단일 번역 현황판 알림(Gemini API 세부 오류 통계 및 대기 검수 표시, 저전력 스마트 폴링) 탑재",
         "updated_at": updated_at,
     }
 

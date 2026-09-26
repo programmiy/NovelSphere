@@ -38,15 +38,14 @@ class LocalNotificationService {
       );
       await androidPlugin.createNotificationChannel(androidChannel);
 
-      // 2. 배민 스타일 무음 고정 대시보드 현황판 채널 (진동/소리 0회, 갤럭시 Now Bar / 잠금화면 실시간 알림 호환)
+      // 2. 배민 스타일 무음 고정 대시보드 현황판 채널 (진동/소리 0회, 단일 알림창 유지)
       const dashboardChannel = AndroidNotificationChannel(
-        'lanovel_dashboard_channel_v2',
+        'lanovel_dashboard_channel',
         'LANOVEL 작업 현황판',
         description: '실시간 번역 작업 진행도 및 검수/API 오류 현황을 표시하는 대시보드 알림 채널입니다.',
-        importance: Importance.defaultImportance,
+        importance: Importance.low,
         playSound: false,
         enableVibration: false,
-        showBadge: false,
       );
       await androidPlugin.createNotificationChannel(dashboardChannel);
     }
@@ -65,7 +64,7 @@ class LocalNotificationService {
     return true;
   }
 
-  /// 배민식 단일 대시보드 현황판 알림 갱신 (무음/무진동 갱신, 갤럭시 Now Bar 호환)
+  /// 배민식 단일 대시보드 현황판 알림 갱신 (무음/무진동 갱신, 고정 ID 9001)
   static Future<void> updateDashboardNotification({
     required String title,
     required String body,
@@ -85,11 +84,11 @@ class LocalNotificationService {
     );
 
     final androidDetails = AndroidNotificationDetails(
-      'lanovel_dashboard_channel_v2',
+      'lanovel_dashboard_channel',
       'LANOVEL 작업 현황판',
       channelDescription: '실시간 번역 작업 진행도 및 검수/API 오류 현황을 표시하는 대시보드 알림 채널입니다.',
-      importance: Importance.defaultImportance,
-      priority: Priority.defaultPriority,
+      importance: Importance.low,
+      priority: Priority.low,
       playSound: false,
       enableVibration: false,
       ongoing: true, // 배민 알림처럼 고정
@@ -97,8 +96,6 @@ class LocalNotificationService {
       showProgress: true,
       maxProgress: maxProgress,
       progress: progress,
-      category: AndroidNotificationCategory.progress, // 삼성 갤럭시 Now Bar / 잠금화면 라이브 알림 호환
-      visibility: NotificationVisibility.public,
       styleInformation: bigTextStyle,
     );
 
@@ -110,33 +107,6 @@ class LocalNotificationService {
       details,
       payload: payload,
     );
-  }
-
-  /// 삼성 갤럭시 Now Bar / 잠금화면 현황판 즉시 테스트 알림 발송
-  static Future<bool> showDashboardTestNotification() async {
-    final hasPerm = await requestPermission();
-    if (!hasPerm) return false;
-
-    try {
-      await updateDashboardNotification(
-        title: '📚 LANOVEL 작업 현황: 테스트 소설 (45%)',
-        body: '• 진행: [15화] 45% 진행 중 (54/120 문장) | • Gemini API 오류: 오류 없음 | • ⚠️ 검수 대기: 2건',
-        progress: 45,
-        maxProgress: 100,
-        detailLines: [
-          '• 진행: [15화] 45% 진행 중 (54/120 문장)',
-          '• Gemini API 오류: 오류 없음',
-          '• ⚠️ 검수 대기: 2건 (탭하여 확인)',
-        ],
-        payload: jsonEncode({
-          'book_title': '테스트 소설',
-          'chapter_title': '15화',
-        }),
-      );
-      return true;
-    } catch (_) {
-      return false;
-    }
   }
 
   /// 대시보드 현황판 알림 닫기 (작업이 없을 때 완전 숨김)

@@ -194,28 +194,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
-  Future<void> _testDashboardNowBar() async {
-    final success = await LocalNotificationService.showDashboardTestNotification();
-    if (mounted) {
-      if (success) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Now Bar 현황판 알림이 발송되었습니다! 스마트폰 상단바 및 잠금화면(Now Bar)을 확인해보세요.'),
-            backgroundColor: Colors.teal,
-            duration: Duration(seconds: 4),
-          ),
-        );
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('⚠️ 안드로이드 알림 권한이 꺼져 있습니다. [스마트폰 설정 > 애플리케이션 > LANOVEL > 알림 허용]을 켜주세요!'),
-            backgroundColor: Colors.redAccent,
-            duration: Duration(seconds: 5),
-          ),
-        );
-      }
-    }
-  }
+
 
   Future<void> _testServerPing() async {
     final typedUrl = PreferencesService.normalizeServerUrl(_serverUrlController.text.trim());
@@ -459,7 +438,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               style: TextStyle(color: theme.textColor, fontWeight: FontWeight.bold, fontSize: 13),
             ),
             subtitle: Text(
-              '화별 반복 알림 대신 단일 알림창에서 실시간 번역 진행률, 검수 대기, Gemini API 오류 현황을 표시합니다. (삼성 Now Bar/잠금화면 지원)',
+              '화별 개별 알림 대신 하나의 알림창에서 실시간 번역 진행률, 검수 대기, Gemini API 오류 현황을 표시합니다.',
               style: TextStyle(color: theme.subTextColor, fontSize: 11),
             ),
             value: _enableDashboardNotification,
@@ -492,43 +471,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    '• 번역 작업이 없고 대기 검수 및 오류가 없으면 상단바가 자동으로 정리됩니다.\n• 15분 주기 스마트 조회로 배터리 소모를 극소화합니다.\n• One UI 잠금화면 및 Now Bar에 실시간 진행 상황이 연동됩니다.',
+                    '• 번역 작업이 없고 대기 검수 및 오류가 없으면 상단바가 자동으로 정리됩니다.\n• 15분 주기 스마트 조회로 배터리 소모를 극소화합니다.',
                     style: TextStyle(color: theme.subTextColor, fontSize: 11, height: 1.4),
                   ),
                 ],
               ),
             ),
             const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: theme.accentColor,
-                      side: BorderSide(color: theme.accentColor),
-                      minimumSize: const Size(0, 42),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                    ),
-                    onPressed: _syncDashboardNow,
-                    icon: const Icon(Icons.sync_rounded, size: 16),
-                    label: const Text('현황판 즉시 갱신', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: theme.accentColor,
-                      foregroundColor: Colors.white,
-                      minimumSize: const Size(0, 42),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                    ),
-                    onPressed: _testDashboardNowBar,
-                    icon: const Icon(Icons.dashboard_customize_rounded, size: 16),
-                    label: const Text('Now Bar 테스트 띄우기', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-                  ),
-                ),
-              ],
+            OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                foregroundColor: theme.accentColor,
+                side: BorderSide(color: theme.accentColor),
+                minimumSize: const Size(double.infinity, 40),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+              onPressed: _syncDashboardNow,
+              icon: const Icon(Icons.sync_rounded, size: 18),
+              label: const Text('현황판 알림 즉시 갱신', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
             ),
           ],
           const SizedBox(height: 12),
