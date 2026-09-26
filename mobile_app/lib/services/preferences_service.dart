@@ -74,9 +74,9 @@ class PreferencesService {
     if (!url.startsWith('http://') && !url.startsWith('https://')) {
       url = 'http://$url';
     }
-    // 포트가 생략된 경우 (예: http://192.168.219.103) 기본 8001 추가
+    // http:// 이고 포트가 생략된 사설 IP/도메인인 경우에만 기본 8001 추가 (https:// 도메인은 표준 443 유지)
     final uri = Uri.tryParse(url);
-    if (uri != null && (!uri.hasPort || uri.port == 0) && !uri.host.contains(':')) {
+    if (uri != null && uri.scheme == 'http' && (!uri.hasPort || uri.port == 0) && !uri.host.contains(':')) {
       if (uri.path.isEmpty || uri.path == '/') {
         url = '${uri.scheme}://${uri.host}:8001';
       }
