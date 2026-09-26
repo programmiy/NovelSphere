@@ -83,6 +83,25 @@ class StatusDashboardService {
     _isRunning = false;
     _pollingTimer?.cancel();
     _pollingTimer = null;
+    _activeFastPollingTimer?.cancel();
+    _activeFastPollingTimer = null;
+  }
+
+  static Timer? _activeFastPollingTimer;
+
+  /// 앱 포그라운드 활성 상태 진입 시 (5초 주기 실시간 반영)
+  static void enterForeground() {
+    syncStatus();
+    _activeFastPollingTimer?.cancel();
+    _activeFastPollingTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+      syncStatus();
+    });
+  }
+
+  /// 앱 백그라운드 전환 시 (15분 초절전 주기로 복귀)
+  static void enterBackground() {
+    _activeFastPollingTimer?.cancel();
+    _activeFastPollingTimer = null;
   }
 
   /// 서버로부터 최신 종합 상태 조회 및 안드로이드 단일 대시보드 알림창 갱신

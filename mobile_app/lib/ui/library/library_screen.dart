@@ -8,8 +8,9 @@ import '../viewer/reader_screen.dart';
 import 'reading_stats_sheet.dart';
 import '../glossary/glossary_screen.dart';
 import '../settings/settings_screen.dart';
-import '../../services/notification_service.dart';
 import '../../services/app_update_service.dart';
+import '../../services/notification_service.dart';
+import '../../services/status_dashboard_service.dart';
 import 'notification_center_sheet.dart';
 
 class LibraryScreen extends StatefulWidget {
@@ -43,6 +44,14 @@ class _LibraryScreenState extends State<LibraryScreen> {
     _loadLibrary();
     _checkNetworkAndServer();
     NotificationService.fetchRecentNotifications();
+    StatusDashboardService.enterForeground();
+  }
+
+  @override
+  void dispose() {
+    StatusDashboardService.enterBackground();
+    _searchController.dispose();
+    super.dispose();
   }
 
   Future<void> _checkNetworkAndServer() async {
@@ -267,6 +276,11 @@ class _LibraryScreenState extends State<LibraryScreen> {
               ),
             ),
 
+            // 2.5 실시간 번역 진행 현황 배너 (작업 진행 중일 때만 동적 노출)
+            SliverToBoxAdapter(
+              child: _buildLiveTranslationBanner(theme),
+            ),
+
             // 3. Hero 이어보기 카드 (최근 읽던 소설)
             if (_recentBook != null && _searchQuery.isEmpty && _filter == 'all')
               SliverToBoxAdapter(
@@ -316,6 +330,137 @@ class _LibraryScreenState extends State<LibraryScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  // 실시간 번역 진행 현황 배너 (앱 포그라운드 실시간 모니터링)
+  Widget _buildLiveTranslationBanner(ReaderThemeData theme) {
+    return ValueListenableBuilder<DashboardStatusData?>(
+      valueListenable: StatusDashboardService.currentStatus,
+      builder: (context, status, _) {
+        if (status == null || !status.isActive) {
+          return const SizedBox.shrink();
+        }
+
+        final bookName = status.bookTitle ?? '진행 중인 소설';
+        final epName = status.currentEpisodeTitle ?? '회차 번역 중';
+        final progress = (status.percentage / 100.0).clamp(0.0, 1.0);
+
+        return Container(
+          margin: const EdgeInsets.fromLTRB(16, 4, 16, 10),
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: theme.surfaceColor,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: theme.accentColor.withOpacity(0.4), width: 1.2),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.04),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 9,
+                    height: 9,
+                    decoration: BoxDecoration(
+                      color: Colors.greenAccent.shade700,
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.greenAccent.withOpacity(0.5),
+                          blurRadius: 4,
+                          spreadRadius: 1,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    'PC 서버 실시간 번역 중',
+                    style: TextStyle(
+                      color: theme.accentColor,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const Spacer(),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: theme.accentColor.withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      '${status.percentage}%',
+                      style: TextStyle(
+                        color: theme.accentColor,
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '$bookName • $epName',
+                style: TextStyle(
+                  color: theme.textColor,
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(height: 8),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: LinearProgressIndicator(
+                  value: progress,
+                  minHeight: 6,
+                  backgroundColor: theme.borderColor.withOpacity(0.5),
+                  valueColor: AlwaysStoppedAnimation<Color>(theme.accentColor),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Text(
+                      status.statusText,
+                      style: TextStyle(color: theme.subTextColor, fontSize: 11),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  if (status.apiErrorsTotal > 0)
+                    Text(
+                      '⚠️ ${status.apiErrorsSummary}',
+                      style: const TextStyle(
+                        color: Colors.orange,
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    )
+                  else
+                    Text(
+                      '• Gemini 정상',
+                      style: TextStyle(color: theme.subTextColor, fontSize: 11),
+                    ),
+                ],
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 

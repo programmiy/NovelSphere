@@ -20,6 +20,7 @@ from server.models import Translation, UrlMetadata, AppliedUrl, TranslationTrash
 from server.rule_classifier import classify_translation, extract_untranslated_keywords, is_verbatim_copy, restore_brackets
 from server.utils import natural_sort_key
 from server.routers.translation import handle_verbatim_cleanup_items
+from server.notifications import update_translation_status
 import time
 
 router = APIRouter()
@@ -318,6 +319,22 @@ def upsert_translations(items: List[TranslationItem], db: Session = Depends(get_
 
     # 단일 트랜잭션으로 원자적(Atomic) 커밋
     db.commit()
+
+    # 실시간 번역 진행 상태 자동 갱신 (모바일 앱 인앱 및 상단바 실시간 연동)
+    if items:
+        latest_item = items[-1]
+        t_title = target_title or latest_item.title
+        b_title = latest_item.folderName or (t_title.split()[0] if t_title else "번역 작업")
+        update_translation_status(
+            book_title=b_title,
+            episode_title=t_title,
+            current_sentence=inserted_count + updated_count,
+            total_sentences=len(items),
+            percentage=min(100, int((inserted_count + updated_count) / max(1, len(items)) * 100)),
+            is_active=True,
+            status_text=f"[{t_title}] 번역 진행 중 ({inserted_count + updated_count}/{len(items)} 문장)" if t_title else None
+        )
+
     return {
         "inserted": inserted_count,
         "updated": updated_count,
