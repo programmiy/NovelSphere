@@ -173,14 +173,47 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _sendTestNotification() async {
-    await NotificationService.sendTestNotification();
+    final success = await NotificationService.sendTestNotification();
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('테스트 알림이 발송되었습니다. 스마트폰 상단바를 확인해주세요!'),
-          backgroundColor: Colors.green,
-        ),
-      );
+      if (success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('테스트 알림이 발송되었습니다. 스마트폰 상단바를 확인해주세요!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('⚠️ 안드로이드 알림 권한이 꺼져 있습니다. [스마트폰 설정 > 애플리케이션 > LANOVEL > 알림 허용]을 켜주세요!'),
+            backgroundColor: Colors.redAccent,
+            duration: Duration(seconds: 5),
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _testDashboardNowBar() async {
+    final success = await LocalNotificationService.showDashboardTestNotification();
+    if (mounted) {
+      if (success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Now Bar 현황판 알림이 발송되었습니다! 스마트폰 상단바 및 잠금화면(Now Bar)을 확인해보세요.'),
+            backgroundColor: Colors.teal,
+            duration: Duration(seconds: 4),
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('⚠️ 안드로이드 알림 권한이 꺼져 있습니다. [스마트폰 설정 > 애플리케이션 > LANOVEL > 알림 허용]을 켜주세요!'),
+            backgroundColor: Colors.redAccent,
+            duration: Duration(seconds: 5),
+          ),
+        );
+      }
     }
   }
 
@@ -466,16 +499,36 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ),
             const SizedBox(height: 12),
-            OutlinedButton.icon(
-              style: OutlinedButton.styleFrom(
-                foregroundColor: theme.accentColor,
-                side: BorderSide(color: theme.accentColor),
-                minimumSize: const Size(double.infinity, 40),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-              ),
-              onPressed: _syncDashboardNow,
-              icon: const Icon(Icons.sync_rounded, size: 18),
-              label: const Text('현황판 알림 즉시 갱신', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: theme.accentColor,
+                      side: BorderSide(color: theme.accentColor),
+                      minimumSize: const Size(0, 42),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                    onPressed: _syncDashboardNow,
+                    icon: const Icon(Icons.sync_rounded, size: 16),
+                    label: const Text('현황판 즉시 갱신', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: theme.accentColor,
+                      foregroundColor: Colors.white,
+                      minimumSize: const Size(0, 42),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                    onPressed: _testDashboardNowBar,
+                    icon: const Icon(Icons.dashboard_customize_rounded, size: 16),
+                    label: const Text('Now Bar 테스트 띄우기', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                  ),
+                ),
+              ],
             ),
           ],
           const SizedBox(height: 12),

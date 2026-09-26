@@ -170,19 +170,24 @@ class NotificationService {
   }
 
   /// 테스트 알림 발송 (사용자 검증용)
-  static Future<void> sendTestNotification() async {
+  static Future<bool> sendTestNotification() async {
     final hasPerm = await LocalNotificationService.requestPermission();
-    if (!hasPerm) return;
+    if (!hasPerm) return false;
 
-    await LocalNotificationService.showNotification(
-      id: 9999,
-      title: 'LANOVEL 알림 테스트',
-      body: '스마트폰 상단바 시스템 푸시 알림이 정상 작동 중입니다!',
-      payload: jsonEncode({
-        'book_title': null,
-        'chapter_title': null,
-      }),
-    );
+    try {
+      await LocalNotificationService.showNotification(
+        id: 9999,
+        title: 'LANOVEL 알림 테스트',
+        body: '스마트폰 상단바 시스템 푸시 알림이 정상 작동 중입니다!',
+        payload: jsonEncode({
+          'book_title': null,
+          'chapter_title': null,
+        }),
+      );
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 
   static void markAsRead(String id) {

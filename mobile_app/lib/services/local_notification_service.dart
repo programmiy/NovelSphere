@@ -38,14 +38,15 @@ class LocalNotificationService {
       );
       await androidPlugin.createNotificationChannel(androidChannel);
 
-      // 2. 배민 스타일 무음 고정 대시보드 현황판 채널 (진동/소리 0회, 갤럭시 Now Bar / 잠금화면 호환)
+      // 2. 배민 스타일 무음 고정 대시보드 현황판 채널 (진동/소리 0회, 갤럭시 Now Bar / 잠금화면 실시간 알림 호환)
       const dashboardChannel = AndroidNotificationChannel(
-        'lanovel_dashboard_channel',
+        'lanovel_dashboard_channel_v2',
         'LANOVEL 작업 현황판',
         description: '실시간 번역 작업 진행도 및 검수/API 오류 현황을 표시하는 대시보드 알림 채널입니다.',
-        importance: Importance.low,
+        importance: Importance.defaultImportance,
         playSound: false,
         enableVibration: false,
+        showBadge: false,
       );
       await androidPlugin.createNotificationChannel(dashboardChannel);
     }
@@ -84,11 +85,11 @@ class LocalNotificationService {
     );
 
     final androidDetails = AndroidNotificationDetails(
-      'lanovel_dashboard_channel',
+      'lanovel_dashboard_channel_v2',
       'LANOVEL 작업 현황판',
       channelDescription: '실시간 번역 작업 진행도 및 검수/API 오류 현황을 표시하는 대시보드 알림 채널입니다.',
-      importance: Importance.low,
-      priority: Priority.low,
+      importance: Importance.defaultImportance,
+      priority: Priority.defaultPriority,
       playSound: false,
       enableVibration: false,
       ongoing: true, // 배민 알림처럼 고정
@@ -99,7 +100,6 @@ class LocalNotificationService {
       category: AndroidNotificationCategory.progress, // 삼성 갤럭시 Now Bar / 잠금화면 라이브 알림 호환
       visibility: NotificationVisibility.public,
       styleInformation: bigTextStyle,
-      icon: '@mipmap/ic_launcher',
     );
 
     final details = NotificationDetails(android: androidDetails);
@@ -110,6 +110,33 @@ class LocalNotificationService {
       details,
       payload: payload,
     );
+  }
+
+  /// 삼성 갤럭시 Now Bar / 잠금화면 현황판 즉시 테스트 알림 발송
+  static Future<bool> showDashboardTestNotification() async {
+    final hasPerm = await requestPermission();
+    if (!hasPerm) return false;
+
+    try {
+      await updateDashboardNotification(
+        title: '📚 LANOVEL 작업 현황: 테스트 소설 (45%)',
+        body: '• 진행: [15화] 45% 진행 중 (54/120 문장) | • Gemini API 오류: 오류 없음 | • ⚠️ 검수 대기: 2건',
+        progress: 45,
+        maxProgress: 100,
+        detailLines: [
+          '• 진행: [15화] 45% 진행 중 (54/120 문장)',
+          '• Gemini API 오류: 오류 없음',
+          '• ⚠️ 검수 대기: 2건 (탭하여 확인)',
+        ],
+        payload: jsonEncode({
+          'book_title': '테스트 소설',
+          'chapter_title': '15화',
+        }),
+      );
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 
   /// 대시보드 현황판 알림 닫기 (작업이 없을 때 완전 숨김)
