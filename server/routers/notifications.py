@@ -242,8 +242,14 @@ def get_status_summary():
         "status_text": trans_status.get("status_text", "대기 중"),
         "review_pending_count": review_count,
         "api_errors": api_errors,
+        "api_calls_today": trans_status.get("api_calls_today", 0),
+        "api_quota_limit": trans_status.get("api_quota_limit", 500),
+        "quota_reset_hour": trans_status.get("quota_reset_hour", 16),
+        "quota_window_start_ts": trans_status.get("quota_window_start_ts", 0),
+        "today_translations_count": trans_status.get("today_translations_count", 0),
         "updated_at": trans_status.get("updated_at", 0)
     }
+
 
 
 

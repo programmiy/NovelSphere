@@ -1,4 +1,4 @@
-const CACHE_NAME = 'lanovel-cache-v3-__GIT_HASH__';
+const CACHE_NAME = 'lanovel-cache-v4-__GIT_HASH__';
 // App Shell: Core files needed for the app to run offline
 const APP_SHELL_URLS = [
     '/', // Root (library.html or library_mobile.html depending on UA)
@@ -108,7 +108,29 @@ self.addEventListener('fetch', event => {
         return;
     }
 
-    // Strategy for App Shell and other assets (CSS, JS, HTML)
+    // Strategy for HTML page navigation (Network-First to always respect device/UA PC default)
+    if (event.request.mode === 'navigate') {
+        event.respondWith(
+            fetch(event.request)
+                .then(networkResponse => {
+                    if (networkResponse && networkResponse.status === 200) {
+                        const responseClone = networkResponse.clone();
+                        caches.open(CACHE_NAME).then(cache => {
+                            cache.put(event.request, responseClone);
+                        });
+                    }
+                    return networkResponse;
+                })
+                .catch(() => {
+                    return caches.match(event.request).then(cached => {
+                        return cached || caches.match('/');
+                    });
+                })
+        );
+        return;
+    }
+
+    // Strategy for App Shell assets (CSS, JS, Fonts, Images)
     // Stale-While-Revalidate. Serve from cache immediately, then update in the background.
     event.respondWith(
         caches.open(CACHE_NAME).then(cache => {

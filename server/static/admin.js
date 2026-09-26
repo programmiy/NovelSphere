@@ -18,6 +18,8 @@ let translationStatuses = {}; // Holds the apply-status for each URL
 let appliedUrlsSet = new Set();
 let rawAbnormalData = null;
 let rawCleanupData = null;
+let latestQuotaSummary = null;
+
 
 // DOM element cache
 let historyContainer, emptyState, searchBox, darkModeToggle, fetchAllTitlesBtn, bulkActionsPanel, selectionCount, deleteSelectedBtn, moveSelectedToFolderDropdown, findReplaceModal, closeFindReplaceModalBtn, cancelFindReplaceBtn, executeFindReplaceBtn, openGlobalFindReplaceBtn, createFolderButton, newFolderNameInput, findEmptyBtn, findText, replaceText, findCount, conditionText, folderScope, useRegex, caseSensitive, autoStartCheckbox, enableDragDropCheckbox;
@@ -180,6 +182,16 @@ async function loadAndRenderGrouped() {
         // NOTE: translationStatuses logic is removed
         translationStatuses = {};
 
+        // Load quota & status summary for accurate daily stats (4 PM/5 PM reset)
+        try {
+            const summaryRes = await fetch('/api/notifications/summary');
+            if (summaryRes.ok) {
+                latestQuotaSummary = await summaryRes.json();
+            }
+        } catch (e) {
+            console.warn("Quota summary fetch failed:", e);
+        }
+
         renderGroupedHistory(groupedTranslations); // Pass data to render
         populateFolderDropdowns(allFolders);
         updateStatistics(groupedTranslations);
@@ -195,11 +207,35 @@ async function loadAndRenderGrouped() {
     }
 }
 
+function getQuotaWindowStartMs(summary) {
+    if (summary && summary.quota_window_start_ts) {
+        return summary.quota_window_start_ts * 1000;
+    }
+    const now = new Date();
+    // US DST check (March 2nd Sun to Nov 1st Sun)
+    const year = now.getFullYear();
+    const mar1 = new Date(year, 2, 1);
+    const firstSunMar = (7 - mar1.getDay()) % 7 + 1;
+    const dstStart = new Date(year, 2, firstSunMar + 7, 2, 0, 0);
+    const nov1 = new Date(year, 10, 1);
+    const firstSunNov = (7 - nov1.getDay()) % 7 + 1;
+    const dstEnd = new Date(year, 10, firstSunNov, 2, 0, 0);
+    const isDst = (now >= dstStart && now < dstEnd);
+    const resetHour = isDst ? 16 : 17;
+
+    const todayReset = new Date(now.getFullYear(), now.getMonth(), now.getDate(), resetHour, 0, 0, 0);
+    if (now >= todayReset) {
+        return todayReset.getTime();
+    } else {
+        return todayReset.getTime() - (24 * 60 * 60 * 1000);
+    }
+}
+
 function updateStatistics(groupedData) {
     let totalCount = 0;
     let todayCount = 0;
     let totalLength = 0;
-    const twentyFourHoursAgo = Date.now() - (24 * 60 * 60 * 1000);
+    const quotaWindowStartMs = getQuotaWindowStartMs(latestQuotaSummary);
 
     for (const folderName in groupedData) {
         const urlGroups = groupedData[folderName]; // This is an array of urlGroup objects
@@ -209,7 +245,7 @@ function updateStatistics(groupedData) {
                 totalCount++;
                 totalLength += item.translated ? item.translated.length : 0;
                 
-                if ((item.timestamp * 1000) >= twentyFourHoursAgo) {
+                if ((item.timestamp * 1000) >= quotaWindowStartMs) {
                     todayCount++;
                 }
             }
@@ -221,7 +257,34 @@ function updateStatistics(groupedData) {
     document.getElementById('totalCount').textContent = totalCount;
     document.getElementById('todayCount').textContent = todayCount;
     document.getElementById('avgLength').textContent = avgLength;
+
+    // API 쿼터 통계 갱신
+    if (latestQuotaSummary) {
+        const apiQuotaCountEl = document.getElementById('apiQuotaCount');
+        const apiQuotaLabelEl = document.getElementById('apiQuotaLabel');
+        const apiQuotaStatItem = document.getElementById('apiQuotaStatItem');
+        const calls = latestQuotaSummary.api_calls_today || 0;
+        const limit = latestQuotaSummary.api_quota_limit || 500;
+        const pct = latestQuotaSummary.percentage || 0;
+        const resetHour = latestQuotaSummary.quota_reset_hour || 16;
+        
+        if (apiQuotaCountEl) {
+            apiQuotaCountEl.textContent = `${calls} / ${limit}`;
+        }
+        if (apiQuotaLabelEl) {
+            apiQuotaLabelEl.textContent = `API 쿼터 (${pct}%)`;
+        }
+        if (apiQuotaStatItem) {
+            apiQuotaStatItem.title = `오늘 Gemini API 쿼터 사용량: ${calls} / ${limit}회 (${pct}%)\n매일 오후 ${resetHour > 12 ? resetHour - 12 : resetHour}시(KST) 초기화`;
+            if (pct >= 90) {
+                apiQuotaStatItem.style.borderColor = 'rgba(239, 68, 68, 0.7)';
+            } else if (pct >= 70) {
+                apiQuotaStatItem.style.borderColor = 'rgba(245, 158, 11, 0.7)';
+            }
+        }
+    }
 }
+
 
 function populateFolderDropdowns(folders) {
     const folderFilterDropdown = document.getElementById('folderFilterDropdown');

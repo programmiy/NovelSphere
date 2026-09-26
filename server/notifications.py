@@ -79,7 +79,7 @@ def update_translation_status(
     episode_title: Optional[str] = None,
     current_sentence: int = 0,
     total_sentences: int = 0,
-    percentage: int = 0,
+    percentage: Optional[float] = None,
     episode_count: Optional[int] = None,
     is_active: bool = True,
     status_text: Optional[str] = None
@@ -94,7 +94,22 @@ def update_translation_status(
             _CURRENT_TRANSLATION_STATUS["current_episode_title"] = episode_title
         _CURRENT_TRANSLATION_STATUS["current_sentence"] = current_sentence
         _CURRENT_TRANSLATION_STATUS["total_sentences"] = total_sentences
-        _CURRENT_TRANSLATION_STATUS["percentage"] = percentage
+
+        api_calls = 0
+        quota_limit = 500
+        quota_pct = 0.0
+        try:
+            from server.quota import get_quota_summary
+            q = get_quota_summary()
+            api_calls = q["api_calls_today"]
+            quota_limit = q["quota_limit"]
+            quota_pct = q["percentage"]
+        except Exception:
+            pass
+
+        eff_percentage = quota_pct if (percentage is None or percentage == 100) else percentage
+        _CURRENT_TRANSLATION_STATUS["percentage"] = eff_percentage
+
         if episode_count is not None:
             _CURRENT_TRANSLATION_STATUS["episode_count"] = episode_count
         _CURRENT_TRANSLATION_STATUS["updated_at"] = now
@@ -102,17 +117,42 @@ def update_translation_status(
             _CURRENT_TRANSLATION_STATUS["status_text"] = status_text
         elif is_active:
             ep_str = f"[{episode_title}] " if episode_title else ""
-            _CURRENT_TRANSLATION_STATUS["status_text"] = f"{ep_str}{percentage}% 진행 중 ({current_sentence}/{total_sentences} 문장)"
+            _CURRENT_TRANSLATION_STATUS["status_text"] = f"{ep_str}오늘 API {api_calls}/{quota_limit}회 ({quota_pct}%)"
         else:
             _CURRENT_TRANSLATION_STATUS["status_text"] = "번역 완료"
 
 def get_translation_status() -> Dict[str, Any]:
-    """현재 번역 상태 조회 (15분 이상 업데이트 없으면 비활성 처리)."""
+    """현재 번역 상태 조회 (15분 이상 업데이트 없으면 비활성 처리, 최신 쿼터 상태 반영)."""
     with _STATUS_LOCK:
         data = dict(_CURRENT_TRANSLATION_STATUS)
         if data["is_active"] and (time.time() - data["updated_at"] > 900):
             data["is_active"] = False
+
+        try:
+            from server.quota import get_quota_summary
+            q = get_quota_summary()
+            data["api_calls_today"] = q["api_calls_today"]
+            data["api_quota_limit"] = q["quota_limit"]
+            data["quota_percentage"] = q["percentage"]
+            data["quota_reset_hour"] = q["quota_reset_hour"]
+            data["quota_window_start_ts"] = q["window_start_ts"]
+            data["today_translations_count"] = q["today_translations_count"]
+
+            if q["percentage"] > 0 or data.get("percentage") in (0, 100, None):
+                data["percentage"] = q["percentage"]
+
+            ep_str = f"[{data.get('current_episode_title')}] " if data.get('current_episode_title') else ""
+            if data["is_active"]:
+                data["status_text"] = f"{ep_str}오늘 API {q['api_calls_today']}/{q['quota_limit']}회 ({q['percentage']}%)"
+            else:
+                data["status_text"] = f"대기 중 (오늘 API {q['api_calls_today']}/{q['quota_limit']}회, {q['percentage']}%)"
+
+        except Exception as e:
+            logger.warning(f"[notifications] 쿼터 상태 반영 실패: {e}")
+
+
         return data
+
 
 def add_sse_subscriber(subscriber_queue):
     """실시간 로컬 알림 스트림 구독자 큐 등록."""

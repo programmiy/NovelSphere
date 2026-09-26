@@ -147,4 +147,13 @@ class AbnormalWhitelist(Base):
         Index('ix_abnormal_wl_url_pid', 'url', 'pid'),
     )
 
+class ApiCallLog(Base):
+    __tablename__ = 'api_call_logs'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    timestamp = Column(Integer, nullable=False, index=True)
+    model = Column(Text, nullable=True)
+    status_code = Column(Integer, default=200)
+
+
+
 

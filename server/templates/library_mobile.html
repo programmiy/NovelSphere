@@ -235,6 +235,25 @@
                     <label class="m-section-label">줄거리 및 개인 메모</label>
                     <textarea id="m-book-notes-summary" rows="3" placeholder="소설 줄거리나 감상 메모를 입력하세요..."></textarea>
                 </div>
+
+                <!-- 소설 소개 출처 URL (줄거리 크롤링) -->
+                <div class="m-form-section">
+                    <label class="m-section-label">소설 소개 출처 URL</label>
+                    <div class="m-input-with-btn">
+                        <input type="text" id="m-book-summary-source-url" placeholder="https://kakuyomu.jp/... 또는 syosetu.com/... 또는 novelup.plus/...">
+                        <button type="button" id="m-crawl-summary-btn" class="btn-sub">소개 가져오기</button>
+                    </div>
+                </div>
+
+                <!-- TOC 원본 목차 정렬 동기화 -->
+                <div class="m-form-section">
+                    <label class="m-section-label">소설 원본 목차(TOC) 동기화 URL</label>
+                    <span class="m-section-hint" style="font-size:11px; color:var(--text-muted); display:block; margin-bottom:4px;">공식 목차 페이지 URL을 입력하여 회차 번호와 순서를 동기화합니다.</span>
+                    <div class="m-input-with-btn">
+                        <input type="text" id="m-book-toc-source-url" placeholder="https://kakuyomu.jp/works/... 또는 syosetu.com/... 또는 novelup.plus/story/...">
+                        <button type="button" id="m-sync-toc-btn" class="btn-sub btn-highlight">TOC 동기화</button>
+                    </div>
+                </div>
             </div>
 
             <footer class="m-modal-footer">
@@ -249,8 +268,15 @@
         <div class="m-bottom-sheet-content full-height">
             <div class="sheet-handle"></div>
             <header class="m-modal-header">
-                <h2 id="m-url-list-title" class="m-toc-modal-title">회차 목차</h2>
-                <button id="m-url-list-close" class="m-modal-close-btn">&times;</button>
+                <div class="m-modal-title-group" style="display:flex; align-items:center; gap:6px; flex:1; min-width:0;">
+                    <h2 id="m-url-list-title" class="m-toc-modal-title">회차 목차</h2>
+                </div>
+                <div class="m-modal-header-actions" style="display:flex; align-items:center; gap:6px; flex-shrink:0;">
+                    <button type="button" id="m-import-toc-btn" class="m-btn-toc-sync" title="TOC 목차 정렬 동기화">
+                        <span class="material-icons" style="font-size:14px; vertical-align:middle;">alt_route</span> TOC 동기화
+                    </button>
+                    <button id="m-url-list-close" class="m-modal-close-btn">&times;</button>
+                </div>
             </header>
 
             <div class="m-toc-search-bar">

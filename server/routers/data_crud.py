@@ -330,10 +330,11 @@ def upsert_translations(items: List[TranslationItem], db: Session = Depends(get_
             episode_title=t_title,
             current_sentence=inserted_count + updated_count,
             total_sentences=len(items),
-            percentage=min(100, int((inserted_count + updated_count) / max(1, len(items)) * 100)),
+            percentage=None,
             is_active=True,
-            status_text=f"[{t_title}] 번역 진행 중 ({inserted_count + updated_count}/{len(items)} 문장)" if t_title else None
+            status_text=None
         )
+
 
     return {
         "inserted": inserted_count,

@@ -394,13 +394,22 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                     decoration: BoxDecoration(
-                      color: theme.accentColor.withOpacity(0.12),
+                      color: (status.percentage >= 90
+                              ? Colors.redAccent
+                              : (status.percentage >= 75
+                                  ? Colors.orangeAccent
+                                  : theme.accentColor))
+                          .withOpacity(0.12),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Text(
-                      '${status.percentage}%',
+                      'API 쿼터 ${status.percentage.toStringAsFixed(1)}%',
                       style: TextStyle(
-                        color: theme.accentColor,
+                        color: status.percentage >= 90
+                            ? Colors.redAccent
+                            : (status.percentage >= 75
+                                ? Colors.orangeAccent
+                                : theme.accentColor),
                         fontSize: 12,
                         fontWeight: FontWeight.bold,
                       ),
@@ -426,9 +435,16 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   value: progress,
                   minHeight: 6,
                   backgroundColor: theme.borderColor.withOpacity(0.5),
-                  valueColor: AlwaysStoppedAnimation<Color>(theme.accentColor),
+                  valueColor: AlwaysStoppedAnimation<Color>(
+                    status.percentage >= 90
+                        ? Colors.redAccent
+                        : (status.percentage >= 75
+                            ? Colors.orangeAccent
+                            : theme.accentColor),
+                  ),
                 ),
               ),
+
               const SizedBox(height: 8),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,

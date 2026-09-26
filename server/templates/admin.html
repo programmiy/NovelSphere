@@ -98,13 +98,21 @@
                         <div class="stat-label">글자 수</div>
                     </div>
                 </div>
-                <div class="stat-item" title="최근 24시간 내 번역된 문단 수">
+                <div class="stat-item" id="todayStatItem" title="오늘 쿼터 주기(매일 오후 4/5시 초기화 기준) 내 번역된 문단 수">
                     <span class="material-icons stat-icon">trending_up</span>
                     <div>
                         <div class="stat-number" id="todayCount">0</div>
                         <div class="stat-label">오늘 번역</div>
                     </div>
                 </div>
+                <div class="stat-item" id="apiQuotaStatItem" title="오늘 Gemini API 쿼터 사용량 (매일 오후 4/5시 초기화, 기본 모델 500회 기준)">
+                    <span class="material-icons stat-icon" style="color: #f59e0b;">bolt</span>
+                    <div>
+                        <div class="stat-number" id="apiQuotaCount">0 / 500</div>
+                        <div class="stat-label" id="apiQuotaLabel">API 쿼터 (0%)</div>
+                    </div>
+                </div>
+
                 <div class="stat-item" title="단락당 평균 글자 수">
                     <span class="material-icons stat-icon">straighten</span>
                     <div>

@@ -137,6 +137,31 @@ def test_mobile_library_detection_and_pc_preservation():
     assert "library.css" in cookie_pc_res.text
     assert "m-bottom-nav" not in cookie_pc_res.text
 
+    # 7. Desktop device with leftover mobile cookie -> Automatically corrected to PC template!
+    leftover_desktop_res = client.get("/", headers={"User-Agent": desktop_ua}, cookies={"lanovel_view_mode": "mobile"})
+    assert leftover_desktop_res.status_code == 200
+    assert "library.css" in leftover_desktop_res.text
+    assert "m-bottom-nav" not in leftover_desktop_res.text
+
+def test_toc_import_elements_presence_in_pc_and_mobile():
+    """PC 및 모바일 서재 뷰에서 TOC(목차) 임포트 및 동기화 버튼들이 완벽하게 존재하는지 검증"""
+    # 1. PC Library HTML
+    pc_res = client.get("/?view=pc")
+    assert pc_res.status_code == 200
+    assert "import-toc-btn" in pc_res.text
+    assert "sync-toc-editor-btn" in pc_res.text
+    assert "book-toc-source-url" in pc_res.text
+    assert "crawl-summary-btn" in pc_res.text
+
+    # 2. Mobile Library HTML
+    mobile_res = client.get("/m")
+    assert mobile_res.status_code == 200
+    assert "m-import-toc-btn" in mobile_res.text
+    assert "m-sync-toc-btn" in mobile_res.text
+    assert "m-book-toc-source-url" in mobile_res.text
+    assert "m-crawl-summary-btn" in mobile_res.text
+
+
 
 def test_book_visibility_toggle_and_hidden_filtering():
     """책 숨김 토글(is_visible) 및 /api/books 필터링 동작 검증"""

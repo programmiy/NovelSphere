@@ -55,6 +55,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const notesSummaryTextarea = document.getElementById('book-notes-summary');
     const summarySourceUrlInput = document.getElementById('book-summary-source-url');
     const crawlSummaryBtn = document.getElementById('crawl-summary-btn');
+    const bookTocSourceUrlInput = document.getElementById('book-toc-source-url');
+    const syncTocEditorBtn = document.getElementById('sync-toc-editor-btn');
     const tagModalCloseBtn = document.getElementById('tag-editor-close');
     const tagModalCancelBtn = document.getElementById('tag-editor-cancel');
     const tagModalSaveBtn = document.getElementById('tag-editor-save');
@@ -689,6 +691,7 @@ document.addEventListener('DOMContentLoaded', () => {
         newTagNameInput.value = '';
         notesSummaryTextarea.value = '';
         summarySourceUrlInput.value = '';
+        if (bookTocSourceUrlInput) bookTocSourceUrlInput.value = '';
         tagModalSaveBtn.disabled = false;
         tagModalSaveBtn.textContent = '저장하기';
     }
@@ -847,6 +850,53 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (error) {
             console.error('Crawl failed:', error);
             alert(`줄거리 가져오기 오류: ${error.message}`);
+        }
+    }
+
+    async function handleSyncTocFromEditor() {
+        if (!currentEditingBook) return;
+        const tocUrl = bookTocSourceUrlInput ? bookTocSourceUrlInput.value.trim() : '';
+        if (!tocUrl) {
+            alert('목차(TOC) URL을 입력해주세요.');
+            return;
+        }
+
+        if (syncTocEditorBtn) syncTocEditorBtn.disabled = true;
+        showToast('TOC 목차를 가져와 순서를 동기화하는 중...', 5000);
+
+        try {
+            const tocResponse = await fetch('/api/import-toc', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ toc_url: tocUrl }),
+            });
+
+            if (!tocResponse.ok) {
+                const errorData = await tocResponse.json();
+                throw new Error(errorData.detail || 'TOC를 가져오는 데 실패했습니다.');
+            }
+
+            const tocUrls = await tocResponse.json();
+            const updateResponse = await fetch(`/api/books/${encodeURIComponent(currentEditingBook.name)}/urls`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ urls: tocUrls }),
+            });
+
+            if (!updateResponse.ok) {
+                const errorData = await updateResponse.json();
+                throw new Error(errorData.detail || '순서 업데이트에 실패했습니다.');
+            }
+
+            const updateData = await updateResponse.json();
+            showToast(updateData.message || '목차 순서 동기화 완료');
+            await fetchBooks();
+        } catch (error) {
+            console.error('TOC sync failed:', error);
+            alert(`TOC 동기화 실패: ${error.message}`);
+            showToast(`동기화 실패: ${error.message}`, 4000);
+        } finally {
+            if (syncTocEditorBtn) syncTocEditorBtn.disabled = false;
         }
     }
 
@@ -1178,6 +1228,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Other Form Listeners
     if (newTagForm) newTagForm.addEventListener('submit', handleAddNewTag);
     if (crawlSummaryBtn) crawlSummaryBtn.addEventListener('click', handleCrawlSummary);
+    if (syncTocEditorBtn) syncTocEditorBtn.addEventListener('click', handleSyncTocFromEditor);
     if (importTocBtn) importTocBtn.addEventListener('click', handleImportToc);
     if (fetchMissingTitlesBtn) fetchMissingTitlesBtn.addEventListener('click', handleFetchMissingTitles);
     if (downloadAllBtn) downloadAllBtn.addEventListener('click', handleDownloadAllOffline);

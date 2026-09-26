@@ -63,6 +63,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const urlListStats = document.getElementById('m-urlListStats');
     const urlSearchInput = document.getElementById('m-urlSearchInput');
     const urlListCloseBtn = document.getElementById('m-url-list-close');
+    const mImportTocBtn = document.getElementById('m-import-toc-btn');
+
+    // Summary Crawl & TOC Sync in Edit Modal
+    const mBookSummarySourceUrl = document.getElementById('m-book-summary-source-url');
+    const mCrawlSummaryBtn = document.getElementById('m-crawl-summary-btn');
+    const mBookTocSourceUrl = document.getElementById('m-book-toc-source-url');
+    const mSyncTocBtn = document.getElementById('m-sync-toc-btn');
 
     // Menu Item Actions
     const mFetchMissingTitlesBtn = document.getElementById('m-fetch-missing-titles-btn');
@@ -609,6 +616,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const isVisibleFlag = currentEditingBook.is_visible !== 0 && activity?.is_visible !== 0;
         if (isVisibleToggle) isVisibleToggle.checked = isVisibleFlag;
         notesSummaryTextarea.value = activity?.summary || activity?.notes || '';
+        if (mBookSummarySourceUrl) mBookSummarySourceUrl.value = '';
+        if (mBookTocSourceUrl) mBookTocSourceUrl.value = '';
 
         tagModal.style.display = 'block';
 
@@ -746,6 +755,129 @@ document.addEventListener('DOMContentLoaded', () => {
             const filtered = modalUrls.filter(u => (u.title || u.url).toLowerCase().includes(q));
             renderTocList(filtered, urlListTitle.textContent.replace(' 목차', ''));
         });
+    }
+
+    // --- TOC Import & Order Synchronization ---
+    async function executeTocSync(bookName, tocUrl) {
+        if (!bookName) {
+            alert('대상 책 이름을 확인할 수 없습니다.');
+            return;
+        }
+        if (!tocUrl || !tocUrl.trim()) {
+            alert('목차(TOC) URL을 입력해주세요.');
+            return;
+        }
+
+        const cleanUrl = tocUrl.trim();
+        showToast('TOC 목차 수집 및 동기화 중...', 6000);
+
+        try {
+            const tocResponse = await fetch('/api/import-toc', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ toc_url: cleanUrl }),
+            });
+
+            if (!tocResponse.ok) {
+                const errData = await tocResponse.json();
+                throw new Error(errData.detail || 'TOC를 가져오는 데 실패했습니다.');
+            }
+
+            const tocUrls = await tocResponse.json();
+            const updateResponse = await fetch(`/api/books/${encodeURIComponent(bookName)}/urls`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ urls: tocUrls }),
+            });
+
+            if (!updateResponse.ok) {
+                const errData = await updateResponse.json();
+                throw new Error(errData.detail || '순서 업데이트에 실패했습니다.');
+            }
+
+            const updateData = await updateResponse.json();
+            showToast(updateData.message || '목차 순서 동기화 완료');
+
+            // 목차 모달이 열려 있다면 즉시 새로고침
+            if (urlListModal.style.display === 'block') {
+                await openTocModal(bookName);
+            }
+            await syncBooksFromServer();
+        } catch (error) {
+            alert(`TOC 동기화 실패: ${error.message}`);
+            showToast(`동기화 실패: ${error.message}`, 4000);
+        }
+    }
+
+    // 목차 모달 헤더의 TOC 동기화 버튼 클릭
+    if (mImportTocBtn) {
+        mImportTocBtn.addEventListener('click', async () => {
+            const bookName = urlListTitle.textContent.replace(' 목차', '').trim();
+            if (!bookName) {
+                alert('책 이름을 확인할 수 없습니다.');
+                return;
+            }
+            const inputUrl = prompt('목차(TOC) 원본 URL을 입력하세요 (카쿠요무, 소설가가 되자, 노벨업+ 등):');
+            if (inputUrl) {
+                await executeTocSync(bookName, inputUrl);
+            }
+        });
+    }
+
+    // 소설 정보 모달 내의 TOC 동기화 버튼 클릭
+    if (mSyncTocBtn) {
+        mSyncTocBtn.addEventListener('click', async () => {
+            if (!currentEditingBook) return;
+            const inputUrl = mBookTocSourceUrl ? mBookTocSourceUrl.value.trim() : '';
+            if (!inputUrl) {
+                alert('TOC 목차 동기화 URL을 입력하세요.');
+                return;
+            }
+            await executeTocSync(currentEditingBook.name, inputUrl);
+        });
+    }
+
+    // 소설 정보 모달 내의 줄거리 소개 가져오기 버튼 클릭
+    async function handleCrawlSummary() {
+        if (!mBookSummarySourceUrl) return;
+        const url = mBookSummarySourceUrl.value.trim();
+        if (!url) {
+            alert('소설 소개 페이지 URL을 입력하세요.');
+            return;
+        }
+
+        mCrawlSummaryBtn.disabled = true;
+        mCrawlSummaryBtn.textContent = '가져오는 중...';
+
+        try {
+            const res = await fetch('/api/crawl-summary', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url: url })
+            });
+
+            if (!res.ok) {
+                const data = await res.json();
+                throw new Error(data.detail || '줄거리 가져오기 실패');
+            }
+
+            const data = await res.json();
+            if (data.summary) {
+                notesSummaryTextarea.value = data.summary;
+                showToast('소개글을 성공적으로 가져왔습니다.');
+            } else {
+                alert('소개글 내용을 찾을 수 없습니다.');
+            }
+        } catch (e) {
+            alert(`오류: ${e.message}`);
+        } finally {
+            mCrawlSummaryBtn.disabled = false;
+            mCrawlSummaryBtn.textContent = '소개 가져오기';
+        }
+    }
+
+    if (mCrawlSummaryBtn) {
+        mCrawlSummaryBtn.addEventListener('click', handleCrawlSummary);
     }
 
     // --- Global Click Delegation ---

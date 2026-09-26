@@ -30,31 +30,13 @@ _stop_lock = threading.Lock()
 _gemini_session = requests.Session()
 
 
-def is_us_dst(dt: Optional[datetime.datetime] = None) -> bool:
-    """
-    미국 써머타임(Daylight Saving Time, PDT) 적용 여부 판별.
-    시작: 3월 둘째 주 일요일 02:00
-    종료: 11월 첫째 주 일요일 02:00
-    """
-    if dt is None:
-        dt = datetime.datetime.now()
-    year = dt.year
-    first_sun_mar = (6 - datetime.date(year, 3, 1).weekday()) % 7 + 1
-    dst_start = datetime.datetime(year, 3, first_sun_mar + 7, 2, 0)
-
-    first_sun_nov = (6 - datetime.date(year, 11, 1).weekday()) % 7 + 1
-    dst_end = datetime.datetime(year, 11, first_sun_nov, 2, 0)
-
-    return dst_start <= dt < dst_end
-
-
-def get_quota_reset_hour(dt: Optional[datetime.datetime] = None) -> int:
-    """
-    Gemini API 일일 쿼터 초기화 시점(미국 태평양 자정)의 한국 시간(KST) 시간(hour) 반환:
-    - 써머타임(PDT, UTC-7): 한국(UTC+9) 기준 오후 4시 (16시)
-    - 표준시(PST, UTC-8): 한국(UTC+9) 기준 오후 5시 (17시)
-    """
-    return 16 if is_us_dst(dt) else 17
+from server.quota import (
+    is_us_dst,
+    get_quota_reset_hour,
+    get_current_quota_window_start_ts,
+    record_api_call,
+    get_quota_summary
+)
 
 
 
@@ -170,9 +152,23 @@ def call_gemini_api(api_url: str, prompt: str, api_key: Optional[str] = None, sy
     if key and "key=" not in api_url:
         headers["x-goog-api-key"] = key
 
-    response = _gemini_session.post(api_url, json=payload, headers=headers, timeout=180)
-    response.raise_for_status()
-    return response.json()
+    model_name = "gemini"
+    if "/models/" in api_url:
+        try:
+            model_name = api_url.split("/models/")[1].split(":")[0]
+        except Exception:
+            pass
+
+    try:
+        response = _gemini_session.post(api_url, json=payload, headers=headers, timeout=180)
+        record_api_call(model=model_name, status_code=response.status_code)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        status_code = getattr(getattr(e, 'response', None), 'status_code', 500)
+        record_api_call(model=model_name, status_code=status_code)
+        raise
+
 
 def process_repeated_chars(text: str) -> str:
     """6번 이상 반복되는 문자를 '(반복)'으로 대체합니다."""

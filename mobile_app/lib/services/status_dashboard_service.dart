@@ -11,13 +11,17 @@ class DashboardStatusData {
   final String? currentEpisodeTitle;
   final int currentSentence;
   final int totalSentences;
-  final int percentage;
+  final double percentage;
   final int episodeCount;
   final String statusText;
   final int reviewPendingCount;
   final int apiErrorsTotal;
   final String apiErrorsSummary;
   final Map<String, dynamic> apiErrorsByType;
+  final int apiCallsToday;
+  final int apiQuotaLimit;
+  final int quotaResetHour;
+  final int todayTranslationsCount;
   final int updatedAt;
 
   DashboardStatusData({
@@ -33,6 +37,10 @@ class DashboardStatusData {
     required this.apiErrorsTotal,
     required this.apiErrorsSummary,
     required this.apiErrorsByType,
+    this.apiCallsToday = 0,
+    this.apiQuotaLimit = 500,
+    this.quotaResetHour = 16,
+    this.todayTranslationsCount = 0,
     required this.updatedAt,
   });
 
@@ -44,17 +52,22 @@ class DashboardStatusData {
       currentEpisodeTitle: json['current_episode_title'] as String?,
       currentSentence: (json['current_sentence'] as num?)?.toInt() ?? 0,
       totalSentences: (json['total_sentences'] as num?)?.toInt() ?? 0,
-      percentage: (json['percentage'] as num?)?.toInt() ?? 0,
+      percentage: (json['percentage'] as num?)?.toDouble() ?? 0.0,
       episodeCount: (json['episode_count'] as num?)?.toInt() ?? 0,
       statusText: json['status_text'] as String? ?? '대기 중',
       reviewPendingCount: (json['review_pending_count'] as num?)?.toInt() ?? 0,
       apiErrorsTotal: (apiErrors['total'] as num?)?.toInt() ?? 0,
       apiErrorsSummary: apiErrors['summary_text'] as String? ?? '오류 없음',
       apiErrorsByType: (apiErrors['by_type'] as Map<String, dynamic>?) ?? {},
+      apiCallsToday: (json['api_calls_today'] as num?)?.toInt() ?? 0,
+      apiQuotaLimit: (json['api_quota_limit'] as num?)?.toInt() ?? 500,
+      quotaResetHour: (json['quota_reset_hour'] as num?)?.toInt() ?? 16,
+      todayTranslationsCount: (json['today_translations_count'] as num?)?.toInt() ?? 0,
       updatedAt: (json['updated_at'] as num?)?.toInt() ?? 0,
     );
   }
 }
+
 
 class StatusDashboardService {
   static final ValueNotifier<DashboardStatusData?> currentStatus =
@@ -126,7 +139,7 @@ class StatusDashboardService {
           } else {
             final bookName = data.bookTitle ?? '번역 작업';
             final title = data.isActive
-                ? '📚 LANOVEL 작업 현황: $bookName (${data.percentage}%)'
+                ? '📚 LANOVEL 작업: $bookName (${data.percentage.toStringAsFixed(1)}%)'
                 : '📚 LANOVEL 작업 현황 (검수/오류 대기)';
 
             final detailLines = <String>[];
@@ -149,7 +162,7 @@ class StatusDashboardService {
             await LocalNotificationService.updateDashboardNotification(
               title: title,
               body: body,
-              progress: data.percentage,
+              progress: data.percentage.round(),
               maxProgress: 100,
               detailLines: detailLines,
               payload: jsonEncode({
@@ -157,6 +170,7 @@ class StatusDashboardService {
                 'chapter_title': data.currentEpisodeTitle,
               }),
             );
+
           }
         } else {
           await LocalNotificationService.cancelDashboardNotification();

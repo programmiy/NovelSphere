@@ -48,23 +48,27 @@ async def read_logs_ui(request: Request):
 import re
 
 def is_mobile_request(request: Request) -> bool:
-    # 1. Query parameter override (?view=mobile or ?view=pc)
+    # 1. Query parameter explicit override (?view=mobile or ?view=pc)
     view_param = request.query_params.get("view", "").lower()
     if view_param == "mobile":
         return True
     if view_param == "pc":
         return False
 
-    # 2. Cookie override
+    # 2. User-Agent detection (PC vs Mobile device)
+    ua = request.headers.get("user-agent", "")
+    is_mobile_device = bool(re.search(r'Mobile|Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini', ua, re.I))
+
+    # 3. Cookie override
     cookie_mode = request.cookies.get("lanovel_view_mode", "").lower()
-    if cookie_mode == "mobile":
-        return True
     if cookie_mode == "pc":
         return False
+    if cookie_mode == "mobile" and is_mobile_device:
+        # Only honor mobile cookie if client is actually a mobile device
+        return True
 
-    # 3. User-Agent detection
-    ua = request.headers.get("user-agent", "")
-    return bool(re.search(r'Mobile|Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini', ua, re.I))
+    # 4. PC Desktop is ALWAYS the default unless on mobile device!
+    return is_mobile_device
 
 def serve_library_view(request: Request):
     is_mobile = is_mobile_request(request)
@@ -75,6 +79,9 @@ def serve_library_view(request: Request):
     view_param = request.query_params.get("view", "").lower()
     if view_param in ("mobile", "pc"):
         response.set_cookie(key="lanovel_view_mode", value=view_param, max_age=60*60*24*365)
+    elif not is_mobile and request.cookies.get("lanovel_view_mode") == "mobile":
+        # If desktop client has leftover mobile cookie, fix it to pc
+        response.set_cookie(key="lanovel_view_mode", value="pc", max_age=60*60*24*365)
     return response
 
 @router.get(
@@ -93,9 +100,7 @@ async def read_library_ui_alias(request: Request):
     description="모바일 전용 서재 웹페이지를 렌더링합니다."
 )
 async def read_mobile_library(request: Request):
-    response = templates.TemplateResponse("library_mobile.html", {"request": request, "is_mobile": True})
-    response.set_cookie(key="lanovel_view_mode", value="mobile", max_age=60*60*24*365)
-    return response
+    return templates.TemplateResponse("library_mobile.html", {"request": request, "is_mobile": True})
 
 @router.get(
     "/",
