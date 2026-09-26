@@ -8,6 +8,8 @@ import '../viewer/reader_screen.dart';
 import 'reading_stats_sheet.dart';
 import '../glossary/glossary_screen.dart';
 import '../settings/settings_screen.dart';
+import '../../services/notification_service.dart';
+import 'notification_center_sheet.dart';
 
 class LibraryScreen extends StatefulWidget {
   const LibraryScreen({super.key});
@@ -39,6 +41,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
     _isGridView = (PreferencesService.libraryViewMode == 'grid');
     _loadLibrary();
     _checkNetworkAndServer();
+    NotificationService.fetchRecentNotifications();
   }
 
   Future<void> _checkNetworkAndServer() async {
@@ -156,11 +159,12 @@ class _LibraryScreenState extends State<LibraryScreen> {
         onRefresh: () async {
           await _checkNetworkAndServer();
           await _loadLibrary();
+          await NotificationService.fetchRecentNotifications();
         },
         color: theme.accentColor,
         child: CustomScrollView(
           slivers: [
-            // 1. 헤더 & 동기화 상태 칩
+            // 1. 헤더 & 동기화 상태 칩 & 알림 벨
             SliverToBoxAdapter(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
@@ -182,8 +186,14 @@ class _LibraryScreenState extends State<LibraryScreen> {
                         ),
                       ],
                     ),
-                    // 네트워크 & 원클릭 동기화 상태 뱃지
-                    _buildSyncStatusBadge(theme),
+                    // 알림 센터 벨 & 네트워크 상태 뱃지
+                    Row(
+                      children: [
+                        _buildNotificationBell(theme),
+                        const SizedBox(width: 8),
+                        _buildSyncStatusBadge(theme),
+                      ],
+                    ),
                   ],
                 ),
               ),
@@ -297,6 +307,64 @@ class _LibraryScreenState extends State<LibraryScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  // 알림 센터 벨 & 읽지 않은 알림 뱃지
+  Widget _buildNotificationBell(ReaderThemeData theme) {
+    return ValueListenableBuilder<int>(
+      valueListenable: NotificationService.unreadCount,
+      builder: (context, unread, _) {
+        return InkWell(
+          onTap: () {
+            showModalBottomSheet(
+              context: context,
+              backgroundColor: Colors.transparent,
+              isScrollControlled: true,
+              builder: (_) => NotificationCenterSheet(
+                theme: theme,
+                onNotificationOpened: () => _loadLibrary(),
+              ),
+            );
+          },
+          borderRadius: BorderRadius.circular(20),
+          child: Padding(
+            padding: const EdgeInsets.all(6),
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Icon(
+                  unread > 0 ? Icons.notifications_active_rounded : Icons.notifications_none_rounded,
+                  color: unread > 0 ? theme.accentColor : theme.textColor,
+                  size: 24,
+                ),
+                if (unread > 0)
+                  Positioned(
+                    top: -2,
+                    right: -2,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                      decoration: const BoxDecoration(
+                        color: Colors.redAccent,
+                        shape: BoxShape.circle,
+                      ),
+                      constraints: const BoxConstraints(minWidth: 14, minHeight: 14),
+                      child: Text(
+                        unread > 9 ? '9+' : '$unread',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 9,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 

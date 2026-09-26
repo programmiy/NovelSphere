@@ -45,6 +45,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
   // 독서 시간 기록용 타이머
   Timer? _readingTimer;
   int _sessionSeconds = 0;
+  Timer? _saveProgressTimer;
 
   @override
   void initState() {
@@ -54,16 +55,64 @@ class _ReaderScreenState extends State<ReaderScreen> {
     if (PreferencesService.keepScreenOn) {
       WakelockPlus.enable();
     }
+
+    _scrollController.addListener(() {
+      if (PreferencesService.viewMode != 'paging' && _scrollController.hasClients) {
+        _debounceSaveProgress();
+      }
+    });
   }
 
   @override
   void dispose() {
     _readingTimer?.cancel();
+    _saveProgressTimer?.cancel();
+    _saveCurrentPosition();
     _flushReadingLog();
     _pageController.dispose();
     _scrollController.dispose();
     WakelockPlus.disable();
     super.dispose();
+  }
+
+  void _onPageChanged(int page) {
+    setState(() => _currentPage = page);
+    _debounceSaveProgress();
+  }
+
+  void _debounceSaveProgress() {
+    _saveProgressTimer?.cancel();
+    _saveProgressTimer = Timer(const Duration(milliseconds: 700), () {
+      _saveCurrentPosition();
+    });
+  }
+
+  void _saveCurrentPosition() {
+    if (_sentences.isEmpty || _chapters.isEmpty || _currentChapterIndex >= _chapters.length) return;
+    const sentencesPerPage = 8;
+    String? pid;
+
+    final isPaging = PreferencesService.viewMode == 'paging';
+    if (isPaging) {
+      final startIdx = _currentPage * sentencesPerPage;
+      pid = (startIdx < _sentences.length) ? _sentences[startIdx].pid : _sentences.first.pid;
+    } else {
+      if (_scrollController.hasClients && _scrollController.position.maxScrollExtent > 0) {
+        final ratio = (_scrollController.offset / _scrollController.position.maxScrollExtent).clamp(0.0, 1.0);
+        final sIdx = (ratio * (_sentences.length - 1)).round();
+        pid = _sentences[sIdx].pid;
+      } else {
+        pid = _sentences.first.pid;
+      }
+    }
+
+    final targetChapter = _chapters[_currentChapterIndex];
+    LocalDbService.updateReadingProgress(
+      bookName: widget.bookName,
+      chapterTitle: targetChapter.title,
+      pid: pid,
+      isCompleted: (_currentChapterIndex == _chapters.length - 1 && _currentPage >= (_sentences.length / sentencesPerPage).ceil() - 1),
+    );
   }
 
   void _startReadingTracker() {
@@ -93,24 +142,34 @@ class _ReaderScreenState extends State<ReaderScreen> {
 
     if (_chapters.isNotEmpty) {
       int initialIdx = 0;
+      String? initialPid;
+      final book = await LocalDbService.getBook(widget.bookName);
+
       if (widget.initialChapterTitle != null) {
         final found = _chapters.indexWhere((c) => c.title == widget.initialChapterTitle);
-        if (found != -1) initialIdx = found;
+        if (found != -1) {
+          initialIdx = found;
+          if (book?.lastReadChapterTitle == widget.initialChapterTitle) {
+            initialPid = book?.lastReadPid;
+          }
+        }
       } else {
         // 책의 마지막 읽던 챕터 확인
-        final book = await LocalDbService.getBook(widget.bookName);
         if (book?.lastReadChapterTitle != null) {
           final found = _chapters.indexWhere((c) => c.title == book!.lastReadChapterTitle);
-          if (found != -1) initialIdx = found;
+          if (found != -1) {
+            initialIdx = found;
+            initialPid = book?.lastReadPid;
+          }
         }
       }
-      await _loadChapter(initialIdx);
+      await _loadChapter(initialIdx, targetPid: initialPid);
     } else {
       setState(() => _isLoading = false);
     }
   }
 
-  Future<void> _loadChapter(int index) async {
+  Future<void> _loadChapter(int index, {String? targetPid}) async {
     if (index < 0 || index >= _chapters.length) return;
 
     setState(() {
@@ -122,23 +181,48 @@ class _ReaderScreenState extends State<ReaderScreen> {
     // 챕터 압축 해제 로드 (1ms)
     final sentences = await LocalDbService.loadChapterSentences(targetChapter.id!);
 
+    const sentencesPerPage = 8;
+    int targetPage = 0;
+    if (targetPid != null && sentences.isNotEmpty) {
+      final sIdx = sentences.indexWhere((s) => s.pid == targetPid);
+      if (sIdx != -1) {
+        targetPage = (sIdx / sentencesPerPage).floor();
+      }
+    }
+
     setState(() {
       _sentences = sentences;
       _isLoading = false;
-      _currentPage = 0;
+      _currentPage = targetPage;
     });
 
     // 독서 진도 저장
+    final currentFirstPid = sentences.isNotEmpty
+        ? ((targetPage * sentencesPerPage < sentences.length)
+            ? sentences[targetPage * sentencesPerPage].pid
+            : sentences.first.pid)
+        : null;
+
     await LocalDbService.updateReadingProgress(
       bookName: widget.bookName,
       chapterTitle: targetChapter.title,
-      pid: sentences.isNotEmpty ? sentences.first.pid : null,
+      pid: currentFirstPid,
       isCompleted: (index == _chapters.length - 1),
     );
 
-    if (_pageController.hasClients) {
-      _pageController.jumpToPage(0);
-    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_pageController.hasClients) {
+        _pageController.jumpToPage(targetPage);
+      }
+      if (_scrollController.hasClients && targetPid != null && sentences.isNotEmpty) {
+        final sIdx = sentences.indexWhere((s) => s.pid == targetPid);
+        if (sIdx != -1 && _scrollController.position.maxScrollExtent > 0) {
+          final ratio = sIdx / (sentences.length - 1);
+          final offset = (ratio * _scrollController.position.maxScrollExtent).clamp(0.0, _scrollController.position.maxScrollExtent);
+          _scrollController.jumpTo(offset);
+        }
+      }
+    });
   }
 
   void _onSentenceLongPressed(Sentence sentence) {
@@ -413,7 +497,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
     return PageView.builder(
       controller: _pageController,
       itemCount: pageCount,
-      onPageChanged: (page) => setState(() => _currentPage = page),
+      onPageChanged: _onPageChanged,
       itemBuilder: (context, pageIndex) {
         final start = pageIndex * sentencesPerPage;
         final end = (start + sentencesPerPage).clamp(0, _sentences.length);

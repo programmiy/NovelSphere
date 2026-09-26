@@ -244,7 +244,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             if (paramTitle) {
                 const foundParamIndex = chapterTitles.findIndex(t => t === paramTitle);
-                if (foundParamIndex !== -1) startChapterIndex = foundParamIndex;
+                if (foundParamIndex !== -1) {
+                    startChapterIndex = foundParamIndex;
+                    if (activityData.last_read_chapter_title === paramTitle && activityData.last_read_pid) {
+                        startPid = activityData.last_read_pid;
+                    }
+                }
             } else if (activityData.last_read_chapter_title) {
                 const foundActIndex = chapterTitles.findIndex(t => t === activityData.last_read_chapter_title);
                 if (foundActIndex !== -1) {
@@ -294,7 +299,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
 
             if (prefs.mode === 'scroll') {
-                renderScrollMode();
+                renderScrollMode(startPid);
             } else {
                 await paginate();
 
@@ -318,11 +323,23 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     // --- Continuous Scroll Mode Rendering ---
-    function renderScrollMode() {
+    function renderScrollMode(targetPid = null) {
         contentArea.innerHTML = currentChapterItems.map(createItemHtml).join('');
         pageIndicator.textContent = `연속 스크롤 (총 ${currentChapterItems.length} 단락)`;
         contentArea.style.opacity = '1';
-        window.scrollTo({ top: 0, behavior: 'instant' });
+        
+        if (targetPid) {
+            requestAnimationFrame(() => {
+                const targetEl = contentArea.querySelector(`[data-pid="${targetPid}"]`);
+                if (targetEl) {
+                    targetEl.scrollIntoView({ behavior: 'instant', block: 'start' });
+                } else {
+                    window.scrollTo({ top: 0, behavior: 'instant' });
+                }
+            });
+        } else {
+            window.scrollTo({ top: 0, behavior: 'instant' });
+        }
         saveLastReadPosition();
     }
 
@@ -435,7 +452,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     window.addEventListener('scroll', () => {
-        if (prefs.mode === 'scroll') updateProgress();
+        if (prefs.mode === 'scroll') {
+            updateProgress();
+            saveLastReadPosition();
+        }
     });
 
     // --- Navigation ---
@@ -490,7 +510,17 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         let firstPid = null;
         if (prefs.mode === 'scroll') {
-            firstPid = currentChapterItems[0]?.pid || null;
+            const items = contentArea.querySelectorAll('.translation-item');
+            for (const item of items) {
+                const rect = item.getBoundingClientRect();
+                if (rect.bottom >= 80) { // 80px 헤더 여백 고려 상단에 걸친 첫 단락
+                    firstPid = item.dataset.pid || null;
+                    break;
+                }
+            }
+            if (!firstPid && currentChapterItems.length > 0) {
+                firstPid = currentChapterItems[0]?.pid || null;
+            }
         } else {
             firstPid = pages[currentPageInChapter]?.[0]?.pid || null;
         }

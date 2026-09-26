@@ -25,6 +25,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String _serverStatusText = '확인 전';
   Color _serverStatusColor = Colors.grey;
 
+  bool _hideWifiSection = false;
+  bool _hideServerSection = false;
+
   bool _isSyncing = false;
   double _syncProgress = 0.0;
   String _syncStatusMessage = '';
@@ -35,7 +38,61 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _wifi1Controller.text = PreferencesService.trustedWifi1;
     _wifi2Controller.text = PreferencesService.trustedWifi2;
     _serverUrlController.text = PreferencesService.serverUrl;
+    _hideWifiSection = PreferencesService.hideWifiSection;
+    _hideServerSection = PreferencesService.hideServerSection;
     _checkCurrentWifi();
+  }
+
+  Future<void> _autoRegisterCurrentWifi() async {
+    final info = NetworkInfo();
+    String? ssid;
+    try {
+      ssid = await info.getWifiName();
+      ssid = ssid?.replaceAll('"', '').trim();
+    } catch (_) {}
+
+    if (ssid == null || ssid.isEmpty || ssid.contains('연결 안 됨') || ssid.contains('확인 불가')) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('현재 활성화된 Wi-Fi 네트워크를 감지할 수 없습니다. Wi-Fi 연결을 확인해주세요.')),
+        );
+      }
+      return;
+    }
+
+    // Wi-Fi 1이 비어있거나 동일하면 1에, 아니면 Wi-Fi 2가 비어있으면 2에, 둘 다 차있으면 1을 갱신
+    if (_wifi1Controller.text.trim().isEmpty || _wifi1Controller.text.trim() == ssid) {
+      _wifi1Controller.text = ssid;
+    } else if (_wifi2Controller.text.trim().isEmpty) {
+      _wifi2Controller.text = ssid;
+    } else {
+      _wifi1Controller.text = ssid;
+    }
+
+    await PreferencesService.setTrustedWifi1(_wifi1Controller.text.trim());
+    await PreferencesService.setTrustedWifi2(_wifi2Controller.text.trim());
+    await _checkCurrentWifi();
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('현재 Wi-Fi ("$ssid")가 신뢰 네트워크로 자동 등록되었습니다.'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    }
+  }
+
+  Future<void> _toggleHideWifiSection() async {
+    final next = !_hideWifiSection;
+    setState(() => _hideWifiSection = next);
+    await PreferencesService.setHideWifiSection(next);
+  }
+
+  Future<void> _toggleHideServerSection() async {
+    final next = !_hideServerSection;
+    setState(() => _hideServerSection = next);
+    await PreferencesService.setHideServerSection(next);
   }
 
   Future<void> _checkCurrentWifi() async {
@@ -180,154 +237,35 @@ class _SettingsScreenState extends State<SettingsScreen> {
         padding: const EdgeInsets.all(20),
         children: [
           // 1. 신뢰 Wi-Fi 2개 설정 섹션 (사용자 코멘트 반영)
-          _buildSectionHeader(theme, '신뢰 Wi-Fi 동기화 보안 (최대 2개 등록)', Icons.wifi_lock_rounded),
-          const SizedBox(height: 8),
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: theme.surfaceColor,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: theme.borderColor),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Icon(
-                      _isTrustedWifi ? Icons.check_circle : Icons.warning_amber_rounded,
-                      color: _isTrustedWifi ? Colors.green : Colors.orange,
-                      size: 20,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        '현재 접속 Wi-Fi: $_currentWifiSsid',
-                        style: TextStyle(color: theme.textColor, fontWeight: FontWeight.w600, fontSize: 13),
-                      ),
-                    ),
-                    IconButton(
-                      icon: Icon(Icons.refresh, color: theme.subTextColor, size: 20),
-                      onPressed: _checkCurrentWifi,
-                    ),
-                  ],
-                ),
-                Text(
-                  _isTrustedWifi
-                      ? '등록된 신뢰 Wi-Fi에 연결되어 있어 자동/백그라운드 동기화가 활성화됩니다.'
-                      : '등록되지 않은 네트워크입니다. 배터리 소모 방지를 위해 동기화가 차단됩니다.',
-                  style: TextStyle(color: theme.subTextColor, fontSize: 11),
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: _wifi1Controller,
-                  style: TextStyle(color: theme.textColor, fontSize: 14),
-                  decoration: InputDecoration(
-                    labelText: '신뢰 Wi-Fi 1 (SSID)',
-                    labelStyle: TextStyle(color: theme.subTextColor),
-                    hintText: '예: MyHome_5G',
-                    suffixIcon: IconButton(
-                      icon: const Icon(Icons.input_rounded, size: 18),
-                      tooltip: '현재 Wi-Fi 입력',
-                      onPressed: () {
-                        if (_currentWifiSsid.isNotEmpty && !_currentWifiSsid.contains('연결 안 됨')) {
-                          _wifi1Controller.text = _currentWifiSsid;
-                        }
-                      },
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: _wifi2Controller,
-                  style: TextStyle(color: theme.textColor, fontSize: 14),
-                  decoration: InputDecoration(
-                    labelText: '신뢰 Wi-Fi 2 (SSID)',
-                    labelStyle: TextStyle(color: theme.subTextColor),
-                    hintText: '예: Office_WiFi',
-                    suffixIcon: IconButton(
-                      icon: const Icon(Icons.input_rounded, size: 18),
-                      tooltip: '현재 Wi-Fi 입력',
-                      onPressed: () {
-                        if (_currentWifiSsid.isNotEmpty && !_currentWifiSsid.contains('연결 안 됨')) {
-                          _wifi2Controller.text = _currentWifiSsid;
-                        }
-                      },
-                    ),
-                  ),
-                ),
-              ],
-            ),
+          _buildSectionHeader(
+            theme,
+            '신뢰 Wi-Fi 동기화 보안 (최대 2개 등록)',
+            Icons.wifi_lock_rounded,
+            isCollapsible: true,
+            isCollapsed: _hideWifiSection,
+            onToggle: _toggleHideWifiSection,
           ),
+          const SizedBox(height: 8),
+          if (_hideWifiSection)
+            _buildCollapsedWifiCard(theme)
+          else
+            _buildExpandedWifiCard(theme),
           const SizedBox(height: 24),
 
           // 2. PC 서버 연결 섹션
-          _buildSectionHeader(theme, 'PC LANOVEL 서버 연동', Icons.computer_rounded),
-          const SizedBox(height: 8),
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: theme.surfaceColor,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: theme.borderColor),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                TextField(
-                  controller: _serverUrlController,
-                  style: TextStyle(color: theme.textColor, fontSize: 14),
-                  decoration: InputDecoration(
-                    labelText: 'PC 서버 주소 (IP:포트)',
-                    labelStyle: TextStyle(color: theme.subTextColor),
-                    hintText: 'http://192.168.219.103:8001',
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  children: [
-                    ActionChip(
-                      avatar: const Icon(Icons.computer, size: 14),
-                      label: const Text('현재 PC 자동입력 (192.168.219.103:8001)', style: TextStyle(fontSize: 11)),
-                      onPressed: () {
-                        setState(() {
-                          _serverUrlController.text = 'http://192.168.219.103:8001';
-                        });
-                      },
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Row(
-                      children: [
-                        Container(
-                          width: 10,
-                          height: 10,
-                          decoration: BoxDecoration(color: _serverStatusColor, shape: BoxShape.circle),
-                        ),
-                        const SizedBox(width: 8),
-                        Text(_serverStatusText, style: TextStyle(color: theme.subTextColor, fontSize: 12)),
-                      ],
-                    ),
-                    OutlinedButton.icon(
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: theme.accentColor,
-                        side: BorderSide(color: theme.accentColor),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                      ),
-                      onPressed: _isCheckingServer ? null : _testServerPing,
-                      icon: const Icon(Icons.network_ping_rounded, size: 16),
-                      label: const Text('연결 테스트'),
-                    ),
-                  ],
-                ),
-              ],
-            ),
+          _buildSectionHeader(
+            theme,
+            'PC LANOVEL 서버 연동',
+            Icons.computer_rounded,
+            isCollapsible: true,
+            isCollapsed: _hideServerSection,
+            onToggle: _toggleHideServerSection,
           ),
+          const SizedBox(height: 8),
+          if (_hideServerSection)
+            _buildCollapsedServerCard(theme)
+          else
+            _buildExpandedServerCard(theme),
           const SizedBox(height: 24),
 
           // 3. 수동 동기화 트리거
@@ -384,16 +322,335 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Widget _buildSectionHeader(ReaderThemeData theme, String title, IconData icon) {
-    return Row(
-      children: [
-        Icon(icon, color: theme.accentColor, size: 18),
-        const SizedBox(width: 8),
-        Text(
-          title,
-          style: TextStyle(color: theme.textColor, fontSize: 14, fontWeight: FontWeight.bold),
+  // 접힌 상태의 Wi-Fi 간략 요약 카드
+  Widget _buildCollapsedWifiCard(ReaderThemeData theme) {
+    final wifi1 = _wifi1Controller.text.trim();
+    final wifi2 = _wifi2Controller.text.trim();
+    final registeredList = [if (wifi1.isNotEmpty) wifi1, if (wifi2.isNotEmpty) wifi2];
+    final registeredText = registeredList.isNotEmpty ? registeredList.join(', ') : '등록된 Wi-Fi 없음';
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: theme.surfaceColor,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: theme.borderColor),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            _isTrustedWifi ? Icons.check_circle : Icons.wifi_protected_setup_rounded,
+            color: _isTrustedWifi ? Colors.green : theme.accentColor,
+            size: 20,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '신뢰 Wi-Fi 보호 활성화됨',
+                  style: TextStyle(color: theme.textColor, fontWeight: FontWeight.w600, fontSize: 13),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '등록: $registeredText (현재: $_currentWifiSsid)',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: theme.subTextColor, fontSize: 11),
+                ),
+              ],
+            ),
+          ),
+          TextButton(
+            onPressed: _toggleHideWifiSection,
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              minimumSize: Size.zero,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            child: Text('설정/펼치기', style: TextStyle(color: theme.accentColor, fontSize: 12)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 펼쳐진 상태의 Wi-Fi 전체 설정 카드
+  Widget _buildExpandedWifiCard(ReaderThemeData theme) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: theme.surfaceColor,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: theme.borderColor),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                _isTrustedWifi ? Icons.check_circle : Icons.warning_amber_rounded,
+                color: _isTrustedWifi ? Colors.green : Colors.orange,
+                size: 20,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  '현재 접속 Wi-Fi: $_currentWifiSsid',
+                  style: TextStyle(color: theme.textColor, fontWeight: FontWeight.w600, fontSize: 13),
+                ),
+              ),
+              IconButton(
+                icon: Icon(Icons.refresh, color: theme.subTextColor, size: 20),
+                onPressed: _checkCurrentWifi,
+              ),
+            ],
+          ),
+          Text(
+            _isTrustedWifi
+                ? '등록된 신뢰 Wi-Fi에 연결되어 있어 자동/백그라운드 동기화가 활성화됩니다.'
+                : '등록되지 않은 네트워크입니다. 배터리 소모 방지를 위해 동기화가 차단됩니다.',
+            style: TextStyle(color: theme.subTextColor, fontSize: 11),
+          ),
+          const SizedBox(height: 12),
+          // [Issue 4] 현재 연결된 Wi-Fi 원터치 자동 등록 버튼
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: theme.accentColor,
+              foregroundColor: Colors.white,
+              minimumSize: const Size(double.infinity, 40),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            onPressed: _autoRegisterCurrentWifi,
+            icon: const Icon(Icons.wifi_find_rounded, size: 18),
+            label: const Text('현재 연결된 Wi-Fi 자동 등록 (1탭 저장)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+          ),
+          const SizedBox(height: 14),
+          TextField(
+            controller: _wifi1Controller,
+            style: TextStyle(color: theme.textColor, fontSize: 14),
+            decoration: InputDecoration(
+              labelText: '신뢰 Wi-Fi 1 (SSID)',
+              labelStyle: TextStyle(color: theme.subTextColor),
+              hintText: '예: MyHome_5G',
+              suffixIcon: IconButton(
+                icon: const Icon(Icons.input_rounded, size: 18),
+                tooltip: '현재 Wi-Fi 입력',
+                onPressed: () {
+                  if (_currentWifiSsid.isNotEmpty && !_currentWifiSsid.contains('연결 안 됨')) {
+                    _wifi1Controller.text = _currentWifiSsid;
+                  }
+                },
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _wifi2Controller,
+            style: TextStyle(color: theme.textColor, fontSize: 14),
+            decoration: InputDecoration(
+              labelText: '신뢰 Wi-Fi 2 (SSID)',
+              labelStyle: TextStyle(color: theme.subTextColor),
+              hintText: '예: Office_WiFi',
+              suffixIcon: IconButton(
+                icon: const Icon(Icons.input_rounded, size: 18),
+                tooltip: '현재 Wi-Fi 입력',
+                onPressed: () {
+                  if (_currentWifiSsid.isNotEmpty && !_currentWifiSsid.contains('연결 안 됨')) {
+                    _wifi2Controller.text = _currentWifiSsid;
+                  }
+                },
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          // [Issue 5] Wi-Fi 등록 후 가리기 버튼
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton.icon(
+              onPressed: _toggleHideWifiSection,
+              icon: const Icon(Icons.visibility_off_outlined, size: 15),
+              label: const Text('등록 완료 후 설정 영역 가리기', style: TextStyle(fontSize: 11)),
+              style: TextButton.styleFrom(foregroundColor: theme.subTextColor),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 접힌 상태의 PC 서버 간략 카드
+  Widget _buildCollapsedServerCard(ReaderThemeData theme) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: theme.surfaceColor,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: theme.borderColor),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 10,
+            height: 10,
+            decoration: BoxDecoration(color: _serverStatusColor, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'PC 서버: ${_serverUrlController.text.trim()}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: theme.textColor, fontWeight: FontWeight.w600, fontSize: 13),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  _serverStatusText,
+                  style: TextStyle(color: _serverStatusColor, fontSize: 11),
+                ),
+              ],
+            ),
+          ),
+          TextButton(
+            onPressed: _toggleHideServerSection,
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              minimumSize: Size.zero,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            child: Text('테스트/펼치기', style: TextStyle(color: theme.accentColor, fontSize: 12)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 펼쳐진 상태의 PC 서버 연동 전체 카드
+  Widget _buildExpandedServerCard(ReaderThemeData theme) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: theme.surfaceColor,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: theme.borderColor),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          TextField(
+            controller: _serverUrlController,
+            style: TextStyle(color: theme.textColor, fontSize: 14),
+            decoration: InputDecoration(
+              labelText: 'PC 서버 주소 (IP:포트)',
+              labelStyle: TextStyle(color: theme.subTextColor),
+              hintText: 'http://192.168.219.103:8001',
+            ),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            children: [
+              ActionChip(
+                avatar: const Icon(Icons.computer, size: 14),
+                label: const Text('현재 PC 자동입력 (192.168.219.103:8001)', style: TextStyle(fontSize: 11)),
+                onPressed: () {
+                  setState(() {
+                    _serverUrlController.text = 'http://192.168.219.103:8001';
+                  });
+                },
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 10,
+                    height: 10,
+                    decoration: BoxDecoration(color: _serverStatusColor, shape: BoxShape.circle),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(_serverStatusText, style: TextStyle(color: theme.subTextColor, fontSize: 12)),
+                ],
+              ),
+              OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: theme.accentColor,
+                  side: BorderSide(color: theme.accentColor),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+                onPressed: _isCheckingServer ? null : _testServerPing,
+                icon: const Icon(Icons.network_ping_rounded, size: 16),
+                label: const Text('연결 테스트'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          // [Issue 6] 서버 연결 테스트 영역 가리기 버튼
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton.icon(
+              onPressed: _toggleHideServerSection,
+              icon: const Icon(Icons.visibility_off_outlined, size: 15),
+              label: const Text('서버 연결 설정 가리기', style: TextStyle(fontSize: 11)),
+              style: TextButton.styleFrom(foregroundColor: theme.subTextColor),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSectionHeader(
+    ReaderThemeData theme,
+    String title,
+    IconData icon, {
+    bool isCollapsible = false,
+    bool isCollapsed = false,
+    VoidCallback? onToggle,
+  }) {
+    return InkWell(
+      onTap: isCollapsible ? onToggle : null,
+      borderRadius: BorderRadius.circular(6),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Row(
+          children: [
+            Icon(icon, color: theme.accentColor, size: 18),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                title,
+                style: TextStyle(color: theme.textColor, fontSize: 14, fontWeight: FontWeight.bold),
+              ),
+            ),
+            if (isCollapsible)
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    isCollapsed ? '펼치기' : '가리기',
+                    style: TextStyle(color: theme.subTextColor, fontSize: 11),
+                  ),
+                  const SizedBox(width: 4),
+                  Icon(
+                    isCollapsed ? Icons.keyboard_arrow_down_rounded : Icons.keyboard_arrow_up_rounded,
+                    color: theme.subTextColor,
+                    size: 18,
+                  ),
+                ],
+              ),
+          ],
         ),
-      ],
+      ),
     );
   }
 }

@@ -11,7 +11,9 @@ from server.notifications import (
     send_ntfy,
     notify_translation_progress,
     notify_translation_complete,
-    notify_episode_progress
+    notify_episode_progress,
+    get_recent_notifications,
+    clear_recent_notifications
 )
 
 router = APIRouter(prefix="/api/notifications", tags=["Notifications"])
@@ -157,4 +159,20 @@ def receive_complete_notification(req: CompleteNotificationRequest):
         episode_count=req.episode_count
     )
     return {"status": "ok"}
+
+@router.get("/recent", summary="최근 알림 히스토리 조회 (모바일/웹 인앱용)")
+def get_recent_notifications_endpoint(limit: int = 50):
+    """모바일 앱 및 웹 인앱 알림 센터에서 최근 발생한 알림 목록을 조회합니다."""
+    notifications = get_recent_notifications(limit=limit)
+    return {
+        "status": "ok",
+        "notifications": notifications,
+        "count": len(notifications)
+    }
+
+@router.post("/clear", summary="알림 히스토리 초기화")
+def clear_notifications_endpoint():
+    """인앱 알림 센터의 모든 알림 내역을 비웁니다."""
+    clear_recent_notifications()
+    return {"status": "ok", "message": "알림 내역이 초기화되었습니다."}
 

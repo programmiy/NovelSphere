@@ -589,10 +589,11 @@ def get_book_activity(folder_name: str):
     cursor.execute("SELECT * FROM book_activity WHERE folderName = ?", (decoded_folder_name,))
     activity = cursor.fetchone()
 
-    if activity and activity.get('last_read_pid'):
+    # last_read_chapter_title이 DB에 비어있을 때만 pid 기반 보조 조회 (기존 챕터 타이틀 오염 방지)
+    if activity and not activity.get('last_read_chapter_title') and activity.get('last_read_pid'):
         cursor.execute("SELECT title FROM translations WHERE folderName = ? AND pid = ? LIMIT 1", (decoded_folder_name, activity['last_read_pid']))
         title_result = cursor.fetchone()
-        if title_result:
+        if title_result and title_result.get('title'):
             activity['last_read_chapter_title'] = title_result['title']
 
     conn.close()

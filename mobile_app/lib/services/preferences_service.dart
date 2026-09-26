@@ -86,4 +86,11 @@ class PreferencesService {
 
   static int get lastSyncedTimestamp => _prefs.getInt('last_synced_timestamp') ?? 0;
   static Future<void> setLastSyncedTimestamp(int value) => _prefs.setInt('last_synced_timestamp', value);
+
+  // UI 접기/가리기 설정
+  static bool get hideWifiSection => _prefs.getBool('hide_wifi_section') ?? (trustedWifi1.isNotEmpty || trustedWifi2.isNotEmpty);
+  static Future<void> setHideWifiSection(bool value) => _prefs.setBool('hide_wifi_section', value);
+
+  static bool get hideServerSection => _prefs.getBool('hide_server_section') ?? false;
+  static Future<void> setHideServerSection(bool value) => _prefs.setBool('hide_server_section', value);
 }

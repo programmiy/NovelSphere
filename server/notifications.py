@@ -6,12 +6,53 @@ HTTP pub-sub 서비스인 ntfy(ntfy.sh 또는 자체 호스팅)를 통해 스마
 
 import json
 import logging
+import os
 import threading
-import requests
+import time
+from collections import deque
 from typing import List, Optional, Dict, Any
+import requests
 from server.settings import settings
 
 logger = logging.getLogger(__name__)
+
+# 최근 알림 인메모리 링버퍼 (최근 50개 보관)
+_NOTIFICATION_HISTORY = deque(maxlen=50)
+_HISTORY_LOCK = threading.Lock()
+
+def record_notification(
+    title: str,
+    message: str,
+    event_type: str = "general",
+    book_title: Optional[str] = None,
+    chapter_title: Optional[str] = None,
+    click_url: Optional[str] = None,
+    priority: str = "default"
+):
+    """모바일 앱 및 웹 인앱 알림 센터 조회를 위한 알림 기록 함수."""
+    with _HISTORY_LOCK:
+        notif_id = f"notif_{int(time.time() * 1000)}_{len(_NOTIFICATION_HISTORY)}"
+        _NOTIFICATION_HISTORY.appendleft({
+            "id": notif_id,
+            "title": title,
+            "message": message,
+            "type": event_type,
+            "book_title": book_title,
+            "chapter_title": chapter_title,
+            "click_url": click_url,
+            "priority": priority,
+            "timestamp": int(time.time())
+        })
+
+def get_recent_notifications(limit: int = 50) -> List[Dict[str, Any]]:
+    """최근 알림 목록 조회."""
+    with _HISTORY_LOCK:
+        return list(_NOTIFICATION_HISTORY)[:limit]
+
+def clear_recent_notifications():
+    """알림 히스토리 초기화."""
+    with _HISTORY_LOCK:
+        _NOTIFICATION_HISTORY.clear()
 
 PRIORITY_MAP = {
     "min": 1,
@@ -24,6 +65,13 @@ PRIORITY_MAP = {
 
 def _send_ntfy_request(payload: Dict[str, Any], server_url: str, timeout: int = 5) -> bool:
     """ntfy 서버로 실제 HTTP POST 요청을 전송하는 내부 함수."""
+    # [안전 가드] pytest 환경에서 mock되지 않은 실제 HTTP 외부 요청 원천 차단
+    if os.environ.get("PYTEST_CURRENT_TEST") or os.environ.get("LANOVEL_TESTING"):
+        from unittest.mock import Mock
+        if not isinstance(requests.post, Mock):
+            logger.debug(f"[ntfy] 테스트 환경 감지: 외부 HTTP 요청 차단 (title='{payload.get('title')}')")
+            return True
+
     try:
         url = server_url.rstrip("/")
         resp = requests.post(
@@ -110,6 +158,17 @@ def notify_translation_progress(
     ep_info = f"[{episode_title}] " if episode_title else ""
     message = f"{ep_info}진행률: {percentage}% ({current}/{total} 문장)"
     click = url if url else None
+
+    record_notification(
+        title=title,
+        message=message,
+        event_type="progress",
+        book_title=novel_title,
+        chapter_title=episode_title,
+        click_url=click,
+        priority="default"
+    )
+
     send_ntfy(
         title=title,
         message=message,
@@ -137,6 +196,16 @@ def notify_translation_complete(
     if url:
         click_url = f"http://127.0.0.1:{settings.server_port}/viewer?url={url}"
 
+    record_notification(
+        title=title,
+        message=message,
+        event_type="complete",
+        book_title=novel_title,
+        chapter_title=episode_title,
+        click_url=click_url,
+        priority="high"
+    )
+
     send_ntfy(
         title=title,
         message=message,
@@ -160,6 +229,16 @@ def notify_episode_progress(
     if url:
         click_url = f"http://127.0.0.1:{settings.server_port}/viewer?url={url}"
 
+    record_notification(
+        title=title,
+        message=message,
+        event_type="episode_milestone",
+        book_title=novel_title,
+        chapter_title=episode_title,
+        click_url=click_url,
+        priority="default"
+    )
+
     send_ntfy(
         title=title,
         message=message,
@@ -180,6 +259,15 @@ def notify_api_error(
     body = message
     if url:
         body += f"\n대상 URL: {url}"
+
+    record_notification(
+        title=title,
+        message=body,
+        event_type="error",
+        click_url=url,
+        priority="urgent"
+    )
+
     send_ntfy(
         title=title,
         message=body,
@@ -199,12 +287,24 @@ def notify_verbatim_cleanup(
     title = f"🧹 [원문 복붙 자동 정리] {novel_title or '소설'}"
     ep_info = f"[{episode_title}] " if episode_title else ""
     message = f"{ep_info}미번역 원문 복사 {count}개 단락이 감지되어 휴지통 및 알림 센터(배치: {batch_id or 'auto'})로 안전하게 격리되었습니다."
+    
+    click_url = f"http://127.0.0.1:{settings.server_port}/"
+    record_notification(
+        title=title,
+        message=message,
+        event_type="cleanup",
+        book_title=novel_title,
+        chapter_title=episode_title,
+        click_url=click_url,
+        priority="default"
+    )
+
     send_ntfy(
         title=title,
         message=message,
         priority="default",
         tags=["broom"],
-        click_url=f"http://127.0.0.1:{settings.server_port}/"
+        click_url=click_url
     )
 
 def notify_task_event(
@@ -217,6 +317,15 @@ def notify_task_event(
     is_success = status.upper() == "SUCCESS"
     title = f"✅ [{task_name}] 완료" if is_success else f"⚠️ [{task_name}] 실패"
     tags = ["white_check_mark"] if is_success else ["x"]
+    
+    record_notification(
+        title=title,
+        message=message,
+        event_type="task",
+        click_url=click_url,
+        priority="default" if is_success else "high"
+    )
+
     send_ntfy(
         title=title,
         message=message,

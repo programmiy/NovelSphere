@@ -97,9 +97,10 @@ def setup_db_data():
     conn.commit()
     conn.close()
 
+@patch('server.routers.tasks.notify_task_event')
 @patch('server.routers.tasks._fetch_and_update_title_worker')
 @patch('server.routers.tasks.process_urls_in_background_task.update_state') # update_state 모의
-def test_process_urls_in_background_task_success(mock_update_state, mock_worker):
+def test_process_urls_in_background_task_success(mock_update_state, mock_worker, mock_notify):
     urls = ["http://test.com/url1", "http://test.com/url2"]
     
     from server.routers.tasks import process_urls_in_background_task
@@ -107,10 +108,12 @@ def test_process_urls_in_background_task_success(mock_update_state, mock_worker)
     
     assert mock_worker.call_count == len(urls)
     assert mock_update_state.call_count == len(urls)
+    mock_notify.assert_called_once()
 
+@patch('server.routers.tasks.notify_task_event')
 @patch('server.routers.tasks._fetch_and_update_title_worker')
 @patch('server.routers.tasks.process_urls_in_background_task.update_state') # update_state 모의
-def test_process_urls_in_background_task_failure(mock_update_state, mock_worker):
+def test_process_urls_in_background_task_failure(mock_update_state, mock_worker, mock_notify):
     mock_worker.side_effect = [True, False] # 첫 번째는 성공, 두 번째는 실패
     urls = ["http://test.com/url1", "http://test.com/url2"]
     
@@ -121,6 +124,7 @@ def test_process_urls_in_background_task_failure(mock_update_state, mock_worker)
     assert mock_update_state.call_count == len(urls)
     assert result['status'] == 'Completed' # Celery eager mode에서는 실패해도 Completed로 반환될 수 있음
     assert result['percentage'] == 100
+    mock_notify.assert_called_once()
 
 @patch('server.routers.tasks.process_urls_in_background_task') # process_urls_in_background_task 자체를 모의
 @patch('server.routers.tasks._fetch_and_update_title_worker')

@@ -207,3 +207,37 @@ def test_api_progress_and_complete_endpoints():
             url="https://example.com/1",
             episode_count=10
         )
+
+def test_recent_and_clear_notifications_endpoints():
+    """GET /api/notifications/recent 및 POST /api/notifications/clear 동작 검증"""
+    from server.notifications import record_notification, clear_recent_notifications
+    clear_recent_notifications()
+
+    # 1. 알림 기록 적재
+    record_notification(
+        title="🎉 [번역 완료] 테스트 책",
+        message="총 50개 문장 번역 완료",
+        event_type="complete",
+        book_title="테스트 책",
+        chapter_title="1화",
+        click_url="http://127.0.0.1:8001/viewer?url=test"
+    )
+
+    # 2. 조회 엔드포인트 호출
+    res = client.get("/api/notifications/recent?limit=10")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["status"] == "ok"
+    assert data["count"] >= 1
+    first = data["notifications"][0]
+    assert first["title"] == "🎉 [번역 완료] 테스트 책"
+    assert first["type"] == "complete"
+    assert first["book_title"] == "테스트 책"
+
+    # 3. 비우기 엔드포인트 호출
+    clear_res = client.post("/api/notifications/clear")
+    assert clear_res.status_code == 200
+    assert clear_res.json()["status"] == "ok"
+
+    res_after = client.get("/api/notifications/recent")
+    assert res_after.json()["count"] == 0
