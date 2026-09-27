@@ -217,15 +217,15 @@ async def notifications_stream(request: Request):
 @router.get("/summary", summary="현재 번역 작업 현황 및 검수/API 오류 종합 요약")
 def get_status_summary():
     """모바일 앱 상단 대시보드 및 라이브 현황판을 위한 초경량 종합 상태 API."""
-    from server.database import get_db
+    from server.database import SessionLocal
     from server.models import CleanupNotification
     
     review_count = 0
     try:
-        db = next(get_db())
-        review_count = db.query(CleanupNotification).filter(CleanupNotification.is_dismissed == 0).count()
-    except Exception:
-        pass
+        with SessionLocal() as db:
+            review_count = db.query(CleanupNotification).filter(CleanupNotification.is_dismissed == 0).count()
+    except Exception as e:
+        logger.warning(f"[notifications] 검수 대기 카운트 조회 실패: {e}")
 
     trans_status = get_translation_status()
     api_errors = get_api_error_stats()

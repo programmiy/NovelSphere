@@ -31,14 +31,17 @@ def get_app_version_info():
     file_size = APK_PATH.stat().st_size if has_apk else 0
     updated_at = int(APK_PATH.stat().st_mtime) if has_apk else 0
 
+    full_version = f"{version}.{build_number}" if build_number else version
+
     return {
-        "version": version,
+        "version": full_version,
+        "base_version": version,
         "build_number": build_number,
         "has_apk": has_apk,
         "file_size": file_size,
-        "file_name": f"lanovel-reader-v{version}.apk",
+        "file_name": f"lanovel-reader-v{full_version}.apk",
         "download_url": "/api/app/download",
-        "release_notes": "서재 상단 실시간 번역 진행 배너 탑재, 5초 주기 포그라운드 자동 갱신, 배민식 단일 현황판 알림 연동",
+        "release_notes": "모바일 뷰어 스와이프로 다음화 넘기기 지원, 하단 바 현재 회차 진행도 표기 및 제어, 하단 여백 확보 및 텍스트 탭 개선",
         "updated_at": updated_at,
     }
 

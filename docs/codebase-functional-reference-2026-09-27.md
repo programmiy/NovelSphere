@@ -1,7 +1,7 @@
 # LANOVEL 종합 코드베이스 기능 및 함수 레퍼런스 (Architectural & Functional Reference)
 
 > **문서 목적**: AI 어시스턴트가 사용자 요구사항 및 구어체 지시를 입력받았을 때, 혼선이나 회귀(Regression) 없이 전체 아키텍처와 1:1 타깃 코드를 0초 만에 직관적으로 파악할 수 있도록 압축 정리한 단일 진실 공급원(SSOT) 기술 레퍼런스입니다.
-> **최신 동기화 일자**: 2026-09-26 (최근 20개 커밋 반영 완료: 모바일 Flutter 독립 앱, OTA 무선 업데이트, 초고속 압축 동기화, 배민 스타일 단일 번역 현황판 알림, NovelUp+ 플랫폼 전면 지원, 룰베이스 품질 보정 및 도서 숨김 기능 통합)
+> **최신 동기화 일자**: 2026-09-27 (모바일 번역문 루비/방점 출판사 스타일 자동 렌더링, Flutter 독립 앱, OTA 무선 업데이트, 초고속 압축 동기화, 배민 스타일 단일 번역 현황판 알림, NovelUp+ 플랫폼 전면 지원, 룰베이스 품질 보정 및 도서 숨김 기능 통합)
 
 ---
 
@@ -20,11 +20,11 @@
 | **데이터 CRUD** | `server/routers/data_crud.py` | FTS5 전문 검색, N+1 제거 upsert, 이상 번역 검출, 복원 센터 모달(휴지통/알림) |
 | **서재/책** | `server/routers/books.py` | 도서 숨김/표시([`update_book_visibility`](file:///C:/LANOVEL/server/routers/books.py)), NovelUp+ 줄거리 크롤링, 회차 내 페이지/스크롤 복원 |
 | **목차 파서** | `server/routers/toc_importer.py` | 카쿠요무(Apollo State Next.js), 소설가가 되자, **NovelUp+** ([`fetch_all_novelup_chapters`](file:///C:/LANOVEL/server/routers/toc_importer.py)) 목차 수집 |
-| **동기화 (신규)** | `server/routers/sync.py` | 모바일 초고속 양방향 동기화: `/ping`, 하이브리드 zlib 압축 SQLite 시드 DB(`/full-pack`), `/pull`, `/push` |
-| **앱 배포 (신규)** | `server/routers/app_release.py` | 모바일 OTA 무선 자동 업데이트: `/api/app/version`, `/api/app/download`, 웹 랜딩 페이지(`/download`) |
+| **동기화** | `server/routers/sync.py` | 모바일 초고속 양방향 동기화: `/ping`, 하이브리드 zlib 압축 SQLite 시드 DB(`/full-pack`), `/pull`, `/push` |
+| **앱 배포** | `server/routers/app_release.py` | 모바일 OTA 무선 자동 업데이트: `/api/app/version`, `/api/app/download`, 웹 랜딩 페이지(`/download`) |
 | **구분선** | `server/routers/separators.py` | 후기/광고 번역 차단용 소설별 구분선 CRUD (공통 7종, 프리셋 6종) |
 | **크롬 확장** | `extension/content.js` | NovelUp+ 지원, 쾌속모드 동적 단축, 빈칸 문장 자동 보완, 구분선 후속 단락 일괄 제외, DOM 치환 |
-| **모바일 앱** | `mobile_app/lib/` | Flutter 네이티브 리더 (Sqflite 하이브리드 압축 DB, OTA 원클릭 설치, 배민 스타일 ID 9001 현황판, TTS) |
+| **모바일 앱** | `mobile_app/lib/` | Flutter 네이티브 리더 (Sqflite 하이브리드 압축 DB, 루비/방점 렌더러, 배민 스타일 ID 9001 현황판, TTS) |
 | **웹 프론트** | `server/static/` | `viewer.js` (롱프레스 단락 편집, 위치 복원), `library.js` (숨김 도서 필터), `admin.js` |
 
 ---
@@ -59,6 +59,7 @@
    2. 웹 프론트엔드 (static/): library.js (숨김 필터), viewer.js (롱프레스 편집), admin.js
    3. 모바일 독립 앱 (mobile_app/): Flutter 기반 네이티브 리더 (Android / iOS)
       - Sqflite 로컬 오프라인 DB (1ms 챕터 zlib 압축 해제, autoHealMissingChapters 회차 자동 치유)
+      - NovelRubyText: 번역문 내 루비(`단어《루비》`) 및 방점(`글(・)`) 출판사급 상단 첨자 자동 렌더링
       - 고정 ID 9001 배민 스타일 단일 번역 현황판 알림 (삼성 Now Bar/잠금화면 규격 호환)
       - 원클릭 무선 자동 업데이트 (OTA, PackageInstaller)
       - 백그라운드 TTS 음성 리더 & 12가지 테마 & 듀얼 페이징/스크롤 뷰어
@@ -156,23 +157,17 @@
   - 카쿠요무 (Apollo State JSON 파싱), 쇼세츠 (최대 100페이지 목차 순회).
   - **NovelUp+**: `fetch_all_novelup_chapters`로 `https://novelup.plus/story/{id}` 및 페이지네이션(`?p={page}`)을 순회하며 `.episode_list`, `.episode_title` 에피소드 자동 수집.
 
-### 5) `server/routers/sync.py` (모바일 초고속 압축 동기화 - 신규)
+### 5) `server/routers/sync.py` (모바일 초고속 압축 동기화)
 - `GET /api/sync/ping`: 0.05초 만에 서버 통신 가능 여부 확인.
 - `GET /api/sync/full-pack`: 하이브리드 SQLite 시드 DB(zlib 압축 BLOB) 생성 후 Gzip 스트리밍 다운로드 (150MB -> ~26MB). 전송 완료 후 PC 임시파일 자동 정리.
 - `DELETE /api/sync/full-pack/{pack_id}`: 모바일 무결성 검증 완료 즉시 PC 임시 압축 팩 안전 삭제.
 - `GET /api/sync/pull`: `since` 이후 신규 번역 및 회차 zlib 압축 BLOB 증분 수신.
 - `POST /api/sync/push`: 모바일에서 기록한 독서 활동, 독서 통계, 인라인 수정 단락 역동기화.
 
-### 6) `server/routers/app_release.py` (모바일 OTA 무선 자동 업데이트 - 신규)
+### 6) `server/routers/app_release.py` (모바일 OTA 무선 자동 업데이트)
 - `GET /api/app/version`: 최신 앱 버전 메타데이터 반환 (`pubspec.yaml` 및 빌드된 APK 분석).
 - `GET /api/app/download`: 최신 릴리즈 APK 바이너리 스트리밍 다운로드.
 - `GET /download`: 모바일 브라우저 전용 반응형 APK 다운로드 웹 랜딩 페이지 서빙.
-
-### 7) `server/routers/notifications.py` (통합 알림 API)
-- `GET /api/notifications/summary`: 모바일 상단 라이브 현황판용 초경량 종합 상태 (번역 활성, 진행 문장/전체 문장, 진행률, 오류 통계).
-- `GET /api/notifications/recent`: 최근 50개 알림 버퍼 조회.
-- `POST /api/notifications/clear`: 알림 버퍼 초기화.
-- `GET /api/notifications/stream`: 로컬 SSE 실시간 스트림.
 
 ---
 
@@ -198,7 +193,10 @@
 
 ### 3) 사용자 인터페이스 계층 (`ui/`)
 - `library_screen.dart`: 카드 서재, 숨김 도서 토글, 당겨서 동기화(Pull-to-refresh).
-- `reader_screen.dart`: **500ms 롱프레스 제스처 시에만 편집 모달 호출** (우측 넘김 터치 충돌 해결), 페이징/스크롤 듀얼 모드, 회차 내 위치 자동 복원.
+- `reader_screen.dart`: **500ms 롱프레스 제스처 시에만 편집 모달 호출**, 페이징/스크롤 듀얼 모드, 회차 내 위치 자동 복원.
+- **`novel_ruby_text.dart` (신규)**:
+  - **`NovelRubyParser`**: `hasRubyOrBouten`으로 일반 문장 O(1) 고속 통과. `글(・)` 방점 및 `단어《루비》` 패턴 자동 분리.
+  - **`NovelRubyText`**: 방점과 루비를 `WidgetSpan` 상단 첨자로 완벽 렌더링.
 - `settings_screen.dart`: Wi-Fi SSID 원터치 자동 등록, OTA 업데이트 확인, 동기화 제어.
 
 ---
@@ -233,6 +231,7 @@
 
 | 사용자 발화 / 요청 예시 | 연관 파일 및 핵심 함수 | 핵심 처리 내용 |
 | :--- | :--- | :--- |
+| **"번역문에 루비/방점 나오게 해줘" / "단어 위에 점/루비 표시해줘"** | `mobile_app/lib/ui/viewer/novel_ruby_text.dart`<br>`mobile_app/lib/ui/viewer/reader_screen.dart` | `NovelRubyParser`로 `글(・)` 방점 및 `단어《루비》` 패턴 자동 감지 -> O(1) 필터링 후 `NovelRubyText` 위젯으로 출판사급 상단 첨자 렌더링. |
 | **"스마트폰 독립 앱으로 보고 싶어" / "모바일 앱 동기화해줘"** | `server/routers/sync.py`<br>`mobile_app/lib/services/sync_service.dart`<br>`mobile_app/lib/services/local_db_service.dart` | 하이브리드 zlib 압축 SQLite 시드 DB를 Gzip 스트리밍 다운로드. 1ms 챕터 압축 해제 및 양방향 증분 pull/push. |
 | **"모바일 앱 업데이트 어떻게 해?" / "새 버전 앱 깔아줘"** | `server/routers/app_release.py`<br>`mobile_app/lib/services/app_update_service.dart` | `/api/app/version` 비교 후 백그라운드 APK 다운로드 및 PackageInstaller 기반 원클릭 무선 OTA 설치. |
 | **"푸시 알림 너무 많이 와" / "배민처럼 하나로 합쳐줘" / "상단바에 진행바 띄워줘"** | `server/notifications.py` (`TranslationStatusBoard`)<br>`mobile_app/lib/services/local_notification_service.dart`<br>`mobile_app/lib/services/status_dashboard_service.dart` | 고정 ID(9001) 단일 번역 현황판 알림으로 진행률/에러 통계 실시간 갱신. 삼성 Now Bar/잠금화면 호환 및 3분 유휴 자동 해제. |

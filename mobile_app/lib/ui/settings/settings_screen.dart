@@ -60,8 +60,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
     try {
       final info = await AppUpdateService.getPackageInfo();
       if (mounted) {
+        final ver = info.version.contains(info.buildNumber)
+            ? info.version
+            : '${info.version}.${info.buildNumber}';
         setState(() {
-          _appVersionText = 'v${info.version} (빌드 ${info.buildNumber})';
+          _appVersionText = 'v$ver';
         });
       }
     } catch (_) {}

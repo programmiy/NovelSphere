@@ -4,6 +4,7 @@ import sqlite3
 from urllib.parse import urlparse
 from contextlib import contextmanager
 from sqlalchemy import create_engine, event
+from sqlalchemy.pool import NullPool
 from sqlalchemy.orm import sessionmaker
 from server.settings import settings
 
@@ -83,7 +84,9 @@ def db_connection(as_dict: bool = False, timeout: float = 15.0):
         conn.close()
 
 engine = create_engine(
-    settings.database_url, connect_args={"check_same_thread": False}
+    settings.database_url,
+    connect_args={"check_same_thread": False},
+    poolclass=NullPool
 )
 
 @event.listens_for(engine, "connect")
