@@ -41,7 +41,7 @@ def get_app_version_info():
         "file_size": file_size,
         "file_name": f"lanovel-reader-v{full_version}.apk",
         "download_url": "/api/app/download",
-        "release_notes": "모바일 뷰어 스와이프로 다음화 넘기기 지원, 하단 바 현재 회차 진행도 표기 및 제어, 하단 여백 확보 및 텍스트 탭 개선",
+        "release_notes": "번역문 내 루비(Ruby) 및 방점(傍点) 출판사 스타일 자동 렌더링 지원, 서버 ASGI 커넥션 안정화 및 뷰어 개선",
         "updated_at": updated_at,
     }
 

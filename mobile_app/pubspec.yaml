@@ -1,7 +1,7 @@
 name: lanovel_reader
 description: "LANOVEL 모바일 완전 독립 서재 앱 - 오프라인 퍼스트 & 양방향 압축 동기화 전자책 리더"
 publish_to: 'none'
-version: 1.2.2+2026092701
+version: 1.2.2+2026092702
 
 
 environment:
