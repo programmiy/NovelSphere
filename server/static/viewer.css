@@ -358,6 +358,30 @@ body.scroll-mode .nav-arrow {
     word-break: break-word;
 }
 
+/* Novel Ruby & Bouten (Publisher Bunko Style) */
+.novel-ruby {
+    ruby-position: over;
+    ruby-align: center;
+}
+
+.novel-ruby rt {
+    font-size: 0.52em;
+    font-weight: 500;
+    line-height: 1;
+    color: var(--text-color);
+    opacity: 0.88;
+    letter-spacing: normal;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+.novel-bouten {
+    text-emphasis: filled dot;
+    -webkit-text-emphasis: filled dot;
+    text-emphasis-position: over;
+    -webkit-text-emphasis-position: over;
+}
+
 /* Inline Edit UI */
 .paragraph-edit-btn {
     position: absolute;

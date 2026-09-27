@@ -102,6 +102,53 @@ document.addEventListener('DOMContentLoaded', async () => {
         return text.toString().replace(/[&<>"']/g, m => map[m]);
     }
 
+    // --- Ruby & Bouten Parser (Publisher Style) ---
+    function renderNovelRubyHtml(text) {
+        if (!text) return '';
+        if (!text.includes('・') && !text.includes('《')) {
+            return escapeHtml(text);
+        }
+
+        const combinedRegex = /((?:[^\s(（]\s*[（(]・[）)]\s*)+)|(?:([|｜]?[가-힣a-zA-Z0-9_\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]+)《([^》]+)》)/g;
+        const boutenCharRegex = /([^\s(（])\s*[（(]・[）)](\s*)/g;
+
+        let result = '';
+        let lastIndex = 0;
+        let match;
+
+        while ((match = combinedRegex.exec(text)) !== null) {
+            if (match.index > lastIndex) {
+                result += escapeHtml(text.substring(lastIndex, match.index));
+            }
+
+            if (match[1]) {
+                const boutenBlock = match[1];
+                let bMatch;
+                boutenCharRegex.lastIndex = 0;
+                while ((bMatch = boutenCharRegex.exec(boutenBlock)) !== null) {
+                    const char = bMatch[1];
+                    const trailingSpace = bMatch[2] || '';
+                    result += `<span class="novel-bouten">${escapeHtml(char)}</span>${escapeHtml(trailingSpace)}`;
+                }
+            } else if (match[2] && match[3]) {
+                let base = match[2];
+                if (base.startsWith('|') || base.startsWith('｜')) {
+                    base = base.substring(1);
+                }
+                const ruby = match[3];
+                result += `<ruby class="novel-ruby">${escapeHtml(base)}<rt>${escapeHtml(ruby)}</rt></ruby>`;
+            }
+
+            lastIndex = combinedRegex.lastIndex;
+        }
+
+        if (lastIndex < text.length) {
+            result += escapeHtml(text.substring(lastIndex));
+        }
+
+        return result;
+    }
+
     // --- Preferences System ---
     function loadPreferences() {
         try {
@@ -424,7 +471,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     function createItemHtml(item) {
         const hasOriginal = Boolean(item.original);
-        let itemHtml = `<div class="translation-item" data-id="${item.id}" data-pid="${item.pid}" data-original="${escapeHtml(item.original)}">`;
+        let itemHtml = `<div class="translation-item" data-id="${item.id}" data-pid="${item.pid}" data-original="${escapeHtml(item.original)}" data-raw-translated="${escapeHtml(item.translated)}">`;
 
         // Edit trigger button (PC hover)
         itemHtml += `<button class="paragraph-edit-btn" title="단락 번역문 수정 (PC: 더블클릭 / 모바일: 길게 누르기)"><span class="material-icons" style="font-size: 16px;">edit</span></button>`;
@@ -432,7 +479,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (prefs.showOriginal && hasOriginal) {
             itemHtml += `<p class="original-text">${escapeHtml(item.original)}</p>`;
         }
-        itemHtml += `<p class="translated-text">${escapeHtml(item.translated)}</p></div>`;
+        itemHtml += `<p class="translated-text">${renderNovelRubyHtml(item.translated)}</p></div>`;
         return itemHtml;
     }
 
@@ -681,7 +728,14 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         translationItem.classList.add('editing');
         const translatedTextElement = translationItem.querySelector('.translated-text');
-        const originalText = translatedTextElement.textContent;
+        
+        // Find raw unparsed text from currentChapterItems or dataset so tags like 《...》 or (・) can be edited
+        const itemId = parseInt(translationItem.dataset.id, 10);
+        const sourceItem = currentChapterItems.find(i => i.id === itemId || i.pid === translationItem.dataset.pid);
+        const originalRawText = sourceItem ? sourceItem.translated : (translationItem.dataset.rawTranslated || translatedTextElement.textContent);
+        translationItem._originalRawText = originalRawText;
+
+        translatedTextElement.textContent = originalRawText;
         translatedTextElement.contentEditable = 'true';
         translatedTextElement.focus();
 
@@ -706,8 +760,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             };
             actionBox.querySelector('.cancel-edit-btn').onclick = (e) => {
                 e.stopPropagation();
-                translatedTextElement.textContent = originalText;
-                disableEditing(translationItem);
+                disableEditing(translationItem, true);
             };
         }
 
@@ -716,21 +769,24 @@ document.addEventListener('DOMContentLoaded', async () => {
                 e.preventDefault();
                 saveParagraphChanges(translationItem);
             } else if (e.key === 'Escape') {
-                translatedTextElement.textContent = originalText;
-                disableEditing(translationItem);
+                disableEditing(translationItem, true);
             }
         };
     }
 
-    function disableEditing(translationItem) {
+    function disableEditing(translationItem, revert = false) {
         translationItem.classList.remove('editing');
         const translatedTextElement = translationItem.querySelector('.translated-text');
         if (translatedTextElement) {
             translatedTextElement.contentEditable = 'false';
             translatedTextElement.onkeydown = null;
+            if (revert && translationItem._originalRawText !== undefined) {
+                translatedTextElement.innerHTML = renderNovelRubyHtml(translationItem._originalRawText);
+            }
         }
         const actionBox = translationItem.querySelector('.inline-edit-actions');
         if (actionBox) actionBox.remove();
+        delete translationItem._originalRawText;
     }
 
     async function saveParagraphChanges(translationItem) {
@@ -754,13 +810,15 @@ document.addEventListener('DOMContentLoaded', async () => {
             });
             if (!response.ok) throw new Error('저장에 실패했습니다.');
 
-            disableEditing(translationItem);
-            showToast('번역문이 수정되었습니다.');
-
-            // Update local state
+            // Update local state before re-rendering
             const itemId = parseInt(translationItem.dataset.id, 10);
             const sourceItem = currentChapterItems.find(i => i.id === itemId || i.pid === itemData.pid);
             if (sourceItem) sourceItem.translated = newTranslatedText;
+            translationItem.dataset.rawTranslated = newTranslatedText;
+
+            disableEditing(translationItem);
+            translatedTextElement.innerHTML = renderNovelRubyHtml(newTranslatedText);
+            showToast('번역문이 수정되었습니다.');
 
         } catch (error) {
             console.error('Error saving changes:', error);
