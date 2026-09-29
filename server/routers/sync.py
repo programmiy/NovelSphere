@@ -241,31 +241,55 @@ def _build_mobile_optimized_db(temp_db_path: str):
     """)
     chapters_meta = src_cursor.fetchall()
 
+    # 4. 단 1회의 Bulk 쿼리로 모든 회차 문장 일괄 로드 (N+1 쿼리 폭포 완전 제거)
+    src_cursor.execute("""
+        SELECT folderName, url, id, pid, original, translated, timestamp
+        FROM translations
+        WHERE folderName IS NOT NULL AND url IS NOT NULL AND url != ''
+        ORDER BY folderName, url,
+                 CASE WHEN lower(pid) LIKE 'p%' OR lower(pid) LIKE 'l%' 
+                      THEN CAST(SUBSTR(pid, 2) AS INTEGER) 
+                      ELSE 999999 END ASC, timestamp ASC
+    """)
+
+    sentences_by_chap = defaultdict(list)
+    for row in src_cursor:
+        sentences_by_chap[(row['folderName'], row['url'])].append({
+            'id': row['id'],
+            'pid': row['pid'],
+            'original': row['original'],
+            'translated': row['translated'],
+            'timestamp': row['timestamp']
+        })
+
+    # 5. 챕터 순서(sort_order ASC)를 완벽히 유지하며 zlib 압축 및 배치 executemany 일괄 적재
+    chapter_rows = []
     for chap in chapters_meta:
         b_name = chap['folderName']
         c_title = chap['title']
         c_url = chap['url']
         s_order = chap['sort_order']
 
-        # 해당 회차(URL)의 모든 문장 로드 (동일 URL에 속한 모든 단락을 온전히 묶음)
-        src_cursor.execute("""
-            SELECT id, pid, original, translated, timestamp
-            FROM translations
-            WHERE folderName = ? AND url = ?
-            ORDER BY CASE WHEN lower(pid) LIKE 'p%' OR lower(pid) LIKE 'l%' 
-                          THEN CAST(SUBSTR(pid, 2) AS INTEGER) 
-                          ELSE 999999 END ASC, timestamp ASC
-        """, (b_name, c_url))
-        sentences = src_cursor.fetchall()
-
-        # 문장 리스트를 가벼운 JSON으로 직렬화 후 zlib 압축 (레벨 6)
+        sentences = sentences_by_chap.get((b_name, c_url), [])
         raw_json = json.dumps(sentences, ensure_ascii=False).encode('utf-8')
         compressed_blob = zlib.compress(raw_json, level=6)
 
-        dst_cursor.execute("""
+        chapter_rows.append((b_name, c_title, c_url, s_order, len(sentences), compressed_blob))
+        if len(chapter_rows) >= 300:
+            dst_cursor.executemany("""
+                INSERT INTO chapters (book_name, title, url, sort_order, sentence_count, compressed_content)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, chapter_rows)
+            chapter_rows.clear()
+
+    if chapter_rows:
+        dst_cursor.executemany("""
             INSERT INTO chapters (book_name, title, url, sort_order, sentence_count, compressed_content)
             VALUES (?, ?, ?, ?, ?, ?)
-        """, (b_name, c_title, c_url, s_order, len(sentences), compressed_blob))
+        """, chapter_rows)
+        chapter_rows.clear()
+
+    del sentences_by_chap
 
     dst_conn.commit()
     dst_conn.execute("VACUUM")

@@ -259,6 +259,9 @@ class SyncService {
         final db = await LocalDbService.database;
 
         if (updatedChapters.isNotEmpty) {
+          final touchedBooks = <String>{};
+          final batch = db.batch();
+
           for (var chap in updatedChapters) {
             final bName = chap['book_name'] as String;
             final cTitle = chap['title'] as String;
@@ -268,13 +271,15 @@ class SyncService {
             final b64Blob = chap['compressed_content'] as String;
             final blobBytes = base64Decode(b64Blob);
 
-            // 해당 URL의 기존 챕터(과거 분리되었던 레코드 포함) 모두 제거 후 최신 통합 챕터로 저장
-            await db.delete(
+            touchedBooks.add(bName);
+
+            // 해당 URL의 기존 챕터(과거 분리되었던 레코드 포함) 모두 제거 후 최신 통합 챕터로 일괄 저장
+            batch.delete(
               'chapters',
               where: 'book_name = ? AND url = ?',
               whereArgs: [bName, cUrl],
             );
-            await db.insert('chapters', {
+            batch.insert('chapters', {
               'book_name': bName,
               'title': cTitle,
               'url': cUrl,
@@ -282,43 +287,51 @@ class SyncService {
               'sentence_count': sCount,
               'compressed_content': blobBytes,
             });
+          }
 
-            // 책의 total_chapters 갱신
+          await batch.commit(noResult: true);
+
+          // 갱신된 책들의 total_chapters를 1회씩만 집계 갱신
+          for (var bName in touchedBooks) {
             final countRow = await db.rawQuery('SELECT COUNT(*) as cnt FROM chapters WHERE book_name = ?', [bName]);
             final totalChaps = (countRow.first['cnt'] as num?)?.toInt() ?? 0;
             await db.update('books', {'total_chapters': totalChaps}, where: 'folder_name = ?', whereArgs: [bName]);
           }
         }
 
-        // PC의 활동 정보를 로컬 DB에 반영
-        for (var act in activities) {
-          final fName = act['folderName'];
-          if (fName == null) continue;
-          await db.rawInsert('''
-            INSERT INTO books (
-              folder_name, last_read_timestamp, last_read_pid, last_read_chapter_title,
-              is_completed, is_visible, is_bookmarked, notes, summary
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(folder_name) DO UPDATE SET
-              last_read_timestamp = COALESCE(excluded.last_read_timestamp, books.last_read_timestamp),
-              last_read_pid = COALESCE(excluded.last_read_pid, books.last_read_pid),
-              last_read_chapter_title = COALESCE(excluded.last_read_chapter_title, books.last_read_chapter_title),
-              is_completed = excluded.is_completed,
-              is_visible = excluded.is_visible,
-              is_bookmarked = excluded.is_bookmarked,
-              notes = COALESCE(excluded.notes, books.notes),
-              summary = COALESCE(excluded.summary, books.summary);
-          ''', [
-            fName,
-            act['last_read_timestamp'],
-            act['last_read_pid'],
-            act['last_read_chapter_title'],
-            act['is_completed'] ?? 0,
-            act['is_visible'] ?? 1,
-            act['is_bookmarked'] ?? 0,
-            act['notes'],
-            act['summary'],
-          ]);
+        // PC의 활동 정보를 로컬 DB에 일괄 반영
+        if (activities.isNotEmpty) {
+          final actBatch = db.batch();
+          for (var act in activities) {
+            final fName = act['folderName'];
+            if (fName == null) continue;
+            actBatch.rawInsert('''
+              INSERT INTO books (
+                folder_name, last_read_timestamp, last_read_pid, last_read_chapter_title,
+                is_completed, is_visible, is_bookmarked, notes, summary
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+              ON CONFLICT(folder_name) DO UPDATE SET
+                last_read_timestamp = COALESCE(excluded.last_read_timestamp, books.last_read_timestamp),
+                last_read_pid = COALESCE(excluded.last_read_pid, books.last_read_pid),
+                last_read_chapter_title = COALESCE(excluded.last_read_chapter_title, books.last_read_chapter_title),
+                is_completed = excluded.is_completed,
+                is_visible = excluded.is_visible,
+                is_bookmarked = excluded.is_bookmarked,
+                notes = COALESCE(excluded.notes, books.notes),
+                summary = COALESCE(excluded.summary, books.summary);
+            ''', [
+              fName,
+              act['last_read_timestamp'],
+              act['last_read_pid'],
+              act['last_read_chapter_title'],
+              act['is_completed'] ?? 0,
+              act['is_visible'] ?? 1,
+              act['is_bookmarked'] ?? 0,
+              act['notes'],
+              act['summary'],
+            ]);
+          }
+          await actBatch.commit(noResult: true);
         }
 
         // 과거 분리된 중복 회차 자가 치유 실행

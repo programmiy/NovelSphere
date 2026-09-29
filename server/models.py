@@ -24,6 +24,7 @@ class Translation(Base):
         Index('ix_folderName', 'folderName'),
         Index('ix_title', 'title'),
         Index('ix_folder_title', 'folderName', 'title'),
+        Index('ix_folder_url', 'folderName', 'url'),
     )
 
 class ExcludedSentence(Base):

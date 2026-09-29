@@ -211,6 +211,7 @@ async def lifespan(app: FastAPI):
 
             connection.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_title ON translations (title)")
             connection.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_folder_title ON translations (folderName, title)")
+            connection.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_translations_folder_url ON translations (folderName, url)")
 
             connection.exec_driver_sql("""
                 CREATE VIRTUAL TABLE IF NOT EXISTS translations_fts USING fts5(
