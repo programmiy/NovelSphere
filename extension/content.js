@@ -2682,15 +2682,22 @@ async function translateAllPTags(isRetranslation = false) {
             }
 
             logToSidebar("페이지 끝으로 스크롤 후 다음 페이지 액션을 실행합니다.");
-            window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+            const scrollTarget = Math.max(document.body.scrollHeight, document.documentElement.scrollHeight);
+            window.scrollTo({ top: scrollTarget, behavior: 'smooth' });
 
+            let scrollCheckAttempts = 0;
             const checkScrollEndInterval = setInterval(() => {
                 if (isTranslationCancelled) {
                     clearInterval(checkScrollEndInterval);
                     return;
                 }
                 
-                if ((window.innerHeight + window.scrollY) >= document.body.scrollHeight - 10) {
+                scrollCheckAttempts++;
+                const currentScroll = window.innerHeight + window.scrollY;
+                const maxScroll = Math.max(document.body.scrollHeight, document.documentElement.scrollHeight);
+                
+                // 50px 버퍼 또는 3초(30회) 경과 시 스크롤 완료로 간주 (DPI 배율 차이 및 백그라운드 스로틀링 대응)
+                if (currentScroll >= maxScroll - 50 || scrollCheckAttempts >= 30) {
                     clearInterval(checkScrollEndInterval);
                     
                     if (currentUrl.includes('novel18.syosetu.com') || currentUrl.includes('syosetu.com')) {
@@ -2736,17 +2743,26 @@ async function translateAllPTags(isRetranslation = false) {
                             chrome.storage.local.remove(countKey).catch(() => {});
                         }
                     } else if (currentUrl.includes('kakuyomu.jp')) {
-                        logToSidebar("'kakuyomu.jp'입니다. 'PageDown' 키를 누릅니다.");
-                        const pageDownDelay = isTurboMode ? 500 : 4000;
-                        setTimeout(() => {
-                            document.body.dispatchEvent(new KeyboardEvent('keydown', {
-                                key: 'PageDown',
-                                code: 'PageDown',
-                                bubbles: true,
-                                cancelable: true,
-                                keyCode: 34
-                            }));
-                        }, pageDownDelay);
+                        logToSidebar("카쿠요무 '다음 에피소드' 링크를 찾아서 이동합니다.");
+                        const nextButton = document.querySelector('#contentMain-readNextEpisode') || 
+                                           document.querySelector('a.js-read-next-episode') ||
+                                           document.querySelector('a[data-link-click-action-name="WorksEpisodesEpisodeFooterNextEpisode"]') ||
+                                           document.querySelector('link[rel="next"]');
+
+                        if (nextButton && nextButton.href) {
+                            logToSidebar(`다음 페이지로 이동: ${nextButton.href}`);
+                            window.location.href = nextButton.href;
+                        } else {
+                            logToSidebar("다음 페이지 버튼을 찾을 수 없습니다. (소설 연속 번역 종료)");
+                            sendNtfyComplete(
+                                currentNovelTitle,
+                                extractEpisodeTitle() || document.title || '',
+                                textsToTranslate.length,
+                                getCleanUrl(),
+                                currentBatchCount
+                            );
+                            chrome.storage.local.remove(countKey).catch(() => {});
+                        }
                     } else {
                         logToSidebar("지원되지 않는 사이트입니다. 기본 'PageDown' 키를 누릅니다.");
                         const pageDownDelay = isTurboMode ? 500 : 4000;
