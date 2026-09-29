@@ -6,6 +6,8 @@ import os
 import logging
 import datetime
 import time
+import collections
+import random
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import List, Optional
@@ -28,6 +30,91 @@ process_started_before_cutoff = False
 process_started_before_5pm = False  # Backward compatibility alias
 _stop_lock = threading.Lock()
 _gemini_session = requests.Session()
+
+# --- Proactive Dynamic Breather & RPM Sliding Window ---
+_CALL_TIMESTAMPS = collections.deque()
+_RPM_LOCK = threading.Lock()
+
+def recycle_gemini_session():
+    """
+    Gemini API 요청용 세션을 소켓 레벨에서 안전하게 재생성하여
+    특정 엣지 노드에 고착된 TCP/TLS 연결 및 잠재적 과부하 상태를 해소합니다.
+    """
+    global _gemini_session
+    old_session = _gemini_session
+    try:
+        new_session = requests.Session()
+        _gemini_session = new_session
+        old_session.close()
+        logger.info("[Session Rejuvenation] Gemini requests.Session이 성공적으로 재생성되었습니다.")
+    except Exception as e:
+        logger.warning(f"[Session Rejuvenation] 세션 재생성 중 예외 발생: {e}")
+
+def get_current_rpm(window_seconds: float = 60.0) -> int:
+    """최근 window_seconds(기본 60초) 동안의 실제 API 호출 횟수(RPM)를 반환합니다."""
+    now = time.time()
+    cutoff = now - window_seconds
+    with _RPM_LOCK:
+        while _CALL_TIMESTAMPS and _CALL_TIMESTAMPS[0] < cutoff:
+            _CALL_TIMESTAMPS.popleft()
+        return len(_CALL_TIMESTAMPS)
+
+def _record_call_timestamp():
+    """API 호출 발생 시 타임스탬프를 슬라이딩 윈도우에 기록합니다."""
+    with _RPM_LOCK:
+        _CALL_TIMESTAMPS.append(time.time())
+
+def proactive_rpm_rest(novel_title: Optional[str] = None, episode_title: Optional[str] = None):
+    """
+    Gemini API 호출 직전 최근 60초간의 호출 빈도(RPM)를 분석하여
+    429(Rate Limit) 및 503(Overload)을 선제적으로 예방하는 적응형 휴식을 수행합니다.
+    - 0~8 RPM (Green Zone): 지연 시간 0초 (최대 속도 유지)
+    - 9~11 RPM (Yellow Zone): 1.5 ~ 3.5초 랜덤 미세 지연 (버스트 누적 완화)
+    - 12+ RPM (Red Zone): 7.0 ~ 14.0초 랜덤 쿨링다운 + HTTP 세션 소켓 재생성(Session Rejuvenation)
+    """
+    current_rpm = get_current_rpm(60.0)
+
+    if current_rpm >= 12:
+        rest_time = round(random.uniform(7.0, 14.0), 2)
+        logger.warning(
+            f"[RPM 선제 방지] 최근 60초 RPM {current_rpm}회 감지 (과열 위험 구간). "
+            f"{rest_time}초간 휴식 후 세션을 소켓 수준에서 재생성합니다."
+        )
+        try:
+            from server.notifications import update_translation_status
+            update_translation_status(
+                book_title=novel_title,
+                episode_title=episode_title,
+                is_active=True,
+                status_text=f"☕ RPM 과열 선제 방지 휴식 중... ({rest_time}초)"
+            )
+        except Exception:
+            pass
+
+        time.sleep(rest_time)
+        recycle_gemini_session()
+
+        try:
+            from server.notifications import update_translation_status
+            update_translation_status(
+                book_title=novel_title,
+                episode_title=episode_title,
+                is_active=True,
+                status_text=None
+            )
+        except Exception:
+            pass
+
+    elif current_rpm >= 9:
+        rest_time = round(random.uniform(1.5, 3.5), 2)
+        logger.info(
+            f"[RPM 미세 조절] 최근 60초 RPM {current_rpm}회 감지 (주의 구간). "
+            f"{rest_time}초간 미세 휴식합니다."
+        )
+        time.sleep(rest_time)
+    else:
+        # Green Zone (0 ~ 8 RPM): 0초 즉시 패스 (최대 처리량 달성)
+        pass
 
 
 from server.quota import (
@@ -123,7 +210,11 @@ def call_gemini_api(api_url: str, prompt: str, api_key: Optional[str] = None, sy
     Calls the Gemini API using requests.Session with header authentication,
     low temperature (0.3), systemInstruction separation, and response_schema.
     Ensures fresh session state by clearing cookies before request.
+    Applies adaptive proactive RPM breathing and session rejuvenation before execution.
     """
+    # 선제적 적응형 RPM 휴식 및 세션 소켓 재생성
+    proactive_rpm_rest()
+
     # 매 요청마다 세션 쿠키/상태를 리셋하여 이전 요청의 컨텍스트 간섭 방지
     try:
         _gemini_session.cookies.clear()
@@ -159,6 +250,9 @@ def call_gemini_api(api_url: str, prompt: str, api_key: Optional[str] = None, sy
         except Exception:
             pass
 
+    # 실제 요청 발송 직전 슬라이딩 윈도우에 타임스탬프 기록
+    _record_call_timestamp()
+
     try:
         response = _gemini_session.post(api_url, json=payload, headers=headers, timeout=180)
         record_api_call(model=model_name, status_code=response.status_code)
@@ -167,6 +261,8 @@ def call_gemini_api(api_url: str, prompt: str, api_key: Optional[str] = None, sy
     except requests.exceptions.RequestException as e:
         status_code = getattr(getattr(e, 'response', None), 'status_code', 500)
         record_api_call(model=model_name, status_code=status_code)
+        if status_code in (429, 503):
+            recycle_gemini_session()
         raise
 
 
@@ -607,7 +703,11 @@ def _recover_verbatim_items(
                     "temperature": 0.3
                 }
             }
+            proactive_rpm_rest()
+            _record_call_timestamp()
             res = _gemini_session.post(api_url, json=plain_payload, headers=headers, timeout=60)
+            if res.status_code in (429, 503):
+                recycle_gemini_session()
             if res.ok:
                 c_json = res.json()
                 cand = c_json.get('candidates', [{}])[0]
@@ -701,6 +801,7 @@ def _translate_sub_batch_with_safety_split(
         sub_data = call_gemini_api(api_url, sub_prompt)
     except requests.exceptions.HTTPError as e:
         if e.response.status_code == 429:
+            recycle_gemini_session()
             raise HTTPException(status_code=429, detail="API 요청 한도 초과. 잠시 후 다시 시도해주세요.")
         logger.warning(f"분할 번역 중 HTTP 오류 ({e}). 하위 분할을 시도합니다.")
         sub_data = None

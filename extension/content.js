@@ -2700,12 +2700,19 @@ async function translateAllPTags(isRetranslation = false) {
                 if (currentScroll >= maxScroll - 50 || scrollCheckAttempts >= 30) {
                     clearInterval(checkScrollEndInterval);
                     
+                    function navigateToNextChapter(targetUrl) {
+                        const navDelay = Math.floor(Math.random() * 1000) + 1500; // 1.5 ~ 2.5초 완충 대기
+                        logToSidebar(`다음 페이지로 이동합니다 (${(navDelay / 1000).toFixed(1)}초 대기): ${targetUrl}`);
+                        setTimeout(() => {
+                            window.location.href = targetUrl;
+                        }, navDelay);
+                    }
+
                     if (currentUrl.includes('novel18.syosetu.com') || currentUrl.includes('syosetu.com')) {
                         logToSidebar("소설 사이트 '次へ' 버튼을 찾아서 클릭합니다.");
                         const nextButton = document.querySelector('a.c-pager__item.c-pager__item--next') || document.querySelector('a.novelview_pager-next');
                         if (nextButton && nextButton.href) {
-                            logToSidebar(`다음 페이지로 이동: ${nextButton.href}`);
-                            window.location.href = nextButton.href;
+                            navigateToNextChapter(nextButton.href);
                         } else {
                             logToSidebar("다음 페이지 버튼을 찾을 수 없습니다. (소설 연속 번역 종료)");
                             // 마지막 화에 도달하여 다음 화가 없으므로 최종 완료 알림 발송 후 카운터 리셋
@@ -2729,8 +2736,7 @@ async function translateAllPTags(isRetranslation = false) {
                         );
 
                         if (nextLink && nextLink.href) {
-                            logToSidebar(`다음 페이지로 이동: ${nextLink.href}`);
-                            window.location.href = nextLink.href;
+                            navigateToNextChapter(nextLink.href);
                         } else {
                             logToSidebar("다음 페이지 버튼을 찾을 수 없습니다. (소설 연속 번역 종료)");
                             sendNtfyComplete(
@@ -2750,8 +2756,7 @@ async function translateAllPTags(isRetranslation = false) {
                                            document.querySelector('link[rel="next"]');
 
                         if (nextButton && nextButton.href) {
-                            logToSidebar(`다음 페이지로 이동: ${nextButton.href}`);
-                            window.location.href = nextButton.href;
+                            navigateToNextChapter(nextButton.href);
                         } else {
                             logToSidebar("다음 페이지 버튼을 찾을 수 없습니다. (소설 연속 번역 종료)");
                             sendNtfyComplete(

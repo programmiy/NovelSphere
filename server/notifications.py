@@ -77,8 +77,8 @@ _STATUS_LOCK = threading.Lock()
 def update_translation_status(
     book_title: Optional[str] = None,
     episode_title: Optional[str] = None,
-    current_sentence: int = 0,
-    total_sentences: int = 0,
+    current_sentence: Optional[int] = None,
+    total_sentences: Optional[int] = None,
     percentage: Optional[float] = None,
     episode_count: Optional[int] = None,
     is_active: bool = True,
@@ -92,8 +92,10 @@ def update_translation_status(
             _CURRENT_TRANSLATION_STATUS["book_title"] = book_title
         if episode_title:
             _CURRENT_TRANSLATION_STATUS["current_episode_title"] = episode_title
-        _CURRENT_TRANSLATION_STATUS["current_sentence"] = current_sentence
-        _CURRENT_TRANSLATION_STATUS["total_sentences"] = total_sentences
+        if current_sentence is not None:
+            _CURRENT_TRANSLATION_STATUS["current_sentence"] = current_sentence
+        if total_sentences is not None:
+            _CURRENT_TRANSLATION_STATUS["total_sentences"] = total_sentences
 
         api_calls = 0
         quota_limit = 500
@@ -113,10 +115,11 @@ def update_translation_status(
         if episode_count is not None:
             _CURRENT_TRANSLATION_STATUS["episode_count"] = episode_count
         _CURRENT_TRANSLATION_STATUS["updated_at"] = now
-        if status_text:
+        if status_text is not None:
             _CURRENT_TRANSLATION_STATUS["status_text"] = status_text
         elif is_active:
-            ep_str = f"[{episode_title}] " if episode_title else ""
+            ep = _CURRENT_TRANSLATION_STATUS.get("current_episode_title") or episode_title
+            ep_str = f"[{ep}] " if ep else ""
             _CURRENT_TRANSLATION_STATUS["status_text"] = f"{ep_str}오늘 API {api_calls}/{quota_limit}회 ({quota_pct}%)"
         else:
             _CURRENT_TRANSLATION_STATUS["status_text"] = "번역 완료"
@@ -141,15 +144,23 @@ def get_translation_status() -> Dict[str, Any]:
             if q["percentage"] > 0 or data.get("percentage") in (0, 100, None):
                 data["percentage"] = q["percentage"]
 
+            # 사용자 정의 status_text(휴식 중, 에러 등)가 설정된 경우 덮어쓰지 않고 보존
+            curr_st = data.get("status_text")
             ep_str = f"[{data.get('current_episode_title')}] " if data.get('current_episode_title') else ""
-            if data["is_active"]:
-                data["status_text"] = f"{ep_str}오늘 API {q['api_calls_today']}/{q['quota_limit']}회 ({q['percentage']}%)"
-            else:
-                data["status_text"] = f"대기 중 (오늘 API {q['api_calls_today']}/{q['quota_limit']}회, {q['percentage']}%)"
+            if not curr_st or curr_st in ("대기 중", "번역 완료") or "오늘 API" in curr_st:
+                if data["is_active"]:
+                    data["status_text"] = f"{ep_str}오늘 API {q['api_calls_today']}/{q['quota_limit']}회 ({q['percentage']}%)"
+                else:
+                    data["status_text"] = f"대기 중 (오늘 API {q['api_calls_today']}/{q['quota_limit']}회, {q['percentage']}%)"
 
         except Exception as e:
             logger.warning(f"[notifications] 쿼터 상태 반영 실패: {e}")
 
+        try:
+            from server.routers.translation import get_current_rpm
+            data["current_rpm"] = get_current_rpm()
+        except Exception:
+            data["current_rpm"] = 0
 
         return data
 
