@@ -26,7 +26,7 @@ let historyContainer, emptyState, searchBox, darkModeToggle, fetchAllTitlesBtn, 
 let cleanupQueueBtn, openRestoreCenterBtn, notifBadge, abnormalFilterBar, filterAbnormalAll, filterAbnormalPartial, filterAbnormalOther, moveToCleanupBtn, whitelistSelectedAbnormalBtn, cleanupSectionBar, cleanupSummaryText, deleteSelectedCleanupBtn, deleteAllCleanupBtn, cleanupRestoreModal, closeRestoreCenterModalBtn, closeRestoreCenterBottomBtn, tabBtnNotifications, tabBtnTrash, tabBtnAbnormalWhitelist, modalNotifBadge, modalTrashBadge, modalWhitelistBadge, tabContentNotifications, tabContentTrash, tabContentAbnormalWhitelist, notificationsTableBody, trashTableBody, whitelistTableBody, clearAllWhitelistBtn, dismissAllNotifsBtn, refreshNotifsBtn, restoreAllTrashBtn, toggleDismissedHistory, dismissedHistoryContainer, dismissedTableBody, dismissedNotifsCount, similarRecommendPanel, recommendKeyword, recommendCardsContainer, closeRecommendPanelBtn;
 let modalAutoRefreshTimer = null;
 let currentRestoreTab = 'notifications';
-let deselectAllBtn, retranslateSelectedBtn, copySelectedOriginalBtn, bulkFindReplaceBtn, bulkWhitelistAbnormalBtn, bulkMoveToCleanupBtn, exportSelectedPdfBtn, exportSelectedJsonBtn, excludeSelectedBtn, exportPdfBtn, exportJsonBtn;
+let deselectAllBtn, retranslateSelectedBtn, copySelectedOriginalBtn, bulkFindReplaceBtn, bulkWhitelistAbnormalBtn, bulkMoveToCleanupBtn, excludeSelectedBtn;
 let openNtfySettingsBtn, ntfySettingsModal, closeNtfySettingsBtn, closeNtfySettingsBottomBtn, ntfyEnabledCheckbox, ntfyServerInput, ntfyTopicInput, ntfyProgressStepSelect, sendNtfyTestBtn, saveNtfySettingsBtn, ntfyTopicLink, ntfyTestResult;
 
 // Debounce timer
@@ -123,11 +123,7 @@ function cacheDOMElements() {
     bulkFindReplaceBtn = document.getElementById('bulkFindReplaceBtn');
     bulkWhitelistAbnormalBtn = document.getElementById('bulkWhitelistAbnormalBtn');
     bulkMoveToCleanupBtn = document.getElementById('bulkMoveToCleanupBtn');
-    exportSelectedPdfBtn = document.getElementById('exportSelectedPdfBtn');
-    exportSelectedJsonBtn = document.getElementById('exportSelectedJsonBtn');
     excludeSelectedBtn = document.getElementById('excludeSelectedBtn');
-    exportPdfBtn = document.getElementById('exportPdfBtn');
-    exportJsonBtn = document.getElementById('exportJsonBtn');
 
     // ntfy settings modal elements
     openNtfySettingsBtn = document.getElementById('openNtfySettingsBtn');
@@ -642,12 +638,6 @@ function setupEventListeners() {
     if (bulkWhitelistAbnormalBtn) bulkWhitelistAbnormalBtn.addEventListener('click', whitelistSelectedAbnormal);
     if (bulkMoveToCleanupBtn) bulkMoveToCleanupBtn.addEventListener('click', moveToCleanupQueueSelected);
     if (excludeSelectedBtn) excludeSelectedBtn.addEventListener('click', excludeSelectedTranslations);
-    if (exportSelectedPdfBtn) exportSelectedPdfBtn.addEventListener('click', () => exportToPrintableHtml(true));
-    if (exportSelectedJsonBtn) exportSelectedJsonBtn.addEventListener('click', () => exportTranslationsAsJson(true));
-
-    // Top control export buttons
-    if (exportPdfBtn) exportPdfBtn.addEventListener('click', () => exportToPrintableHtml(false));
-    if (exportJsonBtn) exportJsonBtn.addEventListener('click', () => exportTranslationsAsJson(false));
 
     // Cleanup queue toolbar & actions
     if (cleanupQueueBtn) cleanupQueueBtn.addEventListener('click', toggleCleanupQueue);
@@ -2409,8 +2399,6 @@ function updateBulkActionPanel() {
     if (copySelectedOriginalBtn) copySelectedOriginalBtn.disabled = !hasSelection;
     if (bulkFindReplaceBtn) bulkFindReplaceBtn.disabled = !hasSelection;
     if (excludeSelectedBtn) excludeSelectedBtn.disabled = !hasSelection;
-    if (exportSelectedPdfBtn) exportSelectedPdfBtn.disabled = !hasSelection;
-    if (exportSelectedJsonBtn) exportSelectedJsonBtn.disabled = !hasSelection;
 }
 
 function deselectAll() {
@@ -2576,97 +2564,6 @@ function getTranslationsList(selectedOnly = false) {
         }
     }
     return list;
-}
-
-function exportTranslationsAsJson(selectedOnly = false) {
-    const items = getTranslationsList(selectedOnly);
-    if (items.length === 0) {
-        showToast(selectedOnly ? '선택된 번역 항목이 없습니다.' : '내보낼 번역 데이터가 없습니다.', 'error');
-        return;
-    }
-
-    const exportData = items.map(t => ({
-        id: t.id,
-        PID: t.pid || '',
-        소설: t.folderName || '미분류',
-        회차: t.title || t.url || '',
-        URL: t.url || '',
-        원문: t.original || '',
-        번역: t.translated || '',
-        날짜: t.timestamp ? new Date(t.timestamp * 1000).toLocaleString('ko-KR') : ''
-    }));
-
-    const dataStr = JSON.stringify(exportData, null, 2);
-    const blob = new Blob([dataStr], { type: 'application/json;charset=utf-8' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    const dateStr = new Date().toISOString().split('T')[0];
-    link.download = `lanovel-${selectedOnly ? 'selected-' : ''}translations-${dateStr}.json`;
-    link.click();
-    showToast(`${items.length}개 번역 항목이 JSON 파일로 다운로드되었습니다.`, 'success');
-}
-
-function exportToPrintableHtml(selectedOnly = false) {
-    const items = getTranslationsList(selectedOnly);
-    if (items.length === 0) {
-        showToast(selectedOnly ? '선택된 번역 항목이 없습니다.' : '내보낼 번역 데이터가 없습니다.', 'error');
-        return;
-    }
-
-    const grouped = {};
-    for (const item of items) {
-        const folder = item.folderName || '미분류';
-        const title = item.title || item.url || '회차';
-        const key = `${folder} - ${title}`;
-        if (!grouped[key]) grouped[key] = [];
-        grouped[key].push(item);
-    }
-
-    let bodyContent = '';
-    for (const key in grouped) {
-        bodyContent += `<h2 style="margin-top: 32px; border-bottom: 2px solid #334155; padding-bottom: 8px; color: #1e293b;">${escapeHtml(key)}</h2>`;
-        bodyContent += '<table style="width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 13px;">';
-        bodyContent += '<thead><tr style="background: #f1f5f9;"><th style="border: 1px solid #cbd5e1; padding: 8px; width: 60px; text-align: center;">PID</th><th style="border: 1px solid #cbd5e1; padding: 8px; width: 45%;">일본어 원문</th><th style="border: 1px solid #cbd5e1; padding: 8px; width: 45%;">한국어 번역문</th></tr></thead><tbody>';
-        for (const t of grouped[key]) {
-            bodyContent += `<tr>
-                <td style="border: 1px solid #e2e8f0; padding: 6px; text-align: center; color: #64748b; font-family: monospace;">${escapeHtml(t.pid || '')}</td>
-                <td style="border: 1px solid #e2e8f0; padding: 8px; line-height: 1.5; color: #475569;">${escapeHtml(t.original || '')}</td>
-                <td style="border: 1px solid #e2e8f0; padding: 8px; line-height: 1.5; font-weight: 500; color: #0f172a;">${escapeHtml(t.translated || '')}</td>
-            </tr>`;
-        }
-        bodyContent += '</tbody></table>';
-    }
-
-    const html = `<!DOCTYPE html>
-<html lang="ko">
-<head>
-    <meta charset="UTF-8">
-    <title>LANOVEL 번역 내보내기 (PDF)</title>
-    <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Pretendard", "Noto Sans KR", sans-serif; margin: 40px; color: #0f172a; }
-        .no-print { margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; background: #e0e7ff; padding: 12px 20px; border-radius: 8px; }
-        .btn-print { background: #4f46e5; color: white; border: none; padding: 8px 18px; border-radius: 6px; font-weight: 600; cursor: pointer; font-size: 14px; }
-        .btn-print:hover { background: #4338ca; }
-        @media print { .no-print { display: none !important; } body { margin: 15mm; } h2 { page-break-after: avoid; } tr { page-break-inside: avoid; } }
-    </style>
-</head>
-<body>
-    <div class="no-print">
-        <span><strong>LANOVEL 번역 리포트</strong> (총 ${items.length}개 단락)</span>
-        <button class="btn-print" onclick="window.print()">🖨️ 인쇄 (PDF로 저장)</button>
-    </div>
-    ${bodyContent}
-</body>
-</html>`;
-
-    const newTab = window.open();
-    if (newTab) {
-        newTab.document.open();
-        newTab.document.write(html);
-        newTab.document.close();
-    } else {
-        showToast('팝업 차단이 감지되었습니다. 팝업을 허용해주세요.', 'error');
-    }
 }
 
 async function deleteSelectedTranslations() {
@@ -2964,16 +2861,6 @@ function initStatsAnalyticsModal() {
             }
         });
     });
-
-    // 리포트 복사 및 CSV / JSON 내보내기 버튼 연결
-    const copyReportBtn = document.getElementById('copyMarkdownReportBtn');
-    if (copyReportBtn) copyReportBtn.addEventListener('click', copyMarkdownReport);
-
-    const exportCsvBtn = document.getElementById('exportStatsCsvBtn');
-    if (exportCsvBtn) exportCsvBtn.addEventListener('click', exportStatsCsv);
-
-    const exportJsonBtn = document.getElementById('exportStatsJsonBtn');
-    if (exportJsonBtn) exportJsonBtn.addEventListener('click', exportStatsJson);
 
     // 작품 심층 분석 패널 닫기 버튼
     const closeDrilldownBtn = document.getElementById('closeNovelDrilldownBtn');
@@ -3802,141 +3689,6 @@ function renderScaleTab(scale) {
 
     const fitBadge = document.getElementById('novelFitBadge');
     if (fitBadge) fitBadge.textContent = scale.novel_fit_badge;
-}
-
-// 종합 통계 분석 요약 마크다운 리포트 클립보드 복사
-function copyMarkdownReport() {
-    if (!analyticsDataCache) {
-        showToast("통계 데이터가 아직 준비되지 않았습니다.", "info");
-        return;
-    }
-
-    const { summary, activity, quality, scale, novels, scope } = analyticsDataCache;
-    const nowStr = new Date().toLocaleString();
-
-    let topNovelsMd = '';
-    if (Array.isArray(novels) && novels.length > 0) {
-        topNovelsMd = novels.slice(0, 5).map(n => 
-            `  ${n.rank}. **${n.name}**: ${n.episode_count.toLocaleString()}화 / ${n.paragraph_count.toLocaleString()}문단 (${n.total_chars.toLocaleString()}자, 비중 ${n.share_pct}%)`
-        ).join('\n');
-    } else {
-        topNovelsMd = '  (등록된 작품 데이터 없음)';
-    }
-
-    const reportMd = `# 📚 LANOVEL 서재 번역 통계 & 품질 심층 리포트
-> ⏱️ 작성 일시: ${nowStr} | 🌐 분석 범위: ${scope}
-
-### 📊 종합 통계 요약
-- **번역 작품 수**: ${summary.total_books.toLocaleString()}개 소설
-- **전체 번역 회차**: ${summary.total_episodes.toLocaleString()}화
-- **누적 번역 문단**: ${summary.total_paragraphs.toLocaleString()}문단
-- **한국어 번역 글자 수**: ${summary.total_kr_chars.toLocaleString()}자
-- **원문(JP) 글자 수**: ${summary.total_jp_chars.toLocaleString()}자 (원문 대비 ${summary.expansion_ratio}배 확장)
-- **화당 평균 분량**: ${summary.avg_chars_per_episode.toLocaleString()}자 (${summary.avg_paragraphs_per_episode}문단/화)
-
-### 📖 번역 규모 & 독서 시간 환산
-- **단행본(소설책) 환산**: 약 **${scale.books_count}권** (권당 10만 자 기준)
-- **200자 원고지 환산**: 약 **${scale.manuscript_count.toLocaleString()}매**
-- **완독 예상 소요시간**: 약 **${scale.reading_hours}시간** (표준 500자/분 기준, 약 ${scale.reading_days}일 연속 완독)
-- **독서 페이스별**: 속독(800자/분) ${scale.pace_fast_hours}시간 / 정독(350자/분) ${scale.pace_slow_hours}시간
-- **웹소설 규격 적합도**: ${scale.novel_fit_badge}
-
-### ⚡ 생산성 & 활동 프로필
-- **일평균 생산량**: ${activity.daily_avg_count.toLocaleString()}문단 (${activity.daily_avg_chars.toLocaleString()}자/일)
-- **역대 최고 기록일**: ${activity.peak_date} (${activity.peak_count.toLocaleString()}문단)
-- **최근 연속 활동**: ${activity.streak_days}일 연속 활동 중
-- **최근 7일 생산량**: ${activity.last_7d_count.toLocaleString()}문단 (${activity.last_7d_chars.toLocaleString()}자)
-- **가장 활발한 시간대**: ${activity.peak_hour}시 (${activity.peak_hour_count.toLocaleString()}문단)
-- **가장 활발한 요일**: ${activity.peak_dow || '-'} (${activity.peak_dow_count ? activity.peak_dow_count.toLocaleString() : 0}문단)
-- **평일 vs 주말 비중**: 평일 ${activity.weekday_pct || 0}% / 주말 ${activity.weekend_pct || 0}%
-
-### 🩺 데이터 무결성 & 품질 점수
-- **종합 데이터 건강도 점수**: **${quality.health_score}점** / 100점
-- **정상 번역률**: ${quality.normal_rate}%
-- **결측/빈 번역문**: ${quality.empty_count.toLocaleString()}건 (${quality.empty_rate}%)
-- **이상번역 감지율**: ${quality.abnormal_rate}% (${quality.abnormal_total_count.toLocaleString()}건)
-- **웹페이지 적용률**: ${quality.applied_rate}%
-
-### 🏆 상위 번역 작품 랭킹
-${topNovelsMd}
-`;
-
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(reportMd).then(() => {
-            showToast("서재 번역 분석 리포트가 클립보드에 복사되었습니다!", "success");
-        }).catch(() => {
-            fallbackCopyText(reportMd);
-        });
-    } else {
-        fallbackCopyText(reportMd);
-    }
-}
-
-function fallbackCopyText(text) {
-    const ta = document.createElement('textarea');
-    ta.value = text;
-    document.body.appendChild(ta);
-    ta.select();
-    document.execCommand('copy');
-    document.body.removeChild(ta);
-    showToast("서재 번역 분석 리포트가 클립보드에 복사되었습니다!", "success");
-}
-
-// 통계 데이터 CSV 내보내기 (Excel 호환 UTF-8 BOM 지원)
-function exportStatsCsv() {
-    if (!analyticsDataCache) {
-        showToast("통계 데이터가 준비되지 않았습니다.", "info");
-        return;
-    }
-
-    const { daily_trends } = analyticsDataCache.activity || {};
-    const novels = analyticsDataCache.novels || [];
-
-    let csv = '\uFEFF'; // UTF-8 BOM
-    csv += '--- [일별 번역 활동 추이] ---\n';
-    csv += '날짜,번역문단수,번역글자수,원문글자수,7일이동평균문단,누적문단수,누적글자수\n';
-    if (Array.isArray(daily_trends)) {
-        daily_trends.forEach(d => {
-            csv += `"${d.date}",${d.count},${d.kr_chars},${d.jp_chars},${d.ma7_count || d.count},${d.cum_count || d.count},${d.cum_chars || d.kr_chars}\n`;
-        });
-    }
-
-    csv += '\n--- [작품별 심층 랭킹] ---\n';
-    csv += '순위,작품명,회차수,문단수,총글자수,화당평균문단,전체비중(%)\n';
-    if (Array.isArray(novels)) {
-        novels.forEach(n => {
-            csv += `${n.rank},"${n.name.replace(/"/g, '""')}",${n.episode_count},${n.paragraph_count},${n.total_chars},${n.avg_paragraphs_per_ep},${n.share_pct}%\n`;
-        });
-    }
-
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    const todayStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-    link.href = url;
-    link.download = `lanovel_stats_${todayStr}.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
-    showToast("통계 데이터 CSV 파일이 다운로드되었습니다.", "success");
-}
-
-// 통계 원본 데이터 JSON 내보내기
-function exportStatsJson() {
-    if (!analyticsDataCache) {
-        showToast("통계 데이터가 준비되지 않았습니다.", "info");
-        return;
-    }
-
-    const jsonStr = JSON.stringify(analyticsDataCache, null, 2);
-    const blob = new Blob([jsonStr], { type: 'application/json;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    const todayStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-    link.href = url;
-    link.download = `lanovel_analytics_${todayStr}.json`;
-    link.click();
-    URL.revokeObjectURL(url);
-    showToast("통계 분석 원본 JSON 파일이 다운로드되었습니다.", "success");
 }
 
 /* ==========================================================================

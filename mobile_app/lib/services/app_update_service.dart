@@ -328,6 +328,12 @@ class AppUpdateService {
       await sink.close();
       client.close();
 
+      if (setProgressState != null) {
+        setProgressState!(() {
+          isApplying = true;
+        });
+      }
+
       // 다이얼로그 닫기
       if (context.mounted && Navigator.canPop(context)) {
         Navigator.pop(context);

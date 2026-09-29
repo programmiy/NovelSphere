@@ -5,8 +5,9 @@ import '../themes/reader_themes.dart';
 
 class ReadingStatsSheet extends StatefulWidget {
   final ReaderThemeData theme;
+  final bool isFullScreen;
 
-  const ReadingStatsSheet({super.key, required this.theme});
+  const ReadingStatsSheet({super.key, required this.theme, this.isFullScreen = false});
 
   @override
   State<ReadingStatsSheet> createState() => _ReadingStatsSheetState();
@@ -53,40 +54,43 @@ class _ReadingStatsSheetState extends State<ReadingStatsSheet> {
   @override
   Widget build(BuildContext context) {
     final theme = widget.theme;
+    final isFull = widget.isFullScreen;
 
     return Container(
-      height: 520,
-      padding: const EdgeInsets.all(20),
+      height: isFull ? null : 520,
+      padding: EdgeInsets.all(isFull ? 16 : 20),
       decoration: BoxDecoration(
-        color: theme.surfaceColor,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+        color: isFull ? theme.background : theme.surfaceColor,
+        borderRadius: isFull ? null : const BorderRadius.vertical(top: Radius.circular(20)),
       ),
       child: _isLoading
           ? Center(child: CircularProgressIndicator(color: theme.accentColor))
           : Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Center(
-                  child: Container(
-                    width: 36,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: theme.borderColor,
-                      borderRadius: BorderRadius.circular(2),
+                if (!isFull) ...[
+                  Center(
+                    child: Container(
+                      width: 36,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: theme.borderColor,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(height: 16),
-                Row(
-                  children: [
-                    Icon(Icons.insights_rounded, color: theme.accentColor, size: 24),
-                    const SizedBox(width: 8),
-                    Text(
-                      '독서 기록 & 잔디 심기',
-                      style: TextStyle(color: theme.textColor, fontSize: 18, fontWeight: FontWeight.bold),
-                    ),
-                  ],
-                ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Icon(Icons.insights_rounded, color: theme.accentColor, size: 24),
+                      const SizedBox(width: 8),
+                      Text(
+                        '독서 기록 & 잔디 심기',
+                        style: TextStyle(color: theme.textColor, fontSize: 18, fontWeight: FontWeight.bold),
+                      ),
+                    ],
+                  ),
+                ],
                 const SizedBox(height: 16),
                 // 오늘 통계 요약 카드
                 Row(

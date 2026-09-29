@@ -6,6 +6,7 @@ import '../../services/sync_service.dart';
 import '../themes/reader_themes.dart';
 import '../viewer/reader_screen.dart';
 import 'reading_stats_sheet.dart';
+import 'server_analytics_view.dart';
 import '../glossary/glossary_screen.dart';
 import '../settings/settings_screen.dart';
 import '../../services/app_update_service.dart';
@@ -27,7 +28,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
   bool _isLoading = true;
 
   String _filter = 'all'; // all, pinned, reading, unread, completed, hidden
-  String _sort = 'recent';
+  final String _sort = 'recent';
   String _searchQuery = '';
   bool _isGridView = true;
 
@@ -159,7 +160,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
           NavigationDestination(
             icon: Icon(Icons.insights_outlined, color: theme.textColor),
             selectedIcon: Icon(Icons.insights_rounded, color: theme.accentColor),
-            label: '독서 잔디',
+            label: '통계 & 분석',
           ),
           NavigationDestination(
             icon: Icon(Icons.settings_outlined, color: theme.textColor),
@@ -204,9 +205,19 @@ class _LibraryScreenState extends State<LibraryScreen> {
                         ),
                       ],
                     ),
-                    // 알림 센터 벨 & 네트워크 상태 뱃지
+                    // 통계 & 분석 바로가기, 알림 센터 벨 & 네트워크 상태 뱃지
                     Row(
                       children: [
+                        IconButton(
+                          icon: Icon(Icons.insights_rounded, color: theme.accentColor, size: 22),
+                          tooltip: '서재 통계 & 분석',
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                          onPressed: () {
+                            setState(() => _currentNavIndex = 2);
+                          },
+                        ),
+                        const SizedBox(width: 12),
                         _buildNotificationBell(theme),
                         const SizedBox(width: 8),
                         _buildSyncStatusBadge(theme),
@@ -872,17 +883,43 @@ class _LibraryScreenState extends State<LibraryScreen> {
   }
 
   Widget _buildReadingStatsView(ReaderThemeData theme) {
-    return Scaffold(
-      backgroundColor: theme.background,
-      appBar: AppBar(
-        backgroundColor: theme.surfaceColor,
-        elevation: 0,
-        title: Text(
-          '독서 통계 & 잔디 심기',
-          style: TextStyle(color: theme.textColor, fontSize: 18, fontWeight: FontWeight.bold),
+    return DefaultTabController(
+      length: 2,
+      child: Scaffold(
+        backgroundColor: theme.background,
+        appBar: AppBar(
+          backgroundColor: theme.surfaceColor,
+          elevation: 0,
+          title: Text(
+            '서재 통계 & 분석',
+            style: TextStyle(color: theme.textColor, fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+          bottom: TabBar(
+            indicatorColor: theme.accentColor,
+            labelColor: theme.accentColor,
+            unselectedLabelColor: theme.subTextColor,
+            labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+            unselectedLabelStyle: const TextStyle(fontSize: 13),
+            indicatorWeight: 3,
+            tabs: const [
+              Tab(
+                icon: Icon(Icons.analytics_rounded, size: 20),
+                text: '번역 & 품질 통계',
+              ),
+              Tab(
+                icon: Icon(Icons.grass_rounded, size: 20),
+                text: '내 독서 잔디',
+              ),
+            ],
+          ),
+        ),
+        body: TabBarView(
+          children: [
+            ServerAnalyticsView(theme: theme),
+            ReadingStatsSheet(theme: theme, isFullScreen: true),
+          ],
         ),
       ),
-      body: ReadingStatsSheet(theme: theme),
     );
   }
 }

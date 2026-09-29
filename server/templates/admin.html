@@ -57,8 +57,6 @@
                     </label>
                 </div>
                 <div class="control-group right">
-                    <button class="btn btn-primary" id="exportPdfBtn">PDF로 내보내기</button>
-                    <button class="btn btn-outline" id="exportJsonBtn">JSON으로 내보내기</button>
                     <button class="btn btn-outline" id="clearCacheBtn">전체 제목 캐시 초기화</button>
                     <button class="btn btn-outline" id="darkModeToggle">
                         <span class="material-icons">dark_mode</span>
@@ -180,8 +178,6 @@
                         <button type="button" class="btn btn-sm btn-bulk-action" id="bulkFindReplaceBtn" title="선택 범위 또는 전체에 대해 찾아 바꾸기 창 열기">🔍 찾아 바꾸기</button>
                         <button type="button" class="btn btn-sm btn-bulk-action btn-bulk-whitelist" id="bulkWhitelistAbnormalBtn" style="display: none;" title="선택 항목을 이상번역 검사에서 영구 제외">🛡️ 이상 제외</button>
                         <button type="button" class="btn btn-sm btn-bulk-action btn-bulk-cleanup" id="bulkMoveToCleanupBtn" style="display: none;" title="선택 항목을 원문 정리 섹션으로 이동">📦 원문 정리로 이동</button>
-                        <button type="button" class="btn btn-sm btn-bulk-action" id="exportSelectedPdfBtn" title="선택한 번역 기록을 PDF로 인쇄/저장">📄 PDF</button>
-                        <button type="button" class="btn btn-sm btn-bulk-action" id="exportSelectedJsonBtn" title="선택한 번역 기록을 JSON 파일로 내보내기">💾 JSON</button>
                     </div>
 
                     <div class="bulk-sep"></div>
@@ -441,9 +437,6 @@
                     <span class="badge-tag" id="modalStatsCurrentScope">전체 통계</span>
                 </div>
                 <div class="stats-header-controls">
-                    <button type="button" class="btn btn-sm btn-outline" id="copyMarkdownReportBtn" title="종합 통계 분석 요약 리포트를 마크다운으로 클립보드에 복사">📋 리포트 복사</button>
-                    <button type="button" class="btn btn-sm btn-outline" id="exportStatsCsvBtn" title="통계 데이터를 CSV 파일로 내보내기">📥 CSV</button>
-                    <button type="button" class="btn btn-sm btn-outline" id="exportStatsJsonBtn" title="통계 원본 데이터를 JSON 파일로 내보내기">📥 JSON</button>
                     <select id="modalNovelFilter" class="form-select stats-scope-select" title="특정 작품 통계로 필터링">
                         <option value="__all__">🌐 전체 작품 종합</option>
                     </select>
