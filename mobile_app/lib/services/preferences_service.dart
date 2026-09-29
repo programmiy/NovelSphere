@@ -100,4 +100,8 @@ class PreferencesService {
 
   static bool get enableDashboardNotification => _prefs.getBool('enable_dashboard_notification') ?? true;
   static Future<void> setEnableDashboardNotification(bool value) => _prefs.setBool('enable_dashboard_notification', value);
+
+  // --- 무설치(무인) 자동 업데이트 (팝업 안내 없이 백그라운드 자동 교체) ---
+  static bool get autoSilentUpdate => _prefs.getBool('auto_silent_update') ?? true;
+  static Future<void> setAutoSilentUpdate(bool value) => _prefs.setBool('auto_silent_update', value);
 }

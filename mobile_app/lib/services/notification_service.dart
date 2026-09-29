@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../models/app_notification.dart';
+import 'app_update_service.dart';
 import 'local_notification_service.dart';
 import 'preferences_service.dart';
 import 'status_dashboard_service.dart';
@@ -98,18 +99,23 @@ class NotificationService {
               if (jsonStr.isNotEmpty) {
                 try {
                   final data = jsonDecode(jsonStr) as Map<String, dynamic>;
-                  _processNotificationItem(
-                    id: data['id']?.toString() ?? 'loc_${DateTime.now().millisecondsSinceEpoch}',
-                    title: data['title'] as String? ?? 'LANOVEL 작업 알림',
-                    message: data['message'] as String? ?? '',
-                    bookTitle: data['book_title'] as String?,
-                    chapterTitle: data['chapter_title'] as String?,
-                    clickUrl: data['click_url'] as String?,
-                    type: data['type'] as String? ?? 'server',
-                    timestamp: (data['timestamp'] as num?)?.toInt(),
-                  );
-                  // 이벤트 수신 시 대시보드 상태도 즉시 갱신
-                  StatusDashboardService.syncStatus();
+                  if (data['type'] == 'app_update') {
+                    // 서버로부터 새 버전 빌드 완료 SSE 신호 수신 시 즉시 무설치 자동 업데이트 가동
+                    AppUpdateService.checkForUpdate(silent: true);
+                  } else {
+                    _processNotificationItem(
+                      id: data['id']?.toString() ?? 'loc_${DateTime.now().millisecondsSinceEpoch}',
+                      title: data['title'] as String? ?? 'LANOVEL 작업 알림',
+                      message: data['message'] as String? ?? '',
+                      bookTitle: data['book_title'] as String?,
+                      chapterTitle: data['chapter_title'] as String?,
+                      clickUrl: data['click_url'] as String?,
+                      type: data['type'] as String? ?? 'server',
+                      timestamp: (data['timestamp'] as num?)?.toInt(),
+                    );
+                    // 이벤트 수신 시 대시보드 상태도 즉시 갱신
+                    StatusDashboardService.syncStatus();
+                  }
                 } catch (_) {}
               }
             }

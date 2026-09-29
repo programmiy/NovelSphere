@@ -187,8 +187,8 @@
 - **`local_notification_service.dart` (배민 스타일 단일 번역 현황판)**:
   - **고정 ID 9001 단일 알림**: 여러 알림 없이 단 1개의 현황판에서 진행 바와 에러 통계 갱신.
   - **삼성 Now Bar / 잠금화면 진행바 호환**, 유휴 상태 3분 후 자동 해제.
-- **`app_update_service.dart` (OTA 무선 업데이트)**:
-  - 버전 체크 -> 백그라운드 APK 다운로드 -> Android PackageInstaller 원클릭 무선 설치.
+- **`app_update_service.dart` (무설치/무인 OTA 자동 업데이트)**:
+  - 버전 체크 -> 백그라운드 APK 다운로드 -> Android 12+ PackageInstaller 세션(USER_ACTION_NOT_REQUIRED) 기반 무설치(무인) 자동 교체 및 앱 즉시 재실행 (`InstallResultReceiver`).
 - **`tts_audio_service.dart`**: `flutter_tts` 백그라운드 음성 리더 (문장 하이라이트, 배속 제어).
 
 ### 3) 사용자 인터페이스 계층 (`ui/`)
@@ -233,7 +233,7 @@
 | :--- | :--- | :--- |
 | **"번역문에 루비/방점 나오게 해줘" / "단어 위에 점/루비 표시해줘"** | `mobile_app/lib/ui/viewer/novel_ruby_text.dart`<br>`mobile_app/lib/ui/viewer/reader_screen.dart` | `NovelRubyParser`로 `글(・)` 방점 및 `단어《루비》` 패턴 자동 감지 -> O(1) 필터링 후 `NovelRubyText` 위젯으로 출판사급 상단 첨자 렌더링. |
 | **"스마트폰 독립 앱으로 보고 싶어" / "모바일 앱 동기화해줘"** | `server/routers/sync.py`<br>`mobile_app/lib/services/sync_service.dart`<br>`mobile_app/lib/services/local_db_service.dart` | 하이브리드 zlib 압축 SQLite 시드 DB를 Gzip 스트리밍 다운로드. 1ms 챕터 압축 해제 및 양방향 증분 pull/push. |
-| **"모바일 앱 업데이트 어떻게 해?" / "새 버전 앱 깔아줘"** | `server/routers/app_release.py`<br>`mobile_app/lib/services/app_update_service.dart` | `/api/app/version` 비교 후 백그라운드 APK 다운로드 및 PackageInstaller 기반 원클릭 무선 OTA 설치. |
+| **"모바일 앱 업데이트 어떻게 해?" / "새 버전 앱 깔아줘" / "-BuildApk 쓰면 알아서 무설치 업데이트해줘"** | `scripts/setup_mobile.ps1`<br>`server/routers/app_release.py`<br>`mobile_app/lib/services/app_update_service.dart` | `-BuildApk` 완료 즉시 ADB 연결 기기 자동 감지 -> `adb install -r` 직배포 및 앱 실행, Wi-Fi 접속 기기에는 SSE `app_update` 실시간 푸시로 안드로이드 시스템 설치 팝업 없는 100% 무인 무설치 자동 교체. |
 | **"푸시 알림 너무 많이 와" / "배민처럼 하나로 합쳐줘" / "상단바에 진행바 띄워줘"** | `server/notifications.py` (`TranslationStatusBoard`)<br>`mobile_app/lib/services/local_notification_service.dart`<br>`mobile_app/lib/services/status_dashboard_service.dart` | 고정 ID(9001) 단일 번역 현황판 알림으로 진행률/에러 통계 실시간 갱신. 삼성 Now Bar/잠금화면 호환 및 3분 유휴 자동 해제. |
 | **"노벨업 플러스 번역해줘" / "novelup.plus 지원해줘"** | `server/routers/toc_importer.py` (`fetch_all_novelup_chapters`)<br>`server/routers/books.py` (`_crawl_and_update_summary_worker`)<br>`extension/content.js`<br>`server/settings.py` | NovelUp+ 목차 파싱, 줄거리 크롤링(`.novel_synopsis`), 뷰어 본문 치환 및 다음 화 자동 이동 전면 지원. |
 | **"원문 복붙된 것들 다 지워줘" / "일본어가 그대로 번역이라고 나와"** | `server/routers/translation.py` (`_recover_verbatim_items`, `handle_verbatim_cleanup_items`)<br>`server/rule_classifier.py` (`is_verbatim_copy`) | 기본 모델(gemini-3.5-flash-lite)로 단일 JSON 및 순수 텍스트 2단계 자체 복구. 화살표(`->`) 분리 후 실패 항목만 격리. |

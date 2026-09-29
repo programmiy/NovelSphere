@@ -76,8 +76,13 @@ class AppUpdateService {
                 _compareSemVer(updateInfo.version, currentPkg.version) > 0);
 
         if (isNewer && updateInfo.hasApk) {
-          if (context != null && context.mounted) {
-            showUpdateDialog(context, updateInfo, currentPkg.version);
+          if (PreferencesService.autoSilentUpdate) {
+            // 별도 대화상자 없이 백그라운드에서 바로 무설치 자동 업데이트 실행
+            performSilentBackgroundUpdate(updateInfo, context: context);
+          } else {
+            if (context != null && context.mounted) {
+              showUpdateDialog(context, updateInfo, currentPkg.version);
+            }
           }
           return updateInfo;
         } else {
@@ -116,6 +121,7 @@ class AppUpdateService {
     return 0;
   }
 
+  /// 업데이트 팝업 표시
   /// 업데이트 팝업 표시
   static void showUpdateDialog(
     BuildContext context,
@@ -161,9 +167,25 @@ class AppUpdateService {
               ),
             ],
             const SizedBox(height: 12),
-            const Text(
-              '지금 바로 다운로드하여 업데이트하시겠습니까?',
-              style: TextStyle(fontSize: 13),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.indigo.shade50,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.indigo.shade100),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.flash_on_rounded, size: 18, color: Colors.indigo),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      '안드로이드 시스템 재설치 화면 없이 앱 내에서 바로 무설치(무인) 자동 교체 및 재실행됩니다.',
+                      style: TextStyle(fontSize: 12, color: Colors.indigo.shade900),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ],
         ),
@@ -174,7 +196,7 @@ class AppUpdateService {
           ),
           FilledButton.icon(
             icon: const Icon(Icons.download_rounded, size: 18),
-            label: const Text('지금 업데이트'),
+            label: const Text('무설치 자동 업데이트'),
             onPressed: () {
               Navigator.pop(dialogCtx);
               downloadAndInstall(context, updateInfo);
@@ -185,7 +207,7 @@ class AppUpdateService {
     );
   }
 
-  /// APK 다운로드 후 안드로이드 시스템 설치 실행
+  /// APK 다운로드 후 안드로이드 시스템 무인(Silent) 설치 실행
   static Future<void> downloadAndInstall(
     BuildContext context,
     AppUpdateInfo updateInfo,
@@ -197,6 +219,7 @@ class AppUpdateService {
     int receivedBytes = 0;
     int totalBytes = updateInfo.fileSize;
     bool isCancelled = false;
+    bool isApplying = false;
 
     // 진행률 다이얼로그 표시
     StateSetter? setProgressState;
@@ -210,38 +233,56 @@ class AppUpdateService {
               ? (receivedBytes / totalBytes).clamp(0.0, 1.0)
               : progress;
           return AlertDialog(
-            title: const Text('앱 업데이트 다운로드'),
+            title: Text(isApplying ? '📦 무설치 업데이트 적용 중' : '앱 업데이트 다운로드'),
             content: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                LinearProgressIndicator(value: percent > 0 ? percent : null),
-                const SizedBox(height: 16),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text('${(percent * 100).toStringAsFixed(0)}% 완료'),
-                    if (totalBytes > 0)
-                      Text(
-                        '${(receivedBytes / (1024 * 1024)).toStringAsFixed(1)} / ${(totalBytes / (1024 * 1024)).toStringAsFixed(1)} MB',
-                        style: const TextStyle(fontSize: 12, color: Colors.grey),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  '다운로드가 완료되면 설치 화면이 자동으로 열립니다.',
-                  style: TextStyle(fontSize: 12, color: Colors.grey),
-                ),
+                if (!isApplying) ...[
+                  LinearProgressIndicator(value: percent > 0 ? percent : null),
+                  const SizedBox(height: 16),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('${(percent * 100).toStringAsFixed(0)}% 완료'),
+                      if (totalBytes > 0)
+                        Text(
+                          '${(receivedBytes / (1024 * 1024)).toStringAsFixed(1)} / ${(totalBytes / (1024 * 1024)).toStringAsFixed(1)} MB',
+                          style: const TextStyle(fontSize: 12, color: Colors.grey),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    '다운로드가 끝나면 설치 화면 없이 백그라운드에서 즉시 교체됩니다.',
+                    style: TextStyle(fontSize: 12, color: Colors.grey),
+                  ),
+                ] else ...[
+                  const SizedBox(height: 8),
+                  const Center(
+                    child: SizedBox(
+                      width: 48,
+                      height: 48,
+                      child: CircularProgressIndicator(strokeWidth: 3),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  const Text(
+                    '시스템 재설치 화면 없이 최신 버전으로 교체 중입니다.\n잠시 후 앱이 자동으로 재실행됩니다.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 13, height: 1.4),
+                  ),
+                ],
               ],
             ),
             actions: [
-              TextButton(
-                onPressed: () {
-                  isCancelled = true;
-                  Navigator.pop(dialogCtx);
-                },
-                child: const Text('취소'),
-              ),
+              if (!isApplying)
+                TextButton(
+                  onPressed: () {
+                    isCancelled = true;
+                    Navigator.pop(dialogCtx);
+                  },
+                  child: const Text('취소'),
+                ),
             ],
           );
         },
@@ -292,7 +333,7 @@ class AppUpdateService {
         Navigator.pop(context);
       }
 
-      // 시스템 패키지 설치 창 호출
+      // 패키지 설치 화면 호출
       final success = await _installerChannel.invokeMethod<bool>(
         'installApk',
         {'filePath': apkFile.path},
@@ -314,6 +355,81 @@ class AppUpdateService {
           SnackBar(content: Text('다운로드 실패: $e')),
         );
       }
+    }
+  }
+
+  static bool _isBackgroundUpdating = false;
+
+  /// 팝업/안내 없이 백그라운드에서 완전히 자동으로 수행하는 무설치 업데이트
+  static Future<void> performSilentBackgroundUpdate(
+    AppUpdateInfo updateInfo, {
+    BuildContext? context,
+  }) async {
+    if (_isBackgroundUpdating) return;
+    _isBackgroundUpdating = true;
+
+    try {
+      final serverUrl = PreferencesService.serverUrl;
+      if (serverUrl.isEmpty) return;
+
+      // 사용자에게 방해되지 않는 하단 스낵바 알림
+      if (context != null && context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    '새 버전(v${updateInfo.version}) 백그라운드 무설치 자동 업데이트 중...',
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                ),
+              ],
+            ),
+            duration: const Duration(seconds: 3),
+            backgroundColor: Colors.indigo.shade700,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+
+      final client = http.Client();
+      final request = http.Request('GET', Uri.parse('$serverUrl/api/app/download'));
+      final response = await client.send(request);
+
+      if (response.statusCode != 200) {
+        throw Exception('HTTP ${response.statusCode}');
+      }
+
+      final tempDir = await getTemporaryDirectory();
+      final apkFile = File('${tempDir.path}/lanovel-reader-update.apk');
+      if (await apkFile.exists()) {
+        await apkFile.delete();
+      }
+
+      final sink = apkFile.openWrite();
+      await for (var chunk in response.stream) {
+        sink.add(chunk);
+      }
+      await sink.flush();
+      await sink.close();
+      client.close();
+
+      // 설치 창 호출
+      await _installerChannel.invokeMethod<bool>(
+        'installApk',
+        {'filePath': apkFile.path},
+      );
+    } catch (e) {
+      debugPrint('[AppUpdateService] Auto silent update error: $e');
+    } finally {
+      _isBackgroundUpdating = false;
     }
   }
 }

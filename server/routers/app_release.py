@@ -1,14 +1,45 @@
 import os
 import re
+import json
 from pathlib import Path
-from fastapi import APIRouter, HTTPException
+from typing import Optional
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse
+from pydantic import BaseModel
 
 router = APIRouter(tags=["app_release"])
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 PUBSPEC_PATH = PROJECT_ROOT / "mobile_app" / "pubspec.yaml"
 APK_PATH = PROJECT_ROOT / "mobile_app" / "build" / "app" / "outputs" / "flutter-apk" / "app-release.apk"
+APK_PATH_GRADLE = PROJECT_ROOT / "mobile_app" / "build" / "app" / "outputs" / "apk" / "release" / "app-release.apk"
+RELEASE_NOTES_PATH = PROJECT_ROOT / "mobile_app" / "release_notes.json"
+
+
+def resolve_apk_path() -> Path:
+    """우선적으로 Flutter/Gradle 공식 빌드 산출물 경로를 확인하고, 없으면 server/static 내 최신 APK를 탐색."""
+    if APK_PATH.exists():
+        return APK_PATH
+    if APK_PATH_GRADLE.exists():
+        return APK_PATH_GRADLE
+    static_dir = PROJECT_ROOT / "server" / "static"
+    if static_dir.exists():
+        static_apks = sorted(list(static_dir.glob("*.apk")), key=lambda p: p.stat().st_mtime, reverse=True)
+        if static_apks:
+            return static_apks[0]
+    return APK_PATH_GRADLE if APK_PATH_GRADLE.exists() else APK_PATH
+
+
+def get_release_notes() -> str:
+    """저장된 릴리즈 노트 JSON을 읽어오며, 없을 경우 기본 문구를 반환합니다."""
+    if RELEASE_NOTES_PATH.exists():
+        try:
+            data = json.loads(RELEASE_NOTES_PATH.read_text(encoding="utf-8"))
+            if data.get("release_notes"):
+                return data["release_notes"].strip()
+        except Exception:
+            pass
+    return "초고속 벌크 동기화(8.9배 가속), 루비/방점 출판 스타일 렌더링 지원, 적응형 RPM 세션 휴식 및 토큰 예산 가변 청킹 적용"
 
 
 def get_app_version_info():
@@ -27,9 +58,10 @@ def get_app_version_info():
         except Exception:
             pass
 
-    has_apk = APK_PATH.exists()
-    file_size = APK_PATH.stat().st_size if has_apk else 0
-    updated_at = int(APK_PATH.stat().st_mtime) if has_apk else 0
+    target_apk = resolve_apk_path()
+    has_apk = target_apk.exists()
+    file_size = target_apk.stat().st_size if has_apk else 0
+    updated_at = int(target_apk.stat().st_mtime) if has_apk else 0
 
     full_version = f"{version}.{build_number}" if build_number else version
 
@@ -41,9 +73,18 @@ def get_app_version_info():
         "file_size": file_size,
         "file_name": f"lanovel-reader-v{full_version}.apk",
         "download_url": "/api/app/download",
-        "release_notes": "번역문 내 루비(Ruby) 및 방점(傍点) 출판사 스타일 자동 렌더링 지원, 서버 ASGI 커넥션 안정화 및 뷰어 개선",
+        "release_notes": get_release_notes(),
         "updated_at": updated_at,
     }
+
+
+class ReleaseNotesRequest(BaseModel):
+    release_notes: str
+
+
+class VersionUpdateRequest(BaseModel):
+    version: Optional[str] = None
+    build_number: Optional[int] = None
 
 
 @router.get("/api/app/version")
@@ -52,18 +93,97 @@ async def get_app_version():
     return get_app_version_info()
 
 
+@router.post("/api/app/broadcast_update")
+async def broadcast_app_update():
+    """새로운 APK 빌드 완료 시 SSE 연결 중인 모바일 앱들에게 무설치 자동 업데이트 신호 브로드캐스트"""
+    try:
+        from server.notifications import broadcast_notification
+        import time
+        info = get_app_version_info()
+        broadcast_notification({
+            "id": f"update_{int(time.time())}",
+            "type": "app_update",
+            "title": f"새 버전 출시 (v{info['version']})",
+            "message": "무설치 자동 업데이트가 배포되었습니다.",
+            "version": info["version"],
+            "build_number": info["build_number"],
+            "timestamp": int(time.time()),
+        })
+        return {"status": "ok", "broadcasted": True, "version": info["version"]}
+    except Exception as e:
+        return {"status": "error", "detail": str(e)}
+
+
+@router.post("/api/app/release_notes")
+async def update_release_notes(req: ReleaseNotesRequest):
+    """릴리즈 노트를 저장 및 영속화"""
+    notes = req.release_notes.strip()
+    RELEASE_NOTES_PATH.parent.mkdir(parents=True, exist_ok=True)
+    RELEASE_NOTES_PATH.write_text(
+        json.dumps({"release_notes": notes}, ensure_ascii=False, indent=2),
+        encoding="utf-8"
+    )
+    return {"status": "ok", "release_notes": notes}
+
+
+@router.post("/api/app/bump_version")
+async def bump_app_version(req: VersionUpdateRequest):
+    """pubspec.yaml 내의 버전 및 빌드 번호를 업데이트"""
+    if not PUBSPEC_PATH.exists():
+        raise HTTPException(status_code=404, detail="pubspec.yaml 파일을 찾을 수 없습니다.")
+
+    content = PUBSPEC_PATH.read_text(encoding="utf-8")
+    match = re.search(r"^version:\s*([0-9\.]+)\+?(\d+)?", content, re.MULTILINE)
+    if not match:
+        raise HTTPException(status_code=400, detail="pubspec.yaml에서 version 패턴을 찾을 수 없습니다.")
+
+    cur_ver = match.group(1).strip()
+    cur_build = int(match.group(2).strip()) if match.group(2) else 1
+
+    new_ver = req.version.strip() if req.version else cur_ver
+    new_build = req.build_number if req.build_number is not None else (cur_build + 1)
+
+    new_version_line = f"version: {new_ver}+{new_build}"
+    new_content = re.sub(r"^version:\s*.*", new_version_line, content, flags=re.MULTILINE)
+    PUBSPEC_PATH.write_text(new_content, encoding="utf-8")
+
+    return get_app_version_info()
+
+
+@router.post("/api/app/upload")
+async def upload_latest_apk(request: Request):
+    """새로운 APK 바이너리를 직접 스트리밍 업로드하여 배포 산출물로 즉시 등록"""
+    APK_PATH.parent.mkdir(parents=True, exist_ok=True)
+    total_bytes = 0
+    with open(APK_PATH, "wb") as f:
+        async for chunk in request.stream():
+            f.write(chunk)
+            total_bytes += len(chunk)
+
+    if total_bytes < 10000:
+        if APK_PATH.exists():
+            try:
+                APK_PATH.unlink()
+            except Exception:
+                pass
+        raise HTTPException(status_code=400, detail="유효하지 않거나 비어있는 APK 파일입니다.")
+
+    return get_app_version_info()
+
+
 @router.get("/api/app/download")
 async def download_latest_apk():
     """최신 릴리즈 APK 바이너리 다운로드 엔드포인트"""
-    if not APK_PATH.exists():
+    target_apk = resolve_apk_path()
+    if not target_apk.exists():
         raise HTTPException(
             status_code=404,
-            detail="빌드된 APK 파일이 없습니다. PC에서 'flutter build apk --release'를 실행해 주세요."
+            detail="빌드된 APK 파일이 없습니다. PC에서 'flutter build apk --release'를 실행하거나 관리자 페이지에서 업로드해 주세요."
         )
 
     info = get_app_version_info()
     return FileResponse(
-        path=str(APK_PATH),
+        path=str(target_apk),
         media_type="application/vnd.android.package-archive",
         filename=info["file_name"],
         headers={
@@ -242,7 +362,7 @@ async def serve_download_page():
                 <li>위 버튼을 눌러 APK를 다운로드합니다.</li>
                 <li>다운로드 완료 알림을 탭하여 설치를 시작합니다.</li>
                 <li>'출처를 알 수 없는 앱 설치' 안내가 뜨면 <strong>[설정] &rarr; [허용]</strong>을 켜주세요.</li>
-                <li><strong>이번 설치 이후부터는 앱 내에서 원클릭 자동 업데이트</strong>가 지원됩니다.</li>
+                <li><strong>이번 최초 설치 이후부터는 앱 내에서 시스템 설치창 없는 '무설치(무인) 자동 업데이트'</strong>가 지원됩니다.</li>
             </ol>
         </div>
 

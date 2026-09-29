@@ -34,6 +34,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   bool _enableSystemNotification = true;
   bool _enableDashboardNotification = true;
+  bool _autoSilentUpdate = true;
 
   bool _isSyncing = false;
   double _syncProgress = 0.0;
@@ -52,6 +53,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _hideServerSection = PreferencesService.hideServerSection;
     _enableSystemNotification = PreferencesService.enableSystemNotification;
     _enableDashboardNotification = PreferencesService.enableDashboardNotification;
+    _autoSilentUpdate = PreferencesService.autoSilentUpdate;
     _checkCurrentWifi();
     _loadAppVersion();
   }
@@ -148,6 +150,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     await PreferencesService.setServerUrl(normalized);
     await PreferencesService.setEnableSystemNotification(_enableSystemNotification);
     await PreferencesService.setEnableDashboardNotification(_enableDashboardNotification);
+    await PreferencesService.setAutoSilentUpdate(_autoSilentUpdate);
 
     if (_enableDashboardNotification) {
       StatusDashboardService.start();
@@ -396,8 +399,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _buildNotificationSettingsCard(theme),
           const SizedBox(height: 24),
 
-          // 5. 앱 버전 및 무선 자동 업데이트 (OTA)
-          _buildSectionHeader(theme, '앱 버전 & 무선 자동 업데이트 (OTA)', Icons.system_update_rounded),
+          // 5. 앱 버전 및 무설치 자동 업데이트 (In-App OTA)
+          _buildSectionHeader(theme, '앱 버전 & 무설치 자동 업데이트 (In-App OTA)', Icons.system_update_rounded),
           const SizedBox(height: 8),
           _buildAppUpdateCard(theme),
         ],
@@ -547,10 +550,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           const SizedBox(height: 8),
           Text(
-            'PC 서버에서 새 버전이 감지되면 수동 파일 전송 없이 앱 안에서 바로 다운로드 및 설치를 진행합니다.',
+            'PC 서버에 새 버전이 감지되면 복잡한 안드로이드 시스템 설치 창 없이 앱 내에서 바로 무설치(무인) 자동 교체 및 재실행됩니다.',
             style: TextStyle(color: theme.subTextColor, fontSize: 11, height: 1.4),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: Text(
+              '별도 안내 없이 무설치 자동 업데이트',
+              style: TextStyle(color: theme.textColor, fontWeight: FontWeight.bold, fontSize: 13),
+            ),
+            subtitle: Text(
+              '새 버전 감지 시 확인 팝업 없이 백그라운드에서 즉시 다운로드 및 자동 교체합니다.',
+              style: TextStyle(color: theme.subTextColor, fontSize: 11),
+            ),
+            value: _autoSilentUpdate,
+            activeColor: theme.accentColor,
+            onChanged: (val) async {
+              setState(() => _autoSilentUpdate = val);
+              await PreferencesService.setAutoSilentUpdate(val);
+            },
+          ),
+          const SizedBox(height: 12),
           ElevatedButton.icon(
             style: ElevatedButton.styleFrom(
               backgroundColor: theme.accentColor,
@@ -577,7 +598,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                   )
                 : const Icon(Icons.refresh_rounded, size: 18),
-            label: Text(_isCheckingUpdate ? '서버 버전 확인 중...' : '최신 버전 확인 및 원클릭 업데이트'),
+            label: Text(_isCheckingUpdate ? '서버 버전 확인 중...' : '최신 버전 확인 및 무설치 자동 업데이트'),
           ),
         ],
       ),

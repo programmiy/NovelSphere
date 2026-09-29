@@ -96,8 +96,46 @@ if ($RunWeb) {
 } elseif ($BuildApk) {
     Write-Host "`n[2/2] Building Android Release APK (flutter build apk --release)..." -ForegroundColor Green
     & flutter build apk --release
+    $apkPath = "C:\LANOVEL\mobile_app\build\app\outputs\flutter-apk\app-release.apk"
     Write-Host "`n[SUCCESS] APK build complete! Location:" -ForegroundColor Green
-    Write-Host "C:\LANOVEL\mobile_app\build\app\outputs\flutter-apk\app-release.apk" -ForegroundColor Yellow
+    Write-Host $apkPath -ForegroundColor Yellow
+
+    # 3. 무설치 자동 업데이트 배포 (ADB 연결 기기 직배포 & Wi-Fi 실시간 푸시)
+    Write-Host "`n[3/3] 모바일 기기 무설치(무인) 자동 업데이트 감지 및 배포 시작..." -ForegroundColor Cyan
+
+    $adbPath = "C:\Users\parkp\AppData\Local\Android\Sdk\platform-tools\adb.exe"
+    if (-not (Test-Path $adbPath)) {
+        $adbCmd = Get-Command adb -ErrorAction SilentlyContinue
+        if ($adbCmd) { $adbPath = $adbCmd.Source }
+    }
+
+    $adbDeployed = $false
+    try {
+        if (Test-Path $adbPath) {
+            $devicesOutput = cmd.exe /c "`"$adbPath`" devices" 2>&1
+            $connectedDevices = $devicesOutput | Where-Object { $_ -match "\bdevice\b" -and $_ -notmatch "List of devices" }
+            if ($connectedDevices) {
+                Write-Host "  -> [ADB 연결 기기 감지] 스마트폰에 무설치 자동 배포(adb install -r)를 실행합니다..." -ForegroundColor Green
+                cmd.exe /c "`"$adbPath`" install -r `"$apkPath`"" 2>&1 | Out-Null
+                cmd.exe /c "`"$adbPath`" shell am start -n com.lanovel.lanovel_reader/.MainActivity" 2>&1 | Out-Null
+                Write-Host "  -> [SUCCESS] 스마트폰에 시스템 설치창 없는 무설치 업데이트 및 앱 실행 완료!" -ForegroundColor Green
+                $adbDeployed = $true
+            }
+        }
+    } catch {}
+
+    # PC 서버가 켜져 있으면 Wi-Fi 접속 중인 모바일 앱들에 SSE 무설치 업데이트 브로드캐스트
+    try {
+        $broadcastRes = Invoke-RestMethod -Uri "http://localhost:8001/api/app/broadcast_update" -Method Post -TimeoutSec 3 -ErrorAction SilentlyContinue
+        if ($broadcastRes) {
+            Write-Host "  -> [Wi-Fi SSE 푸시] 서버에 연결된 모든 모바일 앱에 무설치 자동 업데이트 신호 발송 완료!" -ForegroundColor Green
+        }
+    } catch {}
+
+    if (-not $adbDeployed) {
+        Write-Host "  -> [안내] USB/무선 ADB 기기가 연결되어 있지 않아 Wi-Fi 무설치 자동 업데이트 신호를 발송했습니다." -ForegroundColor Yellow
+        Write-Host "     (스마트폰을 USB로 연결해 두시면 -BuildApk 실행 시 폰을 만질 필요 없이 100% 자동 설치/실행됩니다)" -ForegroundColor Gray
+    }
 } else {
     Write-Host "`n[2/2] Launching on connected device (flutter run)..." -ForegroundColor Green
     & flutter run

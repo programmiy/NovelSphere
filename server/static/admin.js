@@ -235,18 +235,24 @@ function updateStatistics(groupedData) {
     let totalCount = 0;
     let todayCount = 0;
     let totalLength = 0;
+    let totalEpisodes = 0;
+    const folders = Object.keys(groupedData || {});
+    const totalBooks = folders.length;
     const quotaWindowStartMs = getQuotaWindowStartMs(latestQuotaSummary);
 
     for (const folderName in groupedData) {
         const urlGroups = groupedData[folderName]; // This is an array of urlGroup objects
-        for (const urlGroup of urlGroups) {
-            const items = urlGroup.items; // This is the array of translation items
-            for (const item of items) {
-                totalCount++;
-                totalLength += item.translated ? item.translated.length : 0;
-                
-                if ((item.timestamp * 1000) >= quotaWindowStartMs) {
-                    todayCount++;
+        if (Array.isArray(urlGroups)) {
+            totalEpisodes += urlGroups.length;
+            for (const urlGroup of urlGroups) {
+                const items = urlGroup.items || [];
+                for (const item of items) {
+                    totalCount++;
+                    totalLength += item.translated ? item.translated.length : 0;
+                    
+                    if ((item.timestamp * 1000) >= quotaWindowStartMs) {
+                        todayCount++;
+                    }
                 }
             }
         }
@@ -254,9 +260,23 @@ function updateStatistics(groupedData) {
 
     const avgLength = totalCount > 0 ? Math.round(totalLength / totalCount) : 0;
 
-    document.getElementById('totalCount').textContent = totalCount;
-    document.getElementById('todayCount').textContent = todayCount;
-    document.getElementById('avgLength').textContent = avgLength;
+    const statTotalBooksEl = document.getElementById('statTotalBooks');
+    if (statTotalBooksEl) statTotalBooksEl.textContent = totalBooks.toLocaleString();
+
+    const statTotalEpisodesEl = document.getElementById('statTotalEpisodes');
+    if (statTotalEpisodesEl) statTotalEpisodesEl.textContent = totalEpisodes.toLocaleString();
+
+    const statTotalCharsEl = document.getElementById('statTotalChars');
+    if (statTotalCharsEl) statTotalCharsEl.textContent = totalLength.toLocaleString();
+
+    const totalCountEl = document.getElementById('totalCount');
+    if (totalCountEl) totalCountEl.textContent = totalCount.toLocaleString();
+
+    const todayCountEl = document.getElementById('todayCount');
+    if (todayCountEl) todayCountEl.textContent = todayCount.toLocaleString();
+
+    const avgLengthEl = document.getElementById('avgLength');
+    if (avgLengthEl) avgLengthEl.textContent = avgLength.toLocaleString();
 
     // API 쿼터 통계 갱신
     if (latestQuotaSummary) {
@@ -711,6 +731,10 @@ function setupEventListeners() {
             handleDocumentMouseUp(e);
         }
     });
+
+    // Stats analytics modal & app release modal
+    initStatsAnalyticsModal();
+    initAppReleaseModal();
 }
 
 // --- ntfy Push Notification Modal & Actions ---
@@ -2846,3 +2870,867 @@ function showConnectionStatus(isOnline) {
 
 window.addEventListener('online', () => showConnectionStatus(true));
 window.addEventListener('offline', () => showConnectionStatus(false));
+
+/* ==========================================================================
+   통계 & 품질 심층 분석 대시보드 컨트롤러 (Stats Analytics Controller)
+   ========================================================================== */
+
+let analyticsDataCache = null;
+let currentActivityPeriod = '14';
+let currentActivityMetric = 'count';
+
+function initStatsAnalyticsModal() {
+    const openBtn = document.getElementById('openStatsModalBtn');
+    const modal = document.getElementById('statsAnalyticsModal');
+    const closeBtn = document.getElementById('closeStatsModalBtn');
+    const closeBottomBtn = document.getElementById('closeStatsModalBottomBtn');
+    const scopeFilter = document.getElementById('modalNovelFilter');
+
+    if (!openBtn || !modal) return;
+
+    // 모달 열기
+    openBtn.addEventListener('click', () => {
+        modal.style.display = 'flex';
+        populateStatsScopeFilter();
+        const currentSelected = scopeFilter ? scopeFilter.value : '__all__';
+        loadAdminAnalytics(currentSelected);
+    });
+
+    // 모달 닫기
+    const closeModal = () => { modal.style.display = 'none'; };
+    if (closeBtn) closeBtn.addEventListener('click', closeModal);
+    if (closeBottomBtn) closeBottomBtn.addEventListener('click', closeModal);
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) closeModal();
+    });
+
+    // 작품 스코프 변경 필터
+    if (scopeFilter) {
+        scopeFilter.addEventListener('change', (e) => {
+            loadAdminAnalytics(e.target.value);
+        });
+    }
+
+    // 탭 전환 이벤트
+    const tabButtons = modal.querySelectorAll('.stats-tabs .modal-tab-btn');
+    tabButtons.forEach(btn => {
+        btn.addEventListener('click', () => {
+            tabButtons.forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+
+            const targetPaneId = btn.dataset.tab;
+            modal.querySelectorAll('.stats-tab-pane').forEach(pane => {
+                pane.style.display = (pane.id === targetPaneId) ? 'block' : 'none';
+            });
+        });
+    });
+
+    // 활동 추이 기간 버튼 토글 (7일, 14일, 30일, 전체)
+    const periodButtons = document.querySelectorAll('#activityPeriodButtons button');
+    periodButtons.forEach(btn => {
+        btn.addEventListener('click', () => {
+            periodButtons.forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            currentActivityPeriod = btn.dataset.period;
+            if (analyticsDataCache && analyticsDataCache.activity) {
+                renderDailyTrendSvg(analyticsDataCache.activity.daily_trends, currentActivityPeriod, currentActivityMetric);
+            }
+        });
+    });
+
+    // 활동 추이 지표 버튼 토글 (문단 수 vs 글자 수)
+    const metricButtons = document.querySelectorAll('#activityMetricButtons button');
+    metricButtons.forEach(btn => {
+        btn.addEventListener('click', () => {
+            metricButtons.forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            currentActivityMetric = btn.dataset.metric;
+            if (analyticsDataCache && analyticsDataCache.activity) {
+                renderDailyTrendSvg(analyticsDataCache.activity.daily_trends, currentActivityPeriod, currentActivityMetric);
+            }
+        });
+    });
+
+    // 품질 탭 내 바로가기 카드 연결
+    const abnormalBtn = document.getElementById('openAbnormalFromStatsBtn');
+    if (abnormalBtn) {
+        abnormalBtn.addEventListener('click', () => {
+            closeModal();
+            const findEmpty = document.getElementById('findEmptyBtn');
+            if (findEmpty) findEmpty.click();
+        });
+    }
+
+    const whitelistBtn = document.getElementById('openWhitelistFromStatsBtn');
+    if (whitelistBtn) {
+        whitelistBtn.addEventListener('click', () => {
+            closeModal();
+            const restoreBtn = document.getElementById('openRestoreCenterBtn');
+            if (restoreBtn) {
+                restoreBtn.click();
+                setTimeout(() => {
+                    const tab = document.getElementById('tabBtnAbnormalWhitelist');
+                    if (tab) tab.click();
+                }, 100);
+            }
+        });
+    }
+
+    const trashBtn = document.getElementById('openTrashFromStatsBtn');
+    if (trashBtn) {
+        trashBtn.addEventListener('click', () => {
+            closeModal();
+            const restoreBtn = document.getElementById('openRestoreCenterBtn');
+            if (restoreBtn) {
+                restoreBtn.click();
+                setTimeout(() => {
+                    const tab = document.getElementById('tabBtnTrash');
+                    if (tab) tab.click();
+                }, 100);
+            }
+        });
+    }
+
+    // 작품별 랭킹 테이블에서 특정 소설로 즉시 필터 이동
+    const novelTableBody = document.getElementById('novelStatsTableBody');
+    if (novelTableBody) {
+        novelTableBody.addEventListener('click', (e) => {
+            const jumpBtn = e.target.closest('.jump-to-novel-btn');
+            if (jumpBtn && jumpBtn.dataset.novel) {
+                const targetNovel = jumpBtn.dataset.novel;
+                closeModal();
+                const folderFilter = document.getElementById('folderFilterDropdown');
+                if (folderFilter) {
+                    folderFilter.value = targetNovel === '미분류' ? '__no_folder__' : targetNovel;
+                    folderFilter.dispatchEvent(new Event('change'));
+                }
+            }
+        });
+    }
+}
+
+function populateStatsScopeFilter() {
+    const scopeFilter = document.getElementById('modalNovelFilter');
+    if (!scopeFilter) return;
+
+    const curVal = scopeFilter.value;
+    scopeFilter.innerHTML = '<option value="__all__">🌐 전체 작품 종합</option>';
+    
+    // allFolders 기반 옵션 채우기
+    if (Array.isArray(allFolders)) {
+        allFolders.forEach(folder => {
+            const opt = document.createElement('option');
+            opt.value = folder.name;
+            opt.textContent = `📖 ${folder.name}`;
+            scopeFilter.appendChild(opt);
+        });
+    }
+    scopeFilter.value = curVal || '__all__';
+}
+
+async function loadAdminAnalytics(folderScope = '__all__') {
+    const scopeBadge = document.getElementById('modalStatsCurrentScope');
+    if (scopeBadge) {
+        scopeBadge.textContent = folderScope === '__all__' ? '전체 통계' : folderScope;
+    }
+
+    try {
+        const query = (folderScope && folderScope !== '__all__') ? `?folder_name=${encodeURIComponent(folderScope)}` : '';
+        const res = await fetch(`/admin/analytics${query}`);
+        if (!res.ok) throw new Error(`Analytics API error: ${res.statusText}`);
+
+        const data = await res.json();
+        analyticsDataCache = data;
+
+        renderActivityTab(data.activity);
+        renderQualityTab(data.quality, data.summary);
+        renderNovelsTab(data.novels);
+        renderScaleTab(data.scale);
+    } catch (err) {
+        console.error("통계 분석 로딩 실패:", err);
+        showToast("통계 데이터를 불러오지 못했습니다.", "error");
+    }
+}
+
+// 탭 1: 활동 & 생산성 추이 렌더러
+function renderActivityTab(activity) {
+    if (!activity) return;
+
+    // KPI 카드 업데이트
+    const dailyAvgCount = document.getElementById('kpiDailyAvgCount');
+    if (dailyAvgCount) dailyAvgCount.innerHTML = `${activity.daily_avg_count.toLocaleString()}<span class="kpi-unit">건</span>`;
+
+    const dailyAvgChars = document.getElementById('kpiDailyAvgChars');
+    if (dailyAvgChars) dailyAvgChars.textContent = `${activity.daily_avg_chars.toLocaleString()}자 / 일`;
+
+    const peakCount = document.getElementById('kpiPeakCount');
+    if (peakCount) peakCount.innerHTML = `${activity.peak_count.toLocaleString()}<span class="kpi-unit">건</span>`;
+
+    const peakDate = document.getElementById('kpiPeakDate');
+    if (peakDate) peakDate.textContent = activity.peak_date || '-';
+
+    const streakDays = document.getElementById('kpiStreakDays');
+    if (streakDays) streakDays.innerHTML = `${activity.streak_days}<span class="kpi-unit">일 연속</span>`;
+
+    const last7dCount = document.getElementById('kpiLast7dCount');
+    if (last7dCount) last7dCount.innerHTML = `${activity.last_7d_count.toLocaleString()}<span class="kpi-unit">건</span>`;
+
+    const last7dChars = document.getElementById('kpiLast7dChars');
+    if (last7dChars) last7dChars.textContent = `${activity.last_7d_chars.toLocaleString()}자`;
+
+    // 피크 시간대 배지
+    const peakBadge = document.getElementById('peakHourBadge');
+    if (peakBadge) {
+        peakBadge.textContent = `🔥 피크 시간대: ${activity.peak_hour}시 (${activity.peak_hour_count.toLocaleString()}건)`;
+    }
+
+    // SVG 차트 렌더링
+    renderDailyTrendSvg(activity.daily_trends, currentActivityPeriod, currentActivityMetric);
+    renderHourlySvg(activity.hourly_distribution, activity.peak_hour);
+}
+
+// 일별 추이 인터랙티브 SVG 차트 렌더링
+function renderDailyTrendSvg(dailyTrends, period, metric) {
+    const svg = document.getElementById('dailyTrendSvg');
+    const tooltip = document.getElementById('dailyTrendChartTooltip');
+    if (!svg || !Array.isArray(dailyTrends)) return;
+
+    // 기간 필터링
+    let trends = [...dailyTrends];
+    if (period !== 'all') {
+        const days = parseInt(period, 10);
+        trends = trends.slice(-days);
+    }
+
+    svg.innerHTML = '';
+    const width = 800;
+    const height = 240;
+    const padLeft = 60;
+    const padRight = 24;
+    const padTop = 24;
+    const padBottom = 34;
+    const plotW = width - padLeft - padRight;
+    const plotH = height - padTop - padBottom;
+
+    svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+
+    if (trends.length === 0) {
+        svg.innerHTML = `<text x="${width/2}" y="${height/2}" text-anchor="middle" fill="var(--text-muted)">표시할 번역 활동 데이터가 없습니다.</text>`;
+        return;
+    }
+
+    const values = trends.map(t => metric === 'chars' ? t.chars : t.count);
+    const maxVal = Math.max(...values, 10);
+
+    // Y축 가이드선 4단계
+    for (let i = 0; i <= 3; i++) {
+        const yVal = Math.round((maxVal / 3) * i);
+        const yPos = padTop + plotH - (plotH * (i / 3));
+
+        const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        line.setAttribute('x1', padLeft);
+        line.setAttribute('x2', padLeft + plotW);
+        line.setAttribute('y1', yPos);
+        line.setAttribute('y2', yPos);
+        line.setAttribute('stroke', 'var(--border-color, #e2e8f0)');
+        line.setAttribute('stroke-dasharray', '3 3');
+        line.setAttribute('stroke-width', '1');
+        svg.appendChild(line);
+
+        const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        text.setAttribute('x', padLeft - 10);
+        text.setAttribute('y', yPos + 4);
+        text.setAttribute('text-anchor', 'end');
+        text.setAttribute('fill', 'var(--text-muted, #64748b)');
+        text.setAttribute('font-size', '10px');
+        text.textContent = yVal.toLocaleString();
+        svg.appendChild(text);
+    }
+
+    // 포인트 좌표 계산
+    const n = trends.length;
+    const points = trends.map((t, idx) => {
+        const val = metric === 'chars' ? t.chars : t.count;
+        const x = padLeft + (n > 1 ? (plotW * (idx / (n - 1))) : (plotW / 2));
+        const y = padTop + plotH - (plotH * (val / maxVal));
+        return { x, y, val, date: t.date };
+    });
+
+    // 영역 채우기 그라디언트 정의
+    const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+    defs.innerHTML = `
+        <linearGradient id="trendGradient" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#4f46e5" stop-opacity="0.28"/>
+            <stop offset="100%" stop-color="#4f46e5" stop-opacity="0.0"/>
+        </linearGradient>
+    `;
+    svg.appendChild(defs);
+
+    // Area Path
+    if (points.length > 1) {
+        let areaD = `M ${points[0].x} ${points[0].y}`;
+        points.slice(1).forEach(pt => { areaD += ` L ${pt.x} ${pt.y}`; });
+        areaD += ` L ${points[points.length - 1].x} ${padTop + plotH} L ${points[0].x} ${padTop + plotH} Z`;
+
+        const areaPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        areaPath.setAttribute('d', areaD);
+        areaPath.setAttribute('fill', 'url(#trendGradient)');
+        svg.appendChild(areaPath);
+
+        // Line Path
+        let lineD = `M ${points[0].x} ${points[0].y}`;
+        points.slice(1).forEach(pt => { lineD += ` L ${pt.x} ${pt.y}`; });
+
+        const linePath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        linePath.setAttribute('d', lineD);
+        linePath.setAttribute('fill', 'none');
+        linePath.setAttribute('stroke', '#4f46e5');
+        linePath.setAttribute('stroke-width', '2.5');
+        linePath.setAttribute('stroke-linejoin', 'round');
+        linePath.setAttribute('stroke-linecap', 'round');
+        svg.appendChild(linePath);
+    }
+
+    // 포인트 도트 및 인터랙션
+    const stepLabel = Math.max(1, Math.floor(n / 8));
+    points.forEach((pt, idx) => {
+        // X축 날짜 라벨
+        if (idx % stepLabel === 0 || idx === n - 1) {
+            const dateText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+            dateText.setAttribute('x', pt.x);
+            dateText.setAttribute('y', padTop + plotH + 18);
+            dateText.setAttribute('text-anchor', 'middle');
+            dateText.setAttribute('fill', 'var(--text-muted, #64748b)');
+            dateText.setAttribute('font-size', '10px');
+            dateText.textContent = pt.date.slice(5); // MM-DD
+            svg.appendChild(dateText);
+        }
+
+        // 도트 서클
+        const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        circle.setAttribute('cx', pt.x);
+        circle.setAttribute('cy', pt.y);
+        circle.setAttribute('r', '3.5');
+        circle.setAttribute('fill', '#4f46e5');
+        circle.setAttribute('stroke', '#ffffff');
+        circle.setAttribute('stroke-width', '1.5');
+        circle.style.cursor = 'pointer';
+        circle.style.transition = 'r 0.15s, fill 0.15s';
+
+        // 툴팁 이벤트
+        circle.addEventListener('mouseenter', (e) => {
+            circle.setAttribute('r', '6');
+            circle.setAttribute('fill', '#f59e0b');
+            if (tooltip) {
+                tooltip.style.display = 'block';
+                const unit = metric === 'chars' ? '자' : '문단';
+                tooltip.innerHTML = `<strong>${pt.date}</strong><br/>${metric === 'chars' ? '번역 글자 수' : '번역 문단'}: ${pt.val.toLocaleString()}${unit}`;
+                const rect = svg.getBoundingClientRect();
+                const containerRect = svg.parentElement.getBoundingClientRect();
+                const scaleX = rect.width / width;
+                const scaleY = rect.height / height;
+                tooltip.style.left = `${(pt.x * scaleX)}px`;
+                tooltip.style.top = `${(pt.y * scaleY)}px`;
+            }
+        });
+
+        circle.addEventListener('mouseleave', () => {
+            circle.setAttribute('r', '3.5');
+            circle.setAttribute('fill', '#4f46e5');
+            if (tooltip) tooltip.style.display = 'none';
+        });
+
+        svg.appendChild(circle);
+    });
+}
+
+// 24시간 시간대별 활동 분포 SVG 차트 렌더링
+function renderHourlySvg(hourlyDistribution, peakHour) {
+    const svg = document.getElementById('hourlySvg');
+    const tooltip = document.getElementById('hourlyChartTooltip');
+    if (!svg || !Array.isArray(hourlyDistribution)) return;
+
+    svg.innerHTML = '';
+    const width = 800;
+    const height = 240;
+    const padLeft = 40;
+    const padRight = 20;
+    const padTop = 20;
+    const padBottom = 34;
+    const plotW = width - padLeft - padRight;
+    const plotH = height - padTop - padBottom;
+
+    svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+
+    const counts = hourlyDistribution.map(h => h.count);
+    const maxVal = Math.max(...counts, 10);
+    const barW = Math.max(12, (plotW / 24) - 6);
+
+    hourlyDistribution.forEach((h, idx) => {
+        const x = padLeft + (idx * (plotW / 24)) + ((plotW / 24 - barW) / 2);
+        const barH = plotH * (h.count / maxVal);
+        const y = padTop + plotH - barH;
+        const isPeak = (h.hour === peakHour);
+
+        const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        rect.setAttribute('x', x);
+        rect.setAttribute('y', y);
+        rect.setAttribute('width', barW);
+        rect.setAttribute('height', Math.max(barH, 2));
+        rect.setAttribute('rx', '3');
+        rect.setAttribute('fill', isPeak ? '#f59e0b' : '#4f46e5');
+        rect.setAttribute('opacity', isPeak ? '1' : '0.8');
+        rect.style.cursor = 'pointer';
+        rect.style.transition = 'opacity 0.15s, y 0.15s';
+
+        // 툴팁 이벤트
+        rect.addEventListener('mouseenter', () => {
+            rect.setAttribute('opacity', '1');
+            if (tooltip) {
+                tooltip.style.display = 'block';
+                tooltip.innerHTML = `<strong>${h.hour}:00 ~ ${h.hour}:59</strong><br/>번역량: ${h.count.toLocaleString()}문단 (${h.pct}%)${isPeak ? ' 🔥 피크' : ''}`;
+                const svgRect = svg.getBoundingClientRect();
+                const scaleX = svgRect.width / width;
+                const scaleY = svgRect.height / height;
+                tooltip.style.left = `${(x + barW/2) * scaleX}px`;
+                tooltip.style.top = `${y * scaleY}px`;
+            }
+        });
+
+        rect.addEventListener('mouseleave', () => {
+            rect.setAttribute('opacity', isPeak ? '1' : '0.8');
+            if (tooltip) tooltip.style.display = 'none';
+        });
+
+        svg.appendChild(rect);
+
+        // X축 시간 라벨 (3시간 간격)
+        if (h.hour % 3 === 0 || h.hour === 23) {
+            const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+            text.setAttribute('x', x + barW / 2);
+            text.setAttribute('y', padTop + plotH + 18);
+            text.setAttribute('text-anchor', 'middle');
+            text.setAttribute('fill', 'var(--text-muted, #64748b)');
+            text.setAttribute('font-size', '10px');
+            text.textContent = `${h.hour}시`;
+            svg.appendChild(text);
+        }
+    });
+}
+
+// 탭 2: 품질 & 데이터 건강도 렌더러
+function renderQualityTab(quality, summary) {
+    if (!quality || !summary) return;
+
+    // 종합 건강도 점수 원형 링
+    const scoreVal = document.getElementById('healthScoreValue');
+    const ringFill = document.getElementById('scoreRingFill');
+    const score = quality.health_score || 0;
+
+    if (scoreVal) scoreVal.innerHTML = `${score}<span class="score-unit">점</span>`;
+    if (ringFill) {
+        const circumference = 314.159;
+        const offset = circumference * (1 - (score / 100));
+        ringFill.style.strokeDashoffset = offset;
+        if (score >= 90) ringFill.style.stroke = '#10b981';
+        else if (score >= 75) ringFill.style.stroke = '#3b82f6';
+        else if (score >= 60) ringFill.style.stroke = '#f59e0b';
+        else ringFill.style.stroke = '#ef4444';
+    }
+
+    // 메트릭 리스트
+    const metricNormal = document.getElementById('metricNormalRate');
+    if (metricNormal) metricNormal.textContent = `${quality.normal_rate}%`;
+
+    const metricEmpty = document.getElementById('metricEmptyCount');
+    if (metricEmpty) metricEmpty.textContent = `${quality.empty_count.toLocaleString()}건 (${quality.empty_rate}%)`;
+
+    const metricAbnormal = document.getElementById('metricAbnormalRate');
+    if (metricAbnormal) metricAbnormal.textContent = `${quality.abnormal_rate}%`;
+
+    const metricApplied = document.getElementById('metricAppliedRate');
+    if (metricApplied) metricApplied.textContent = `${quality.applied_rate}%`;
+
+    // 원문 대비 번역문 확장률
+    const expNum = document.getElementById('expansionRatioNumber');
+    if (expNum) expNum.innerHTML = `${summary.expansion_ratio}<span class="ratio-unit">x</span>`;
+
+    const marker = document.getElementById('expansionMarker');
+    if (marker) {
+        // 0.5x ~ 1.8x 스케일 매핑
+        const ratio = summary.expansion_ratio || 1.1;
+        const pct = Math.max(0, Math.min(100, ((ratio - 0.5) / 1.3) * 100));
+        marker.style.left = `${pct}%`;
+    }
+
+    const expOrig = document.getElementById('expansionOrigChars');
+    if (expOrig) expOrig.textContent = summary.total_jp_chars.toLocaleString();
+
+    const expTrans = document.getElementById('expansionTransChars');
+    if (expTrans) expTrans.textContent = summary.total_kr_chars.toLocaleString();
+
+    // 문단 길이 5구간 분포 리스트
+    const lenList = document.getElementById('lengthDistributionList');
+    if (lenList && Array.isArray(quality.length_distribution)) {
+        lenList.innerHTML = quality.length_distribution.map(d => `
+            <div class="length-dist-item">
+                <div class="length-dist-header">
+                    <div>
+                        <span class="length-dist-label">${escapeHtml(d.label)}</span>
+                        <span class="length-dist-desc">(${escapeHtml(d.desc)})</span>
+                    </div>
+                    <span class="length-dist-count">${d.count.toLocaleString()}건 (${d.pct}%)</span>
+                </div>
+                <div class="length-dist-track">
+                    <div class="length-dist-fill" style="width: ${d.pct}%;"></div>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    // 품질 위생 지표 카드
+    const statAbnormal = document.getElementById('statAbnormalTotalCount');
+    if (statAbnormal) statAbnormal.textContent = `${quality.abnormal_total_count.toLocaleString()}건`;
+
+    const statWhitelist = document.getElementById('statWhitelistCount');
+    if (statWhitelist) statWhitelist.textContent = `${quality.whitelist_count.toLocaleString()}건`;
+
+    const statTrash = document.getElementById('statTrashTotalCount');
+    if (statTrash) statTrash.textContent = `${quality.trash_total_count.toLocaleString()}건`;
+
+    const statPending = document.getElementById('statPendingFolderCount');
+    if (statPending) statPending.textContent = `${quality.pending_folder_count.toLocaleString()}건`;
+}
+
+// 탭 3: 작품별 심층 랭킹 렌더러
+function renderNovelsTab(novels) {
+    const tbody = document.getElementById('novelStatsTableBody');
+    const badge = document.getElementById('novelTotalCountBadge');
+    if (!tbody || !Array.isArray(novels)) return;
+
+    if (badge) badge.textContent = `총 ${novels.length}개 작품`;
+
+    if (novels.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; color: var(--text-muted); padding: 24px;">작품 데이터가 없습니다.</td></tr>`;
+        return;
+    }
+
+    tbody.innerHTML = novels.map(n => {
+        let rankBadgeClass = 'novel-rank-badge';
+        if (n.rank === 1) rankBadgeClass += ' novel-rank-1';
+        else if (n.rank === 2) rankBadgeClass += ' novel-rank-2';
+        else if (n.rank === 3) rankBadgeClass += ' novel-rank-3';
+
+        return `
+            <tr>
+                <td style="text-align: center;"><span class="${rankBadgeClass}">${n.rank}</span></td>
+                <td><strong>${escapeHtml(n.name)}</strong></td>
+                <td style="text-align: right;">${n.episode_count.toLocaleString()}화</td>
+                <td style="text-align: right;">${n.paragraph_count.toLocaleString()}문단</td>
+                <td style="text-align: right;">${n.total_chars.toLocaleString()}자</td>
+                <td style="text-align: right;">${n.avg_paragraphs_per_ep}</td>
+                <td>
+                    <div class="share-bar-container">
+                        <div class="share-bar-track">
+                            <div class="share-bar-fill" style="width: ${n.share_pct}%;"></div>
+                        </div>
+                        <span class="share-bar-pct">${n.share_pct}%</span>
+                    </div>
+                </td>
+                <td style="text-align: center;">
+                    <button type="button" class="btn btn-sm btn-outline jump-to-novel-btn" data-novel="${escapeHtml(n.name)}" title="해당 소설 필터로 이동">
+                        <span class="material-icons" style="font-size: 14px;">filter_alt</span>
+                    </button>
+                </td>
+            </tr>
+        `;
+    }).join('');
+}
+
+// 탭 4: 번역 규모 & 독서 환산 렌더러
+function renderScaleTab(scale) {
+    if (!scale) return;
+
+    const scaleBig = document.getElementById('scaleKrCharsBig');
+    if (scaleBig) scaleBig.innerHTML = `${scale.kr_chars.toLocaleString()}<span class="kpi-unit">자</span>`;
+
+    const scaleSub = document.getElementById('scaleJpCharsSub');
+    if (scaleSub) scaleSub.textContent = `원문 ${scale.jp_chars.toLocaleString()}자 대비 1.16배`;
+
+    const scaleBooks = document.getElementById('scaleBooksCount');
+    if (scaleBooks) scaleBooks.innerHTML = `${scale.books_count}<span class="kpi-unit">권</span>`;
+
+    const scaleManuscript = document.getElementById('scaleManuscriptCount');
+    if (scaleManuscript) scaleManuscript.innerHTML = `${scale.manuscript_count.toLocaleString()}<span class="kpi-unit">매</span>`;
+
+    const scaleHours = document.getElementById('scaleReadingHours');
+    if (scaleHours) scaleHours.innerHTML = `${scale.reading_hours}<span class="kpi-unit">시간</span>`;
+
+    const scaleDays = document.getElementById('scaleReadingDays');
+    if (scaleDays) scaleDays.textContent = `약 ${scale.reading_days}일 연속 완독`;
+
+    const paceFast = document.getElementById('paceFastHours');
+    if (paceFast) paceFast.textContent = `${scale.pace_fast_hours}시간`;
+
+    const paceStd = document.getElementById('paceStandardHours');
+    if (paceStd) paceStd.textContent = `${scale.pace_standard_hours}시간`;
+
+    const paceSlow = document.getElementById('paceSlowHours');
+    if (paceSlow) paceSlow.textContent = `${scale.pace_slow_hours}시간`;
+
+    const avgChars = document.getElementById('avgCharsPerChapter');
+    if (avgChars) avgChars.textContent = `${scale.avg_chars_per_chapter.toLocaleString()}자 / 화`;
+
+    const avgParas = document.getElementById('avgParagraphsPerChapter');
+    if (avgParas) avgParas.textContent = `${scale.avg_paragraphs_per_chapter}단락 / 화`;
+
+    const fitBadge = document.getElementById('novelFitBadge');
+    if (fitBadge) fitBadge.textContent = scale.novel_fit_badge;
+}
+
+/* ==========================================================================
+   앱 릴리즈 관리 컨트롤러 (App Release Controller)
+   ========================================================================== */
+
+let selectedApkFile = null;
+
+function initAppReleaseModal() {
+    const openBtn = document.getElementById('openAppReleaseModalBtn');
+    const modal = document.getElementById('appReleaseModal');
+    const closeBtn = document.getElementById('closeAppReleaseModalBtn');
+    const closeBottomBtn = document.getElementById('closeAppReleaseModalBottomBtn');
+    const saveNotesBtn = document.getElementById('saveAppReleaseNotesBtn');
+    const bumpVersionBtn = document.getElementById('bumpAppVersionBtn');
+    const dropzone = document.getElementById('apkDropzone');
+    const dropzoneInner = document.getElementById('apkDropzoneInner');
+    const fileInput = document.getElementById('apkFileInput');
+    const uploadBtn = document.getElementById('uploadApkBtn');
+
+    if (!openBtn || !modal) return;
+
+    // 모달 열기
+    openBtn.addEventListener('click', () => {
+        modal.style.display = 'flex';
+        fetchAppReleaseInfo();
+    });
+
+    // 모달 닫기
+    const closeModal = () => { modal.style.display = 'none'; };
+    if (closeBtn) closeBtn.addEventListener('click', closeModal);
+    if (closeBottomBtn) closeBottomBtn.addEventListener('click', closeModal);
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) closeModal();
+    });
+
+    // 릴리즈 노트 저장
+    if (saveNotesBtn) {
+        saveNotesBtn.addEventListener('click', async () => {
+            const notesInput = document.getElementById('appReleaseNotesInput');
+            const notes = notesInput ? notesInput.value.trim() : '';
+            saveNotesBtn.disabled = true;
+            saveNotesBtn.textContent = '저장 중...';
+
+            try {
+                const res = await fetch('/api/app/release_notes', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ release_notes: notes })
+                });
+                if (!res.ok) throw new Error(`릴리즈 노트 저장 실패: ${res.statusText}`);
+                showToast('릴리즈 노트가 성공적으로 저장되었습니다.', 'success');
+            } catch (err) {
+                console.error(err);
+                showToast('릴리즈 노트 저장 중 오류가 발생했습니다.', 'error');
+            } finally {
+                saveNotesBtn.disabled = false;
+                saveNotesBtn.textContent = '릴리즈 노트 저장';
+            }
+        });
+    }
+
+    // 버전 및 빌드번호 범프
+    if (bumpVersionBtn) {
+        bumpVersionBtn.addEventListener('click', async () => {
+            const verInput = document.getElementById('appVersionInput');
+            const buildInput = document.getElementById('appBuildInput');
+            const newVer = verInput ? verInput.value.trim() : null;
+            const newBuild = buildInput ? (parseInt(buildInput.value.trim(), 10) + 1) : null;
+
+            bumpVersionBtn.disabled = true;
+            bumpVersionBtn.innerHTML = '<span class="material-icons" style="font-size: 15px;">hourglass_top</span> 처리 중...';
+
+            try {
+                const res = await fetch('/api/app/bump_version', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ version: newVer, build_number: newBuild })
+                });
+                if (!res.ok) throw new Error(`버전 갱신 실패: ${res.statusText}`);
+                const data = await res.json();
+                showToast(`버전이 v${data.version} (Build #${data.build_number})로 갱신되었습니다.`, 'success');
+                fetchAppReleaseInfo();
+            } catch (err) {
+                console.error(err);
+                showToast('버전 갱신 중 오류가 발생했습니다.', 'error');
+            } finally {
+                bumpVersionBtn.disabled = false;
+                bumpVersionBtn.innerHTML = '<span class="material-icons" style="font-size: 15px;">trending_up</span> +1 빌드 올리기';
+            }
+        });
+    }
+
+    // APK 파일 선택 및 드래그 앤 드롭
+    if (dropzoneInner && fileInput) {
+        dropzoneInner.addEventListener('click', () => fileInput.click());
+    }
+
+    if (fileInput) {
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files && e.target.files.length > 0) {
+                handleSelectedApkFile(e.target.files[0]);
+            }
+        });
+    }
+
+    if (dropzone) {
+        dropzone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropzone.classList.add('dragover');
+        });
+        dropzone.addEventListener('dragleave', () => {
+            dropzone.classList.remove('dragover');
+        });
+        dropzone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropzone.classList.remove('dragover');
+            if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                handleSelectedApkFile(e.dataTransfer.files[0]);
+            }
+        });
+    }
+
+    // 새 APK 업로드 시작
+    if (uploadBtn) {
+        uploadBtn.addEventListener('click', async () => {
+            if (!selectedApkFile) return;
+
+            uploadBtn.disabled = true;
+            const statusText = document.getElementById('apkUploadStatusText');
+            const progressWrap = document.getElementById('apkUploadProgressBarWrap');
+            const progressBar = document.getElementById('apkUploadProgressBar');
+
+            if (statusText) statusText.textContent = '업로드 스트리밍 전송 중...';
+            if (progressWrap) progressWrap.style.display = 'block';
+            if (progressBar) progressBar.style.width = '60%';
+
+            try {
+                const res = await fetch('/api/app/upload', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/octet-stream' },
+                    body: selectedApkFile
+                });
+
+                if (!res.ok) {
+                    const errJson = await res.json().catch(() => ({}));
+                    throw new Error(errJson.detail || `업로드 실패: ${res.statusText}`);
+                }
+
+                if (progressBar) progressBar.style.width = '100%';
+                if (statusText) statusText.textContent = '업로드 완료 및 배포 적용 성공!';
+                showToast('APK 바이너리가 성공적으로 업로드 및 배포되었습니다!', 'success');
+                selectedApkFile = null;
+                setTimeout(() => {
+                    if (progressWrap) progressWrap.style.display = 'none';
+                    if (progressBar) progressBar.style.width = '0%';
+                    fetchAppReleaseInfo();
+                }, 1000);
+            } catch (err) {
+                console.error(err);
+                if (statusText) statusText.textContent = `업로드 실패: ${err.message}`;
+                showToast(`업로드 실패: ${err.message}`, 'error');
+            } finally {
+                uploadBtn.disabled = true;
+            }
+        });
+    }
+}
+
+function handleSelectedApkFile(file) {
+    if (!file.name.toLowerCase().endsWith('.apk')) {
+        showToast('.apk 파일만 업로드할 수 있습니다.', 'error');
+        return;
+    }
+
+    selectedApkFile = file;
+    const fileInfo = document.getElementById('selectedApkFileInfo');
+    const uploadBtn = document.getElementById('uploadApkBtn');
+    const statusText = document.getElementById('apkUploadStatusText');
+
+    const sizeMb = (file.size / (1024 * 1024)).toFixed(2);
+    if (fileInfo) {
+        fileInfo.textContent = `선택됨: ${file.name} (${sizeMb} MB)`;
+    }
+    if (statusText) {
+        statusText.textContent = `업로드 준비 완료 (${sizeMb} MB)`;
+    }
+    if (uploadBtn) {
+        uploadBtn.disabled = false;
+    }
+}
+
+async function fetchAppReleaseInfo() {
+    try {
+        const res = await fetch('/api/app/version');
+        if (!res.ok) throw new Error('앱 버전 정보를 가져오지 못했습니다.');
+
+        const data = await res.json();
+
+        const verBadge = document.getElementById('appCurrentVersionBadge');
+        if (verBadge) verBadge.textContent = `v${data.version}`;
+
+        const buildBadge = document.getElementById('appCurrentBuildBadge');
+        if (buildBadge) buildBadge.textContent = `Build #${data.build_number}`;
+
+        const statusBadge = document.getElementById('appApkStatusBadge');
+        if (statusBadge) {
+            if (data.has_apk) {
+                statusBadge.textContent = 'APK 배포 완료';
+                statusBadge.classList.remove('not-found');
+            } else {
+                statusBadge.textContent = 'APK 미등록 (빌드 필요)';
+                statusBadge.classList.add('not-found');
+            }
+        }
+
+        const fileNameEl = document.getElementById('appReleaseFileName');
+        if (fileNameEl) fileNameEl.textContent = data.file_name;
+
+        const fileSizeEl = document.getElementById('appReleaseFileSize');
+        if (fileSizeEl) {
+            const mb = (data.file_size / (1024 * 1024)).toFixed(1);
+            fileSizeEl.textContent = `${mb} MB (${data.file_size.toLocaleString()} bytes)`;
+        }
+
+        const updatedAtEl = document.getElementById('appReleaseUpdatedAt');
+        if (updatedAtEl) {
+            if (data.updated_at) {
+                const date = new Date(data.updated_at * 1000);
+                updatedAtEl.textContent = date.toLocaleString();
+            } else {
+                updatedAtEl.textContent = '-';
+            }
+        }
+
+        const verInput = document.getElementById('appVersionInput');
+        if (verInput) verInput.value = data.base_version || '1.0.0';
+
+        const buildInput = document.getElementById('appBuildInput');
+        if (buildInput) buildInput.value = data.build_number || 1;
+
+        const notesInput = document.getElementById('appReleaseNotesInput');
+        if (notesInput) notesInput.value = data.release_notes || '';
+
+    } catch (err) {
+        console.error("앱 릴리즈 정보 조회 오류:", err);
+    }
+}
