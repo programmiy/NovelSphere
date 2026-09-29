@@ -3,7 +3,9 @@
 // =================================================================================
 
 let autoScrollInterval = null;
-const LONG_TEXT_THRESHOLD = 150; // Define threshold for long texts
+// ⚡ 글자 수 / 토큰 예산 기반 가변 청킹 기준치
+const CHUNK_BUDGET_CHARACTERS = 2000; // 묶음당 최대 원문 글자 수 (약 1,000~1,500 토큰)
+const CHUNK_BUDGET_MAX_ITEMS = 40;   // 묶음당 최대 문장 수 상한
 const JAPANESE_REGEX = /[\u3000-\u303f\u3040-\u309f\u30a0-\u30ff\uff00-\uff9f\u4e00-\u9faf\u3400-\u4dbf]/;
 const PID_REGEX = /^[a-zA-Z][a-zA-Z0-9]*$/;
 let hasScannedForP_Tags = false;
@@ -2046,6 +2048,34 @@ function chunkArray(array, size) {
     return chunks;
 }
 
+// ⚡ 글자 수 / 토큰 예산 기반 가변 청킹 함수
+function createBudgetChunks(items, maxChars = CHUNK_BUDGET_CHARACTERS, maxItems = CHUNK_BUDGET_MAX_ITEMS) {
+    const chunks = [];
+    let currentChunk = [];
+    let currentChars = 0;
+
+    for (const item of items) {
+        const itemText = item.text || '';
+        const itemLen = itemText.length;
+
+        // 현재 묶음에 추가했을 때 글자 수 예산(maxChars) 또는 최대 문장 수(maxItems)를 초과하면 새 묶음 시작
+        if (currentChunk.length > 0 && (currentChars + itemLen > maxChars || currentChunk.length >= maxItems)) {
+            chunks.push(currentChunk);
+            currentChunk = [];
+            currentChars = 0;
+        }
+
+        currentChunk.push(item);
+        currentChars += itemLen;
+    }
+
+    if (currentChunk.length > 0) {
+        chunks.push(currentChunk);
+    }
+
+    return chunks;
+}
+
 // =================================================================================
 // ntfy Push Notifications
 // =================================================================================
@@ -2229,14 +2259,9 @@ async function translateAllPTags(isRetranslation = false) {
     const sepPreview = sepCount > 0 ? activeSeparators.slice(0, 3).join(', ') + (sepCount > 3 ? ` 외 ${sepCount - 3}개` : '') : '없음';
     const modelDesc = isRetranslation ? "고성능 모델(Gemini 3.0 Flash)" : "기본 엔진";
     const turboDesc = isTurboMode ? " ⚡쾌속모드" : "";
-    logToSidebar(`[소설: ${currentNovelTitle || '기본'}] 총 ${textsToTranslate.length}개의 문장 번역을 시작합니다. (${modelDesc}${turboDesc}, 구분선: ${sepPreview})`);
-    
-    const longTexts = textsToTranslate.filter(item => item.text.length > LONG_TEXT_THRESHOLD);
-    const normalTexts = textsToTranslate.filter(item => item.text.length <= LONG_TEXT_THRESHOLD);
-
-    if (longTexts.length > 0) {
-        logToSidebar(`경고: ${longTexts.length}개의 긴 문장(${LONG_TEXT_THRESHOLD}자 이상)이 감지되어 개별적으로 처리합니다.`);
-    }
+    const totalChars = textsToTranslate.reduce((sum, item) => sum + (item.text ? item.text.length : 0), 0);
+    const chunks = createBudgetChunks(textsToTranslate, CHUNK_BUDGET_CHARACTERS, CHUNK_BUDGET_MAX_ITEMS);
+    logToSidebar(`[소설: ${currentNovelTitle || '기본'}] 총 ${textsToTranslate.length}개 문장(약 ${totalChars.toLocaleString()}자)을 글자 수·토큰 예산(최대 ${CHUNK_BUDGET_CHARACTERS.toLocaleString()}자 / ${CHUNK_BUDGET_MAX_ITEMS}문장) 기반 ${chunks.length}개 최적 묶음으로 번역을 시작합니다. (${modelDesc}${turboDesc}, 구분선: ${sepPreview})`);
     
     addPlaceholderRows(textsToTranslate);
 
@@ -2404,7 +2429,7 @@ async function translateAllPTags(isRetranslation = false) {
                 await translateChunk(subChunk, newChunkSize);
                 
                 if (index < subChunks.length - 1) {
-                    await new Promise(resolve => setTimeout(resolve, 30000));
+                    await new Promise(resolve => setTimeout(resolve, 3000));
                 }
             }
         } else if (failedItems.length > 0) {
@@ -2496,59 +2521,8 @@ async function translateAllPTags(isRetranslation = false) {
         }
     }
 
-    // Process long texts individually first
-    for (const [index, item] of longTexts.entries()) {
-        if (isTranslationCancelled) break;
-        logToSidebar(`긴 문장 번역 중 (${index + 1}/${longTexts.length})...`);
-        await translateChunk([item], 1);
-        checkAndReportMilestone(index + 1, textsToTranslate.length);
-        if (index < longTexts.length - 1) {
-            const currentDelay = isTurboMode ? 2000 : 5000;
-            logToSidebar(`${currentDelay / 1000}초 후 다음 긴 문장을 번역합니다.`);
-            await sleepResponsive(() => isTurboMode ? 2000 : 5000);
-            if (isTurboMode && checkCutoffTimeReached()) {
-                await abortTurboMode("초기화 시간 도달");
-                break;
-            }
-        }
-    }
-
-    // Then, process normal texts in batches
-    if (!isTranslationCancelled && normalTexts.length > 0) {
-        logToSidebar(`${normalTexts.length}개의 일반 문장을 묶음으로 번역합니다.`);
-        
-        const totalSentences = textsToTranslate.length;
-        const normalSentenceCount = normalTexts.length;
-        let initialChunkSize;
-
-        if (normalSentenceCount <= 10) {
-            // 10개 이하인 경우 분할하지 않고 한 번에 처리
-            initialChunkSize = normalSentenceCount;
-            logToSidebar(`번역할 일반 문장 수(${normalSentenceCount})가 10개 이하이므로, 분할하지 않고 한 번에 번역합니다.`);
-        } else if (totalSentences > 80) {
-            // "Aggressive" splitting for many sentences
-            const idealChunks = 10;
-            initialChunkSize = Math.ceil(normalTexts.length / idealChunks);
-            initialChunkSize = Math.max(5, initialChunkSize);
-            initialChunkSize = Math.min(20, initialChunkSize);
-            logToSidebar(`총 문장 수(${totalSentences})가 80개를 초과하여, 묶음 크기를 ${initialChunkSize}(으)로 공격적으로 설정합니다.`);
-        } else {
-            // New "stepped" splitting for fewer sentences
-            let numGroups;
-            if (normalSentenceCount <= 20) {
-                numGroups = 2;
-            } else {
-                // For 21-30 -> 3 groups, 31-40 -> 4 groups, etc.
-                numGroups = Math.ceil(normalSentenceCount / 10);
-            }
-            // Ensure at least 1 group if count is very low.
-            numGroups = Math.max(1, numGroups); 
-
-            initialChunkSize = Math.ceil(normalSentenceCount / numGroups);
-            logToSidebar(`총 문장 수(${totalSentences})가 80개 이하이므로, ${numGroups}개의 그룹으로 나누어(묶음 크기: ${initialChunkSize}) 번역합니다.`);
-        }
-
-        const chunks = chunkArray(normalTexts, initialChunkSize);
+    // ⚡ 글자 수 / 토큰 예산 기반 가변 묶음 순차 번역
+    if (!isTranslationCancelled && chunks.length > 0) {
         let progress = 0;
 
         logToSidebar(isTurboMode 
@@ -2581,10 +2555,11 @@ async function translateAllPTags(isRetranslation = false) {
                 }
             }
 
+            const currentChunkChars = currentChunk.reduce((sum, it) => sum + (it.text ? it.text.length : 0), 0);
             progress += chunk.length;
-            logToSidebar(`(${progress}/${normalTexts.length}) 일반 문장 번역 진행 중...${currentChunk.length > chunk.length ? ` (빈칸 문장 ${currentChunk.length - chunk.length}개 추가 포함)` : ''}`);
-            await translateChunk(currentChunk, initialChunkSize);
-            checkAndReportMilestone(longTexts.length + progress, textsToTranslate.length);
+            logToSidebar(`(${progress}/${textsToTranslate.length}문장, 묶음 ${index + 1}/${chunks.length} [약 ${currentChunkChars.toLocaleString()}자]) 번역 진행 중...${currentChunk.length > chunk.length ? ` (빈칸 문장 ${currentChunk.length - chunk.length}개 추가 포함)` : ''}`);
+            await translateChunk(currentChunk, currentChunk.length);
+            checkAndReportMilestone(progress, textsToTranslate.length);
 
             if (index < chunks.length - 1) {
                 const currentDelay = isTurboMode ? 2000 : 5000;
