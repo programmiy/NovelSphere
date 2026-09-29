@@ -2878,6 +2878,7 @@ window.addEventListener('offline', () => showConnectionStatus(false));
 let analyticsDataCache = null;
 let currentActivityPeriod = '14';
 let currentActivityMetric = 'count';
+let currentActivityTrendMode = 'daily';
 
 function initStatsAnalyticsModal() {
     const openBtn = document.getElementById('openStatsModalBtn');
@@ -2925,6 +2926,19 @@ function initStatsAnalyticsModal() {
         });
     });
 
+    // 활동 추이 모드 버튼 토글 (일일 번역량, 7일 이동평균, 누적 성장량)
+    const trendModeButtons = document.querySelectorAll('#activityTrendModeButtons button');
+    trendModeButtons.forEach(btn => {
+        btn.addEventListener('click', () => {
+            trendModeButtons.forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            currentActivityTrendMode = btn.dataset.mode;
+            if (analyticsDataCache && analyticsDataCache.activity) {
+                renderDailyTrendSvg(analyticsDataCache.activity.daily_trends, currentActivityPeriod, currentActivityMetric, currentActivityTrendMode);
+            }
+        });
+    });
+
     // 활동 추이 기간 버튼 토글 (7일, 14일, 30일, 전체)
     const periodButtons = document.querySelectorAll('#activityPeriodButtons button');
     periodButtons.forEach(btn => {
@@ -2933,7 +2947,7 @@ function initStatsAnalyticsModal() {
             btn.classList.add('active');
             currentActivityPeriod = btn.dataset.period;
             if (analyticsDataCache && analyticsDataCache.activity) {
-                renderDailyTrendSvg(analyticsDataCache.activity.daily_trends, currentActivityPeriod, currentActivityMetric);
+                renderDailyTrendSvg(analyticsDataCache.activity.daily_trends, currentActivityPeriod, currentActivityMetric, currentActivityTrendMode);
             }
         });
     });
@@ -2946,10 +2960,29 @@ function initStatsAnalyticsModal() {
             btn.classList.add('active');
             currentActivityMetric = btn.dataset.metric;
             if (analyticsDataCache && analyticsDataCache.activity) {
-                renderDailyTrendSvg(analyticsDataCache.activity.daily_trends, currentActivityPeriod, currentActivityMetric);
+                renderDailyTrendSvg(analyticsDataCache.activity.daily_trends, currentActivityPeriod, currentActivityMetric, currentActivityTrendMode);
             }
         });
     });
+
+    // 리포트 복사 및 CSV / JSON 내보내기 버튼 연결
+    const copyReportBtn = document.getElementById('copyMarkdownReportBtn');
+    if (copyReportBtn) copyReportBtn.addEventListener('click', copyMarkdownReport);
+
+    const exportCsvBtn = document.getElementById('exportStatsCsvBtn');
+    if (exportCsvBtn) exportCsvBtn.addEventListener('click', exportStatsCsv);
+
+    const exportJsonBtn = document.getElementById('exportStatsJsonBtn');
+    if (exportJsonBtn) exportJsonBtn.addEventListener('click', exportStatsJson);
+
+    // 작품 심층 분석 패널 닫기 버튼
+    const closeDrilldownBtn = document.getElementById('closeNovelDrilldownBtn');
+    if (closeDrilldownBtn) {
+        closeDrilldownBtn.addEventListener('click', () => {
+            const panel = document.getElementById('novelDrilldownPanel');
+            if (panel) panel.style.display = 'none';
+        });
+    }
 
     // 품질 탭 내 바로가기 카드 연결
     const abnormalBtn = document.getElementById('openAbnormalFromStatsBtn');
@@ -2991,7 +3024,7 @@ function initStatsAnalyticsModal() {
         });
     }
 
-    // 작품별 랭킹 테이블에서 특정 소설로 즉시 필터 이동
+    // 작품별 랭킹 테이블에서 특정 소설로 즉시 필터 이동 또는 회차별 스파크라인 상세 분석 열기
     const novelTableBody = document.getElementById('novelStatsTableBody');
     if (novelTableBody) {
         novelTableBody.addEventListener('click', (e) => {
@@ -3004,6 +3037,12 @@ function initStatsAnalyticsModal() {
                     folderFilter.value = targetNovel === '미분류' ? '__no_folder__' : targetNovel;
                     folderFilter.dispatchEvent(new Event('change'));
                 }
+                return;
+            }
+
+            const drillBtn = e.target.closest('.drilldown-novel-btn') || e.target.closest('tr');
+            if (drillBtn && drillBtn.dataset.novel) {
+                openNovelDrilldown(drillBtn.dataset.novel);
             }
         });
     }
@@ -3085,12 +3124,13 @@ function renderActivityTab(activity) {
     }
 
     // SVG 차트 렌더링
-    renderDailyTrendSvg(activity.daily_trends, currentActivityPeriod, currentActivityMetric);
+    renderDailyTrendSvg(activity.daily_trends, currentActivityPeriod, currentActivityMetric, currentActivityTrendMode);
     renderHourlySvg(activity.hourly_distribution, activity.peak_hour);
+    renderDowSvg(activity.dow_distribution, activity.peak_dow, activity.weekday_pct, activity.weekend_pct);
 }
 
-// 일별 추이 인터랙티브 SVG 차트 렌더링
-function renderDailyTrendSvg(dailyTrends, period, metric) {
+// 일별 추이 인터랙티브 SVG 차트 렌더링 (일일 번역량 / 7일 이동평균 / 누적 성장량 지원)
+function renderDailyTrendSvg(dailyTrends, period, metric, mode = 'daily') {
     const svg = document.getElementById('dailyTrendSvg');
     const tooltip = document.getElementById('dailyTrendChartTooltip');
     if (!svg || !Array.isArray(dailyTrends)) return;
@@ -3105,7 +3145,7 @@ function renderDailyTrendSvg(dailyTrends, period, metric) {
     svg.innerHTML = '';
     const width = 800;
     const height = 240;
-    const padLeft = 60;
+    const padLeft = 65;
     const padRight = 24;
     const padTop = 24;
     const padBottom = 34;
@@ -3119,8 +3159,24 @@ function renderDailyTrendSvg(dailyTrends, period, metric) {
         return;
     }
 
-    const values = trends.map(t => metric === 'chars' ? t.chars : t.count);
+    // 값 산출 함수
+    const getVal = (t) => {
+        if (mode === 'cumulative') {
+            return metric === 'chars' ? (t.cum_chars ?? t.kr_chars) : (t.cum_count ?? t.count);
+        } else if (mode === 'ma7') {
+            return metric === 'chars' ? (t.ma7_chars ?? t.kr_chars) : (t.ma7_count ?? t.count);
+        } else {
+            return metric === 'chars' ? t.kr_chars : t.count;
+        }
+    };
+
+    const values = trends.map(getVal);
     const maxVal = Math.max(...values, 10);
+
+    // 테마 컬러 및 그라디언트 설정
+    let themeColor = '#4f46e5'; // indigo (daily)
+    if (mode === 'ma7') themeColor = '#8b5cf6'; // violet (ma7)
+    else if (mode === 'cumulative') themeColor = '#059669'; // emerald (cumulative)
 
     // Y축 가이드선 4단계
     for (let i = 0; i <= 3; i++) {
@@ -3150,23 +3206,23 @@ function renderDailyTrendSvg(dailyTrends, period, metric) {
     // 포인트 좌표 계산
     const n = trends.length;
     const points = trends.map((t, idx) => {
-        const val = metric === 'chars' ? t.chars : t.count;
+        const val = getVal(t);
         const x = padLeft + (n > 1 ? (plotW * (idx / (n - 1))) : (plotW / 2));
         const y = padTop + plotH - (plotH * (val / maxVal));
-        return { x, y, val, date: t.date };
+        return { x, y, val, raw: t, date: t.date };
     });
 
-    // 영역 채우기 그라디언트 정의
+    // 그라디언트 정의
     const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
     defs.innerHTML = `
-        <linearGradient id="trendGradient" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stop-color="#4f46e5" stop-opacity="0.28"/>
-            <stop offset="100%" stop-color="#4f46e5" stop-opacity="0.0"/>
+        <linearGradient id="trendGradient_${mode}" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="${themeColor}" stop-opacity="0.32"/>
+            <stop offset="100%" stop-color="${themeColor}" stop-opacity="0.0"/>
         </linearGradient>
     `;
     svg.appendChild(defs);
 
-    // Area Path
+    // Area & Line Path
     if (points.length > 1) {
         let areaD = `M ${points[0].x} ${points[0].y}`;
         points.slice(1).forEach(pt => { areaD += ` L ${pt.x} ${pt.y}`; });
@@ -3174,17 +3230,16 @@ function renderDailyTrendSvg(dailyTrends, period, metric) {
 
         const areaPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
         areaPath.setAttribute('d', areaD);
-        areaPath.setAttribute('fill', 'url(#trendGradient)');
+        areaPath.setAttribute('fill', `url(#trendGradient_${mode})`);
         svg.appendChild(areaPath);
 
-        // Line Path
         let lineD = `M ${points[0].x} ${points[0].y}`;
         points.slice(1).forEach(pt => { lineD += ` L ${pt.x} ${pt.y}`; });
 
         const linePath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
         linePath.setAttribute('d', lineD);
         linePath.setAttribute('fill', 'none');
-        linePath.setAttribute('stroke', '#4f46e5');
+        linePath.setAttribute('stroke', themeColor);
         linePath.setAttribute('stroke-width', '2.5');
         linePath.setAttribute('stroke-linejoin', 'round');
         linePath.setAttribute('stroke-linecap', 'round');
@@ -3211,22 +3266,33 @@ function renderDailyTrendSvg(dailyTrends, period, metric) {
         circle.setAttribute('cx', pt.x);
         circle.setAttribute('cy', pt.y);
         circle.setAttribute('r', '3.5');
-        circle.setAttribute('fill', '#4f46e5');
+        circle.setAttribute('fill', themeColor);
         circle.setAttribute('stroke', '#ffffff');
         circle.setAttribute('stroke-width', '1.5');
         circle.style.cursor = 'pointer';
         circle.style.transition = 'r 0.15s, fill 0.15s';
 
         // 툴팁 이벤트
-        circle.addEventListener('mouseenter', (e) => {
+        circle.addEventListener('mouseenter', () => {
             circle.setAttribute('r', '6');
             circle.setAttribute('fill', '#f59e0b');
             if (tooltip) {
                 tooltip.style.display = 'block';
                 const unit = metric === 'chars' ? '자' : '문단';
-                tooltip.innerHTML = `<strong>${pt.date}</strong><br/>${metric === 'chars' ? '번역 글자 수' : '번역 문단'}: ${pt.val.toLocaleString()}${unit}`;
+                let modeTitle = '일일 번역량';
+                let extraInfo = '';
+                if (mode === 'ma7') {
+                    modeTitle = '7일 이동평균';
+                    const dailyVal = metric === 'chars' ? pt.raw.kr_chars : pt.raw.count;
+                    extraInfo = `<br/><span style="color: #94a3b8; font-size: 11px;">(당일 실적: ${dailyVal.toLocaleString()}${unit})</span>`;
+                } else if (mode === 'cumulative') {
+                    modeTitle = '누적 번역량';
+                    const dailyVal = metric === 'chars' ? pt.raw.kr_chars : pt.raw.count;
+                    extraInfo = `<br/><span style="color: #94a3b8; font-size: 11px;">(당일 증가: +${dailyVal.toLocaleString()}${unit})</span>`;
+                }
+
+                tooltip.innerHTML = `<strong>${pt.date}</strong><br/>${modeTitle}: <strong>${pt.val.toLocaleString()}${unit}</strong>${extraInfo}`;
                 const rect = svg.getBoundingClientRect();
-                const containerRect = svg.parentElement.getBoundingClientRect();
                 const scaleX = rect.width / width;
                 const scaleY = rect.height / height;
                 tooltip.style.left = `${(pt.x * scaleX)}px`;
@@ -3236,7 +3302,7 @@ function renderDailyTrendSvg(dailyTrends, period, metric) {
 
         circle.addEventListener('mouseleave', () => {
             circle.setAttribute('r', '3.5');
-            circle.setAttribute('fill', '#4f46e5');
+            circle.setAttribute('fill', themeColor);
             if (tooltip) tooltip.style.display = 'none';
         });
 
@@ -3315,6 +3381,91 @@ function renderHourlySvg(hourlyDistribution, peakHour) {
             text.textContent = `${h.hour}시`;
             svg.appendChild(text);
         }
+    });
+}
+
+// 요일별 활동 분포 SVG 차트 렌더링 (월~일)
+function renderDowSvg(dowDistribution, peakDow, weekdayPct, weekendPct) {
+    const svg = document.getElementById('dowSvg');
+    const tooltip = document.getElementById('dowChartTooltip');
+    const peakDowBadge = document.getElementById('peakDowBadge');
+    const ratioBadge = document.getElementById('weekdayWeekendRatioBadge');
+
+    if (peakDowBadge && peakDow) {
+        peakDowBadge.textContent = `🔥 가장 활발한 요일: ${peakDow}`;
+    }
+    if (ratioBadge && weekdayPct !== undefined && weekendPct !== undefined) {
+        ratioBadge.textContent = `평일 ${weekdayPct}% / 주말 ${weekendPct}%`;
+    }
+
+    if (!svg || !Array.isArray(dowDistribution)) return;
+
+    svg.innerHTML = '';
+    const width = 800;
+    const height = 190;
+    const padLeft = 40;
+    const padRight = 20;
+    const padTop = 20;
+    const padBottom = 30;
+    const plotW = width - padLeft - padRight;
+    const plotH = height - padTop - padBottom;
+
+    svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+
+    const counts = dowDistribution.map(d => d.count);
+    const maxVal = Math.max(...counts, 10);
+    const slotW = plotW / 7;
+    const barW = Math.min(52, slotW - 20);
+
+    dowDistribution.forEach((d, idx) => {
+        const x = padLeft + (idx * slotW) + ((slotW - barW) / 2);
+        const barH = plotH * (d.count / maxVal);
+        const y = padTop + plotH - barH;
+        const isPeak = (d.name === peakDow);
+        const isWeekend = (d.dow === 0 || d.dow === 6);
+
+        let barColor = '#4f46e5'; // 平日: indigo
+        if (isPeak) barColor = '#f59e0b'; // 피크: gold
+        else if (isWeekend) barColor = '#0ea5e9'; // 주말: sky
+
+        const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        rect.setAttribute('x', x);
+        rect.setAttribute('y', y);
+        rect.setAttribute('width', barW);
+        rect.setAttribute('height', Math.max(barH, 3));
+        rect.setAttribute('rx', '4');
+        rect.setAttribute('fill', barColor);
+        rect.setAttribute('opacity', isPeak ? '1' : '0.85');
+        rect.classList.add('dow-bar');
+
+        rect.addEventListener('mouseenter', () => {
+            if (tooltip) {
+                tooltip.style.display = 'block';
+                tooltip.innerHTML = `<strong>${d.name}</strong><br/>번역량: <strong>${d.count.toLocaleString()}문단</strong> (${d.pct}%)<br/><span style="font-size: 11px; color: #94a3b8;">${d.chars.toLocaleString()}자</span>${isPeak ? ' 🔥 피크 요일' : ''}`;
+                const svgRect = svg.getBoundingClientRect();
+                const scaleX = svgRect.width / width;
+                const scaleY = svgRect.height / height;
+                tooltip.style.left = `${(x + barW/2) * scaleX}px`;
+                tooltip.style.top = `${y * scaleY}px`;
+            }
+        });
+
+        rect.addEventListener('mouseleave', () => {
+            if (tooltip) tooltip.style.display = 'none';
+        });
+
+        svg.appendChild(rect);
+
+        // X축 요일 라벨
+        const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        text.setAttribute('x', x + barW / 2);
+        text.setAttribute('y', padTop + plotH + 18);
+        text.setAttribute('text-anchor', 'middle');
+        text.setAttribute('fill', isWeekend ? '#0ea5e9' : 'var(--text-muted, #64748b)');
+        text.setAttribute('font-weight', isWeekend ? '700' : '500');
+        text.setAttribute('font-size', '11px');
+        text.textContent = d.short_name;
+        svg.appendChild(text);
     });
 }
 
@@ -3422,7 +3573,7 @@ function renderNovelsTab(novels) {
         else if (n.rank === 3) rankBadgeClass += ' novel-rank-3';
 
         return `
-            <tr>
+            <tr class="novel-stat-row" data-novel="${escapeHtml(n.name)}" style="cursor: pointer;" title="클릭하여 회차별 세부 분량 스파크라인 확인">
                 <td style="text-align: center;"><span class="${rankBadgeClass}">${n.rank}</span></td>
                 <td><strong>${escapeHtml(n.name)}</strong></td>
                 <td style="text-align: right;">${n.episode_count.toLocaleString()}화</td>
@@ -3437,14 +3588,179 @@ function renderNovelsTab(novels) {
                         <span class="share-bar-pct">${n.share_pct}%</span>
                     </div>
                 </td>
-                <td style="text-align: center;">
-                    <button type="button" class="btn btn-sm btn-outline jump-to-novel-btn" data-novel="${escapeHtml(n.name)}" title="해당 소설 필터로 이동">
-                        <span class="material-icons" style="font-size: 14px;">filter_alt</span>
-                    </button>
+                <td style="text-align: center;" onclick="event.stopPropagation();">
+                    <div style="display: inline-flex; gap: 4px;">
+                        <button type="button" class="btn btn-sm btn-outline drilldown-novel-btn" data-novel="${escapeHtml(n.name)}" title="회차별 분량 스파크라인 분석">
+                            <span class="material-icons" style="font-size: 14px;">analytics</span>
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline jump-to-novel-btn" data-novel="${escapeHtml(n.name)}" title="해당 소설 필터로 이동">
+                            <span class="material-icons" style="font-size: 14px;">filter_alt</span>
+                        </button>
+                    </div>
                 </td>
             </tr>
         `;
     }).join('');
+}
+
+// 작품 심층 분석 및 회차별 스파크라인 열기
+async function openNovelDrilldown(folderName) {
+    if (!folderName) return;
+    const panel = document.getElementById('novelDrilldownPanel');
+    const titleEl = document.getElementById('drilldownNovelTitle');
+    if (!panel) return;
+
+    if (titleEl) titleEl.textContent = `📖 ${folderName} 회차별 세부 분량 분석`;
+    panel.style.display = 'block';
+    panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+    try {
+        const res = await fetch(`/admin/analytics/novel?folder_name=${encodeURIComponent(folderName)}`);
+        if (!res.ok) throw new Error('작품 상세 분석 데이터를 가져오지 못했습니다.');
+        const data = await res.json();
+
+        const totalEpsEl = document.getElementById('drilldownTotalEps');
+        if (totalEpsEl) totalEpsEl.textContent = data.total_episodes.toLocaleString();
+
+        const appliedRateEl = document.getElementById('drilldownAppliedRate');
+        if (appliedRateEl) appliedRateEl.textContent = `${data.applied_pct}%`;
+
+        const appliedEpsEl = document.getElementById('drilldownAppliedEps');
+        if (appliedEpsEl) appliedEpsEl.textContent = data.applied_episodes.toLocaleString();
+
+        const avgCharsEl = document.getElementById('drilldownAvgChars');
+        if (avgCharsEl) avgCharsEl.textContent = data.avg_chars_per_ep.toLocaleString();
+
+        const maxEpEl = document.getElementById('drilldownMaxEp');
+        if (maxEpEl) {
+            maxEpEl.textContent = data.max_episode ? `${data.max_episode.title} (${data.max_episode.char_count.toLocaleString()}자)` : '-';
+        }
+
+        const minEpEl = document.getElementById('drilldownMinEp');
+        if (minEpEl) {
+            minEpEl.textContent = data.min_episode ? `${data.min_episode.title} (${data.min_episode.char_count.toLocaleString()}자)` : '-';
+        }
+
+        renderNovelSparkline(data.episodes, data.avg_chars_per_ep);
+    } catch (err) {
+        console.error("작품 스파크라인 로딩 실패:", err);
+        showToast("작품 회차 데이터를 불러오지 못했습니다.", "error");
+    }
+}
+
+// 회차별 분량 인터랙티브 스파크라인 SVG 차트 렌더링
+function renderNovelSparkline(episodes, avgChars) {
+    const svg = document.getElementById('novelEpisodeSparklineSvg');
+    const tooltip = document.getElementById('novelSparklineTooltip');
+    if (!svg || !Array.isArray(episodes)) return;
+
+    svg.innerHTML = '';
+    const width = 800;
+    const height = 190;
+    const padLeft = 50;
+    const padRight = 20;
+    const padTop = 20;
+    const padBottom = 30;
+    const plotW = width - padLeft - padRight;
+    const plotH = height - padTop - padBottom;
+
+    svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+
+    if (episodes.length === 0) {
+        svg.innerHTML = `<text x="${width/2}" y="${height/2}" text-anchor="middle" fill="var(--text-muted)">회차 분량 데이터가 없습니다.</text>`;
+        return;
+    }
+
+    const charCounts = episodes.map(e => e.char_count);
+    const maxVal = Math.max(...charCounts, avgChars, 100);
+
+    // 평균 기준선 (Red Dashed Line)
+    if (avgChars > 0) {
+        const avgY = padTop + plotH - (plotH * (avgChars / maxVal));
+        const avgLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        avgLine.setAttribute('x1', padLeft);
+        avgLine.setAttribute('x2', padLeft + plotW);
+        avgLine.setAttribute('y1', avgY);
+        avgLine.setAttribute('y2', avgY);
+        avgLine.setAttribute('stroke', '#ef4444');
+        avgLine.setAttribute('stroke-dasharray', '4 4');
+        avgLine.setAttribute('stroke-width', '1.5');
+        svg.appendChild(avgLine);
+
+        const avgText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        avgText.setAttribute('x', padLeft + plotW);
+        avgText.setAttribute('y', avgY - 4);
+        avgText.setAttribute('text-anchor', 'end');
+        avgText.setAttribute('fill', '#ef4444');
+        avgText.setAttribute('font-size', '10px');
+        avgText.setAttribute('font-weight', '600');
+        avgText.textContent = `화당 평균: ${avgChars.toLocaleString()}자`;
+        svg.appendChild(avgText);
+    }
+
+    const n = episodes.length;
+    const slotW = plotW / n;
+    const barW = Math.max(3, Math.min(16, slotW - 2));
+
+    episodes.forEach((ep, idx) => {
+        const x = padLeft + (idx * slotW) + ((slotW - barW) / 2);
+        const barH = plotH * (ep.char_count / maxVal);
+        const y = padTop + plotH - barH;
+
+        const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        rect.setAttribute('x', x);
+        rect.setAttribute('y', y);
+        rect.setAttribute('width', barW);
+        rect.setAttribute('height', Math.max(barH, 2));
+        rect.setAttribute('rx', '2');
+        rect.setAttribute('fill', ep.is_applied ? '#10b981' : '#4f46e5');
+        rect.setAttribute('opacity', ep.is_applied ? '0.9' : '0.7');
+        rect.style.cursor = 'pointer';
+        rect.style.transition = 'opacity 0.15s, fill 0.15s';
+
+        rect.addEventListener('mouseenter', () => {
+            rect.setAttribute('opacity', '1');
+            rect.setAttribute('fill', '#f59e0b');
+            if (tooltip) {
+                tooltip.style.display = 'block';
+                const statusTag = ep.is_applied ? '✅ 웹페이지 적용 완료' : '⏳ 미적용 상태';
+                tooltip.innerHTML = `<strong>#${ep.index} ${escapeHtml(ep.title)}</strong><br/>글자 수: <strong>${ep.char_count.toLocaleString()}자</strong> (${ep.paragraph_count}문단)<br/><span style="font-size: 11px;">${statusTag}</span>`;
+                const svgRect = svg.getBoundingClientRect();
+                const scaleX = svgRect.width / width;
+                const scaleY = svgRect.height / height;
+                tooltip.style.left = `${(x + barW/2) * scaleX}px`;
+                tooltip.style.top = `${y * scaleY}px`;
+            }
+        });
+
+        rect.addEventListener('mouseleave', () => {
+            rect.setAttribute('opacity', ep.is_applied ? '0.9' : '0.7');
+            rect.setAttribute('fill', ep.is_applied ? '#10b981' : '#4f46e5');
+            if (tooltip) tooltip.style.display = 'none';
+        });
+
+        svg.appendChild(rect);
+    });
+
+    // 1화 라벨 & 최신화 라벨
+    if (n > 0) {
+        const firstLabel = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        firstLabel.setAttribute('x', padLeft);
+        firstLabel.setAttribute('y', padTop + plotH + 18);
+        firstLabel.setAttribute('fill', 'var(--text-muted, #64748b)');
+        firstLabel.setAttribute('font-size', '10px');
+        firstLabel.textContent = `1화 (${episodes[0].char_count.toLocaleString()}자)`;
+        svg.appendChild(firstLabel);
+
+        const lastLabel = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        lastLabel.setAttribute('x', padLeft + plotW);
+        lastLabel.setAttribute('y', padTop + plotH + 18);
+        lastLabel.setAttribute('text-anchor', 'end');
+        lastLabel.setAttribute('fill', 'var(--text-muted, #64748b)');
+        lastLabel.setAttribute('font-size', '10px');
+        lastLabel.textContent = `${n}화 (${episodes[n - 1].char_count.toLocaleString()}자)`;
+        svg.appendChild(lastLabel);
+    }
 }
 
 // 탭 4: 번역 규모 & 독서 환산 렌더러
@@ -3486,6 +3802,141 @@ function renderScaleTab(scale) {
 
     const fitBadge = document.getElementById('novelFitBadge');
     if (fitBadge) fitBadge.textContent = scale.novel_fit_badge;
+}
+
+// 종합 통계 분석 요약 마크다운 리포트 클립보드 복사
+function copyMarkdownReport() {
+    if (!analyticsDataCache) {
+        showToast("통계 데이터가 아직 준비되지 않았습니다.", "info");
+        return;
+    }
+
+    const { summary, activity, quality, scale, novels, scope } = analyticsDataCache;
+    const nowStr = new Date().toLocaleString();
+
+    let topNovelsMd = '';
+    if (Array.isArray(novels) && novels.length > 0) {
+        topNovelsMd = novels.slice(0, 5).map(n => 
+            `  ${n.rank}. **${n.name}**: ${n.episode_count.toLocaleString()}화 / ${n.paragraph_count.toLocaleString()}문단 (${n.total_chars.toLocaleString()}자, 비중 ${n.share_pct}%)`
+        ).join('\n');
+    } else {
+        topNovelsMd = '  (등록된 작품 데이터 없음)';
+    }
+
+    const reportMd = `# 📚 LANOVEL 서재 번역 통계 & 품질 심층 리포트
+> ⏱️ 작성 일시: ${nowStr} | 🌐 분석 범위: ${scope}
+
+### 📊 종합 통계 요약
+- **번역 작품 수**: ${summary.total_books.toLocaleString()}개 소설
+- **전체 번역 회차**: ${summary.total_episodes.toLocaleString()}화
+- **누적 번역 문단**: ${summary.total_paragraphs.toLocaleString()}문단
+- **한국어 번역 글자 수**: ${summary.total_kr_chars.toLocaleString()}자
+- **원문(JP) 글자 수**: ${summary.total_jp_chars.toLocaleString()}자 (원문 대비 ${summary.expansion_ratio}배 확장)
+- **화당 평균 분량**: ${summary.avg_chars_per_episode.toLocaleString()}자 (${summary.avg_paragraphs_per_episode}문단/화)
+
+### 📖 번역 규모 & 독서 시간 환산
+- **단행본(소설책) 환산**: 약 **${scale.books_count}권** (권당 10만 자 기준)
+- **200자 원고지 환산**: 약 **${scale.manuscript_count.toLocaleString()}매**
+- **완독 예상 소요시간**: 약 **${scale.reading_hours}시간** (표준 500자/분 기준, 약 ${scale.reading_days}일 연속 완독)
+- **독서 페이스별**: 속독(800자/분) ${scale.pace_fast_hours}시간 / 정독(350자/분) ${scale.pace_slow_hours}시간
+- **웹소설 규격 적합도**: ${scale.novel_fit_badge}
+
+### ⚡ 생산성 & 활동 프로필
+- **일평균 생산량**: ${activity.daily_avg_count.toLocaleString()}문단 (${activity.daily_avg_chars.toLocaleString()}자/일)
+- **역대 최고 기록일**: ${activity.peak_date} (${activity.peak_count.toLocaleString()}문단)
+- **최근 연속 활동**: ${activity.streak_days}일 연속 활동 중
+- **최근 7일 생산량**: ${activity.last_7d_count.toLocaleString()}문단 (${activity.last_7d_chars.toLocaleString()}자)
+- **가장 활발한 시간대**: ${activity.peak_hour}시 (${activity.peak_hour_count.toLocaleString()}문단)
+- **가장 활발한 요일**: ${activity.peak_dow || '-'} (${activity.peak_dow_count ? activity.peak_dow_count.toLocaleString() : 0}문단)
+- **평일 vs 주말 비중**: 평일 ${activity.weekday_pct || 0}% / 주말 ${activity.weekend_pct || 0}%
+
+### 🩺 데이터 무결성 & 품질 점수
+- **종합 데이터 건강도 점수**: **${quality.health_score}점** / 100점
+- **정상 번역률**: ${quality.normal_rate}%
+- **결측/빈 번역문**: ${quality.empty_count.toLocaleString()}건 (${quality.empty_rate}%)
+- **이상번역 감지율**: ${quality.abnormal_rate}% (${quality.abnormal_total_count.toLocaleString()}건)
+- **웹페이지 적용률**: ${quality.applied_rate}%
+
+### 🏆 상위 번역 작품 랭킹
+${topNovelsMd}
+`;
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(reportMd).then(() => {
+            showToast("서재 번역 분석 리포트가 클립보드에 복사되었습니다!", "success");
+        }).catch(() => {
+            fallbackCopyText(reportMd);
+        });
+    } else {
+        fallbackCopyText(reportMd);
+    }
+}
+
+function fallbackCopyText(text) {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    showToast("서재 번역 분석 리포트가 클립보드에 복사되었습니다!", "success");
+}
+
+// 통계 데이터 CSV 내보내기 (Excel 호환 UTF-8 BOM 지원)
+function exportStatsCsv() {
+    if (!analyticsDataCache) {
+        showToast("통계 데이터가 준비되지 않았습니다.", "info");
+        return;
+    }
+
+    const { daily_trends } = analyticsDataCache.activity || {};
+    const novels = analyticsDataCache.novels || [];
+
+    let csv = '\uFEFF'; // UTF-8 BOM
+    csv += '--- [일별 번역 활동 추이] ---\n';
+    csv += '날짜,번역문단수,번역글자수,원문글자수,7일이동평균문단,누적문단수,누적글자수\n';
+    if (Array.isArray(daily_trends)) {
+        daily_trends.forEach(d => {
+            csv += `"${d.date}",${d.count},${d.kr_chars},${d.jp_chars},${d.ma7_count || d.count},${d.cum_count || d.count},${d.cum_chars || d.kr_chars}\n`;
+        });
+    }
+
+    csv += '\n--- [작품별 심층 랭킹] ---\n';
+    csv += '순위,작품명,회차수,문단수,총글자수,화당평균문단,전체비중(%)\n';
+    if (Array.isArray(novels)) {
+        novels.forEach(n => {
+            csv += `${n.rank},"${n.name.replace(/"/g, '""')}",${n.episode_count},${n.paragraph_count},${n.total_chars},${n.avg_paragraphs_per_ep},${n.share_pct}%\n`;
+        });
+    }
+
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    const todayStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    link.href = url;
+    link.download = `lanovel_stats_${todayStr}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+    showToast("통계 데이터 CSV 파일이 다운로드되었습니다.", "success");
+}
+
+// 통계 원본 데이터 JSON 내보내기
+function exportStatsJson() {
+    if (!analyticsDataCache) {
+        showToast("통계 데이터가 준비되지 않았습니다.", "info");
+        return;
+    }
+
+    const jsonStr = JSON.stringify(analyticsDataCache, null, 2);
+    const blob = new Blob([jsonStr], { type: 'application/json;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    const todayStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    link.href = url;
+    link.download = `lanovel_analytics_${todayStr}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+    showToast("통계 분석 원본 JSON 파일이 다운로드되었습니다.", "success");
 }
 
 /* ==========================================================================

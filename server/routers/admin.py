@@ -1,3 +1,4 @@
+import datetime
 from typing import Optional
 from fastapi import APIRouter, HTTPException
 from server.database import get_sqlite_conn
@@ -170,6 +171,19 @@ def get_admin_analytics(folder_name: Optional[str] = None):
             for r in daily_rows if r[0]
         ]
 
+        # 누적치(Cumulative) 및 7일 이동평균(MA7) 산출
+        cum_count = 0
+        cum_chars = 0
+        for i, d in enumerate(daily_trends):
+            cum_count += d["count"]
+            cum_chars += d["kr_chars"]
+            d["cum_count"] = cum_count
+            d["cum_chars"] = cum_chars
+
+            window = daily_trends[max(0, i - 6) : i + 1]
+            d["ma7_count"] = round(sum(w["count"] for w in window) / len(window), 1)
+            d["ma7_chars"] = round(sum(w["kr_chars"] for w in window) / len(window), 1)
+
         # KPI 산출
         peak_count = 0
         peak_date = "-"
@@ -212,13 +226,67 @@ def get_admin_analytics(folder_name: Optional[str] = None):
         cursor.execute(hourly_query, params)
         hourly_rows = cursor.fetchall()
         hourly_map = {r[0]: r[1] for r in hourly_rows}
-        hourly_distribution = [hourly_map.get(h, 0) for h in range(24)]
+        hourly_distribution = [
+            {"hour": h, "count": hourly_map.get(h, 0), "pct": round((hourly_map.get(h, 0) / max(total_paragraphs, 1)) * 100, 1)}
+            for h in range(24)
+        ]
         
         peak_hour = 0
         peak_hour_count = 0
-        if any(hourly_distribution):
-            peak_hour = max(range(24), key=lambda h: hourly_distribution[h])
-            peak_hour_count = hourly_distribution[peak_hour]
+        if any(h["count"] > 0 for h in hourly_distribution):
+            peak_item = max(hourly_distribution, key=lambda h: h["count"])
+            peak_hour = peak_item["hour"]
+            peak_hour_count = peak_item["count"]
+
+        # 요일별 활동 분포 (Day of Week Distribution: 월~일)
+        dow_query = f"""
+        SELECT 
+            CAST(STRFTIME('%w', timestamp, 'unixepoch', 'localtime') AS INTEGER) as dow_num,
+            COUNT(*) as count,
+            COALESCE(SUM(LENGTH(translated)), 0) as kr_chars
+        FROM translations
+        {daily_where}
+        GROUP BY dow_num
+        ORDER BY dow_num ASC
+        """
+        cursor.execute(dow_query, params)
+        dow_rows = cursor.fetchall()
+        dow_map = {r[0]: {"count": r[1], "chars": r[2]} for r in dow_rows}
+
+        dow_order = [
+            (1, "월요일", "월"),
+            (2, "화요일", "화"),
+            (3, "수요일", "수"),
+            (4, "목요일", "목"),
+            (5, "금요일", "금"),
+            (6, "토요일", "토"),
+            (0, "일요일", "일"),
+        ]
+        dow_distribution = []
+        weekday_count = 0
+        weekend_count = 0
+        for num, name, short_name in dow_order:
+            c = dow_map.get(num, {}).get("count", 0)
+            ch = dow_map.get(num, {}).get("chars", 0)
+            pct = round((c / max(total_paragraphs, 1)) * 100, 1)
+            dow_distribution.append({
+                "dow": num,
+                "name": name,
+                "short_name": short_name,
+                "count": c,
+                "chars": ch,
+                "pct": pct
+            })
+            if num in (0, 6):
+                weekend_count += c
+            else:
+                weekday_count += c
+
+        peak_dow_item = max(dow_distribution, key=lambda x: x["count"]) if dow_distribution else None
+        peak_dow_name = peak_dow_item["name"] if peak_dow_item and peak_dow_item["count"] > 0 else "-"
+        peak_dow_count = peak_dow_item["count"] if peak_dow_item else 0
+        weekday_pct = round((weekday_count / max(total_paragraphs, 1)) * 100, 1)
+        weekend_pct = round((weekend_count / max(total_paragraphs, 1)) * 100, 1)
 
         # 4. 품질 & 데이터 건강도 (Quality & Health)
         empty_where = f"WHERE (translated IS NULL OR TRIM(translated) = '') {'AND folderName = ?' if target_folder else ''}"
@@ -344,7 +412,14 @@ def get_admin_analytics(folder_name: Optional[str] = None):
                 "daily_trends": daily_trends,
                 "hourly_distribution": hourly_distribution,
                 "peak_hour": peak_hour,
-                "peak_hour_count": peak_hour_count
+                "peak_hour_count": peak_hour_count,
+                "dow_distribution": dow_distribution,
+                "peak_dow": peak_dow_name,
+                "peak_dow_count": peak_dow_count,
+                "weekday_count": weekday_count,
+                "weekend_count": weekend_count,
+                "weekday_pct": weekday_pct,
+                "weekend_pct": weekend_pct
             },
             "quality": {
                 "health_score": health_score,
@@ -377,5 +452,85 @@ def get_admin_analytics(folder_name: Optional[str] = None):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"통계 분석 산출 중 오류 발생: {e}")
+    finally:
+        conn.close()
+
+
+@router.get("/admin/analytics/novel", tags=["Admin"], summary="작품별 회차 세부 분량 및 스파크라인 분석")
+def get_novel_analytics(folder_name: str):
+    """특정 소설의 각 회차별 글자 수/문단 수 추이, 스파크라인 및 완독 진척도 분석 데이터를 반환합니다."""
+    if not folder_name:
+        raise HTTPException(status_code=400, detail="소설 폴더 이름이 필요합니다.")
+
+    conn = get_sqlite_conn()
+    cursor = conn.cursor()
+    try:
+        target_name = None if folder_name == "__no_folder__" or folder_name == "미분류" else folder_name
+        where_sql = "WHERE (t.folderName IS NULL OR t.folderName = '' OR t.folderName = '미분류')" if target_name is None else "WHERE t.folderName = ?"
+        params = [] if target_name is None else [target_name]
+
+        query = f"""
+        SELECT 
+            t.url,
+            COALESCE(t.title, '무제') as ep_title,
+            COALESCE(t.toc_sort_order, 999999) as ep_sort,
+            COUNT(*) as para_count,
+            COALESCE(SUM(LENGTH(t.translated)), 0) as char_count,
+            COALESCE(SUM(LENGTH(t.original)), 0) as jp_chars,
+            MIN(t.timestamp) as first_ts,
+            MAX(t.timestamp) as last_ts,
+            CASE WHEN a.url IS NOT NULL THEN 1 ELSE 0 END as is_applied
+        FROM translations t
+        LEFT JOIN applied_urls a ON t.url = a.url
+        {where_sql}
+        GROUP BY t.url
+        ORDER BY ep_sort ASC, first_ts ASC
+        """
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+
+        episodes = []
+        for idx, r in enumerate(rows, 1):
+            episodes.append({
+                "index": idx,
+                "url": r[0],
+                "title": r[1],
+                "sort_order": r[2],
+                "paragraph_count": r[3],
+                "char_count": r[4],
+                "jp_chars": r[5],
+                "expansion_ratio": round(r[4] / max(r[5], 1), 2),
+                "first_timestamp": r[6],
+                "last_timestamp": r[7],
+                "is_applied": bool(r[8])
+            })
+
+        total_eps = len(episodes)
+        applied_eps = sum(1 for e in episodes if e["is_applied"])
+        applied_pct = round((applied_eps / max(total_eps, 1)) * 100, 1)
+
+        max_ep = max(episodes, key=lambda e: e["char_count"]) if episodes else None
+        min_ep = min(episodes, key=lambda e: e["char_count"]) if episodes else None
+        avg_chars = round(sum(e["char_count"] for e in episodes) / max(total_eps, 1)) if episodes else 0
+        avg_paras = round(sum(e["paragraph_count"] for e in episodes) / max(total_eps, 1), 1) if episodes else 0
+        total_chars = sum(e["char_count"] for e in episodes)
+        total_paras = sum(e["paragraph_count"] for e in episodes)
+
+        return {
+            "status": "success",
+            "novel_name": folder_name,
+            "total_episodes": total_eps,
+            "applied_episodes": applied_eps,
+            "applied_pct": applied_pct,
+            "total_chars": total_chars,
+            "total_paragraphs": total_paras,
+            "avg_chars_per_ep": avg_chars,
+            "avg_paras_per_ep": avg_paras,
+            "max_episode": {"title": max_ep["title"], "char_count": max_ep["char_count"], "index": max_ep["index"]} if max_ep else None,
+            "min_episode": {"title": min_ep["title"], "char_count": min_ep["char_count"], "index": min_ep["index"]} if min_ep else None,
+            "episodes": episodes
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"작품 세부 분석 산출 중 오류 발생: {e}")
     finally:
         conn.close()

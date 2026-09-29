@@ -30,9 +30,20 @@ def test_admin_analytics_endpoint():
     assert "streak_days" in activity
     assert "daily_trends" in activity
     assert isinstance(activity["daily_trends"], list)
+    if activity["daily_trends"]:
+        trend = activity["daily_trends"][0]
+        assert "cum_count" in trend
+        assert "cum_chars" in trend
+        assert "ma7_count" in trend
+        assert "ma7_chars" in trend
     assert "hourly_distribution" in activity
     assert len(activity["hourly_distribution"]) == 24
     assert "peak_hour" in activity
+    assert "dow_distribution" in activity
+    assert len(activity["dow_distribution"]) == 7
+    assert "peak_dow" in activity
+    assert "weekday_pct" in activity
+    assert "weekend_pct" in activity
 
     # 3. quality 검증
     quality = data["quality"]
@@ -78,3 +89,23 @@ def test_admin_analytics_with_folder_scope():
     assert "summary" in data
     assert "activity" in data
     assert "quality" in data
+
+
+def test_novel_analytics_drilldown():
+    """GET /admin/analytics/novel 특정 소설 회차별 분량 및 스파크라인 엔드포인트 검증"""
+    # 1. 파라미터 누락 시 400
+    err_res = client.get("/admin/analytics/novel?folder_name=")
+    assert err_res.status_code == 400
+
+    # 2. 존재하는 소설 또는 미분류로 정상 응답 검증
+    res = client.get("/admin/analytics/novel?folder_name=미분류")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["status"] == "success"
+    assert "total_episodes" in data
+    assert "applied_episodes" in data
+    assert "applied_pct" in data
+    assert "avg_chars_per_ep" in data
+    assert "episodes" in data
+    assert isinstance(data["episodes"], list)
+

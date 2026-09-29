@@ -441,6 +441,9 @@
                     <span class="badge-tag" id="modalStatsCurrentScope">전체 통계</span>
                 </div>
                 <div class="stats-header-controls">
+                    <button type="button" class="btn btn-sm btn-outline" id="copyMarkdownReportBtn" title="종합 통계 분석 요약 리포트를 마크다운으로 클립보드에 복사">📋 리포트 복사</button>
+                    <button type="button" class="btn btn-sm btn-outline" id="exportStatsCsvBtn" title="통계 데이터를 CSV 파일로 내보내기">📥 CSV</button>
+                    <button type="button" class="btn btn-sm btn-outline" id="exportStatsJsonBtn" title="통계 원본 데이터를 JSON 파일로 내보내기">📥 JSON</button>
                     <select id="modalNovelFilter" class="form-select stats-scope-select" title="특정 작품 통계로 필터링">
                         <option value="__all__">🌐 전체 작품 종합</option>
                     </select>
@@ -500,6 +503,11 @@
                                 <p class="section-desc">날짜별 번역된 문단 수와 글자 수 변화를 시각적으로 확인합니다.</p>
                             </div>
                             <div class="stats-chart-controls">
+                                <div class="btn-group" id="activityTrendModeButtons">
+                                    <button type="button" class="btn btn-sm btn-outline active" data-mode="daily">일일 번역량</button>
+                                    <button type="button" class="btn btn-sm btn-outline" data-mode="ma7">7일 이동평균</button>
+                                    <button type="button" class="btn btn-sm btn-outline" data-mode="cumulative">누적 성장량</button>
+                                </div>
                                 <div class="btn-group" id="activityPeriodButtons">
                                     <button type="button" class="btn btn-sm btn-outline" data-period="7">최근 7일</button>
                                     <button type="button" class="btn btn-sm btn-outline active" data-period="14">최근 14일</button>
@@ -530,6 +538,24 @@
                         <div class="chart-container" id="hourlyChartContainer">
                             <div id="hourlyChartTooltip" class="chart-tooltip" style="display: none;"></div>
                             <svg id="hourlySvg" class="analytics-svg hourly-svg"></svg>
+                        </div>
+                    </div>
+
+                    <!-- 요일별 활동 분포 (월~일) -->
+                    <div class="stats-section-card">
+                        <div class="stats-section-header">
+                            <div>
+                                <h3 class="section-title">📅 요일별 활동 분포 (월~일)</h3>
+                                <p class="section-desc">요일별 번역 작업 패턴 및 평일 vs 주말 작업 비중을 분석합니다.</p>
+                            </div>
+                            <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                                <span class="peak-hour-badge" id="peakDowBadge">🔥 가장 활발한 요일: 분석 중...</span>
+                                <span class="badge-count" id="weekdayWeekendRatioBadge">평일 0% / 주말 0%</span>
+                            </div>
+                        </div>
+                        <div class="chart-container" id="dowChartContainer" style="height: 190px;">
+                            <div id="dowChartTooltip" class="chart-tooltip" style="display: none;"></div>
+                            <svg id="dowSvg" class="analytics-svg"></svg>
                         </div>
                     </div>
                 </div>
@@ -648,11 +674,36 @@
 
                 <!-- 탭 3: 작품별 심층 랭킹 -->
                 <div id="tabStatNovels" class="stats-tab-pane" style="display: none;">
+                    <!-- 작품 심층 분석 및 회차별 스파크라인 패널 -->
+                    <div id="novelDrilldownPanel" class="stats-section-card novel-drilldown-card" style="display: none;">
+                        <div class="stats-section-header">
+                            <div>
+                                <div style="display: flex; align-items: center; gap: 8px;">
+                                    <span class="material-icons" style="color: var(--primary-color);">analytics</span>
+                                    <h3 class="section-title" id="drilldownNovelTitle">작품 회차별 세부 분량 분석</h3>
+                                </div>
+                                <p class="section-desc">1화부터 최신화까지 각 회차별 글자 수 추이(스파크라인)와 완독 적용 상태입니다.</p>
+                            </div>
+                            <button type="button" class="btn btn-sm btn-outline" id="closeNovelDrilldownBtn">&times; 패널 닫기</button>
+                        </div>
+                        <div class="drilldown-kpi-bar" id="drilldownKpiBar">
+                            <span class="drilldown-chip">전체 <strong id="drilldownTotalEps">0</strong>화</span>
+                            <span class="drilldown-chip">적용 완료 <strong id="drilldownAppliedRate">0%</strong> (<span id="drilldownAppliedEps">0</span>화)</span>
+                            <span class="drilldown-chip">화당 평균 <strong id="drilldownAvgChars">0</strong>자</span>
+                            <span class="drilldown-chip peak-chip">최장 화수: <strong id="drilldownMaxEp">-</strong></span>
+                            <span class="drilldown-chip">최단 화수: <strong id="drilldownMinEp">-</strong></span>
+                        </div>
+                        <div class="chart-container" id="novelSparklineContainer" style="height: 190px; margin-top: 14px;">
+                            <div id="novelSparklineTooltip" class="chart-tooltip" style="display: none;"></div>
+                            <svg id="novelEpisodeSparklineSvg" class="analytics-svg"></svg>
+                        </div>
+                    </div>
+
                     <div class="stats-section-card">
                         <div class="stats-section-header">
                             <div>
                                 <h3 class="section-title">📚 작품별 번역 규모 &amp; 비중 랭킹</h3>
-                                <p class="section-desc">소설별 문단 수, 회차 수, 총 글자 수 및 평균 밀도를 비교합니다. 행을 클릭하면 해당 작품 필터로 즉시 이동합니다.</p>
+                                <p class="section-desc">소설별 문단 수, 회차 수, 총 글자 수 및 평균 밀도를 비교합니다. 행을 클릭하거나 분석 버튼을 누르면 회차별 분량 스파크라인을 확인합니다.</p>
                             </div>
                             <span class="badge-count" id="novelTotalCountBadge">총 0개 작품</span>
                         </div>
@@ -667,7 +718,7 @@
                                         <th style="width: 120px; text-align: right;">총 글자 수</th>
                                         <th style="width: 110px; text-align: right;">화당 평균 문단</th>
                                         <th style="width: 170px;">전체 번역 비중</th>
-                                        <th style="width: 70px; text-align: center;">이동</th>
+                                        <th style="width: 120px; text-align: center;">상세 / 이동</th>
                                     </tr>
                                 </thead>
                                 <tbody id="novelStatsTableBody">

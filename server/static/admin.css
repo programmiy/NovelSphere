@@ -2472,3 +2472,80 @@ body.dark-mode #bulk-actions {
     border-color: var(--primary-color, #4f46e5);
     background-color: rgba(79, 70, 229, 0.04);
 }
+
+/* ==========================================================================
+   작품 심층 분석 및 회차별 스파크라인 (Novel Drilldown & Sparkline)
+   ========================================================================== */
+
+.novel-drilldown-card {
+    border: 1.5px solid var(--primary-color, #4f46e5) !important;
+    background: linear-gradient(180deg, rgba(79, 70, 229, 0.02) 0%, var(--card-bg, #ffffff) 100%) !important;
+    box-shadow: 0 4px 14px rgba(79, 70, 229, 0.08);
+    animation: fadeInSlideDown 0.25s ease-out;
+}
+
+@keyframes fadeInSlideDown {
+    from {
+        opacity: 0;
+        transform: translateY(-8px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.drilldown-kpi-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 10px 0;
+}
+
+.drilldown-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 5px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    background-color: var(--card-bg, #ffffff);
+    border: 1px solid var(--border-color, #e2e8f0);
+    color: var(--text-color, #1e293b);
+}
+
+.drilldown-chip strong {
+    color: var(--primary-color, #4f46e5);
+    font-weight: 700;
+}
+
+.drilldown-chip.peak-chip {
+    background-color: rgba(245, 158, 11, 0.08);
+    border-color: rgba(245, 158, 11, 0.3);
+}
+
+.drilldown-chip.peak-chip strong {
+    color: #d97706;
+}
+
+/* 요일별 활동 분포 */
+#dowChartContainer {
+    user-select: none;
+}
+
+.dow-bar {
+    transition: opacity 0.15s, y 0.15s;
+    cursor: pointer;
+}
+
+.dow-bar:hover {
+    opacity: 1 !important;
+    filter: brightness(1.1);
+}
+
+/* 차트 모드 토글 버튼 그룹 */
+#activityTrendModeButtons .btn.active {
+    background-color: var(--primary-color, #4f46e5);
+    color: #ffffff;
+    border-color: var(--primary-color, #4f46e5);
+}
