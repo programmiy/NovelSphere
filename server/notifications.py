@@ -141,6 +141,20 @@ def get_translation_status() -> Dict[str, Any]:
             data["quota_window_start_ts"] = q["window_start_ts"]
             data["today_translations_count"] = q["today_translations_count"]
 
+            # 4시(오후 4시/16시 또는 17시) 쿼터 초기화 시각이 지났다면 이전 회차 카운터 및 진행 상태 0으로 초기화
+            if q["window_start_ts"] > _CURRENT_TRANSLATION_STATUS.get("updated_at", 0):
+                _CURRENT_TRANSLATION_STATUS["episode_count"] = 0
+                _CURRENT_TRANSLATION_STATUS["current_sentence"] = 0
+                _CURRENT_TRANSLATION_STATUS["total_sentences"] = 0
+                _CURRENT_TRANSLATION_STATUS["is_active"] = False
+                data["episode_count"] = 0
+                data["current_sentence"] = 0
+                data["total_sentences"] = 0
+                data["is_active"] = False
+            elif not data.get("is_active"):
+                # 유휴(대기 중) 상태에서는 이전 누적 표시 클리어
+                data["episode_count"] = 0
+
             if q["percentage"] > 0 or data.get("percentage") in (0, 100, None):
                 data["percentage"] = q["percentage"]
 

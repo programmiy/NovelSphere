@@ -124,3 +124,40 @@ def test_find_replace_invalid_regex():
     })
     assert res.status_code == 400
     assert "유효하지 않은 정규식" in res.json()["detail"]
+
+def test_find_replace_target_ids(sample_translations):
+    # p1의 id만 지정하여 치환
+    target_id = sample_translations[0].id
+    res = client.post("/translations/find_replace", json={
+        "find_text": "사과",
+        "replace_text": "망고",
+        "target_ids": [target_id],
+        "use_regex": False,
+        "case_sensitive": True
+    })
+    assert res.status_code == 200
+    assert "1개의 항목" in res.json()["message"]
+
+    db = SessionLocal()
+    p1 = db.query(Translation).filter(Translation.url == TEST_URL, Translation.pid == "p1").first()
+    p2 = db.query(Translation).filter(Translation.url == TEST_URL, Translation.pid == "p2").first()
+    assert "망고입니다." in p1.translated
+    assert "사과입니다." in p2.translated  # p2는 target_ids에 없으므로 유지
+    db.close()
+
+def test_find_replace_safe_slash(sample_translations):
+    # 역슬래시나 특수문자가 포함된 치환도 오류 없이 안전하게 치환되어야 함
+    res = client.post("/translations/find_replace", json={
+        "find_text": "바나나",
+        "replace_text": r"C:\Folder\banana",
+        "folder_scope": "테스트폴더B",
+        "use_regex": False,
+        "case_sensitive": False
+    })
+    assert res.status_code == 200
+    assert "1개의 항목" in res.json()["message"]
+
+    db = SessionLocal()
+    p3 = db.query(Translation).filter(Translation.url == TEST_URL, Translation.pid == "p3").first()
+    assert r"C:\Folder\banana" in p3.translated
+    db.close()

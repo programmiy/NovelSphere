@@ -29,11 +29,11 @@ import functools
 def _get_compiled_regex(expr: str, flags: int = 0):
     return re.compile(expr, flags=flags)
 
-def _sqlite_regexp(expr, item):
+def _sqlite_regexp(expr, item, flags=0):
     if item is None or expr is None:
         return False
     try:
-        return _get_compiled_regex(expr).search(item) is not None
+        return _get_compiled_regex(expr, flags=flags).search(item) is not None
     except Exception:
         return False
 
@@ -45,12 +45,27 @@ def _sqlite_regexp_replace(pattern, repl, text, flags=0):
     try:
         return _get_compiled_regex(pattern, flags=flags).sub(repl, text)
     except Exception:
+        try:
+            return _get_compiled_regex(pattern, flags=flags).sub(lambda m: repl, text)
+        except Exception:
+            return text
+
+def _sqlite_regexp_replace_plain(pattern, repl, text):
+    if text is None:
+        return None
+    if pattern is None or repl is None:
+        return text
+    try:
+        return _get_compiled_regex(pattern).sub(lambda m: repl, text)
+    except Exception:
         return text
 
 def register_sqlite_functions(conn):
     conn.create_function("REGEXP", 2, _sqlite_regexp)
+    conn.create_function("REGEXP", 3, _sqlite_regexp)
     conn.create_function("REGEXP_REPLACE", 3, lambda p, r, t: _sqlite_regexp_replace(p, r, t, 0))
     conn.create_function("REGEXP_REPLACE", 4, _sqlite_regexp_replace)
+    conn.create_function("REGEXP_REPLACE_PLAIN", 3, _sqlite_regexp_replace_plain)
 
 def get_sqlite_conn(as_dict: bool = False, timeout: float = 15.0) -> sqlite3.Connection:
     """

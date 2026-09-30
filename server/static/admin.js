@@ -619,7 +619,7 @@ function setupEventListeners() {
             clearTimeout(findReplaceCountTimeout);
             findReplaceCountTimeout = setTimeout(countOccurrences, 300);
         });
-        if (element.type === 'checkbox') {
+        if (element.type === 'checkbox' || element.tagName === 'SELECT') {
              element.addEventListener('change', () => {
                 clearTimeout(findReplaceCountTimeout);
                 findReplaceCountTimeout = setTimeout(countOccurrences, 300);
@@ -1694,7 +1694,19 @@ function openFindReplaceModal() {
     findCount.textContent = '(0개)';
 
     // Populate folder scope dropdown
-    folderScope.innerHTML = '<option value="__all__">모든 폴더</option>';
+    folderScope.innerHTML = '';
+    if (selectedIds && selectedIds.size > 0) {
+        const selectedOption = document.createElement('option');
+        selectedOption.value = '__selected__';
+        selectedOption.textContent = `선택된 ${selectedIds.size}개 항목`;
+        folderScope.appendChild(selectedOption);
+    }
+
+    const allOption = document.createElement('option');
+    allOption.value = '__all__';
+    allOption.textContent = '모든 폴더';
+    folderScope.appendChild(allOption);
+
     allFolders.forEach(folder => {
         const option = document.createElement('option');
         option.value = folder.name;
@@ -1733,33 +1745,45 @@ function countOccurrences() {
         return;
     }
 
-    for (const folderName in groupedTranslations) {
-        if (selectedFolder !== '__all__' && folderName !== selectedFolder) {
-            continue;
-        }
+    const isSelectedScope = selectedFolder === '__selected__';
+    const dataSources = [groupedTranslations, rawAbnormalData, rawCleanupData].filter(Boolean);
+    const countedIds = new Set();
 
-        const urlGroups = groupedTranslations[folderName]; // This is an array of urlGroup objects
-        if (!Array.isArray(urlGroups)) continue; // Safety check
-
-        for (const urlGroup of urlGroups) {
-            const items = urlGroup.items; // This is the array of translation items
-            if (!Array.isArray(items)) continue; // Safety check
-
-            for (const item of items) {
-                // Check conditionText in original
-                if (conditionTextValue) {
-                    const originalContent = caseSensitiveValue ? item.original : item.original.toLowerCase();
-                    const conditionContent = caseSensitiveValue ? conditionTextValue : conditionTextValue.toLowerCase();
-                    if (!originalContent.includes(conditionContent)) {
-                        continue;
-                    }
+    for (const source of dataSources) {
+        for (const folderName in source) {
+            if (!isSelectedScope && selectedFolder !== '__all__' && folderName !== selectedFolder) {
+                if (!(selectedFolder === '폴더 추가 대기 상태' && (folderName === '폴더 추가 대기 상태' || folderName === ''))) {
+                    continue;
                 }
+            }
 
-                // Check findText in translated
-                if (item.translated) {
-                    const matches = item.translated.match(findRegex);
-                    if (matches) {
-                        count += matches.length;
+            const urlGroups = source[folderName];
+            if (!Array.isArray(urlGroups)) continue;
+
+            for (const urlGroup of urlGroups) {
+                const items = urlGroup.items;
+                if (!Array.isArray(items)) continue;
+
+                for (const item of items) {
+                    if (countedIds.has(item.id)) continue;
+                    if (isSelectedScope && !selectedIds.has(item.id)) continue;
+
+                    // Check conditionText in original (null-safe)
+                    if (conditionTextValue) {
+                        const originalContent = caseSensitiveValue ? (item.original || '') : (item.original || '').toLowerCase();
+                        const conditionContent = caseSensitiveValue ? conditionTextValue : conditionTextValue.toLowerCase();
+                        if (!originalContent.includes(conditionContent)) {
+                            continue;
+                        }
+                    }
+
+                    // Check findText in translated
+                    if (item.translated) {
+                        const matches = item.translated.match(findRegex);
+                        if (matches) {
+                            count += matches.length;
+                            countedIds.add(item.id);
+                        }
                     }
                 }
             }
@@ -1773,7 +1797,7 @@ function escapeRegExp(string) {
     return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // $& means the whole matched string
 }
 
-function applyFindReplaceToLocalData(findTextValue, replaceTextValue, conditionTextValue, selectedFolder, useRegexValue, caseSensitiveValue) {
+function applyFindReplaceToLocalData(findTextValue, replaceTextValue, conditionTextValue, selectedFolder, useRegexValue, caseSensitiveValue, targetIds = null) {
     let regex;
     const flags = caseSensitiveValue ? 'g' : 'gi';
     try {
@@ -1783,30 +1807,43 @@ function applyFindReplaceToLocalData(findTextValue, replaceTextValue, conditionT
         return;
     }
 
-    // 1. 메모리 상의 groupedTranslations 업데이트
-    for (const folderName in groupedTranslations) {
-        if (selectedFolder !== '__all__' && folderName !== selectedFolder) {
-            continue;
-        }
+    const targetIdSet = targetIds && targetIds.length > 0 ? new Set(targetIds) : null;
+    const isSelectedScope = selectedFolder === '__selected__' || Boolean(targetIdSet);
 
-        const urlGroups = groupedTranslations[folderName];
-        if (!Array.isArray(urlGroups)) continue;
+    // 1. 메모리 상의 모든 활성 데이터 소스 (groupedTranslations, rawAbnormalData, rawCleanupData) 동기화
+    const sourcesToUpdate = [groupedTranslations, rawAbnormalData, rawCleanupData].filter(Boolean);
 
-        for (const urlGroup of urlGroups) {
-            const items = urlGroup.items;
-            if (!Array.isArray(items)) continue;
+    for (const source of sourcesToUpdate) {
+        for (const folderName in source) {
+            if (!isSelectedScope && selectedFolder !== '__all__' && folderName !== selectedFolder) {
+                if (!(selectedFolder === '폴더 추가 대기 상태' && (folderName === '폴더 추가 대기 상태' || folderName === ''))) {
+                    continue;
+                }
+            }
 
-            for (const item of items) {
-                if (conditionTextValue) {
-                    const originalContent = caseSensitiveValue ? (item.original || '') : (item.original || '').toLowerCase();
-                    const conditionContent = caseSensitiveValue ? conditionTextValue : conditionTextValue.toLowerCase();
-                    if (!originalContent.includes(conditionContent)) {
+            const urlGroups = source[folderName];
+            if (!Array.isArray(urlGroups)) continue;
+
+            for (const urlGroup of urlGroups) {
+                const items = urlGroup.items;
+                if (!Array.isArray(items)) continue;
+
+                for (const item of items) {
+                    if (targetIdSet && !targetIdSet.has(item.id)) {
                         continue;
                     }
-                }
 
-                if (item.translated) {
-                    item.translated = item.translated.replace(regex, replaceTextValue);
+                    if (conditionTextValue) {
+                        const originalContent = caseSensitiveValue ? (item.original || '') : (item.original || '').toLowerCase();
+                        const conditionContent = caseSensitiveValue ? conditionTextValue : conditionTextValue.toLowerCase();
+                        if (!originalContent.includes(conditionContent)) {
+                            continue;
+                        }
+                    }
+
+                    if (item.translated) {
+                        item.translated = item.translated.replace(regex, () => replaceTextValue);
+                    }
                 }
             }
         }
@@ -1814,9 +1851,16 @@ function applyFindReplaceToLocalData(findTextValue, replaceTextValue, conditionT
 
     // 2. 현재 화면에 이미 렌더링된 번역 텍스트 요소들 즉시 갱신
     document.querySelectorAll('.translated-text').forEach(el => {
-        const itemFolder = el.dataset.folder || '';
-        if (selectedFolder !== '__all__' && itemFolder !== selectedFolder) {
+        const itemId = parseInt(el.dataset.id, 10);
+        if (targetIdSet && !targetIdSet.has(itemId)) {
             return;
+        }
+
+        const itemFolder = el.dataset.folder || '';
+        if (!isSelectedScope && selectedFolder !== '__all__' && itemFolder !== selectedFolder) {
+            if (!(selectedFolder === '폴더 추가 대기 상태' && !itemFolder)) {
+                return;
+            }
         }
 
         if (conditionTextValue) {
@@ -1827,8 +1871,8 @@ function applyFindReplaceToLocalData(findTextValue, replaceTextValue, conditionT
             }
         }
 
-        if (el.textContent) {
-            el.textContent = el.textContent.replace(regex, replaceTextValue);
+        if (el.textContent && regex.test(el.textContent)) {
+            el.textContent = el.textContent.replace(regex, () => replaceTextValue);
         }
     });
 
@@ -1849,7 +1893,13 @@ async function executeGlobalFindReplace() {
         return;
     }
 
-    if (!confirm(`선택된 조건에 따라 번역 기록에서 "${findTextValue}"을(를) "${replaceTextValue}"(으)로 바꾸시겠습니까? 이 작업은 되돌릴 수 없습니다.`)) {
+    const isSelectedScope = selectedFolder === '__selected__';
+    const targetIds = isSelectedScope ? Array.from(selectedIds) : null;
+    const scopeLabel = isSelectedScope 
+        ? `선택된 ${targetIds.length}개 항목` 
+        : (selectedFolder === '__all__' ? '전체 번역 기록' : `'${selectedFolder}' 폴더`);
+
+    if (!confirm(`[${scopeLabel}] 범위에서 "${findTextValue}"을(를) "${replaceTextValue}"(으)로 바꾸시겠습니까? 이 작업은 되돌릴 수 없습니다.`)) {
         return;
     }
 
@@ -1858,17 +1908,22 @@ async function executeGlobalFindReplace() {
     executeFindReplaceBtn.textContent = '치환 중...';
 
     try {
+        const payload = {
+            find_text: findTextValue,
+            replace_text: replaceTextValue,
+            condition_text: conditionTextValue || null,
+            folder_scope: isSelectedScope ? null : selectedFolder,
+            use_regex: useRegexValue,
+            case_sensitive: caseSensitiveValue
+        };
+        if (targetIds && targetIds.length > 0) {
+            payload.target_ids = targetIds;
+        }
+
         const response = await fetch('/translations/find_replace', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                find_text: findTextValue,
-                replace_text: replaceTextValue,
-                condition_text: conditionTextValue,
-                folder_scope: selectedFolder,
-                use_regex: useRegexValue,
-                case_sensitive: caseSensitiveValue
-            })
+            body: JSON.stringify(payload)
         });
 
         if (!response.ok) {
@@ -1881,7 +1936,7 @@ async function executeGlobalFindReplace() {
         closeFindReplaceModal();
 
         // 192MB 전체 재로드(loadAndRenderGrouped) 대신 로컬 데이터와 화면 DOM에 즉시 반영
-        applyFindReplaceToLocalData(findTextValue, replaceTextValue, conditionTextValue, selectedFolder, useRegexValue, caseSensitiveValue);
+        applyFindReplaceToLocalData(findTextValue, replaceTextValue, conditionTextValue, selectedFolder, useRegexValue, caseSensitiveValue, targetIds);
 
     } catch (error) {
         console.error("Global find and replace failed:", error);

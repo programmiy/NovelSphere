@@ -373,11 +373,21 @@ async function detectNovelTitle() {
     const host = window.location.hostname;
     
     if (host.includes('kakuyomu.jp')) {
-        const workLink = document.querySelector('header a[href*="/works/"]') || 
-                         document.querySelector('.widget-toc-main-title') ||
-                         document.querySelector('a[href^="/works/"][class*="Title"]');
+        // '閉じる', '目次', 'TOP' 등 제외하고 /works/<digits> 형태의 작품 메인 링크 우선 탐색
+        const workLink = Array.from(document.querySelectorAll('header a[href*="/works/"]')).find(a => {
+            const txt = (a.textContent || '').trim();
+            const aria = a.getAttribute('aria-label') || '';
+            const href = a.getAttribute('href') || '';
+            return txt && !txt.includes('閉じる') && !aria.includes('閉じる') && !txt.includes('目次') && !txt.includes('TOP') && /\/works\/\d+$/.test(href.split('?')[0]);
+        }) || document.querySelector('.widget-toc-main-title') ||
+              document.querySelector('a[href^="/works/"][class*="Title"]') ||
+              document.querySelector('header a[class*="workTitle"]');
+
         if (workLink && workLink.textContent.trim()) {
-            return workLink.textContent.trim();
+            const candidate = workLink.textContent.trim();
+            if (candidate && !candidate.includes('閉じる')) {
+                return candidate;
+            }
         }
         const titleText = document.title.replace(/\s*-\s*カクヨム.*$/i, '').trim();
         const parts = titleText.split(/\s*-\s*/);
@@ -385,7 +395,7 @@ async function detectNovelTitle() {
             let novelPart = parts[parts.length - 1].trim();
             novelPart = novelPart.replace(/（[^）]+）$/, '').trim();
             novelPart = novelPart.replace(/\([^)]+\)$/, '').trim();
-            if (novelPart) return novelPart;
+            if (novelPart && !novelPart.includes('閉じる')) return novelPart;
         }
     } else if (host.includes('syosetu.com')) {
         // 쇼세츠 소설 본 제목 요소 탐색
@@ -398,7 +408,9 @@ async function detectNovelTitle() {
             return novelLink.textContent.trim();
         }
         const parts = document.title.split(/\s*-\s*/);
-        if (parts.length > 0 && parts[0].trim()) {
+        if (parts.length > 1) {
+            return parts[parts.length - 1].trim();
+        } else if (parts.length > 0 && parts[0].trim()) {
             return parts[0].trim();
         }
     } else if (host.includes('novelup.plus')) {
@@ -421,7 +433,10 @@ async function detectNovelTitle() {
 
     // 3. Fallback: document.title 파싱
     const cleanDocTitle = document.title.split(/[-|–—]/)[0].trim();
-    return cleanDocTitle || "기본 소설";
+    if (cleanDocTitle && cleanDocTitle !== '閉じる') {
+        return cleanDocTitle;
+    }
+    return "기본 소설";
 }
 
 async function loadNovelSeparators(novelTitle) {
@@ -1847,8 +1862,7 @@ function setupEventListeners() {
         document.getElementById('retry-translation-btn').style.display = 'inline-block';
         updateSidebarWithCancelled();
         try {
-            const novelKey = (currentNovelTitle || 'default').trim().replace(/[^a-zA-Z0-9가-힣_]/g, '_');
-            chrome.storage.local.remove(`lanovel_batch_count_${novelKey}`).catch(() => {});
+            resetBatchCount();
         } catch (e) {}
     });
 
@@ -2074,6 +2088,135 @@ function createBudgetChunks(items, maxChars = CHUNK_BUDGET_CHARACTERS, maxItems 
     }
 
     return chunks;
+}
+
+// =================================================================================
+// 소설 Work Key 및 10화 단위 연속 번역 세션·4시 리셋 카운터 관리
+// =================================================================================
+
+function getNovelWorkKey() {
+    const url = window.location.href;
+    const host = window.location.hostname;
+
+    // 1. 카쿠요무: /works/1177354054887975130
+    if (host.includes('kakuyomu.jp')) {
+        const match = url.match(/\/works\/(\d+)/);
+        if (match) return `kakuyomu_${match[1]}`;
+    }
+    // 2. 쇼세츠 (소설가가 되자): /n3298hj/ or /n4913gc/
+    if (host.includes('syosetu.com')) {
+        const match = url.match(/\/(n\d+[a-z]+)\//i);
+        if (match) return `syosetu_${match[1].toLowerCase()}`;
+    }
+    // 3. 노벨업플러스: /story/12345
+    if (host.includes('novelup.plus')) {
+        const match = url.match(/\/story\/(\d+)/);
+        if (match) return `novelup_${match[1]}`;
+    }
+
+    // 4. Fallback: 소설 제목 정규화 (일본어, 영문, 숫자, 한글 모두 포함)
+    if (currentNovelTitle && currentNovelTitle !== '기본 소설' && currentNovelTitle !== '閉じる') {
+        const sanitized = currentNovelTitle.trim().replace(/[^a-zA-Z0-9가-힣\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff_]/g, '_');
+        if (sanitized && sanitized.replace(/_/g, '').length > 0) {
+            return `novel_${sanitized}`;
+        }
+    }
+
+    return 'default';
+}
+
+// Gemini API 일일 쿼터 초기화 시각(미국 태평양 자정) 기준 윈도우 식별자 반환
+// - 서머타임(PDT): 한국 시간 16:00 (오후 4시)
+// - 표준시(PST): 한국 시간 17:00 (오후 5시)
+function getCurrentQuotaWindow(now = new Date()) {
+    const cutoffHour = typeof detectCutoffInfo === 'function' ? detectCutoffInfo().hour : 16;
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const hour = now.getHours();
+
+    if (hour < cutoffHour) {
+        const prev = new Date(now.getTime() - 24 * 3600 * 1000);
+        const pYear = prev.getFullYear();
+        const pMonth = String(prev.getMonth() + 1).padStart(2, '0');
+        const pDay = String(prev.getDate()).padStart(2, '0');
+        return `${pYear}-${pMonth}-${pDay}_${cutoffHour}`;
+    }
+    return `${year}-${month}-${day}_${cutoffHour}`;
+}
+
+async function updateAndGetBatchCount(currentCleanUrl) {
+    const workKey = getNovelWorkKey();
+    const stateKey = `lanovel_batch_state_${workKey}`;
+
+    // 레거시 비정상 키(380 등 기존 누적 오염값) 완전 청소
+    try {
+        const allKeys = await chrome.storage.local.get(null);
+        const legacyKeys = Object.keys(allKeys).filter(k => k.startsWith('lanovel_batch_count_'));
+        if (legacyKeys.length > 0) {
+            await chrome.storage.local.remove(legacyKeys);
+        }
+    } catch (_) {}
+
+    const currentWindow = getCurrentQuotaWindow();
+    const now = Date.now();
+
+    let state = {
+        count: 0,
+        lastUpdated: 0,
+        lastUrl: '',
+        window: currentWindow
+    };
+
+    try {
+        const stored = await chrome.storage.local.get(stateKey);
+        if (stored && stored[stateKey] && typeof stored[stateKey].count === 'number') {
+            state = stored[stateKey];
+        }
+    } catch (e) {
+        console.warn('[ntfy] Failed to read batch state from storage:', e);
+    }
+
+    // API 쿼터 초기화 시각(오후 4시 / 써머타임 해제 시 오후 5시) 도달 시 카운터 0으로 갱신
+    if (state.window !== currentWindow) {
+        const cutoffHour = typeof detectCutoffInfo === 'function' ? detectCutoffInfo().hour : 16;
+        logToSidebar(`🔄 [쿼터 갱신] Gemini API 일일 쿼터 초기화 시간(${cutoffHour}:00)에 도달하여 번역 회차 카운터를 0부터 새로 시작합니다.`);
+        state.count = 0;
+        state.lastUrl = '';
+        state.window = currentWindow;
+    }
+
+    // 동일 URL(회차) 중복 카운트 방지
+    if (state.lastUrl && state.lastUrl === currentCleanUrl) {
+        logToSidebar(`[번역 진행 카운터] 동일 회차 재번역 감지: 카운터를 유지합니다. (${state.count}화)`);
+        state.lastUpdated = now;
+        try {
+            await chrome.storage.local.set({ [stateKey]: state });
+        } catch (_) {}
+        return state.count;
+    }
+
+    // 정상적인 새 회차 번역 완료: +1 증가
+    state.count = (state.count || 0) + 1;
+    state.lastUpdated = now;
+    state.lastUrl = currentCleanUrl;
+    state.window = currentWindow;
+
+    try {
+        await chrome.storage.local.set({ [stateKey]: state });
+    } catch (e) {
+        console.warn('[ntfy] Failed to save batch state:', e);
+    }
+
+    return state.count;
+}
+
+async function resetBatchCount() {
+    const workKey = getNovelWorkKey();
+    const stateKey = `lanovel_batch_state_${workKey}`;
+    try {
+        await chrome.storage.local.remove(stateKey);
+    } catch (_) {}
 }
 
 // =================================================================================
@@ -2606,23 +2749,13 @@ async function translateAllPTags(isRetranslation = false) {
         }
 
         // [10화 단위 번역 진행 알림 (100% 완료 시에만)]
-        // chrome.storage.local에 소설별 누적 완료 회차 수를 저장합니다.
-        const novelKey = (currentNovelTitle || 'default').trim().replace(/[^a-zA-Z0-9가-힣_]/g, '_');
-        const countKey = `lanovel_batch_count_${novelKey}`;
-        let currentBatchCount = 1;
+        // 4시(새벽 4시 및 쿼터 초기화 오후 4시) 자동 갱신, 세션 타임아웃, 중복 방지가 반영된 카운터 조회
+        const currentBatchCount = await updateAndGetBatchCount(getCleanUrl());
 
-        try {
-            const stored = await chrome.storage.local.get(countKey);
-            currentBatchCount = (stored && typeof stored[countKey] === 'number' ? stored[countKey] : 0) + 1;
-            await chrome.storage.local.set({ [countKey]: currentBatchCount });
-        } catch (storageErr) {
-            console.warn('[ntfy] Failed to access chrome.storage:', storageErr);
-        }
-
-        logToSidebar(`[번역 진행 카운터] 현재 소설 누적 번역 완료: ${currentBatchCount}화`);
+        logToSidebar(`[번역 진행 카운터] 현재 소설 연속 번역 완료: ${currentBatchCount}화`);
 
         // 10의 배수(10, 20, 30, ...) 화가 100% 완료되었을 때만 진행 알림 발송!
-        if (currentBatchCount % 10 === 0) {
+        if (currentBatchCount > 0 && currentBatchCount % 10 === 0) {
             logToSidebar(`🔔 [ntfy] ${currentBatchCount}화 달성! 10화 단위 번역 진행 알림을 발송합니다.`);
             sendNtfyProgress(
                 currentNovelTitle,
@@ -2698,7 +2831,7 @@ async function translateAllPTags(isRetranslation = false) {
                                 getCleanUrl(),
                                 currentBatchCount
                             );
-                            chrome.storage.local.remove(countKey).catch(() => {});
+                            resetBatchCount();
                         }
                     } else if (currentUrl.includes('novelup.plus')) {
                         logToSidebar("노벨업플러스 '次へ' 버튼을 찾아서 클릭합니다.");
@@ -2721,7 +2854,7 @@ async function translateAllPTags(isRetranslation = false) {
                                 getCleanUrl(),
                                 currentBatchCount
                             );
-                            chrome.storage.local.remove(countKey).catch(() => {});
+                            resetBatchCount();
                         }
                     } else if (currentUrl.includes('kakuyomu.jp')) {
                         logToSidebar("카쿠요무 '다음 에피소드' 링크를 찾아서 이동합니다.");
@@ -2741,7 +2874,7 @@ async function translateAllPTags(isRetranslation = false) {
                                 getCleanUrl(),
                                 currentBatchCount
                             );
-                            chrome.storage.local.remove(countKey).catch(() => {});
+                            resetBatchCount();
                         }
                     } else {
                         logToSidebar("지원되지 않는 사이트입니다. 기본 'PageDown' 키를 누릅니다.");
