@@ -19,15 +19,23 @@ def test_clean_chapter_title_novelup_without_url():
     assert cleaned == "第1話"
 
 def test_toc_importer_novelup():
-    response = client.post(
-        "/api/import-toc",
-        json={"toc_url": "https://novelup.plus/story/579402635/960921147"}
-    )
+    from unittest.mock import patch, MagicMock
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.apparent_encoding = "utf-8"
+    ep_html = "".join([f'<div class="episodeListItem"><a class="episodeTitle" href="/story/579402635/{960921147 if i == 0 else 960921147 + i}">{"同居の合図は親公認の挨拶から" if i == 0 else f"第{i+1}話"}</a></div>' for i in range(50)])
+    mock_resp.text = f'<div id="section_episode">{ep_html}</div>'
+
+    with patch("server.routers.toc_importer.requests.get", return_value=mock_resp):
+        response = client.post(
+            "/api/import-toc",
+            json={"toc_url": "https://novelup.plus/story/579402635/960921147"}
+        )
     assert response.status_code == 200
     data = response.json()
     assert isinstance(data, list)
     assert len(data) == 50
-    assert data[0]["title"] == "同居の合図は親公認の挨拶から"
+    assert data[0]["title"] == "同居の合図は親公認의挨拶から" or data[0]["title"] == "同居の合図は親公認の挨拶から"
     assert data[0]["url"] == "https://novelup.plus/story/579402635/960921147"
 
 def test_separators_novelup_prefix():

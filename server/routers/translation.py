@@ -1,26 +1,70 @@
+"""
+LANOVEL Translation Router
+Coordinates translation requests, quota reset boundaries, and translation CRUD endpoints.
+Underlying translation engine, RPM management, and recovery mechanisms are modularized in server.services.
+"""
 
-import json
-import requests
-import re
-import os
-import logging
 import datetime
+import json
+import logging
+import re
+import threading
 import time
-import collections
-import random
-from fastapi import APIRouter, HTTPException, Depends
-from pydantic import BaseModel
 from typing import List, Optional
+from urllib.parse import urlparse
+
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+import requests
 from sqlalchemy import text
 from sqlalchemy.orm import Session
-from server.database import get_db
-from server.models import Translation, ExcludedSentence, TranslationTrash, CleanupNotification
-from server.rule_classifier import classify_translation, is_verbatim_copy, normalize_text, restore_brackets
 
-from urllib.parse import urlparse
-from server.notifications import notify_verbatim_cleanup, notify_api_error
-import threading
+from server.database import get_db
+from server.models import ExcludedSentence, Translation
+from server.notifications import notify_api_error
+from server.quota import (
+    is_us_dst,
+    get_quota_reset_hour,
+    get_current_quota_window_start_ts,
+    get_quota_summary,
+    record_api_call,
+)
+from server.rule_classifier import (
+    classify_translation,
+    is_verbatim_copy,
+    normalize_text,
+    restore_brackets,
+)
 from server.settings import settings
+
+# --- Modularized Services Re-exports for Backward Compatibility ---
+from server.services.rpm_manager import (
+    _CALL_TIMESTAMPS,
+    _RPM_LOCK,
+    _record_call_timestamp,
+    get_current_rpm,
+    get_gemini_session,
+    proactive_rpm_rest,
+    recycle_gemini_session,
+)
+from server.services.translation_engine import (
+    TRANSLATION_RESPONSE_SCHEMA,
+    TRANSLATION_SYSTEM_INSTRUCTION,
+    TranslationItemInput,
+    _build_translation_prompt,
+    call_gemini_api,
+    is_safety_blocked,
+    parse_translation_response,
+    process_repeated_chars,
+)
+from server.services.translation_recovery import (
+    _recover_verbatim_items,
+    _translate_sub_batch_with_safety_split,
+    handle_verbatim_cleanup_items,
+)
+
+# Backward compatibility alias for _gemini_session
+_gemini_session = get_gemini_session()
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -29,117 +73,19 @@ logger = logging.getLogger(__name__)
 process_started_before_cutoff = False
 process_started_before_5pm = False  # Backward compatibility alias
 _stop_lock = threading.Lock()
-_gemini_session = requests.Session()
-
-# --- Proactive Dynamic Breather & RPM Sliding Window ---
-_CALL_TIMESTAMPS = collections.deque()
-_RPM_LOCK = threading.Lock()
-
-def recycle_gemini_session():
-    """
-    Gemini API 요청용 세션을 소켓 레벨에서 안전하게 재생성하여
-    특정 엣지 노드에 고착된 TCP/TLS 연결 및 잠재적 과부하 상태를 해소합니다.
-    """
-    global _gemini_session
-    old_session = _gemini_session
-    try:
-        new_session = requests.Session()
-        _gemini_session = new_session
-        old_session.close()
-        logger.info("[Session Rejuvenation] Gemini requests.Session이 성공적으로 재생성되었습니다.")
-    except Exception as e:
-        logger.warning(f"[Session Rejuvenation] 세션 재생성 중 예외 발생: {e}")
-
-def get_current_rpm(window_seconds: float = 60.0) -> int:
-    """최근 window_seconds(기본 60초) 동안의 실제 API 호출 횟수(RPM)를 반환합니다."""
-    now = time.time()
-    cutoff = now - window_seconds
-    with _RPM_LOCK:
-        while _CALL_TIMESTAMPS and _CALL_TIMESTAMPS[0] < cutoff:
-            _CALL_TIMESTAMPS.popleft()
-        return len(_CALL_TIMESTAMPS)
-
-def _record_call_timestamp():
-    """API 호출 발생 시 타임스탬프를 슬라이딩 윈도우에 기록합니다."""
-    with _RPM_LOCK:
-        _CALL_TIMESTAMPS.append(time.time())
-
-def proactive_rpm_rest(novel_title: Optional[str] = None, episode_title: Optional[str] = None):
-    """
-    Gemini API 호출 직전 최근 60초간의 호출 빈도(RPM)를 분석하여
-    429(Rate Limit) 및 503(Overload)을 선제적으로 예방하는 적응형 휴식을 수행합니다.
-    - 0~8 RPM (Green Zone): 지연 시간 0초 (최대 속도 유지)
-    - 9~11 RPM (Yellow Zone): 1.5 ~ 3.5초 랜덤 미세 지연 (버스트 누적 완화)
-    - 12+ RPM (Red Zone): 7.0 ~ 14.0초 랜덤 쿨링다운 + HTTP 세션 소켓 재생성(Session Rejuvenation)
-    """
-    current_rpm = get_current_rpm(60.0)
-
-    if current_rpm >= 12:
-        rest_time = round(random.uniform(7.0, 14.0), 2)
-        logger.warning(
-            f"[RPM 선제 방지] 최근 60초 RPM {current_rpm}회 감지 (과열 위험 구간). "
-            f"{rest_time}초간 휴식 후 세션을 소켓 수준에서 재생성합니다."
-        )
-        try:
-            from server.notifications import update_translation_status
-            update_translation_status(
-                book_title=novel_title,
-                episode_title=episode_title,
-                is_active=True,
-                status_text=f"☕ RPM 과열 선제 방지 휴식 중... ({rest_time}초)"
-            )
-        except Exception:
-            pass
-
-        time.sleep(rest_time)
-        recycle_gemini_session()
-
-        try:
-            from server.notifications import update_translation_status
-            update_translation_status(
-                book_title=novel_title,
-                episode_title=episode_title,
-                is_active=True,
-                status_text=None
-            )
-        except Exception:
-            pass
-
-    elif current_rpm >= 9:
-        rest_time = round(random.uniform(1.5, 3.5), 2)
-        logger.info(
-            f"[RPM 미세 조절] 최근 60초 RPM {current_rpm}회 감지 (주의 구간). "
-            f"{rest_time}초간 미세 휴식합니다."
-        )
-        time.sleep(rest_time)
-    else:
-        # Green Zone (0 ~ 8 RPM): 0초 즉시 패스 (최대 처리량 달성)
-        pass
 
 
-from server.quota import (
-    is_us_dst,
-    get_quota_reset_hour,
-    get_current_quota_window_start_ts,
-    record_api_call,
-    get_quota_summary
-)
-
-
-
-# --- Pydantic Models ---
-class TranslationItemInput(BaseModel):
-    id: str
-    text: str
-
+# --- Pydantic Request Models ---
 class TranslateRequest(BaseModel):
     items: List[TranslationItemInput]
     url: str
     is_retranslation: Optional[bool] = False
     model: Optional[str] = None
 
+
 class ExcludeRequest(BaseModel):
     ids: List[int]
+
 
 class FindReplaceRequest(BaseModel):
     find_text: str
@@ -148,775 +94,23 @@ class FindReplaceRequest(BaseModel):
     folder_scope: Optional[str] = None
     use_regex: Optional[bool] = False
     case_sensitive: Optional[bool] = False
+    target_ids: Optional[List[int]] = None
+
 
 class UpdateTitleRequest(BaseModel):
     url: str
     title: str
 
+
 # --- Helper Functions ---
 def _get_excluded_sentences_for_url(url: str, db: Session) -> set:
-    """Helper function to retrieve excluded sentences for a given URL."""
+    """특정 URL에 대해 제외 처리된 원문 문장 세트를 반환합니다."""
     excluded_originals = {
         item.original
         for item in db.query(ExcludedSentence).filter(ExcludedSentence.url == url).all()
     }
     return excluded_originals
 
-TRANSLATION_SYSTEM_INSTRUCTION = {
-    "parts": [{
-        "text": (
-            "You are a professional Japanese-to-Korean light novel translation engine.\n\n"
-            "CRITICAL RULES & NEGATIVE CONSTRAINTS:\n"
-            "1. STRICT TRANSLATION ONLY (NO ECHOING / DO NOT RETURN ORIGINAL):\n"
-            "   - Under NO circumstances should you output or echo the original Japanese text into the 'translated' field.\n"
-            "   - Every Japanese sentence MUST be completely and naturally translated into fluent Korean.\n"
-            "2. STRICT ITEM INDEPENDENCE (NO CROSS-CONTAMINATION & NO REPETITION LOOP):\n"
-            "   - Each 'translated' field MUST correspond strictly and uniquely to its own 'text' field by 'id'.\n"
-            "   - NEVER copy, carry over, or duplicate text/translations from preceding items or other items.\n"
-            "   - If different items have different Japanese text, their Korean translations MUST also be distinct.\n"
-            "3. ZERO KANA LEAKAGE (NO RESIDUAL KANA):\n"
-            "   - Ensure NO Japanese Hiragana or Katakana remains untranslated in the Korean text.\n"
-            "   - Common colloquial expressions must be translated into natural Korean:\n"
-            "     * というか -> '그보다', '아니', '라기보다는'\n"
-            "     * こんどこそ / 今度こそ -> '이번에야말로', '이번만큼은'\n"
-            "     * やっぱり / やはり -> '역시', '아무래도'\n"
-            "     * さすがに -> '아무리 그래도', '역시나'\n"
-            "     * まぁ / まあ -> '뭐', '글쎄'\n"
-            "     * ……っ -> '……!', '……읏', '……'\n"
-            "4. STYLE & PUNCTUATION:\n"
-            "   - Preserve original quotation marks (「...」, 『...』) and punctuation marks (……, 〜, !?).\n"
-            "   - Maintain light novel storytelling tone (natural Korean web novel dialogue and narration).\n"
-            "5. OUTPUT FORMAT:\n"
-            "   - Return ONLY a valid JSON array matching the schema, with each item containing 'id' and 'translated'.\n"
-            "   - Do not add explanations, notes, or markdown formatting."
-        )
-    }]
-}
-
-TRANSLATION_RESPONSE_SCHEMA = {
-    "type": "ARRAY",
-    "items": {
-        "type": "OBJECT",
-        "properties": {
-            "id": {"type": "STRING"},
-            "translated": {"type": "STRING"}
-        },
-        "required": ["id", "translated"]
-    }
-}
-
-def call_gemini_api(api_url: str, prompt: str, api_key: Optional[str] = None, system_instruction: Optional[dict] = None):
-    """
-    Calls the Gemini API using requests.Session with header authentication,
-    low temperature (0.3), systemInstruction separation, and response_schema.
-    Ensures fresh session state by clearing cookies before request.
-    Applies adaptive proactive RPM breathing and session rejuvenation before execution.
-    """
-    # 선제적 적응형 RPM 휴식 및 세션 소켓 재생성
-    proactive_rpm_rest()
-
-    # 매 요청마다 세션 쿠키/상태를 리셋하여 이전 요청의 컨텍스트 간섭 방지
-    try:
-        _gemini_session.cookies.clear()
-    except Exception:
-        pass
-
-    payload = {
-        "contents": [{"parts": [{"text": prompt}]}],
-        "systemInstruction": system_instruction or TRANSLATION_SYSTEM_INSTRUCTION,
-        "generationConfig": {
-            "temperature": 0.3,
-            "response_mime_type": "application/json",
-            "response_schema": TRANSLATION_RESPONSE_SCHEMA,
-        },
-        "safetySettings": [
-            {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
-            {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
-            {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
-            {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"}
-        ]
-    }
-    logger.debug(f"Gemini API Payload (first 500 chars): {json.dumps(payload, ensure_ascii=False)[:500]}...")
-    
-    headers = {"Content-Type": "application/json"}
-    key = api_key or getattr(settings, "gemini_api_key", None)
-    if key and "key=" not in api_url:
-        headers["x-goog-api-key"] = key
-
-    model_name = "gemini"
-    if "/models/" in api_url:
-        try:
-            model_name = api_url.split("/models/")[1].split(":")[0]
-        except Exception:
-            pass
-
-    # 실제 요청 발송 직전 슬라이딩 윈도우에 타임스탬프 기록
-    _record_call_timestamp()
-
-    try:
-        response = _gemini_session.post(api_url, json=payload, headers=headers, timeout=180)
-        record_api_call(model=model_name, status_code=response.status_code)
-        response.raise_for_status()
-        return response.json()
-    except requests.exceptions.RequestException as e:
-        status_code = getattr(getattr(e, 'response', None), 'status_code', 500)
-        record_api_call(model=model_name, status_code=status_code)
-        if status_code in (429, 503):
-            recycle_gemini_session()
-        raise
-
-
-def process_repeated_chars(text: str) -> str:
-    """6번 이상 반복되는 문자를 '(반복)'으로 대체합니다."""
-    if not text:
-        return text
-    return re.sub(r'(.)\1{5,}', '(반복)', text)
-
-def parse_translation_response(raw_text: str) -> dict:
-    """
-    Gemini API 등 LLM 응답에서 번역된 JSON 데이터를 안전하게 파싱하여 {id: translated_text} 딕셔너리로 반환합니다.
-    - 제어 문자(줄바꿈 \\n, 탭 \\t 등) 허용 (strict=False)
-    - 마크다운 코드 블록 (```json ... ```) 제거
-    - 텍스트 앞뒤 찌꺼기 및 추가 문자열(raw_decode 및 대괄호/중괄호 슬라이싱) 처리
-    - 후행 쉼표(trailing comma), 잘못된 이스케이프(\\\\ ) 등 문법 오류 복구
-    - 잘린 JSON에 대한 정규식 기반 폴백 복구
-    """
-    if not raw_text or not raw_text.strip():
-        raise ValueError("번역 응답 내용이 비어있습니다.")
-
-    def _extract_map(data) -> dict:
-        if isinstance(data, list):
-            res = {}
-            for item in data:
-                if isinstance(item, dict):
-                    item_id = item.get('id')
-                    if item_id is None:
-                        continue
-                    item_id = str(item_id)
-
-                    trans = None
-                    for candidate_key in ('translated', 'translation', 'text', 'translated_text', 'korean', 'ko', 'result', 'output', 'content'):
-                        if candidate_key in item and item[candidate_key] is not None:
-                            trans = str(item[candidate_key])
-                            break
-                    if trans is None:
-                        other_keys = [k for k in item.keys() if k != 'id']
-                        if len(other_keys) == 1 and item[other_keys[0]] is not None:
-                            trans = str(item[other_keys[0]])
-
-                    if trans is not None:
-                        res[item_id] = trans
-            if res:
-                return res
-        elif isinstance(data, dict):
-            for key in ("translations", "items", "data", "results", "sentences", "response"):
-                if key in data and isinstance(data[key], (list, dict)):
-                    res = _extract_map(data[key])
-                    if res:
-                        return res
-            if 'id' in data:
-                item_id = str(data['id'])
-                trans = None
-                for candidate_key in ('translated', 'translation', 'text', 'translated_text', 'korean', 'ko', 'result'):
-                    if candidate_key in data and data[candidate_key] is not None:
-                        trans = str(data[candidate_key])
-                        break
-                if trans is None:
-                    other_keys = [k for k in data.keys() if k != 'id']
-                    if len(other_keys) == 1 and data[other_keys[0]] is not None:
-                        trans = str(data[other_keys[0]])
-                if trans is not None:
-                    return {item_id: trans}
-            if data and all(isinstance(k, str) for k in data.keys()):
-                return {str(k): str(v) for k, v in data.items() if v is not None}
-        return {}
-
-    text = raw_text.strip()
-
-    # 1. 마크다운 코드 블록 제거
-    if "```" in text:
-        fence_match = re.search(r'```(?:json)?\s*([\s\S]*?)\s*```', text, flags=re.IGNORECASE)
-        if fence_match:
-            text = fence_match.group(1).strip()
-        else:
-            text = re.sub(r'^\s*```(?:json)?\s*', '', text, flags=re.IGNORECASE)
-            text = re.sub(r'\s*```\s*$', '', text).strip()
-
-    # 2. 1차 시도: json.loads (strict=False로 줄바꿈/제어 문자 허용)
-    try:
-        data = json.loads(text, strict=False)
-        m = _extract_map(data)
-        if m:
-            return m
-    except Exception:
-        pass
-
-    # 3. 2차 시도: raw_decode (strict=False로 뒤쪽 찌꺼기 e.g. "}]" 허용)
-    try:
-        decoder = json.JSONDecoder(strict=False)
-        data, _ = decoder.raw_decode(text)
-        m = _extract_map(data)
-        if m:
-            return m
-    except Exception:
-        pass
-
-    # 4. 3차 시도: 텍스트 내에서 JSON 배열[...] 또는 객체{...} 영역만 추출 후 파싱
-    s_arr = text.find('[')
-    if s_arr != -1:
-        e_arr = text.rfind(']')
-        if e_arr != -1 and s_arr < e_arr:
-            sub = text[s_arr:e_arr + 1]
-            try:
-                data = json.loads(sub, strict=False)
-                m = _extract_map(data)
-                if m:
-                    return m
-            except Exception:
-                pass
-            try:
-                decoder = json.JSONDecoder(strict=False)
-                data, _ = decoder.raw_decode(sub)
-                m = _extract_map(data)
-                if m:
-                    return m
-            except Exception:
-                pass
-        else:
-            # 잘린 배열 복구: 마지막 '}'를 찾아 뒤에 ']' 닫기
-            last_brace = text.rfind('}')
-            if last_brace != -1 and s_arr < last_brace:
-                sub = text[s_arr:last_brace + 1] + ']'
-                try:
-                    data = json.loads(sub, strict=False)
-                    m = _extract_map(data)
-                    if m:
-                        return m
-                except Exception:
-                    pass
-                try:
-                    decoder = json.JSONDecoder(strict=False)
-                    data, _ = decoder.raw_decode(sub)
-                    m = _extract_map(data)
-                    if m:
-                        return m
-                except Exception:
-                    pass
-
-    # 객체인 경우 (배열이 아니거나 객체가 먼저 나오는 경우)
-    s_obj = text.find('{')
-    e_obj = text.rfind('}')
-    if s_obj != -1 and e_obj != -1 and s_obj < e_obj:
-        if s_arr == -1 or s_obj < s_arr:
-            sub = text[s_obj:e_obj + 1]
-            try:
-                data = json.loads(sub, strict=False)
-                m = _extract_map(data)
-                if m:
-                    return m
-            except Exception:
-                pass
-            try:
-                decoder = json.JSONDecoder(strict=False)
-                data, _ = decoder.raw_decode(sub)
-                m = _extract_map(data)
-                if m:
-                    return m
-            except Exception:
-                pass
-
-    # 5. 4차 시도: 흔한 JSON 문법 에러 복구 (Trailing commas, 유효하지 않은 이스케이프)
-    repaired = text
-    # 후행 쉼표 제거 (e.g. [1, 2, ] -> [1, 2])
-    repaired = re.sub(r',\s*([\]}])', r'\1', repaired)
-    # 유효하지 않은 백슬래시 이스케이프 복구 (JSON 표준: ", \, /, b, f, n, r, t, uXXXX 외는 \\로 치환)
-    repaired = re.sub(r'\\(?![/u"\\bfnrt]|u[0-9a-fA-F]{4})', r'\\\\', repaired)
-
-    try:
-        data = json.loads(repaired, strict=False)
-        m = _extract_map(data)
-        if m:
-            return m
-    except Exception:
-        pass
-
-    try:
-        decoder = json.JSONDecoder(strict=False)
-        data, _ = decoder.raw_decode(repaired)
-        m = _extract_map(data)
-        if m:
-            return m
-    except Exception:
-        pass
-
-    # 6. 5차 시도: 정규식 기반 개별 객체 폴백 추출 (잘린 JSON이나 부분 손상된 응답 복구)
-    fallback_map = {}
-    item_pattern = re.compile(
-        r'\{\s*"id"\s*:\s*(?:"([^"\\]*(?:\\.[^"\\]*)*)"|([0-9a-zA-Z_\-]+))\s*,\s*"(?:translated|translation|text|translated_text|korean|result)"\s*:\s*"((?:[^"\\]|\\.)*)"',
-        re.DOTALL | re.IGNORECASE
-    )
-    for match in item_pattern.finditer(text):
-        item_id = match.group(1) if match.group(1) is not None else match.group(2)
-        trans_raw = match.group(3)
-        try:
-            trans_val = json.loads(f'"{trans_raw}"', strict=False)
-        except Exception:
-            trans_val = trans_raw.replace('\\"', '"').replace('\\\\', '\\').replace('\\n', '\n')
-        if item_id:
-            fallback_map[str(item_id)] = trans_val
-
-    item_pattern_rev = re.compile(
-        r'\{\s*"(?:translated|translation|text|translated_text|korean|result)"\s*:\s*"((?:[^"\\]|\\.)*)"\s*,\s*"id"\s*:\s*(?:"([^"\\]*(?:\\.[^"\\]*)*)"|([0-9a-zA-Z_\-]+))',
-        re.DOTALL | re.IGNORECASE
-    )
-    for match in item_pattern_rev.finditer(text):
-        trans_raw = match.group(1)
-        item_id = match.group(2) if match.group(2) is not None else match.group(3)
-        try:
-            trans_val = json.loads(f'"{trans_raw}"', strict=False)
-        except Exception:
-            trans_val = trans_raw.replace('\\"', '"').replace('\\\\', '\\').replace('\\n', '\n')
-        if item_id and str(item_id) not in fallback_map:
-            fallback_map[str(item_id)] = trans_val
-
-    # 6-2. 텍스트 라인 형태: "p1": "번역문" 또는 p1: 번역문 폴백
-    if not fallback_map:
-        line_pattern = re.compile(
-            r'(?:^|\n)\s*["\']?([0-9a-zA-Z_\-]+)["\']?\s*:\s*["\']?(.*?)["\']?(?=\n\s*["\']?[0-9a-zA-Z_\-]+["\']?\s*:|\s*$)',
-            re.DOTALL
-        )
-        for match in line_pattern.finditer(text):
-            item_id = match.group(1)
-            trans_raw = match.group(2).strip().strip('"').strip("'")
-            if item_id and trans_raw and item_id.lower() not in ("id", "translation", "translated", "text"):
-                fallback_map[str(item_id)] = trans_raw
-
-    if fallback_map:
-        logger.warning(f"정규식 폴백으로 {len(fallback_map)}개의 번역 항목을 복구했습니다.")
-        return fallback_map
-
-    raise json.JSONDecodeError("JSON 파싱 및 복구에 모두 실패했습니다.", text, 0)
-
-def _build_translation_prompt(items: List[TranslationItemInput]) -> str:
-    """번역 대상 JSON 데이터를 생성합니다. 프롬프트 내 명시적 지침 및 이전 컨텍스트 격리를 지시합니다."""
-    api_input_json = json.dumps([{"id": item.id, "text": item.text} for item in items], ensure_ascii=False)
-    return (
-        "Translate the following JSON array from Japanese to Korean.\n"
-        "MANDATORY REQUIREMENTS:\n"
-        "1. Translate each item independently and uniquely based only on its own text.\n"
-        "2. Do NOT echo or copy the original Japanese text into 'translated'.\n"
-        "3. Do NOT repeat or carry over translations or text from preceding items.\n"
-        "4. Return ONLY a valid JSON array of objects with 'id' and 'translated':\n\n"
-        f"{api_input_json}"
-    )
-
-def handle_verbatim_cleanup_items(
-    db: Session,
-    url: str,
-    verbatim_items: List[dict],
-    folder_name: Optional[str] = None,
-    title: Optional[str] = None
-) -> str:
-    """
-    원문 복붙(글자만 일치)으로 감지된 번역 항목들을 즉시 삭제하고,
-    TranslationTrash(휴지통)로 이전하며 CleanupNotification 알림을 등록합니다.
-    """
-    if not verbatim_items:
-        return ""
-
-    clean_url = (url or "").split('#')[0].strip()
-
-    sample_meta = db.query(Translation.folderName, Translation.title).filter(
-        (Translation.url == clean_url) | (Translation.url == url)
-    ).first()
-    novel_title = folder_name or (sample_meta[0] if sample_meta else None) or "미분류"
-    episode_title = title or (sample_meta[1] if sample_meta else None) or clean_url
-
-    target_pids = {str(item.get("id")) for item in verbatim_items if item.get("id")}
-    target_origs = {item.get("original") for item in verbatim_items if item.get("original")}
-
-    now_ms = int(time.time() * 1000)
-    batch_id = f"verbatim_auto_{now_ms}"
-
-    # 기존 DB에 해당 원문 또는 pid가 이미 적재되어 있는 경우 휴지통으로 이동 후 삭제
-    existing_targets = db.query(Translation).filter(
-        (Translation.url == clean_url) | (Translation.url == url),
-        (Translation.pid.in_(target_pids) | Translation.original.in_(target_origs))
-    ).all()
-
-    existing_pid_set = set()
-    existing_orig_set = set()
-
-    for t in existing_targets:
-        if t.pid:
-            existing_pid_set.add(str(t.pid))
-        if t.original:
-            existing_orig_set.add(t.original)
-
-        matched_item = next((x for x in verbatim_items if str(x.get("id")) == str(t.pid) or x.get("original") == t.original), None)
-        item_cat = (matched_item.get("category") if matched_item else None) or 'verbatim'
-
-        trash_item = TranslationTrash(
-            original_translation_id=t.id,
-            url=clean_url,
-            pid=t.pid,
-            original=t.original,
-            translated=t.translated,
-            timestamp=t.timestamp,
-            folderName=t.folderName,
-            title=t.title,
-            toc_sort_order=t.toc_sort_order,
-            reason_category=item_cat,
-            deleted_at=now_ms,
-            cleanup_batch_id=batch_id
-        )
-        db.add(trash_item)
-        db.delete(t)
-
-    # 기존 DB에 없던 신규 번역 항목들도 TranslationTrash에 등록하여 재검수 대상으로 보존
-    for item in verbatim_items:
-        pid = str(item.get("id") or "")
-        orig = item.get("original") or ""
-        if (pid and pid in existing_pid_set) or (orig and orig in existing_orig_set):
-            continue
-
-        item_cat = item.get("category") or 'verbatim'
-        trash_item = TranslationTrash(
-            original_translation_id=None,
-            url=clean_url,
-            pid=pid,
-            original=orig,
-            translated=item.get("translated") or "",
-            timestamp=now_ms // 1000,
-            folderName=novel_title,
-            title=episode_title,
-            toc_sort_order=None,
-            reason_category=item_cat,
-            deleted_at=now_ms,
-            cleanup_batch_id=batch_id
-        )
-        db.add(trash_item)
-
-    # 알림 시스템(CleanupNotification)에 등록
-    notif = CleanupNotification(
-        batch_id=batch_id,
-        novel_title=novel_title,
-        episode_title=episode_title,
-        url=clean_url,
-        deleted_count=len(verbatim_items),
-        is_dismissed=0,
-        created_at=now_ms,
-        dismissed_at=None
-    )
-    db.add(notif)
-    db.commit()
-
-    logger.warning(
-        f"[원문 복사 즉시 삭제] URL: '{clean_url}'에서 {len(verbatim_items)}개 원문 복붙 문장을 "
-        f"즉시 삭제하고 알림 시스템(배치 ID: {batch_id})으로 이전했습니다."
-    )
-
-    # ntfy 푸시 알림 전송
-    notify_verbatim_cleanup(
-        novel_title=novel_title,
-        episode_title=episode_title,
-        count=len(verbatim_items),
-        url=url,
-        batch_id=batch_id
-    )
-
-    return batch_id
-
-def _recover_verbatim_items(
-    verbatim_detected_items: List[dict],
-    items_to_translate: List[TranslationItemInput],
-    translated_results: dict,
-    api_url: str
-) -> List[dict]:
-    """
-    배치 번역 중 기본 모델(Gemini Flash-Lite 등)의 JSON 스키마 제약으로 인해
-    원문 에코잉(verbatim)이 발생한 항목들을 동일한 기본 모델로 재시도하여 정상 복구합니다.
-    (대체 모델 사용 없이 오직 현재 요청된 기본 모델로만 복구를 수행합니다.)
-    """
-    if not verbatim_detected_items:
-        return verbatim_detected_items
-
-    recovered_ids = set()
-
-    for v_item in verbatim_detected_items:
-        orig_item = next((it for it in items_to_translate if str(it.id) == str(v_item["id"])), None)
-        if not orig_item:
-            continue
-
-        # 1차 시도: 동일 기본 모델로 단일 항목 JSON 요청
-        try:
-            single_payload = json.dumps([{"id": orig_item.id, "text": orig_item.text}], ensure_ascii=False)
-            single_prompt = (
-                "Translate this Japanese text into natural, fluent Korean.\n"
-                "Return ONLY a valid JSON array with 'id' and 'translated':\n"
-                + single_payload
-            )
-            retry_res = call_gemini_api(api_url, single_prompt)
-            cand = retry_res.get('candidates', [{}])[0]
-            cand_text = cand.get('content', {}).get('parts', [{}])[0].get('text', '')
-            parsed_map = parse_translation_response(cand_text)
-            new_trans = parsed_map.get(str(orig_item.id), "")
-
-            if '->' in new_trans or '=>' in new_trans:
-                parts = re.split(r'\s*[-=]>\s*', new_trans, maxsplit=1)
-                if len(parts) == 2 and any(ord('가') <= ord(c) <= ord('힣') for c in parts[1]):
-                    new_trans = parts[1].strip()
-
-            new_trans = process_repeated_chars(new_trans)
-            new_trans = restore_brackets(orig_item.text, new_trans)
-            cat = classify_translation(orig_item.text, new_trans)
-
-            if not (is_verbatim_copy(orig_item.text, new_trans) or cat in ('verbatim_or_empty', 'paraphrased_jp')):
-                logger.info(f"[기본모델 verbatim 복구 성공(단일 JSON)] ID: {orig_item.id} -> '{new_trans[:30]}...'")
-                translated_results[str(orig_item.id)] = {
-                    "id": orig_item.id,
-                    "original": orig_item.text,
-                    "translated": new_trans,
-                    "censored": False,
-                    "verbatim": False,
-                    "verbatim_category": None
-                }
-                recovered_ids.add(str(orig_item.id))
-                continue
-        except Exception as e:
-            logger.debug(f"[verbatim 단일 JSON 복구 시도 중 오류] ID: {orig_item.id}: {e}")
-
-        # 2차 시도: 동일 기본 모델로 JSON 스키마 제약을 해제한 단일 일반 텍스트 번역 요청 (스키마 간섭 배제)
-        try:
-            headers = {"Content-Type": "application/json"}
-            key = getattr(settings, "gemini_api_key", None)
-            if key and "key=" not in api_url:
-                headers["x-goog-api-key"] = key
-
-            plain_payload = {
-                "contents": [{
-                    "parts": [{
-                        "text": f"Translate the following Japanese text into natural Korean. Output ONLY the translated Korean text, nothing else:\n{orig_item.text}"
-                    }]
-                }],
-                "generationConfig": {
-                    "temperature": 0.3
-                }
-            }
-            proactive_rpm_rest()
-            _record_call_timestamp()
-            res = _gemini_session.post(api_url, json=plain_payload, headers=headers, timeout=60)
-            if res.status_code in (429, 503):
-                recycle_gemini_session()
-            if res.ok:
-                c_json = res.json()
-                cand = c_json.get('candidates', [{}])[0]
-                cand_text = cand.get('content', {}).get('parts', [{}])[0].get('text', '').strip()
-                if cand_text:
-                    if '->' in cand_text or '=>' in cand_text:
-                        parts = re.split(r'\s*[-=]>\s*', cand_text, maxsplit=1)
-                        if len(parts) == 2 and any(ord('가') <= ord(c) <= ord('힣') for c in parts[1]):
-                            cand_text = parts[1].strip()
-                    cand_text = process_repeated_chars(cand_text)
-                    cand_text = restore_brackets(orig_item.text, cand_text)
-                    cat = classify_translation(orig_item.text, cand_text)
-                    if not (is_verbatim_copy(orig_item.text, cand_text) or cat in ('verbatim_or_empty', 'paraphrased_jp')):
-                        logger.info(f"[기본모델 verbatim 복구 성공(단일 일반)] ID: {orig_item.id} -> '{cand_text[:30]}...'")
-                        translated_results[str(orig_item.id)] = {
-                            "id": orig_item.id,
-                            "original": orig_item.text,
-                            "translated": cand_text,
-                            "censored": False,
-                            "verbatim": False,
-                            "verbatim_category": None
-                        }
-                        recovered_ids.add(str(orig_item.id))
-                        continue
-        except Exception as e:
-            logger.debug(f"[verbatim 단일 일반 복구 시도 중 오류] ID: {orig_item.id}: {e}")
-
-    return [v for v in verbatim_detected_items if str(v["id"]) not in recovered_ids]
-
-def is_safety_blocked(data: dict) -> (bool, str):
-    """Gemini API 응답에서 안전 필터/검열 차단 여부를 감지합니다 (소프트 거절 텍스트 포함)."""
-    if not data:
-        return False, ""
-    feedback = data.get('promptFeedback')
-    if feedback and feedback.get('blockReason'):
-        return True, str(feedback.get('blockReason'))
-
-    if data.get('candidates') and isinstance(data['candidates'], list) and data['candidates']:
-        candidate = data['candidates'][0]
-        finish_reason = candidate.get('finishReason')
-        if finish_reason in ('SAFETY', 'BLOCKLIST', 'PROHIBITED_CONTENT'):
-            return True, str(finish_reason)
-
-        # 소프트 거절(Soft Refusal) 감지: finishReason은 STOP이지만 본문에 거절 문구가 담긴 경우
-        if candidate.get('content') and candidate['content'].get('parts'):
-            parts = candidate['content']['parts']
-            if isinstance(parts, list) and parts:
-                text = parts[0].get('text', '')
-                lower_text = text.lower()
-                refusal_keywords = [
-                    "cannot fulfill this request",
-                    "unable to fulfill",
-                    "unable to translate",
-                    "cannot translate this",
-                    "against safety guidelines",
-                    "against our safety",
-                    "safety policies",
-                    "violates our",
-                    "sexually explicit",
-                    "nsfw",
-                    "申し訳ありません",
-                    "お受けできません",
-                    "翻訳はお受け",
-                    "성인 콘텐츠",
-                    "번역할 수 없습니다"
-                ]
-                for kw in refusal_keywords:
-                    if kw in lower_text:
-                        clean_check = text.strip()
-                        if not (clean_check.startswith('[') or clean_check.startswith('{')):
-                            return True, f"SOFT_REFUSAL ({kw})"
-    return False, ""
-
-def _translate_sub_batch_with_safety_split(
-    items: List[TranslationItemInput],
-    api_url: str,
-    wait_time_on_block: int = 5,
-    depth: int = 1
-) -> (dict, set):
-    """
-    검열 발생 또는 파싱 실패 시 재귀적 2분할 번역을 수행합니다.
-    - len(items) > 1: 분할하여 안전한 문장들 번역 계속 진행
-    - len(items) == 1: Fast-Fail 적용 (해당 문장 '[검열로 인해 번역 생략]' 처리 후 다음으로 진행)
-    반환값: (translated_map: dict, censored_ids: set)
-    """
-    if not items:
-        return {}, set()
-
-    sub_prompt = _build_translation_prompt(items)
-    try:
-        sub_data = call_gemini_api(api_url, sub_prompt)
-    except requests.exceptions.HTTPError as e:
-        if e.response.status_code == 429:
-            recycle_gemini_session()
-            raise HTTPException(status_code=429, detail="API 요청 한도 초과. 잠시 후 다시 시도해주세요.")
-        logger.warning(f"분할 번역 중 HTTP 오류 ({e}). 하위 분할을 시도합니다.")
-        sub_data = None
-    except Exception as e:
-        logger.warning(f"분할 번역 중 오류 ({e}). 하위 분할을 시도합니다.")
-        sub_data = None
-
-    if sub_data is None:
-        if len(items) > 1:
-            mid = len(items) // 2
-            res1, cens1 = _translate_sub_batch_with_safety_split(items[:mid], api_url, wait_time_on_block, depth + 1)
-            time.sleep(1.0)
-            res2, cens2 = _translate_sub_batch_with_safety_split(items[mid:], api_url, wait_time_on_block, depth + 1)
-            return {**res1, **res2}, cens1.union(cens2)
-        else:
-            single_item = items[0]
-            return {str(single_item.id): single_item.text}, set()
-
-    blocked, reason = is_safety_blocked(sub_data)
-    if blocked:
-        if len(items) > 1:
-            logger.warning(
-                f"[검열 분할 {depth}단계] {len(items)}개 문장 그룹에서 검열 발생 ({reason}). "
-                f"{wait_time_on_block}초 대기 후 추가 2분할을 시도합니다."
-            )
-            time.sleep(wait_time_on_block)
-            mid = len(items) // 2
-            first_half = items[:mid]
-            second_half = items[mid:]
-
-            res1, cens1 = _translate_sub_batch_with_safety_split(first_half, api_url, wait_time_on_block, depth + 1)
-            time.sleep(1.0)
-            res2, cens2 = _translate_sub_batch_with_safety_split(second_half, api_url, wait_time_on_block, depth + 1)
-
-            combined_map = {**res1, **res2}
-            combined_cens = cens1.union(cens2)
-            return combined_map, combined_cens
-        else:
-            # Single item blocked -> Fast-Fail
-            single_item = items[0]
-            logger.warning(
-                f"[검열 Fast-Fail] 단일 문장(ID: {single_item.id})에서 검열 발생 ({reason}). "
-                f"해당 문장을 '[검열로 인해 번역 생략]' 처리하고 다음 문장으로 진행합니다."
-            )
-            return {str(single_item.id): "[검열로 인해 번역 생략]"}, {str(single_item.id)}
-
-    # Parse response
-    if not sub_data.get('candidates') or not sub_data['candidates']:
-        if len(items) > 1:
-            mid = len(items) // 2
-            res1, cens1 = _translate_sub_batch_with_safety_split(items[:mid], api_url, wait_time_on_block, depth + 1)
-            time.sleep(1.0)
-            res2, cens2 = _translate_sub_batch_with_safety_split(items[mid:], api_url, wait_time_on_block, depth + 1)
-            return {**res1, **res2}, cens1.union(cens2)
-        else:
-            logger.warning(f"[단일 문장 번역 실패] ID: {items[0].id}. 원문 오염을 방지하기 위해 빈 번역문으로 처리합니다.")
-            return {str(items[0].id): ""}, set()
-
-    candidate = sub_data['candidates'][0]
-    finish_reason = candidate.get('finishReason')
-    if finish_reason and finish_reason != 'STOP':
-        if finish_reason in ('SAFETY', 'BLOCKLIST', 'PROHIBITED_CONTENT'):
-            if len(items) > 1:
-                logger.warning(
-                    f"[검열 분할 {depth}단계] 응답 후보에서 검열 발생 ({finish_reason}). "
-                    f"{wait_time_on_block}초 대기 후 추가 2분할을 시도합니다."
-                )
-                time.sleep(wait_time_on_block)
-                mid = len(items) // 2
-                res1, cens1 = _translate_sub_batch_with_safety_split(items[:mid], api_url, wait_time_on_block, depth + 1)
-                time.sleep(1.0)
-                res2, cens2 = _translate_sub_batch_with_safety_split(items[mid:], api_url, wait_time_on_block, depth + 1)
-                return {**res1, **res2}, cens1.union(cens2)
-            else:
-                single_item = items[0]
-                logger.warning(
-                    f"[검열 Fast-Fail] 단일 문장(ID: {single_item.id})에서 응답 검열 발생 ({finish_reason}). "
-                    f"해당 문장을 '[검열로 인해 번역 생략]' 처리합니다."
-                )
-                return {str(single_item.id): "[검열로 인해 번역 생략]"}, {str(single_item.id)}
-        if len(items) > 1:
-            mid = len(items) // 2
-            res1, cens1 = _translate_sub_batch_with_safety_split(items[:mid], api_url, wait_time_on_block, depth + 1)
-            time.sleep(1.0)
-            res2, cens2 = _translate_sub_batch_with_safety_split(items[mid:], api_url, wait_time_on_block, depth + 1)
-            return {**res1, **res2}, cens1.union(cens2)
-        else:
-            return {str(items[0].id): ""}, set()
-
-    if candidate.get('content') and candidate['content'].get('parts') and isinstance(candidate['content']['parts'], list) and candidate['content']['parts']:
-        raw_text = candidate['content']['parts'][0].get('text', '')
-        try:
-            sub_map = parse_translation_response(raw_text)
-            return sub_map, set()
-        except Exception as e:
-            logger.warning(f"분할 번역 JSON 파싱 실패 ({e}), 원본: '{raw_text[:100]}...'. 추가 분할을 시도합니다.")
-            if len(items) > 1:
-                mid = len(items) // 2
-                res1, cens1 = _translate_sub_batch_with_safety_split(items[:mid], api_url, wait_time_on_block, depth + 1)
-                time.sleep(1.0)
-                res2, cens2 = _translate_sub_batch_with_safety_split(items[mid:], api_url, wait_time_on_block, depth + 1)
-                return {**res1, **res2}, cens1.union(cens2)
-            else:
-                single_item = items[0]
-                logger.warning(f"[Fast-Fail] 단일 문장(ID: {single_item.id}) 파싱 실패로 빈 번역문으로 처리합니다.")
-                return {str(single_item.id): ""}, set()
-    else:
-        if len(items) > 1:
-            mid = len(items) // 2
-            res1, cens1 = _translate_sub_batch_with_safety_split(items[:mid], api_url, wait_time_on_block, depth + 1)
-            time.sleep(1.0)
-            res2, cens2 = _translate_sub_batch_with_safety_split(items[mid:], api_url, wait_time_on_block, depth + 1)
-            return {**res1, **res2}, cens1.union(cens2)
-        else:
-            return {str(items[0].id): ""}, set()
 
 # --- API Endpoints ---
 @router.post(
@@ -955,7 +149,7 @@ def translate_texts(req: TranslateRequest, db: Session = Depends(get_db)):
     req.url = clean_url
 
     translatable_items = [item for item in req.items if item.id != 'tagCount']
-    
+
     if translatable_items:
         excluded_originals = _get_excluded_sentences_for_url(clean_url, db)
         items_to_translate = [item for item in translatable_items if item.text not in excluded_originals]
@@ -973,7 +167,7 @@ def translate_texts(req: TranslateRequest, db: Session = Depends(get_db)):
     selected_model = req.model or (settings.gemini_retranslation_model if req.is_retranslation else settings.gemini_default_model)
     logger.debug(f"Using Gemini Model: {selected_model} (is_retranslation={req.is_retranslation})")
     api_url = f"https://generativelanguage.googleapis.com/v1beta/models/{selected_model}:generateContent"
-    
+
     prompt = _build_translation_prompt(items_to_translate)
     logger.debug(f"Gemini API URL: {api_url}")
     logger.debug(f"Gemini API Prompt (first 500 chars): {prompt[:500]}...")
@@ -982,11 +176,11 @@ def translate_texts(req: TranslateRequest, db: Session = Depends(get_db)):
     data = None
     last_exception = None
     max_attempts = 5
-    
+
     for attempt in range(max_attempts):
         try:
             data = call_gemini_api(api_url, prompt)
-            break # Success, exit loop
+            break  # Success, exit loop
         except requests.exceptions.HTTPError as e:
             last_exception = e
             if e.response.status_code == 503:
@@ -998,7 +192,7 @@ def translate_texts(req: TranslateRequest, db: Session = Depends(get_db)):
                     url=req.url
                 )
                 raise HTTPException(status_code=503, detail="API 과부하(503) 에러입니다. RPM 소모 방지를 위해 재시도하지 않습니다.")
-            
+
             logger.warning(f"HTTP 오류 발생 (시도 {attempt + 1}/{max_attempts}): {e}")
             if e.response.status_code == 429:
                 notify_api_error(
@@ -1008,11 +202,11 @@ def translate_texts(req: TranslateRequest, db: Session = Depends(get_db)):
                     url=req.url
                 )
                 raise HTTPException(status_code=429, detail="API 요청 한도 초과. 잠시 후 다시 시도해주세요.")
-        
+
         except requests.exceptions.RequestException as e:
             last_exception = e
             logger.error(f"Gemini API 연결 오류 (시도 {attempt + 1}/{max_attempts}): {e}")
-            
+
         except Exception as e:
             last_exception = e
             logger.error(f"예상치 못한 오류 발생 (시도 {attempt + 1}/{max_attempts}): {e}")
@@ -1028,7 +222,7 @@ def translate_texts(req: TranslateRequest, db: Session = Depends(get_db)):
     if data is None:
         if last_exception:
             raise HTTPException(status_code=500, detail=f"Gemini API 요청 최종 실패 (재시도 후): {last_exception}")
-        else: # Should not be reachable
+        else:
             raise HTTPException(status_code=500, detail="알 수 없는 오류로 API 호출에 실패했습니다.")
 
     # --- Process Response ---
@@ -1066,7 +260,7 @@ def translate_texts(req: TranslateRequest, db: Session = Depends(get_db)):
             for item in items_to_translate:
                 is_censored = str(item.id) in censored_ids or translated_map.get(str(item.id)) == "[검열로 인해 번역 생략]"
                 raw_trans = translated_map.get(str(item.id))
-                
+
                 if raw_trans is None:
                     translated_text = ""
                 else:
@@ -1133,7 +327,7 @@ def translate_texts(req: TranslateRequest, db: Session = Depends(get_db)):
         raw_text = None
         if data.get('candidates') and isinstance(data['candidates'], list) and data['candidates']:
             candidate = data['candidates'][0]
-            
+
             finish_reason = candidate.get('finishReason')
             if finish_reason and finish_reason != 'STOP':
                 logger.warning(f"API finishReason이 '{finish_reason}'입니다. 분할 번역으로 복구를 시도합니다.")
@@ -1241,10 +435,11 @@ def translate_texts(req: TranslateRequest, db: Session = Depends(get_db)):
                 })
 
         return {"translations": final_translations}
-    
+
     except (KeyError, IndexError, json.JSONDecodeError) as e:
         error_detail = f"API 응답 처리 오류: {e}. Original response: '{data.get('candidates', 'N/A') if 'data' in locals() else 'Response not available'}'"
         raise HTTPException(status_code=500, detail=error_detail)
+
 
 @router.get(
     "/excluded_sentences",
@@ -1255,6 +450,7 @@ def translate_texts(req: TranslateRequest, db: Session = Depends(get_db)):
 def get_excluded_sentences(url: str, db: Session = Depends(get_db)):
     excluded_originals = _get_excluded_sentences_for_url(url, db)
     return {"excluded_texts": list(excluded_originals)}
+
 
 @router.post(
     "/translations/exclude",
@@ -1278,11 +474,12 @@ def exclude_translations(req: ExcludeRequest, db: Session = Depends(get_db)):
                     original=translation_to_exclude.original
                 )
                 db.add(new_excluded)
-            
+
             db.delete(translation_to_exclude)
             excluded_count += 1
-    db.commit() # Commit once after the loop
+    db.commit()
     return {"message": f"{excluded_count}개의 항목이 제외 목록에 추가되었습니다."}
+
 
 @router.post(
     "/translations/find_replace",
@@ -1294,32 +491,36 @@ def find_replace_all(req: FindReplaceRequest, db: Session = Depends(get_db)):
     if not req.find_text:
         raise HTTPException(status_code=400, detail="찾을 텍스트를 입력해야 합니다.")
 
+    replace_text = req.replace_text if req.replace_text is not None else ""
     flags = re.IGNORECASE if not req.case_sensitive else 0
+
+    has_casing = req.find_text.lower() != req.find_text.upper()
+    is_plain_exact = (not req.use_regex) and (req.case_sensitive or not has_casing)
+
     if req.use_regex:
         try:
             re.compile(req.find_text, flags=flags)
         except re.error as e:
             raise HTTPException(status_code=400, detail=f"유효하지 않은 정규식: {e}")
-        pattern = req.find_text
+        pattern = f"(?i){req.find_text}" if not req.case_sensitive else req.find_text
     else:
-        pattern = re.escape(req.find_text)
+        pattern = f"(?i){re.escape(req.find_text)}" if not req.case_sensitive else re.escape(req.find_text)
 
     # 1. SQL WHERE 조건절 및 파라미터 구성
     where_clauses = ["translated IS NOT NULL"]
     params = {
-        "pattern": pattern,
-        "replace_text": req.replace_text or "",
-        "flags": int(flags)
+        "replace_text": replace_text
     }
 
-    # 대상 텍스트 매칭 조건
-    if not req.use_regex and req.case_sensitive:
-        where_clauses.append("instr(translated, :find_raw) > 0")
-        params["find_raw"] = req.find_text
-    else:
-        where_clauses.append("translated REGEXP :pattern")
+    # 특정 ID 목록 타겟팅 (하단 일괄 작업 선택 항목 지원)
+    if req.target_ids:
+        safe_ids = [int(i) for i in req.target_ids]
+        if safe_ids:
+            where_clauses.append(f"id IN ({','.join(str(i) for i in safe_ids)})")
+        else:
+            return {"message": "0개의 항목에서 내용을 교체했습니다."}
 
-    # 폴더 범위 필터링
+    # 폴더 범위 필터링 (인덱스를 탈 수 있도록 앞부분에 배치)
     if req.folder_scope and req.folder_scope != "__all__":
         if req.folder_scope == "폴더 추가 대기 상태":
             where_clauses.append("folderName IS NULL")
@@ -1329,17 +530,30 @@ def find_replace_all(req: FindReplaceRequest, db: Session = Depends(get_db)):
 
     # 원문 조건 필터링
     if req.condition_text:
-        if req.case_sensitive:
+        cond_has_casing = req.condition_text.lower() != req.condition_text.upper()
+        if req.case_sensitive or not cond_has_casing:
             where_clauses.append("instr(original, :condition_text) > 0")
+            params["condition_text"] = req.condition_text
         else:
             where_clauses.append("original REGEXP :condition_pattern")
-            params["condition_pattern"] = re.escape(req.condition_text)
-        params["condition_text"] = req.condition_text
+            params["condition_pattern"] = f"(?i){re.escape(req.condition_text)}"
 
-    # 치환 함수 표현식
-    if not req.use_regex and req.case_sensitive:
+    # 대상 텍스트 매칭 조건 및 치환 함수 표현식
+    if is_plain_exact:
+        # 한글/기호/대소문자 일치 등 정규식이 불필요한 경우: C레벨 초고속 replace 및 instr
+        where_clauses.append("instr(translated, :find_raw) > 0")
+        params["find_raw"] = req.find_text
         replace_expr = "replace(translated, :find_raw, :replace_text)"
+    elif not req.use_regex:
+        # 영문 대소문자 미구분 단순 텍스트 치환: safe plain regex replace
+        where_clauses.append("translated REGEXP :pattern")
+        params["pattern"] = pattern
+        replace_expr = "REGEXP_REPLACE_PLAIN(:pattern, :replace_text, translated)"
     else:
+        # 정규식 치환
+        where_clauses.append("translated REGEXP :pattern")
+        params["pattern"] = pattern
+        params["flags"] = int(flags)
         replace_expr = "REGEXP_REPLACE(:pattern, :replace_text, translated, :flags)"
 
     # 실제 내용이 변경되는 항목만 치환하고 카운트하도록 필터링
