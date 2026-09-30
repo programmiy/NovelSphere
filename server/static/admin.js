@@ -1,6 +1,3 @@
-// import Sortable, { MultiDrag } from "https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.esm.js";
-// Sortable.mount(new MultiDrag());
-
 // Global state
 const JAPANESE_REGEX = /[\u3000-\u303f\u3040-\u309f\u30a0-\u30ff\uff00-\uff9f\u4e00-\u9faf\u3400-\u4dbf]/;
 let groupedTranslations = {};
@@ -22,7 +19,7 @@ let latestQuotaSummary = null;
 
 
 // DOM element cache
-let historyContainer, emptyState, searchBox, darkModeToggle, fetchAllTitlesBtn, bulkActionsPanel, selectionCount, deleteSelectedBtn, moveSelectedToFolderDropdown, findReplaceModal, closeFindReplaceModalBtn, cancelFindReplaceBtn, executeFindReplaceBtn, openGlobalFindReplaceBtn, createFolderButton, newFolderNameInput, findEmptyBtn, findText, replaceText, findCount, conditionText, folderScope, useRegex, caseSensitive, autoStartCheckbox, enableDragDropCheckbox;
+let historyContainer, emptyState, searchBox, darkModeToggle, bulkActionsPanel, selectionCount, deleteSelectedBtn, moveSelectedToFolderDropdown, findReplaceModal, closeFindReplaceModalBtn, cancelFindReplaceBtn, executeFindReplaceBtn, openGlobalFindReplaceBtn, createFolderButton, newFolderNameInput, findEmptyBtn, findText, replaceText, findCount, conditionText, folderScope, useRegex, caseSensitive, autoStartCheckbox, enableDragDropCheckbox;
 let cleanupQueueBtn, openRestoreCenterBtn, notifBadge, abnormalFilterBar, filterAbnormalAll, filterAbnormalPartial, filterAbnormalOther, moveToCleanupBtn, whitelistSelectedAbnormalBtn, cleanupSectionBar, cleanupSummaryText, deleteSelectedCleanupBtn, deleteAllCleanupBtn, cleanupRestoreModal, closeRestoreCenterModalBtn, closeRestoreCenterBottomBtn, tabBtnNotifications, tabBtnTrash, tabBtnAbnormalWhitelist, modalNotifBadge, modalTrashBadge, modalWhitelistBadge, tabContentNotifications, tabContentTrash, tabContentAbnormalWhitelist, notificationsTableBody, trashTableBody, whitelistTableBody, clearAllWhitelistBtn, dismissAllNotifsBtn, refreshNotifsBtn, restoreAllTrashBtn, toggleDismissedHistory, dismissedHistoryContainer, dismissedTableBody, dismissedNotifsCount, similarRecommendPanel, recommendKeyword, recommendCardsContainer, closeRecommendPanelBtn;
 let modalAutoRefreshTimer = null;
 let currentRestoreTab = 'notifications';
@@ -40,7 +37,7 @@ let sortableInstances = [];
 document.addEventListener('DOMContentLoaded', () => {
     cacheDOMElements();
     setupEventListeners();
-    // loadDarkModePreference(); // Disabled: Chrome extension API not available
+    loadDarkModePreference();
     loadAndRenderGrouped();
     loadNotificationsAndBadge();
 });
@@ -50,7 +47,6 @@ function cacheDOMElements() {
     emptyState = document.getElementById('emptyState');
     searchBox = document.getElementById('searchBox');
     darkModeToggle = document.getElementById('darkModeToggle');
-    // fetchAllTitlesBtn = document.getElementById('fetchAllTitlesBtn');
     bulkActionsPanel = document.getElementById('bulk-actions');
     selectionCount = document.getElementById('selection-count');
     deleteSelectedBtn = document.getElementById('deleteSelectedBtn');
@@ -2770,14 +2766,18 @@ function showToast(message, type = 'success', duration = 3000) {
 }
 
 function toggleDarkMode() {
-    document.body.classList.toggle('dark-mode');
-    // Saving preference disabled: chrome.storage.local.set({ darkMode: document.body.classList.contains('dark-mode') });
+    const isDark = document.body.classList.toggle('dark-mode');
+    try {
+        localStorage.setItem('lanovel_dark_mode', isDark ? 'true' : 'false');
+    } catch (_) {}
 }
 
-async function loadDarkModePreference() {
-    // Disabled: chrome.storage.local.get is not available
-    // const { darkMode } = await chrome.storage.local.get('darkMode');
-    // if (darkMode) document.body.classList.add('dark-mode');
+function loadDarkModePreference() {
+    try {
+        if (localStorage.getItem('lanovel_dark_mode') === 'true') {
+            document.body.classList.add('dark-mode');
+        }
+    } catch (_) {}
 }
 
 async function fetchAllTitles() {
