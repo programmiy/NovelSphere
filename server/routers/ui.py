@@ -14,7 +14,7 @@ templates = Jinja2Templates(directory=settings.templates_dir)
     description="책 UI 웹페이지를 렌더링합니다."
 )
 async def read_book_ui(request: Request):
-    return templates.TemplateResponse("book_ui.html", {"request": request})
+    return templates.TemplateResponse(request=request, name="book_ui.html")
 
 @router.get(
     "/viewer",
@@ -23,7 +23,7 @@ async def read_book_ui(request: Request):
     description="로컬 뷰어 웹페이지를 렌더링합니다."
 )
 async def read_viewer_ui(request: Request, book: Optional[str] = None):
-    return templates.TemplateResponse("viewer.html", {"request": request, "book_name": book})
+    return templates.TemplateResponse(request=request, name="viewer.html", context={"book_name": book})
 
 @router.get(
     "/admin",
@@ -32,7 +32,7 @@ async def read_viewer_ui(request: Request, book: Optional[str] = None):
     description="관리자 UI 웹페이지를 렌더링합니다."
 )
 async def read_admin_ui(request: Request):
-    response = templates.TemplateResponse("admin.html", {"request": request})
+    response = templates.TemplateResponse(request=request, name="admin.html")
     response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     return response
 
@@ -43,7 +43,7 @@ async def read_admin_ui(request: Request):
     description="로그 뷰어 웹페이지를 렌더링합니다."
 )
 async def read_logs_ui(request: Request):
-    return templates.TemplateResponse("log_viewer.html", {"request": request})
+    return templates.TemplateResponse(request=request, name="log_viewer.html")
 
 import re
 
@@ -73,7 +73,7 @@ def is_mobile_request(request: Request) -> bool:
 def serve_library_view(request: Request):
     is_mobile = is_mobile_request(request)
     template_name = "library_mobile.html" if is_mobile else "library.html"
-    response = templates.TemplateResponse(template_name, {"request": request, "is_mobile": is_mobile})
+    response = templates.TemplateResponse(request=request, name=template_name, context={"is_mobile": is_mobile})
     
     # If explicit view query parameter was passed, persist to cookie
     view_param = request.query_params.get("view", "").lower()
@@ -100,7 +100,7 @@ async def read_library_ui_alias(request: Request):
     description="모바일 전용 서재 웹페이지를 렌더링합니다."
 )
 async def read_mobile_library(request: Request):
-    return templates.TemplateResponse("library_mobile.html", {"request": request, "is_mobile": True})
+    return templates.TemplateResponse(request=request, name="library_mobile.html", context={"is_mobile": True})
 
 @router.get(
     "/",

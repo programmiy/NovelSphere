@@ -132,13 +132,15 @@ def test_mobile_library_detection_and_pc_preservation():
     assert "lanovel_view_mode=pc" in forced_pc_res.headers.get("set-cookie", "")
 
     # 6. Mobile device with lanovel_view_mode=pc cookie -> Serves PC template
-    cookie_pc_res = client.get("/", headers={"User-Agent": mobile_ua_iphone}, cookies={"lanovel_view_mode": "pc"})
+    client_pc_cookie = TestClient(app, cookies={"lanovel_view_mode": "pc"})
+    cookie_pc_res = client_pc_cookie.get("/", headers={"User-Agent": mobile_ua_iphone})
     assert cookie_pc_res.status_code == 200
     assert "library.css" in cookie_pc_res.text
     assert "m-bottom-nav" not in cookie_pc_res.text
 
     # 7. Desktop device with leftover mobile cookie -> Automatically corrected to PC template!
-    leftover_desktop_res = client.get("/", headers={"User-Agent": desktop_ua}, cookies={"lanovel_view_mode": "mobile"})
+    client_mobile_cookie = TestClient(app, cookies={"lanovel_view_mode": "mobile"})
+    leftover_desktop_res = client_mobile_cookie.get("/", headers={"User-Agent": desktop_ua})
     assert leftover_desktop_res.status_code == 200
     assert "library.css" in leftover_desktop_res.text
     assert "m-bottom-nav" not in leftover_desktop_res.text
