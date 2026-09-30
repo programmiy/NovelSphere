@@ -3,14 +3,14 @@ import time
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from server.models import Base, Translation, TranslationTrash, CleanupNotification
-from server.rule_classifier import is_verbatim_copy
+from server.rule_classifier import is_verbatim_copy, classify_translation, has_japanese_text, is_chinese_text
 from server.routers.translation import (
     handle_verbatim_cleanup_items,
     _build_translation_prompt,
     TRANSLATION_SYSTEM_INSTRUCTION,
     TranslationItemInput
 )
-from server.routers.data_crud import upsert_translations, TranslationItem, get_cleanup_review_targets, dismiss_notification
+from server.routers.data_crud import upsert_translations, TranslationItem, get_cleanup_review_targets, dismiss_notification, get_cleanup_queue
 
 # 인메모리 SQLite DB로 테스트 세션 격리
 @pytest.fixture
@@ -49,6 +49,7 @@ def test_is_verbatim_copy_detection():
     # 3. 정상 번역
     assert is_verbatim_copy("あいつはバカだ", "그 녀석은 바보다") is False
     # 4. 단순 기호/문장부호는 정상 허용 (복붙 판정 안 함)
+    assert is_verbatim_copy("「……」", "「……」") is False
     assert is_verbatim_copy("「……っ!」", "「……!」") is False
     assert is_verbatim_copy("……", "……") is False
     # 5. 빈 문자열
@@ -348,5 +349,121 @@ def test_upsert_translations_blocks_paraphrased_jp(db_session):
     row_p2 = db_session.query(Translation).filter(Translation.url == url, Translation.pid == "p2").first()
     assert row_p2 is not None
     assert row_p2.translated == "바람이 불고 있었다."
+
+def test_symbols_and_ellipsis_not_blocked_or_verbatim(db_session):
+    """「……」 및 단순 기호/문장부호는 사실상 일본어가 없으므로 원문 복제/변형으로 판별되지 않고 정상 적재되는지 검증"""
+    assert has_japanese_text("「……」") is False
+    assert has_japanese_text("……") is False
+    assert has_japanese_text("「……っ!」") is False
+    assert has_japanese_text("「――」") is False
+
+    assert is_verbatim_copy("「……」", "「……」") is False
+    assert classify_translation("「……」", "「……」") == "normal"
+    assert classify_translation("「……」", "……") == "normal"
+    assert classify_translation("「……」", "") == "normal"
+    assert classify_translation("「……」", None) == "normal"
+    assert classify_translation("「……っ!」", "「……!」") == "normal"
+
+    url = "https://kakuyomu.jp/works/123/episodes/901"
+    items = [
+        TranslationItem(
+            url=url,
+            pid="p1",
+            original="「……」",
+            translated="「……」",
+            timestamp=int(time.time())
+        )
+    ]
+    res = upsert_translations(items, db=db_session)
+    assert res["inserted"] == 1
+    assert res.get("verbatim_count", 0) == 0
+
+    # Translation 테이블에 정상 저장되어야 함 (휴지통에 격리되지 않음)
+    saved = db_session.query(Translation).filter(Translation.url == url, Translation.pid == "p1").first()
+    assert saved is not None
+    assert saved.translated == "「……」"
+    trashed = db_session.query(TranslationTrash).filter(TranslationTrash.url == url, TranslationTrash.pid == "p1").first()
+    assert trashed is None
+
+def test_chinese_variation_detection():
+    """변형 판정 기준인 중국어(간체자 및 무한글 중국어 문장) 감지 및 paraphrased_zh 분류 검증"""
+    # 1. 간체자 포함 문장
+    assert is_chinese_text("他微笑着说：“没关系。”") is True
+    assert is_chinese_text("그는 笑了笑하며 说话했다") is True
+    assert is_chinese_text("那家伙真是个笨蛋。") is True
+
+    # 2. 한글 없는 중국어 문법/고빈도 문장
+    assert is_chinese_text("“好的，我知道了。”") is True
+
+    # 3. 정상 한글 및 일본어
+    assert is_chinese_text("그는 웃으며 '괜찮아'라고 말했다.") is False
+    assert is_chinese_text("あいつは本当にバカだ。") is False
+    assert is_chinese_text("「……」") is False
+
+    # 4. classify_translation에서 paraphrased_zh 분류
+    assert classify_translation("あいつは本当にバカだ。", "那家伙真是个笨蛋。") == "paraphrased_zh"
+    assert classify_translation("「大丈夫だ」と彼は言った。", "他微笑着说：“没关系。”") == "paraphrased_zh"
+
+def test_upsert_translations_blocks_chinese_variation(db_session):
+    """upsert_translations 호출 시 중국어 변형 번역문이 차단되어 TranslationTrash에 격리되는지 검증"""
+    url = "https://kakuyomu.jp/works/123/episodes/902"
+    items = [
+        TranslationItem(
+            url=url,
+            pid="p1",
+            original="あいつは本当にバカだ。",
+            translated="那家伙真是个笨蛋。", # 중국어 변형 (paraphrased_zh)
+            timestamp=int(time.time())
+        ),
+        TranslationItem(
+            url=url,
+            pid="p2",
+            original="風が吹いていた。",
+            translated="바람이 불고 있었다.", # 정상 번역
+            timestamp=int(time.time())
+        )
+    ]
+
+    res = upsert_translations(items, db=db_session)
+    assert res["inserted"] == 1
+    assert res.get("verbatim_count") == 1
+
+    # 1. p1은 Translation 테이블에 저장되지 않음
+    row_p1 = db_session.query(Translation).filter(Translation.url == url, Translation.pid == "p1").first()
+    assert row_p1 is None
+
+    # 2. p1은 TranslationTrash에 reason_category='paraphrased_zh'로 저장됨
+    trash_p1 = db_session.query(TranslationTrash).filter(TranslationTrash.url == url, TranslationTrash.pid == "p1").first()
+    assert trash_p1 is not None
+    assert trash_p1.reason_category == "paraphrased_zh"
+
+    # 3. p2는 Translation 테이블에 정상 저장됨
+    row_p2 = db_session.query(Translation).filter(Translation.url == url, Translation.pid == "p2").first()
+    assert row_p2 is not None
+    assert row_p2.translated == "바람이 불고 있었다."
+
+def test_get_cleanup_queue_includes_chinese_variation(db_session):
+    """get_cleanup_queue 조회 시 중국어 변형 항목이 원문 변형(paraphrased_zh)으로 정상 집계 및 노출되는지 검증"""
+    url = "https://kakuyomu.jp/works/123/episodes/903"
+    t1 = Translation(
+        url=url,
+        pid="p1",
+        original="あいつは本当にバ카だ。",
+        translated="那家伙真是个笨蛋。",
+        timestamp=int(time.time()),
+        folderName="중국어 변형 테스트",
+        title="1화"
+    )
+    db_session.add(t1)
+    db_session.commit()
+
+    res = get_cleanup_queue(db=db_session)
+    assert res["_summary"]["paraphrased_count"] >= 1
+    assert "중국어 변형 테스트" in res
+    items = res["중국어 변형 테스트"][0]["items"]
+    matched = next((x for x in items if x["pid"] == "p1"), None)
+    assert matched is not None
+    assert matched["category"] == "paraphrased_zh"
+    assert matched["category_label"] == "원문 변형 (중국어)"
 
 

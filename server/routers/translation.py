@@ -276,8 +276,8 @@ def translate_texts(req: TranslateRequest, db: Session = Depends(get_db)):
                     translated_text = process_repeated_chars(translated_text)
                     translated_text = restore_brackets(item.text, translated_text)
                     cls_cat = classify_translation(item.text, translated_text)
-                    if is_verbatim_copy(item.text, translated_text) or cls_cat in ('verbatim_or_empty', 'paraphrased_jp'):
-                        verbatim_cat = 'verbatim' if (is_verbatim_copy(item.text, translated_text) or cls_cat == 'verbatim_or_empty') else 'paraphrased_jp'
+                    if is_verbatim_copy(item.text, translated_text) or cls_cat in ('verbatim_or_empty', 'paraphrased_jp', 'paraphrased_zh'):
+                        verbatim_cat = 'verbatim' if (is_verbatim_copy(item.text, translated_text) or cls_cat == 'verbatim_or_empty') else ('paraphrased_zh' if cls_cat == 'paraphrased_zh' else 'paraphrased_jp')
                         logger.warning(f"[검열 분할 중 {verbatim_cat} 감지] ID: {item.id} -> 번역문을 즉시 삭제합니다.")
                         verbatim_detected_items.append({
                             "id": item.id,
@@ -386,8 +386,8 @@ def translate_texts(req: TranslateRequest, db: Session = Depends(get_db)):
                 translated_text = process_repeated_chars(translated_text)
                 translated_text = restore_brackets(item.text, translated_text)
                 cls_cat = classify_translation(item.text, translated_text)
-                if is_verbatim_copy(item.text, translated_text) or cls_cat in ('verbatim_or_empty', 'paraphrased_jp'):
-                    verbatim_cat = 'verbatim' if (is_verbatim_copy(item.text, translated_text) or cls_cat == 'verbatim_or_empty') else 'paraphrased_jp'
+                if is_verbatim_copy(item.text, translated_text) or cls_cat in ('verbatim_or_empty', 'paraphrased_jp', 'paraphrased_zh'):
+                    verbatim_cat = 'verbatim' if (is_verbatim_copy(item.text, translated_text) or cls_cat == 'verbatim_or_empty') else ('paraphrased_zh' if cls_cat == 'paraphrased_zh' else 'paraphrased_jp')
                     logger.warning(f"[{verbatim_cat} 감지] ID: {item.id}, 원문: '{item.text[:40]}...' -> 번역문을 즉시 삭제합니다.")
                     verbatim_detected_items.append({
                         "id": item.id,

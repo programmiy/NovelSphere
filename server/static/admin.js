@@ -1,5 +1,5 @@
 // Global state
-const JAPANESE_REGEX = /[\u3000-\u303f\u3040-\u309f\u30a0-\u30ff\uff00-\uff9f\u4e00-\u9faf\u3400-\u4dbf]/;
+const JAPANESE_REGEX = /[\u3040-\u309f\u30a0-\u30fa\u30fd-\u30ff\u4e00-\u9faf\u3400-\u4dbf]/;
 let groupedTranslations = {};
 let allFolders = [];
 let selectedIds = new Set();
@@ -498,7 +498,7 @@ function renderItem(t) {
         badgeHtml = `<div class="badge-wrapper"><span class="category-badge ${badgeClass}">${escapeHtml(label)}</span>${queuedBadge}</div>`;
     } else if (isCleanupQueue && t.category) {
         let badgeClass = 'badge-verbatim';
-        if (t.category === 'paraphrased_jp') badgeClass = 'badge-paraphrased';
+        if (t.category === 'paraphrased_jp' || t.category === 'paraphrased_zh') badgeClass = 'badge-paraphrased';
         else if (t.category === 'moved') badgeClass = 'badge-moved';
         badgeHtml = `<div class="badge-wrapper"><span class="category-badge ${badgeClass}">${escapeHtml(t.category_label || t.category)}</span></div>`;
     }
@@ -1322,9 +1322,9 @@ async function loadAndRenderTrash() {
         trashTableBody.innerHTML = trashList.map(item => {
             const delDate = item.deleted_at ? new Date(item.deleted_at * 1000).toLocaleString('ko-KR', { dateStyle: 'short', timeStyle: 'short' }) : '-';
             let catBadge = '';
-            if (item.reason_category === 'verbatim_or_empty') {
+            if (item.reason_category === 'verbatim_or_empty' || item.reason_category === 'verbatim') {
                 catBadge = '<span class="category-badge badge-verbatim">원문 그대로</span>';
-            } else if (item.reason_category === 'paraphrased_jp') {
+            } else if (item.reason_category === 'paraphrased_jp' || item.reason_category === 'paraphrased_zh' || item.reason_category === 'paraphrased') {
                 catBadge = '<span class="category-badge badge-paraphrased">원문 변형</span>';
             } else {
                 catBadge = '<span class="category-badge badge-moved">다른 언어</span>';

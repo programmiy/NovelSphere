@@ -200,7 +200,7 @@ def _recover_verbatim_items(
             new_trans = restore_brackets(orig_item.text, new_trans)
             cat = classify_translation(orig_item.text, new_trans)
 
-            if not (is_verbatim_copy(orig_item.text, new_trans) or cat in ('verbatim_or_empty', 'paraphrased_jp')):
+            if not (is_verbatim_copy(orig_item.text, new_trans) or cat in ('verbatim_or_empty', 'paraphrased_jp', 'paraphrased_zh')):
                 logger.info(f"[기본모델 verbatim 복구 성공(단일 JSON)] ID: {orig_item.id} -> '{new_trans[:30]}...'")
                 translated_results[str(orig_item.id)] = {
                     "id": orig_item.id,
@@ -249,7 +249,7 @@ def _recover_verbatim_items(
                     cand_text = process_repeated_chars(cand_text)
                     cand_text = restore_brackets(orig_item.text, cand_text)
                     cat = classify_translation(orig_item.text, cand_text)
-                    if not (is_verbatim_copy(orig_item.text, cand_text) or cat in ('verbatim_or_empty', 'paraphrased_jp')):
+                    if not (is_verbatim_copy(orig_item.text, cand_text) or cat in ('verbatim_or_empty', 'paraphrased_jp', 'paraphrased_zh')):
                         logger.info(f"[기본모델 verbatim 복구 성공(단일 일반)] ID: {orig_item.id} -> '{cand_text[:30]}...'")
                         translated_results[str(orig_item.id)] = {
                             "id": orig_item.id,
