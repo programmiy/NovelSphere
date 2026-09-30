@@ -448,7 +448,7 @@ def test_get_cleanup_queue_includes_chinese_variation(db_session):
     t1 = Translation(
         url=url,
         pid="p1",
-        original="あいつは本当にバ카だ。",
+        original="あいつは本当にバカだ。",
         translated="那家伙真是个笨蛋。",
         timestamp=int(time.time()),
         folderName="중국어 변형 테스트",
@@ -457,10 +457,12 @@ def test_get_cleanup_queue_includes_chinese_variation(db_session):
     db_session.add(t1)
     db_session.commit()
 
+    import json
     res = get_cleanup_queue(db=db_session)
-    assert res["_summary"]["paraphrased_count"] >= 1
-    assert "중국어 변형 테스트" in res
-    items = res["중국어 변형 테스트"][0]["items"]
+    data = res if isinstance(res, dict) else json.loads(res.body.decode('utf-8'))
+    assert data["_summary"]["paraphrased_count"] >= 1
+    assert "중국어 변형 테스트" in data
+    items = data["중국어 변형 테스트"][0]["items"]
     matched = next((x for x in items if x["pid"] == "p1"), None)
     assert matched is not None
     assert matched["category"] == "paraphrased_zh"

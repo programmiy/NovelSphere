@@ -2952,6 +2952,8 @@ const CHINESE_INDICATOR_CHARS = new Set(
 
 function containsChinese(text) {
     if (!text) return false;
+    // 일본어 가나(히라가나/가타카나)가 포함되어 있다면 일본어이므로 중국어 판별 제외
+    if (/[\u3040-\u309f\u30a0-\u30fa\u30fd-\u30ff]/.test(text)) return false;
     for (const ch of text) {
         if (SIMPLIFIED_CHINESE_CHARS.has(ch)) return true;
     }

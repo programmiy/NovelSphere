@@ -92,6 +92,10 @@ def is_chinese_text(text: Optional[str]) -> bool:
     if not norm:
         return False
 
+    # 일본어 가나(히라가나/가타카나)가 포함되어 있다면 일본어 문장이므로 중국어 판별 제외
+    if bool(KANA_RE.search(norm)):
+        return False
+
     # 1. 간체자 집합에 포함된 문자가 1자라도 있으면 즉시 중국어로 판별
     if any(ch in SIMPLIFIED_CHINESE_SET for ch in norm):
         return True

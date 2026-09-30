@@ -156,7 +156,7 @@ def delete_cleanup_queue_items(req: CleanupDeleteRequest, db: Session) -> Dict[s
         target_translations = db.query(Translation).filter(Translation.id.in_(req.ids)).all()
     elif req.all_queue:
         queued_ids = {row.translation_id for row in db.query(CleanupQueuedItem).all()}
-        candidate_regex = r'[\u3040-\u309f\u30a0-\u30fa]'
+        candidate_regex = r'[\u3040-\u309f\u30a0-\u30fa\u4e00-\u9faf\u3400-\u4dbf]'
         query = text("""
             SELECT id, original, translated FROM translations
             WHERE translated IS NULL OR translated = '' OR original = translated OR translated REGEXP :pattern
@@ -167,7 +167,7 @@ def delete_cleanup_queue_items(req: CleanupDeleteRequest, db: Session) -> Dict[s
             t_dict = t._asdict()
             t_id = t_dict.get("id")
             cat = classify_translation(t_dict.get("original") or "", t_dict.get("translated") or "")
-            if cat in ('verbatim_or_empty', 'paraphrased_jp') or t_id in queued_ids:
+            if cat in ('verbatim_or_empty', 'paraphrased_jp', 'paraphrased_zh') or t_id in queued_ids:
                 target_ids.add(t_id)
         target_ids.update(queued_ids)
         target_translations = db.query(Translation).filter(Translation.id.in_(list(target_ids))).all()
