@@ -89,7 +89,7 @@ class NovelSpanToken {
 
 void main() {
   test('Bouten with spaces test', () {
-    final text = '내(・)가(・) 지(・)켜(・)주(・)고(・) 싶(・)다(・)는 욕구';
+    const text = '내(・)가(・) 지(・)켜(・)주(・)고(・) 싶(・)다(・)는 욕구';
     final tokens = NovelRubySpanParser.parse(text);
 
     // Verify reconstructed text matches original without (・)

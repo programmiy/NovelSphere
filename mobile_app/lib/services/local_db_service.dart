@@ -1,6 +1,6 @@
 import 'dart:convert';
-import 'dart:typed_data';
 import 'package:archive/archive.dart';
+import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
@@ -339,14 +339,16 @@ class LocalDbService {
     final compressedBytes = rows.first['compressed_content'] as Uint8List;
     try {
       // 1. Zlib Decompress
-      final decompressedBytes = ZLibDecoder().decodeBytes(compressedBytes);
+      final decompressedBytes = const ZLibDecoder().decodeBytes(compressedBytes);
       // 2. UTF-8 decode & JSON parse
       final jsonString = utf8.decode(decompressedBytes);
       final List<dynamic> parsedList = jsonDecode(jsonString);
 
       return parsedList.map((item) => Sentence.fromJson(item as Map<String, dynamic>)).toList();
     } catch (e) {
-      print('Error decompressing chapter sentences: $e');
+      if (kDebugMode) {
+        debugPrint('Error decompressing chapter sentences: $e');
+      }
       return [];
     }
   }
@@ -364,7 +366,7 @@ class LocalDbService {
     // 2. JSON 직렬화 & Zlib Re-compress
     final rawJson = jsonEncode(allChapterSentences.map((s) => s.toJson()).toList());
     final rawBytes = utf8.encode(rawJson);
-    final compressedBytes = ZLibEncoder().encode(rawBytes);
+    final compressedBytes = const ZLibEncoder().encode(rawBytes);
 
     // 3. 로컬 SQLite DB 업데이트
     await db.update(
@@ -505,7 +507,7 @@ class LocalDbService {
       if (compressedBytes == null) continue;
 
       try {
-        final decompressed = ZLibDecoder().decodeBytes(compressedBytes);
+        final decompressed = const ZLibDecoder().decodeBytes(compressedBytes);
         final jsonStr = utf8.decode(decompressed);
         final List<dynamic> list = jsonDecode(jsonStr);
 
@@ -531,7 +533,7 @@ class LocalDbService {
         }
 
         if (chapterModified) {
-          final reEncoded = ZLibEncoder().encode(utf8.encode(jsonEncode(list)));
+          final reEncoded = const ZLibEncoder().encode(utf8.encode(jsonEncode(list)));
           await db.update(
             'chapters',
             {'compressed_content': reEncoded},
@@ -540,7 +542,9 @@ class LocalDbService {
           );
         }
       } catch (e) {
-        print('Error applying rule on chapter $chapId: $e');
+        if (kDebugMode) {
+          debugPrint('Error applying rule on chapter $chapId: $e');
+        }
       }
     }
 

@@ -35,7 +35,7 @@ class _TtsPlayerPanelState extends State<TtsPlayerPanel> {
     setState(() => _isLoading = false);
     if (!ok && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
+        const SnackBar(
           content: Text('PC 서버에 생성된 TTS 오디오가 없거나 다운로드할 수 없습니다.'),
           backgroundColor: Colors.redAccent,
         ),

@@ -78,7 +78,11 @@ class AppUpdateService {
         if (isNewer && updateInfo.hasApk) {
           if (PreferencesService.autoSilentUpdate) {
             // 별도 대화상자 없이 백그라운드에서 바로 무설치 자동 업데이트 실행
-            performSilentBackgroundUpdate(updateInfo, context: context);
+            if (context != null && context.mounted) {
+              performSilentBackgroundUpdate(updateInfo, context: context);
+            } else {
+              performSilentBackgroundUpdate(updateInfo);
+            }
           } else {
             if (context != null && context.mounted) {
               showUpdateDialog(context, updateInfo, currentPkg.version);
