@@ -11,6 +11,7 @@ import '../themes/reader_themes.dart';
 import 'novel_ruby_text.dart';
 import 'quick_edit_dialog.dart';
 import 'reader_settings_sheet.dart';
+import 'similar_translations_panel.dart';
 import 'toc_drawer.dart';
 import 'tts_player_panel.dart';
 
@@ -38,6 +39,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
   bool _showControls = false;
   bool _showTtsPanel = false;
   bool _isTransitioningChapter = false;
+  String? _similarSearchKeyword;
 
   // 페이징 및 스크롤 컨트롤러
   PageController _pageController = PageController();
@@ -363,6 +365,75 @@ class _ReaderScreenState extends State<ReaderScreen> {
     });
   }
 
+  void _openSimilarTranslations(String keyword) {
+    final trimmed = keyword.trim();
+    if (trimmed.isEmpty) return;
+    setState(() {
+      _similarSearchKeyword = trimmed;
+      _showControls = false;
+      _showTtsPanel = false;
+    });
+  }
+
+  void _promptSimilarSearch(ReaderThemeData theme) {
+    final controller = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: theme.surfaceColor,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            const Icon(Icons.manage_search_rounded, color: Colors.amber, size: 24),
+            const SizedBox(width: 8),
+            Text(
+              '유사 번역 용례 검색',
+              style: TextStyle(color: theme.textColor, fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+          ],
+        ),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          style: TextStyle(color: theme.textColor, fontSize: 15),
+          decoration: InputDecoration(
+            hintText: '검색할 일본어 또는 한국어 단어...',
+            hintStyle: TextStyle(color: theme.subTextColor.withOpacity(0.5)),
+            filled: true,
+            fillColor: theme.background,
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: const BorderSide(color: Colors.amber, width: 2),
+            ),
+          ),
+          onSubmitted: (val) {
+            Navigator.pop(ctx);
+            _openSimilarTranslations(val);
+          },
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text('취소', style: TextStyle(color: theme.subTextColor)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.amber,
+              foregroundColor: Colors.black,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            onPressed: () {
+              Navigator.pop(ctx);
+              _openSimilarTranslations(controller.text);
+            },
+            child: const Text('용례 조회', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _onSentenceLongPressed(Sentence sentence) {
     final theme = ReaderThemes.getTheme(PreferencesService.theme);
 
@@ -373,6 +444,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
         theme: theme,
         koreanFont: PreferencesService.koreanFont,
         japaneseFont: PreferencesService.japaneseFont,
+        onSearchSimilar: (kw) => _openSimilarTranslations(kw),
         onSave: (newTranslated) async {
           setState(() {
             sentence.translated = newTranslated;
@@ -477,6 +549,22 @@ class _ReaderScreenState extends State<ReaderScreen> {
                 onClose: () => setState(() => _showTtsPanel = false),
               ),
             ),
+
+          // 5. 유사 번역 용례 탐색기 패널 (선택된 키워드 존재 시)
+          if (_similarSearchKeyword != null)
+            Positioned(
+              bottom: 0,
+              left: 0,
+              right: 0,
+              child: SimilarTranslationsPanel(
+                initialKeyword: _similarSearchKeyword!,
+                bookName: widget.bookName,
+                theme: theme,
+                koreanFont: PreferencesService.koreanFont,
+                japaneseFont: PreferencesService.japaneseFont,
+                onClose: () => setState(() => _similarSearchKeyword = null),
+              ),
+            ),
         ],
       ),
     );
@@ -524,6 +612,15 @@ class _ReaderScreenState extends State<ReaderScreen> {
             IconButton(
               icon: Icon(Icons.list_rounded, color: theme.textColor),
               onPressed: () => _scaffoldKey.currentState?.openDrawer(),
+            ),
+            // 유사 번역 검색 버튼
+            IconButton(
+              icon: Icon(
+                Icons.manage_search_rounded,
+                color: _similarSearchKeyword != null ? Colors.amber : theme.textColor,
+              ),
+              tooltip: '유사 번역 용례 검색',
+              onPressed: () => _promptSimilarSearch(theme),
             ),
             // TTS 버튼
             IconButton(

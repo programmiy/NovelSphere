@@ -580,4 +580,86 @@ class LocalDbService {
       whereArgs: ids,
     );
   }
+
+  // --- 유사 번역 용례 검색 (Similar Translations Explorer) ---
+  /// 키워드를 기반으로 로컬 DB 챕터들의 압축 문장을 역색인/순회하여 유사 번역 사례들을 고속 반환
+  static Future<List<Map<String, dynamic>>> searchSimilarTranslations({
+    required String keyword,
+    String? currentBookName,
+    int limit = 10,
+  }) async {
+    final kw = keyword.trim();
+    if (kw.isEmpty) return [];
+
+    final db = await database;
+    List<Map<String, dynamic>> results = [];
+    Set<String> seenTexts = {};
+
+    // 1. 현재 소설의 챕터들을 우선 조회 (최신 순)
+    List<Map<String, dynamic>> targetChapters = [];
+    if (currentBookName != null && currentBookName.isNotEmpty) {
+      targetChapters = await db.query(
+        'chapters',
+        columns: ['id', 'book_name', 'title', 'compressed_content'],
+        where: 'book_name = ?',
+        whereArgs: [currentBookName],
+        orderBy: 'sort_order DESC',
+        limit: 50,
+      );
+    }
+
+    // 2. 다른 소설의 챕터들도 후보로 확보
+    final otherChapters = await db.query(
+      'chapters',
+      columns: ['id', 'book_name', 'title', 'compressed_content'],
+      where: currentBookName != null && currentBookName.isNotEmpty ? 'book_name != ?' : null,
+      whereArgs: currentBookName != null && currentBookName.isNotEmpty ? [currentBookName] : null,
+      orderBy: 'id DESC',
+      limit: 30,
+    );
+
+    final allChapters = [...targetChapters, ...otherChapters];
+
+    for (final row in allChapters) {
+      if (results.length >= limit) break;
+
+      final blob = row['compressed_content'] as Uint8List?;
+      if (blob == null) continue;
+
+      try {
+        final decompressed = const ZLibDecoder().decodeBytes(blob);
+        final jsonStr = utf8.decode(decompressed);
+        final List<dynamic> list = jsonDecode(jsonStr);
+
+        for (final item in list) {
+          final s = Sentence.fromJson(item as Map<String, dynamic>);
+          final orig = s.original;
+          final trans = s.translated;
+
+          if (trans.trim().isEmpty) continue;
+
+          // 원문 또는 번역문에 키워드가 포함되어 있는지 확인
+          if (orig.contains(kw) || trans.contains(kw)) {
+            final dedupeKey = '$orig||$trans';
+            if (seenTexts.contains(dedupeKey)) continue;
+            seenTexts.add(dedupeKey);
+
+            results.add({
+              'id': s.id,
+              'pid': s.pid,
+              'original': orig,
+              'translated': trans,
+              'book_name': row['book_name'] as String? ?? '',
+              'title': row['title'] as String? ?? '',
+            });
+
+            if (results.length >= limit) break;
+          }
+        }
+      } catch (_) {}
+    }
+
+    return results;
+  }
 }
+

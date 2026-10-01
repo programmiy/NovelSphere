@@ -24,7 +24,7 @@
 | **앱 배포** | `server/routers/app_release.py` | 모바일 OTA 무선 자동 업데이트: `/api/app/version`, `/api/app/download`, 웹 랜딩 페이지(`/download`) |
 | **구분선** | `server/routers/separators.py` | 후기/광고 번역 차단용 소설별 구분선 CRUD (공통 7종, 프리셋 6종) |
 | **크롬 확장** | `extension/content.js` | **키보드 내비게이션(`[`/`]`, `H`/`L`, `O`/`T`, `N`)**, **미니멀 HUD**, **목차 번역 배지 & 미번역 퀵 점프 패널**, **다음화 자동 번역 연동**, 쾌속모드 단축, 빈칸 보완 |
-| **모바일 앱** | `mobile_app/lib/` | Flutter 네이티브 리더 (Sqflite 하이브리드 압축 DB, 루비/방점 렌더러, 배민 스타일 ID 9001 현황판, TTS) |
+| **모바일 앱** | `mobile_app/lib/` | Flutter 네이티브 리더 (Sqflite 하이브리드 압축 DB, **유사 번역 용례 탐색기(Chained Context Explorer)**, 루비/방점 렌더러, 배민 스타일 ID 9001 현황판, TTS) |
 | **웹 프론트** | `server/static/` | `viewer.js` (롱프레스 단락 편집, 위치 복원), `library.js` (숨김 도서 필터), `admin.js` |
 
 ---
@@ -160,7 +160,9 @@
 
 ## 5. Flutter 모바일 독립 서재 애플리케이션 (`mobile_app/`)
 
-- **`local_db_service.dart`**: Sqflite 로컬 오프라인 DB, 1ms 챕터 zlib 압축 해제, `autoHealMissingChapters()`.
+- **`local_db_service.dart`**: Sqflite 로컬 오프라인 DB, 1ms 챕터 zlib 압축 해제, `autoHealMissingChapters()`, **`searchSimilarTranslations()` (로컬 챕터 zlib 역색인 기반 유사 번역 초고속 0ms 검색)**.
+- **`similar_translations_panel.dart`**: 화면 하단 슬라이딩 미니 패널, **꼬리를 무는 연쇄 탐색(Chained Context Exploration)**, 단어 선택 툴바 연쇄 조회, 로컬+서버 하이브리드 병합, 뒤로가기 히스토리.
+- **`quick_edit_dialog.dart`**: 원문 `SelectableText` 확장, 단어 드래그 시 즉시 `[🔍 유사 번역 대조]` 툴바 제공 및 헤더 원터치 대조 버튼 연동.
 - **`sync_service.dart`**: Wi-Fi 감지 -> 핑 -> 전체 시드 다운로드/해제 -> 서버 임시파일 삭제 호출 -> 증분 pull/push.
 - **`local_notification_service.dart`**: 고정 ID 9001 단일 번역 현황판 알림 (배민 스타일, 삼성 Now Bar 호환).
 - **`app_update_service.dart`**: PackageInstaller 무설치(무인) 자동 교체 및 앱 즉시 재실행.
@@ -208,6 +210,7 @@
 
 | 사용자 발화 / 요청 예시 | 연관 파일 및 핵심 함수 | 핵심 처리 내용 |
 | :--- | :--- | :--- |
+| **"원문 드래그해서 다른 데선 어떻게 번역됐는지 보고 싶어" / "유사 번역 용례 찾아줘" / "다른 곳에선 어떻게 번역했나 띄워줘"** | `mobile_app/lib/ui/viewer/similar_translations_panel.dart`<br>`mobile_app/lib/ui/viewer/quick_edit_dialog.dart`<br>`mobile_app/lib/services/local_db_service.dart` (`searchSimilarTranslations`) | 뷰어 상단 검색 및 교정 다이얼로그 원문 드래그 시 하단 슬라이딩 미니 패널 호출. 로컬 SQLite zlib 역색인 0ms 검색 + PC 서버 하이브리드 병합, 카드 내 단어 선택 시 꼬리를 무는 연쇄 탐색 지원. |
 | **"키보드로 다음화 넘어가게 해줘" / "소설 읽다가 다음화로 바로 번역되게 해줘"** | `extension/content.js` (`setupLanovelKeyboardNavigation`, `checkAutoTranslateNextTrigger`)<br>`extension/content.css` (`#lanovel-hud`) | `]` 또는 `L` 누르면 세션 플래그 설정 후 다음 화로 이동 -> 새 페이지 로드 즉시 자동 번역 시작 + 플로팅 HUD 안내. |
 | **"목차에서 안 읽은(미번역) 화만 골라서 보고 싶어" / "목차에 번역됐는지 표시해줘"** | `extension/content.js` (`initTocPageFeatures`, `renderQuickJumpPanel`)<br>`server/routers/books.py` (`check_translated_urls`) | 목차 페이지 감지 시 에피소드 링크별 번역 여부 배지 부착, 우측 하단 `[⚡ 미번역 N화]` 퀵 점프 드로어 제공, `N`키 순차 탐색 및 `Enter` 진입. |
 | **"번역문에 루비/방점 나오게 해줘" / "단어 위에 점/루비 표시해줘"** | `mobile_app/lib/ui/viewer/novel_ruby_text.dart`<br>`mobile_app/lib/ui/viewer/reader_screen.dart` | `NovelRubyParser`로 `글(・)` 방점 및 `단어《루비》` 패턴 자동 감지 -> O(1) 필터링 후 `NovelRubyText` 위젯으로 출판사급 상단 첨자 렌더링. |

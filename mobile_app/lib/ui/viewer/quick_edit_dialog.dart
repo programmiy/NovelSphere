@@ -8,6 +8,7 @@ class QuickEditDialog extends StatefulWidget {
   final String koreanFont;
   final String japaneseFont;
   final Function(String newTranslated) onSave;
+  final Function(String keyword)? onSearchSimilar;
 
   const QuickEditDialog({
     super.key,
@@ -16,6 +17,7 @@ class QuickEditDialog extends StatefulWidget {
     required this.koreanFont,
     required this.japaneseFont,
     required this.onSave,
+    this.onSearchSimilar,
   });
 
   @override
@@ -61,14 +63,49 @@ class _QuickEditDialogState extends State<QuickEditDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 원문 섹션 (선택한 일본어 폰트 적용)
-            Text(
-              '원문 (日本語)',
-              style: TextStyle(
-                color: widget.theme.subTextColor,
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-              ),
+            // 원문 섹션 (선택한 일본어 폰트 적용 및 유사 번역 드래그 탐색)
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  '원문 (日本語)',
+                  style: TextStyle(
+                    color: widget.theme.subTextColor,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                if (widget.onSearchSimilar != null && widget.sentence.original.isNotEmpty)
+                  InkWell(
+                    borderRadius: BorderRadius.circular(6),
+                    onTap: () {
+                      final orig = widget.sentence.original;
+                      // 가나 2자 이상 또는 한자 2자 이상 추출 폴백
+                      final match = RegExp(r'[\u30a0-\u30ff]{2,}|[\u4e00-\u9faf]{2,}').firstMatch(orig);
+                      final kw = match != null ? match.group(0)! : orig.substring(0, orig.length > 8 ? 8 : orig.length);
+                      Navigator.pop(context);
+                      widget.onSearchSimilar!(kw);
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.manage_search_rounded, size: 14, color: widget.theme.accentColor),
+                          const SizedBox(width: 4),
+                          Text(
+                            '유사 번역 대조',
+                            style: TextStyle(
+                              color: widget.theme.accentColor,
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+              ],
             ),
             const SizedBox(height: 6),
             Container(
@@ -79,7 +116,7 @@ class _QuickEditDialogState extends State<QuickEditDialog> {
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(color: widget.theme.borderColor),
               ),
-              child: Text(
+              child: SelectableText(
                 widget.sentence.original.isEmpty ? '(원문 없음)' : widget.sentence.original,
                 style: TextStyle(
                   color: widget.theme.originalTextColor,
@@ -87,6 +124,27 @@ class _QuickEditDialogState extends State<QuickEditDialog> {
                   fontFamily: widget.japaneseFont,
                   height: 1.4,
                 ),
+                contextMenuBuilder: (context, editableTextState) {
+                  final selectedText = editableTextState.textEditingValue.selection.textInside(
+                    editableTextState.textEditingValue.text,
+                  ).trim();
+
+                  return AdaptiveTextSelectionToolbar.buttonItems(
+                    anchors: editableTextState.contextMenuAnchors,
+                    buttonItems: [
+                      if (selectedText.isNotEmpty && widget.onSearchSimilar != null)
+                        ContextMenuButtonItem(
+                          onPressed: () {
+                            editableTextState.hideToolbar();
+                            Navigator.pop(context);
+                            widget.onSearchSimilar!(selectedText);
+                          },
+                          label: '🔍 유사 번역 대조',
+                        ),
+                      ...editableTextState.contextMenuButtonItems,
+                    ],
+                  );
+                },
               ),
             ),
             const SizedBox(height: 16),
