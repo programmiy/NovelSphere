@@ -353,3 +353,19 @@ def test_delete_translations_non_existent_item(client_instance, setup_db_data):
     response = client_instance.post("/translations/delete", json=delete_request)
     assert response.status_code == 200
     assert "0개의 항목이 삭제되었습니다." in response.json()["message"]
+
+def test_get_translations_by_folder_both_routes(client_instance, setup_db_data):
+    """Verify both legacy /translations_by_folder and modular /translations/by_folder endpoints respond 200"""
+    # 1. Legacy route used by admin.js and Chrome extension
+    res1 = client_instance.get("/translations_by_folder")
+    assert res1.status_code == 200
+    data1 = res1.json()
+    assert "_applied_urls" in data1
+
+    # 2. Modular route alias
+    res2 = client_instance.get("/translations/by_folder")
+    assert res2.status_code == 200
+    data2 = res2.json()
+    assert "_applied_urls" in data2
+    assert set(data1.keys()) == set(data2.keys())
+

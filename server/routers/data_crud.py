@@ -446,6 +446,11 @@ def get_paged_translations(page: int = 1, per_page: int = 20):
 
 
 @router.get(
+    "/translations_by_folder",
+    tags=["Data CRUD"],
+    summary="폴더별 번역 기록 조회 (관리자 UI용 - 레거시 호환)"
+)
+@router.get(
     "/translations/by_folder",
     tags=["Data CRUD"],
     summary="폴더별 번역 기록 조회 (관리자 UI용)",
