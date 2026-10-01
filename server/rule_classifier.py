@@ -61,6 +61,22 @@ def is_symbol_or_punct_only(text: Optional[str]) -> bool:
     cleaned = re.sub(r'^[っッ]+$', '', cleaned)
     return len(cleaned) == 0
 
+def is_pure_punctuation_only(text: Optional[str]) -> bool:
+    """
+    문장 내에 의미 있는 문자(가나, 한자, 한글, 영문 등)가 전혀 없고,
+    오직 문장부호, 괄호, 기호(「」『』…―!? 등) 및 공백으로만 이루어져 있는지 검사합니다.
+    예: 「……」, 「…………」, 「……？」, 「……！」, 「……!?」, 『……』, （……）, ……, ―― 등
+    -> 이런 문장은 API 번역 호출 없이 즉시 원문 그대로 번역문으로 자동 대입(Fast-path) 대상입니다.
+    """
+    if not text or not str(text).strip():
+        return False
+    s = str(text).strip()
+    # 히라가나, 가타카나, 한자(CJK), 한글, 알파벳 문자가 하나라도 있으면 순수 기호 문장이 아님
+    if re.search(r'[\u3040-\u309f\u30a0-\u30fa\u30fd-\u30ff\u4e00-\u9faf\u3400-\u4dbf\uac00-\ud7a3a-zA-Z0-9]', s):
+        return False
+    # 소설의 대화 괄호 또는 말줄임표/대시/부호 등이 최소 1자 이상 포함되어 있어야 함
+    return bool(re.search(r'[「」『』【】《》〈〉〔〕（）\(\)“”"\'…‥・―—~～!?！？\.]', s))
+
 def has_japanese_text(text: Optional[str]) -> bool:
     """
     텍스트에 일본어 문자(히라가나, 가타카나, 한자)가 최소 1자 이상 포함되어 있는지 검사합니다.

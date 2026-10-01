@@ -469,3 +469,64 @@ def test_get_cleanup_queue_includes_chinese_variation(db_session):
     assert matched["category_label"] == "원문 변형 (중국어)"
 
 
+def test_pure_punctuation_only_fast_path():
+    """문자 없는 순수 문장부호/기호 문장 판별 및 Fast-path 대상 식별 검증"""
+    from server.rule_classifier import is_pure_punctuation_only
+
+    # 1. Fast-path 대상 (순수 기호/대화 괄호/말줄임표 등)
+    assert is_pure_punctuation_only("「……」") is True
+    assert is_pure_punctuation_only("「…………」") is True
+    assert is_pure_punctuation_only("「……？」") is True
+    assert is_pure_punctuation_only("「……！」") is True
+    assert is_pure_punctuation_only("「……!?」") is True
+    assert is_pure_punctuation_only("『……』") is True
+    assert is_pure_punctuation_only("（……）") is True
+    assert is_pure_punctuation_only("【……】") is True
+    assert is_pure_punctuation_only("……") is True
+    assert is_pure_punctuation_only("…………") is True
+    assert is_pure_punctuation_only("――") is True
+    assert is_pure_punctuation_only("――……") is True
+    assert is_pure_punctuation_only("！？") is True
+    assert is_pure_punctuation_only("「――」") is True
+
+    # 2. Fast-path 제외 (문자/감탄소자 포함 -> Gemini 번역 대상)
+    assert is_pure_punctuation_only("「……っ！」") is False
+    assert is_pure_punctuation_only("「……あ」") is False
+    assert is_pure_punctuation_only("あいつは本当にバカだ。") is False
+    assert is_pure_punctuation_only("「OK」") is False
+    assert is_pure_punctuation_only("Chapter 1") is False
+    assert is_pure_punctuation_only("") is False
+    assert is_pure_punctuation_only("   ") is False
+
+
+def test_translate_texts_fast_path_bypasses_gemini(db_session, monkeypatch):
+    """순수 문장부호만 있는 요청은 Gemini API 호출 없이 즉시 Fast-path로 원문 반환되는지 검증"""
+    from server.routers.translation import translate_texts, TranslateRequest, TranslationItemInput
+
+    def fail_if_called(*args, **kwargs):
+        raise AssertionError("Gemini API should NOT be called for punctuation-only items!")
+
+    import server.routers.translation as trans_module
+    monkeypatch.setattr(trans_module, "call_gemini_api", fail_if_called)
+
+    req = TranslateRequest(
+        items=[
+            TranslationItemInput(id="p1", text="「……」"),
+            TranslationItemInput(id="p2", text="……"),
+            TranslationItemInput(id="p3", text="「……？」"),
+        ],
+        url="https://kakuyomu.jp/works/123/episodes/903"
+    )
+
+    res = translate_texts(req, db=db_session)
+    translations = res["translations"]
+    assert len(translations) == 3
+    assert translations[0]["id"] == "p1"
+    assert translations[0]["translated"] == "「……」"
+    assert translations[1]["id"] == "p2"
+    assert translations[1]["translated"] == "……"
+    assert translations[2]["id"] == "p3"
+    assert translations[2]["translated"] == "「……？」"
+
+
+

@@ -31,6 +31,7 @@ from server.quota import (
 )
 from server.rule_classifier import (
     classify_translation,
+    is_pure_punctuation_only,
     is_verbatim_copy,
     normalize_text,
     restore_brackets,
@@ -201,6 +202,33 @@ def translate_texts(req: TranslateRequest, db: Session = Depends(get_db)):
             {"id": item.id, "original": item.text, "translated": item.text} for item in req.items
         ]}
 
+    # 순수 문장부호/기호 문장(「……」 등)은 Gemini API 호출 없이 원문 그대로 즉시 반환(Fast-path)
+    fast_pass_results = {}
+    actual_items_to_translate = []
+    for item in items_to_translate:
+        if is_pure_punctuation_only(item.text):
+            fast_pass_results[str(item.id)] = {
+                "id": item.id,
+                "original": item.text,
+                "translated": item.text,
+                "censored": False,
+                "verbatim": False,
+                "verbatim_category": None
+            }
+        else:
+            actual_items_to_translate.append(item)
+
+    if not actual_items_to_translate:
+        return {"translations": [
+            fast_pass_results.get(
+                str(item.id),
+                {"id": item.id, "original": item.text, "translated": item.text, "censored": False, "verbatim": False, "verbatim_category": None}
+            )
+            for item in req.items
+        ]}
+
+    items_to_translate = actual_items_to_translate
+
     if not settings.gemini_api_key or "YOUR_GEMINI_API_KEY_HERE" in settings.gemini_api_key:
         raise HTTPException(status_code=500, detail="Gemini API 키가 설정되지 않았습니다. .env 파일을 확인해주세요.")
 
@@ -344,6 +372,8 @@ def translate_texts(req: TranslateRequest, db: Session = Depends(get_db)):
             for item in req.items:
                 if str(item.id) in translated_results:
                     final_translations.append(translated_results[str(item.id)])
+                elif str(item.id) in fast_pass_results:
+                    final_translations.append(fast_pass_results[str(item.id)])
                 else:
                     final_translations.append({
                         "id": item.id,
@@ -448,6 +478,8 @@ def translate_texts(req: TranslateRequest, db: Session = Depends(get_db)):
         for item in req.items:
             if str(item.id) in translated_results:
                 final_translations.append(translated_results[str(item.id)])
+            elif str(item.id) in fast_pass_results:
+                final_translations.append(fast_pass_results[str(item.id)])
             else:
                 final_translations.append({
                     "id": item.id,

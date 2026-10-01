@@ -8,6 +8,59 @@ const CHUNK_BUDGET_CHARACTERS = 2000; // 묶음당 최대 원문 글자 수 (약
 const CHUNK_BUDGET_MAX_ITEMS = 40;   // 묶음당 최대 문장 수 상한
 const JAPANESE_REGEX = /[\u3040-\u309f\u30a0-\u30fa\u30fd-\u30ff\u4e00-\u9faf\u3400-\u4dbf]/;
 const PID_REGEX = /^[a-zA-Z][a-zA-Z0-9]*$/;
+
+/**
+ * 웹소설 본문 문단이 번역 대상인지 판별합니다.
+ * 1. 일본어 문자 (히라가나, 가타카나, 한자) 포함 시 번역 대상.
+ * 2. 대화/인용 괄호(「」, 『』, （）, 【】, 《》, 〈〉, 〔〕, “”, "")가 포함된 문장 (예: 「……」, 「……？」, 『……』, （……） 등).
+ *    -> 소설 속 대사/독백/호흡 문단은 가나/한자가 없더라도 중요한 문맥이므로 반드시 수집합니다.
+ * 3. 괄호가 없더라도 소설 지문의 말줄임표/대시/부호(……, …………, ――――, ……？ 등)로 구성된 침묵·호흡 문단.
+ */
+function isTranslatableText(text) {
+    if (!text || typeof text !== 'string') return false;
+    const trimmed = text.trim();
+    if (!trimmed) return false;
+
+    // 1. 일본어 문자 (히라가나, 가타카나, 한자) 포함
+    if (JAPANESE_REGEX.test(trimmed)) {
+        return true;
+    }
+
+    // 2. 대화/인용 괄호가 포함된 문장 (예: 「……」, 「……？」, 『……』, （……）, 「――」 등)
+    if (/[「」『』【】《》〈〉〔〕（）“”"']/.test(trimmed)) {
+        return true;
+    }
+
+    // 3. 소설 지문의 말줄임표(…, ‥), 대시(―, —), 물음표/느낌표 등으로 구성된 침묵/호흡 문단
+    // 예: ……, …………, ――, ……？, ……!, ！？ 등
+    if (/^[…‥・―—ー~～!?！？\s]+$/.test(trimmed)) {
+        if (/[…‥―—]/.test(trimmed) || trimmed.length >= 2) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/**
+ * 문장 내에 의미 있는 문자(가나, 한자, 한글, 영문 등)가 전혀 없고,
+ * 오직 문장부호, 괄호, 기호(「」『』…―!? 등) 및 공백으로만 이루어져 있는지 검사합니다.
+ * 예: 「……」, 「…………」, 「……？」, 「……！」, 「……!?」, 『……』, （……）, ……, ―― 등
+ * -> 이런 문장은 API 번역 호출 없이 즉시 원문 그대로 번역문으로 자동 대입(Fast-path)합니다.
+ */
+function isPurePunctuationOnly(text) {
+    if (!text || typeof text !== 'string') return false;
+    const trimmed = text.trim();
+    if (!trimmed) return false;
+
+    // 히라가나, 가타카나, 한자(CJK), 한글, 알파벳 문자가 하나라도 있으면 순수 기호 문장이 아님
+    if (/[\u3040-\u309f\u30a0-\u30fa\u30fd-\u30ff\u4e00-\u9faf\u3400-\u4dbf\uac00-\ud7a3a-zA-Z]/.test(trimmed)) {
+        return false;
+    }
+
+    // 소설의 대화 괄호 또는 말줄임표/대시/부호 등이 최소 1자 이상 포함되어 있어야 함
+    return /[「」『』【】《》〈〉〔〕（）“”"'\…‥・―—~～!?！？]/.test(trimmed);
+}
 let hasScannedForP_Tags = false;
 let isTranslationCancelled = false;
 let resolveResume = null; // 번역 재개를 위한 전역 resolver
@@ -1036,7 +1089,7 @@ function hasUntranslatedParagraphs() {
         const cleanedText = text.replace(/([あアいイうウえエおオ])\1{2,}/g, '$1ー');
         if (exclusionSet.has(cleanedText)) continue;
 
-        if (JAPANESE_REGEX.test(cleanedText)) {
+        if (isTranslatableText(cleanedText)) {
             return true; // 번역할 문장이 실제로 존재함
         }
     }
@@ -2356,6 +2409,7 @@ async function translateAllPTags(isRetranslation = false) {
 
     const paragraphs = getTargetParagraphs();
     const textsToTranslate = [];
+    const instantPunctuationItems = [];
     let skipTranslation = false;
 
     paragraphs.forEach(p => {
@@ -2391,13 +2445,40 @@ async function translateAllPTags(isRetranslation = false) {
             return;
         }
 
-        if (cleanedText && JAPANESE_REGEX.test(cleanedText)) {
-            textsToTranslate.push({ id: p.id, text: cleanedText });
+        if (cleanedText && isTranslatableText(cleanedText)) {
+            // [Fast-Path] 문자가 없고 순수 문장부호/기호만 있는 문장(「……」, 「……？」, …… 등)은 API 호출 없이 즉시 원문 그대로 대입
+            if (isPurePunctuationOnly(cleanedText)) {
+                instantPunctuationItems.push({ id: p.id, original: cleanedText, translated: cleanedText });
+            } else {
+                textsToTranslate.push({ id: p.id, text: cleanedText });
+            }
         }
     });
 
+    // ⚡ 순수 문장부호/기호 문장(「……」 등) 즉시 대입 및 저장 처리 (API 호출 0소모, 0초 즉시 반영)
+    if (instantPunctuationItems.length > 0) {
+        instantPunctuationItems.forEach(item => {
+            const pidStr = String(item.id);
+            userDeletedTranslationPids.delete(pidStr);
+            translationCache.set(item.id, { pid: item.id, original: item.original, translated: item.translated });
+            addEntryToSidebar({ pid: item.id, original: item.original, translated: item.translated });
+        });
+        updateSidebarWithTranslations(instantPunctuationItems);
+        sortSidebar();
+        if (isPageApplied) {
+            applyTranslationsToPage(instantPunctuationItems, false);
+        }
+        await saveAllTranslations(instantPunctuationItems);
+        logToSidebar(`[즉시 대입] 문자 없는 문장부호 문장 ${instantPunctuationItems.length}개(「……」 등)를 API 호출 없이 원문 그대로 즉시 적용했습니다.`);
+    }
+
     if (textsToTranslate.length === 0) {
-        logToSidebar("번역할 새로운 내용이 없습니다.");
+        if (instantPunctuationItems.length > 0) {
+            logToSidebar("모든 번역 작업이 완료되었습니다. (순수 문장부호 즉시 대입 완료)");
+            sortSidebar();
+        } else {
+            logToSidebar("번역할 새로운 내용이 없습니다.");
+        }
         document.getElementById('stop-translation-btn').style.display = 'none';
         document.getElementById('retry-translation-btn').style.display = 'inline-block';
         return;
