@@ -1,7 +1,7 @@
 # LANOVEL 종합 코드베이스 기능 및 함수 레퍼런스 (Architectural & Functional Reference)
 
 > **문서 목적**: AI 어시스턴트가 사용자 요구사항 및 구어체 지시를 입력받았을 때, 혼선이나 회귀(Regression) 없이 전체 아키텍처와 1:1 타깃 코드를 0초 만에 직관적으로 파악할 수 있도록 압축 정리한 단일 진실 공급원(SSOT) 기술 레퍼런스입니다.
-> **최신 동기화 일자**: 2026-09-27 (모바일 번역문 루비/방점 출판사 스타일 자동 렌더링, Flutter 독립 앱, OTA 무선 업데이트, 초고속 압축 동기화, 배민 스타일 단일 번역 현황판 알림, NovelUp+ 플랫폼 전면 지원, 룰베이스 품질 보정 및 도서 숨김 기능 통합)
+> **최신 동기화 일자**: 2026-10-01 (브라우저 확장 프로그램 스마트 키보드 내비게이션, 미니멀 플로팅 HUD, 목차 에피소드 번역 상태 배지 및 미번역 퀵 점프 패널, 백엔드 URL 번역 상태 배치 확인 API, 모바일 번역문 루비/방점 렌더링, Flutter 독립 앱, OTA 무선 업데이트)
 
 ---
 
@@ -18,12 +18,12 @@
 | **서버 코어** | `server/server.py` | 14개 라우터 등록, FTS5 가상테이블/트리거, 30분 괄호복원 태스크, 24시간 온라인 백업, 캐시 버스팅 |
 | **번역 엔진** | `server/routers/translation.py` | Gemini 호출, 기본모델 verbatim 2단계 자체 복구([`_recover_verbatim_items`](file:///C:/LANOVEL/server/routers/translation.py)), 17시 안전 중단 |
 | **데이터 CRUD** | `server/routers/data_crud.py` | FTS5 전문 검색, N+1 제거 upsert, 이상 번역 검출, 복원 센터 모달(휴지통/알림) |
-| **서재/책** | `server/routers/books.py` | 도서 숨김/표시([`update_book_visibility`](file:///C:/LANOVEL/server/routers/books.py)), NovelUp+ 줄거리 크롤링, 회차 내 페이지/스크롤 복원 |
-| **목차 파서** | `server/routers/toc_importer.py` | 카쿠요무(Apollo State Next.js), 소설가가 되자, **NovelUp+** ([`fetch_all_novelup_chapters`](file:///C:/LANOVEL/server/routers/toc_importer.py)) 목차 수집 |
+| **서재/책** | `server/routers/books.py` | 도서 숨김/표시, URL 번역 상태 배치 확인([`check_translated_urls`](file:///C:/LANOVEL/server/routers/books.py)), NovelUp+ 줄거리 크롤링, 회차 내 위치 복원 |
+| **목차 파서** | `server/routers/toc_importer.py` | 카쿠요무(Apollo State Next.js), 소설가가 되자, NovelUp+ ([`fetch_all_novelup_chapters`](file:///C:/LANOVEL/server/routers/toc_importer.py)) 목차 수집 |
 | **동기화** | `server/routers/sync.py` | 모바일 초고속 양방향 동기화: `/ping`, 하이브리드 zlib 압축 SQLite 시드 DB(`/full-pack`), `/pull`, `/push` |
 | **앱 배포** | `server/routers/app_release.py` | 모바일 OTA 무선 자동 업데이트: `/api/app/version`, `/api/app/download`, 웹 랜딩 페이지(`/download`) |
 | **구분선** | `server/routers/separators.py` | 후기/광고 번역 차단용 소설별 구분선 CRUD (공통 7종, 프리셋 6종) |
-| **크롬 확장** | `extension/content.js` | NovelUp+ 지원, 쾌속모드 동적 단축, 빈칸 문장 자동 보완, 구분선 후속 단락 일괄 제외, DOM 치환 |
+| **크롬 확장** | `extension/content.js` | **키보드 내비게이션(`[`/`]`, `H`/`L`, `O`/`T`, `N`)**, **미니멀 HUD**, **목차 번역 배지 & 미번역 퀵 점프 패널**, **다음화 자동 번역 연동**, 쾌속모드 단축, 빈칸 보완 |
 | **모바일 앱** | `mobile_app/lib/` | Flutter 네이티브 리더 (Sqflite 하이브리드 압축 DB, 루비/방점 렌더러, 배민 스타일 ID 9001 현황판, TTS) |
 | **웹 프론트** | `server/static/` | `viewer.js` (롱프레스 단락 편집, 위치 복원), `library.js` (숨김 도서 필터), `admin.js` |
 
@@ -32,20 +32,21 @@
 ## 1. 시스템 전체 아키텍처 및 데이터 흐름
 
 ```
-[ 웹소설 플랫폼 (Kakuyomu / Syosetu / NovelUp+) ]
+[ 웹소설 플랫폼 (Kakuyomu / Syosetu / NovelUp+ / Hameln) ]
            ▲
            │ DOM 파싱 (p/l 태그, 소설명 감지, 구분선 감지, 다음 화 '次へ' 자동 이동)
+           │ 스마트 키보드 내비게이션 (]/L 다음화+자동번역, [/H 이전화, O/T 목차, N 미번역 퀵점프)
            ▼
 [ 크롬 확장 프로그램 (extension) ]
-   - content.js: 실시간 쾌속모드 대기시간 단축(8초->2초), 번역 직전 빈칸 보완, 구분선 후속 단락 일괄 제외
+   - content.js: 키보드 내비게이션, HUD 플로팅 배지, 목차 상태 배지/미번역 퀵점프 패널, 쾌속모드(8초->2초)
    - background.js: API 중계, 토큰 인증, 에러 로깅
-           │ HTTP (POST /translate, GET/POST /api/...)
+           │ HTTP (POST /translate, POST /api/check_translated_urls, GET/POST /api/...)
            ▼
 [ FastAPI 백엔드 서버 (server:app, Port: 8001) ]
    - translation.py   ──▶ [ Google Gemini API ] (gemini-3.5-flash-lite / gemini-3.8-flash)
                           (기본 모델 verbatim 2단계 자체 복구: 단일 JSON -> 순수 텍스트 -> 화살표 분리)
    - data_crud.py     ──▶ [ SQLite DB (translations.db - WAL Mode) ]
-   - books.py         ──▶ [ FTS5 가상 테이블 (translations_fts) ]
+   - books.py         ──▶ [ FTS5 가상 테이블 및 URL 번역 배치 확인 API ]
    - sync.py          ──▶ [ 하이브리드 zlib 압축 SQLite 시드 DB 생성 엔진 (150MB -> ~26MB Gzip) ]
    - app_release.py   ──▶ [ 모바일 APK 패키징 및 OTA 업데이트 배포 ]
    - notifications.py ──▶ [ 인메모리 배민 스타일 단일 번역 현황판 & 로컬 SSE 브로드캐스트 ]
@@ -70,9 +71,10 @@
 ## 2. 번역 및 데이터 처리 파이프라인 (Life of a Translation)
 
 ```
-1. [웹 페이지 로드] 
-   content.js가 소설 사이트(카쿠요무/쇼세츠/NovelUp+) 감지 -> 구분선 목록 조회(/api/separators/by-url)
-   -> 이미 번역된 문장이 구분선과 일치하면 후속 단락까지 일괄 제외(/translations/exclude)
+1. [웹 페이지 로드 & 키보드 내비게이션] 
+   - content.js가 사이트(카쿠요무/쇼세츠/NovelUp+/Hameln) 감지
+   - `]` 또는 `L` 누르면 세션 플래그 설정 후 다음 화로 이동 -> 새 페이지 진입 시 자동으로 사이드바 오픈 및 번역 시작
+   - 목차 페이지에서는 `N` 키로 미번역 퀵 점프 패널 열기 및 다음 미번역 에피소드로 이동/포커스
 2. [번역 실행] 
    20개 단위 청크 번역(/translate) -> 쾌속모드 활성화 시 대기시간 동적 단축(8초 -> 2초)
    -> 17시 경계 감지(16시대 프로세스 차단) -> Gemini API 호출
@@ -102,7 +104,7 @@
 - `gemini_default_model`: `gemini-3.5-flash-lite` (기본 번역 및 verbatim 자체 복구용)
 - `gemini_retranslation_model`: `gemini-3.8-flash` (단일 단락 고성능 재번역용)
 - `ntfy_enabled`: `False` (외부 ntfy 의존성 완전 분리, 자체 인메모리 현황판 구동)
-- `allowed_origins`: 카쿠요무, 쇼세츠, **NovelUp+ (`https://novelup.plus`)**, 로컬호스트 등 CORS 허용
+- `allowed_origins`: 카쿠요무, 쇼세츠, NovelUp+ (`https://novelup.plus`), 로컬호스트 등 CORS 허용
 
 ### `server/models.py` (핵심 ORM 모델 - 총 12개)
 - `Translation`: `(id, url, pid, original, translated, timestamp, folderName, title, toc_sort_order)`. 고유키: `(url, pid, original)`.
@@ -122,20 +124,12 @@
   - 따옴표(`"`, `'`, `“`, `‘`, `«`) 치환 및 한쪽/완전 누락된 괄호 복원. 다중 괄호(`「「...」」`) 및 화자 접두어 보존.
 - `batch_restore_brackets_in_db(db_conn)`: DB 내 누락/변형된 대사 괄호 고속 일괄 복원.
 
-### `server/notifications.py` (배민 스타일 단일 현황판 & 오류 통계)
-- **외부 ntfy 분리**: `settings.ntfy_enabled == False` 시 외부 HTTP 요청 차단.
-- **`TranslationStatusBoard`**: 활성 여부, 작품/회차명, 문장 진행률, 15분 미갱신 시 자동 비활성화(Idle).
-- **Gemini API 오류 통계**: `record_api_error_stat(error_type)`, `get_api_error_stats()` (429 Quota, 503 Overload 등 실시간 집계).
-- **인메모리 버퍼 & SSE**: `_NOTIFICATION_HISTORY` (최근 50개 링버퍼), `_SSE_SUBSCRIBERS` 브로드캐스트.
-
 ---
 
 ## 4. 백엔드 라우터별 세부 API 엔드포인트
 
 ### 1) `server/routers/translation.py` (번역 엔진 코어)
-- `POST /translate`:
-  - 17시 안전 중단 락, 최대 5회 지수 백오프, 실시간 `restore_brackets` 대사 괄호 복원.
-  - **`_recover_verbatim_items`**: 기본 모델(`gemini-3.5-flash-lite`)로 1차 단일 JSON -> 2차 스키마 프리 순수 텍스트 -> 화살표(`->`) 분리 자체 복구.
+- `POST /translate`: 17시 안전 중단 락, 최대 5회 지수 백오프, 실시간 `restore_brackets` 대사 괄호 복원.
 - `POST /translations/find_replace`: 폴더 범위, 원문 조건, 정규식을 지원하는 전역 찾아바꾸기.
 - `POST /translations/exclude`: 지정 ID 번역 제외 목록 등록 및 레코드 삭제.
 
@@ -147,72 +141,55 @@
 
 ### 3) `server/routers/books.py` (서재 및 도서 활동)
 - `GET /folders`, `GET /api/books`: `include_hidden=false` 기본 적용으로 숨김 도서(`is_visible == 0`) 필터링.
-- **`PUT /api/books/{folder_name}/visibility`**: 도서 숨김/표시(`is_visible: bool`) 토글 API.
+- `POST /api/check_translated_urls`: 목차 URL 목록을 전달받아 SQLite chunking(900개) 기반으로 번역 DB 적재 여부를 고속 배치 판별.
+- `PUT /api/books/{folder_name}/visibility`: 도서 숨김/표시(`is_visible: bool`) 토글 API.
 - `PUT /api/books/{folder_name}/activity`: 회차 내부 세부 페이지/스크롤 위치 및 독서 진도 저장.
-- `POST /api/books/{folder_name}/crawl-summary`: 카쿠요무, 쇼세츠 및 **NovelUp+ (`.novel_synopsis`)** 줄거리 크롤링.
+- `POST /api/books/{folder_name}/crawl-summary`: 카쿠요무, 쇼세츠 및 NovelUp+ 줄거리 크롤링.
 - `GET /api/books/{folder_name}/export`: 독립 오프라인 HTML 파일 내보내기.
 
 ### 4) `server/routers/toc_importer.py` (목차 크롤링)
-- `POST /api/import-toc`:
-  - 카쿠요무 (Apollo State JSON 파싱), 쇼세츠 (최대 100페이지 목차 순회).
-  - **NovelUp+**: `fetch_all_novelup_chapters`로 `https://novelup.plus/story/{id}` 및 페이지네이션(`?p={page}`)을 순회하며 `.episode_list`, `.episode_title` 에피소드 자동 수집.
+- `POST /api/import-toc`: 카쿠요무(Apollo State JSON 파싱), 쇼세츠(최대 100페이지 목차 순회), NovelUp+ 목차 수집.
 
 ### 5) `server/routers/sync.py` (모바일 초고속 압축 동기화)
-- `GET /api/sync/ping`: 0.05초 만에 서버 통신 가능 여부 확인.
-- `GET /api/sync/full-pack`: 하이브리드 SQLite 시드 DB(zlib 압축 BLOB) 생성 후 Gzip 스트리밍 다운로드 (150MB -> ~26MB). 전송 완료 후 PC 임시파일 자동 정리.
-- `DELETE /api/sync/full-pack/{pack_id}`: 모바일 무결성 검증 완료 즉시 PC 임시 압축 팩 안전 삭제.
-- `GET /api/sync/pull`: `since` 이후 신규 번역 및 회차 zlib 압축 BLOB 증분 수신.
-- `POST /api/sync/push`: 모바일에서 기록한 독서 활동, 독서 통계, 인라인 수정 단락 역동기화.
+- `GET /api/sync/ping`, `GET /api/sync/full-pack`, `DELETE /api/sync/full-pack/{pack_id}`, `GET /api/sync/pull`, `POST /api/sync/push`.
 
 ### 6) `server/routers/app_release.py` (모바일 OTA 무선 자동 업데이트)
-- `GET /api/app/version`: 최신 앱 버전 메타데이터 반환 (`pubspec.yaml` 및 빌드된 APK 분석).
-- `GET /api/app/download`: 최신 릴리즈 APK 바이너리 스트리밍 다운로드.
-- `GET /download`: 모바일 브라우저 전용 반응형 APK 다운로드 웹 랜딩 페이지 서빙.
+- `GET /api/app/version`, `GET /api/app/download`, `GET /download`.
 
 ---
 
 ## 5. Flutter 모바일 독립 서재 애플리케이션 (`mobile_app/`)
 
-### 1) 데이터 모델 계층 (`models/`)
-- `book.dart` (소설 메타 및 `isVisible`, `isPinned`), `chapter.dart` (회차 및 zlib `compressedContent`), `sentence.dart` (단락 본문), `reading_log.dart` (일일 독서 통계), `glossary_rule.dart` (치환 사전), `app_notification.dart` (인앱 알림).
-
-### 2) 핵심 서비스 계층 (`services/`)
-- **`local_db_service.dart` (Sqflite 로컬 오프라인 DB)**:
-  - 챕터 오픈 시 zlib BLOB을 1ms 이내로 실시간 압축 해제.
-  - **`autoHealMissingChapters()`**: 동기화 후 누락되거나 어긋난 회차 DB 구조 자동 치유.
-- **`sync_service.dart` (압축 동기화 서비스)**:
-  - Wi-Fi 감지 -> 핑 -> 전체 시드 다운로드/해제 -> 서버 임시파일 삭제 호출 -> 증분 pull/push.
-- **`status_dashboard_service.dart` (스마트 가변 폴링)**:
-  - 번역 진행 중에는 가변 단축 주기, 유휴 상태 시에는 **초저전력 15분 주기**로 `/api/status/summary` 폴링.
-- **`local_notification_service.dart` (배민 스타일 단일 번역 현황판)**:
-  - **고정 ID 9001 단일 알림**: 여러 알림 없이 단 1개의 현황판에서 진행 바와 에러 통계 갱신.
-  - **삼성 Now Bar / 잠금화면 진행바 호환**, 유휴 상태 3분 후 자동 해제.
-- **`app_update_service.dart` (무설치/무인 OTA 자동 업데이트)**:
-  - 버전 체크 -> 백그라운드 APK 다운로드 -> Android 12+ PackageInstaller 세션(USER_ACTION_NOT_REQUIRED) 기반 무설치(무인) 자동 교체 및 앱 즉시 재실행 (`InstallResultReceiver`).
-- **`tts_audio_service.dart`**: `flutter_tts` 백그라운드 음성 리더 (문장 하이라이트, 배속 제어).
-
-### 3) 사용자 인터페이스 계층 (`ui/`)
-- `library_screen.dart`: 카드 서재, 숨김 도서 토글, 당겨서 동기화(Pull-to-refresh).
-- `reader_screen.dart`: **500ms 롱프레스 제스처 시에만 편집 모달 호출**, 페이징/스크롤 듀얼 모드, 회차 내 위치 자동 복원.
-- **`novel_ruby_text.dart` (신규)**:
-  - **`NovelRubyParser`**: `hasRubyOrBouten`으로 일반 문장 O(1) 고속 통과. `글(・)` 방점 및 `단어《루비》` 패턴 자동 분리.
-  - **`NovelRubyText`**: 방점과 루비를 `WidgetSpan` 상단 첨자로 완벽 렌더링.
-- `settings_screen.dart`: Wi-Fi SSID 원터치 자동 등록, OTA 업데이트 확인, 동기화 제어.
+- **`local_db_service.dart`**: Sqflite 로컬 오프라인 DB, 1ms 챕터 zlib 압축 해제, `autoHealMissingChapters()`.
+- **`sync_service.dart`**: Wi-Fi 감지 -> 핑 -> 전체 시드 다운로드/해제 -> 서버 임시파일 삭제 호출 -> 증분 pull/push.
+- **`local_notification_service.dart`**: 고정 ID 9001 단일 번역 현황판 알림 (배민 스타일, 삼성 Now Bar 호환).
+- **`app_update_service.dart`**: PackageInstaller 무설치(무인) 자동 교체 및 앱 즉시 재실행.
+- **`novel_ruby_text.dart`**: `글(・)` 방점 및 `단어《루비》` 패턴 자동 분리 후 상단 첨자 완벽 렌더링.
 
 ---
 
 ## 6. 크롬 확장 프로그램 (`extension/`) 세부 동작
-- **NovelUp+ 지원**: 본문 셀렉터, 소설명 감지, 다음 화(`次へ`) 링크 자동 이동.
+
+- **스마트 키보드 내비게이션 & HUD**:
+  - `]` / `L`: 다음 화 이동 및 자동 번역 플래그(`sessionStorage`) 설정.
+  - `[` / `H`: 이전 화 이동.
+  - `O` / `T`: 소설 목차(TOC) 복귀.
+  - 키 입력 시 `#lanovel-hud` 글래스모피즘 배지로 실시간 피드백 안내.
+- **목차(TOC) 페이지 번역 상태 배지 및 미번역 퀵 점프 패널**:
+  - 카쿠요무, 쇼세츠, NovelUp+, 하멜른 목차 페이지 자동 감지.
+  - `POST /api/check_translated_urls` 연동으로 회차별 완료/미번역 배지 부착.
+  - 우측 하단 `[⚡ 미번역 N화] [N]` 미니 버튼 및 다크 글래스 드로어 패널.
+  - `N` 키로 다음 미번역 항목 순차 포커스 & 목차 본문 자동 스크롤, `Enter` 키로 즉시 진입 및 자동 번역.
 - **쾌속모드 대기시간 즉각 동적 단축**: 루프 순회 중 `fastMode` 감지 시 즉시 8초 -> 2초로 대기 단축.
-- **미번역 빈칸 문장 마지막 보완**: 번역 완료 직전 잔여 빈칸/기호 문장을 마지막 청크에 자동 편입.
-- **격리 단락 분리 (`deletedTranslationPids` vs `userDeletedTranslationPids`)**: 원문 복붙 격리 항목이 새로고침 시 번역 스킵되는 현상 방지.
+- **미번역 빈칸 문장 마지막 보완**: 번역 직전 미번역 빈칸 문장들을 마지막 번역 꾸러미에 자동 편입.
 - **구분선 후속 단락 일괄 제외**: 첫 단락 보호 예외 로직 및 검수탭 스타일 패널 알림.
 
 ---
 
 ## 7. 웹 프론트엔드 UI (`server/static/`) 세부 동작
+
 - **`viewer.js`**: 모바일 웹 뷰어 터치 충돌 해결을 위한 롱프레스(500ms) 편집 모달 분리, 회차 내 페이지/스크롤 복원.
-- **`library.js` & `library_mobile.js`**: 도서 숨김/표시(`PUT /api/books/{folder_name}/visibility`) 토글 및 상단 숨김 도서 보기 필터.
+- **`library.js` & `library_mobile.js`**: 도서 숨김/표시 토글 및 상단 숨김 도서 보기 필터.
 - **`admin.js`**: 경량 모드 아코디언, 이상 번역 검출, 복원 센터 모달, 전역 찾아바꾸기.
 
 ---
@@ -220,10 +197,10 @@
 ## 8. 불변 규칙 및 안전 가드 (Critical Guardrails)
 
 1. **오후 5시 번역 안전 중단**: 16시대에 시작된 번역 프로세스가 17시를 넘기면 스레드 안전 락 하에서 503 에러를 던져 중단됨.
-2. **원문 복붙(verbatim) 2단계 자체 복구 우선**: 발견 즉시 격리하지 않고 기본 모델(gemini-3.5-flash-lite)로 단일 JSON -> 순수 텍스트 -> 화살표 분리를 먼저 시도한 뒤, 최종 실패 항목만 격리.
-3. **대사 괄호 복원 범위 한정**: 원문이 `「%」`로 시작하고 끝나는 대사 문장에만 한정 적용 (문장 중간 괄호/독백 배제).
+2. **원문 복붙(verbatim) 2단계 자체 복구 우선**: 기본 모델(gemini-3.5-flash-lite)로 단일 JSON -> 순수 텍스트 -> 화살표 분리 시도 후 실패 시 격리.
+3. **대사 괄호 복원 범위 한정**: 원문이 `「%」`로 시작하고 끝나는 대사 문장에만 한정 적용.
 4. **ntfy 외부 의존성 분리**: `settings.ntfy_enabled`가 꺼져 있을 때는 외부 ntfy 서버로의 HTTP 요청을 원천 차단.
-5. **모바일 동기화 시드 삭제**: 모바일 앱이 `/api/sync/full-pack` 다운로드 및 압축 해제 검증을 마치면 반드시 `DELETE /api/sync/full-pack/{pack_id}`를 호출하여 PC 측 임시 파일을 삭제해야 함.
+5. **모바일 동기화 시드 삭제**: 모바일 앱이 `/api/sync/full-pack` 다운로드 완료 즉시 `DELETE /api/sync/full-pack/{pack_id}`를 호출해 PC 임시 파일 삭제.
 
 ---
 
@@ -231,13 +208,15 @@
 
 | 사용자 발화 / 요청 예시 | 연관 파일 및 핵심 함수 | 핵심 처리 내용 |
 | :--- | :--- | :--- |
+| **"키보드로 다음화 넘어가게 해줘" / "소설 읽다가 다음화로 바로 번역되게 해줘"** | `extension/content.js` (`setupLanovelKeyboardNavigation`, `checkAutoTranslateNextTrigger`)<br>`extension/content.css` (`#lanovel-hud`) | `]` 또는 `L` 누르면 세션 플래그 설정 후 다음 화로 이동 -> 새 페이지 로드 즉시 자동 번역 시작 + 플로팅 HUD 안내. |
+| **"목차에서 안 읽은(미번역) 화만 골라서 보고 싶어" / "목차에 번역됐는지 표시해줘"** | `extension/content.js` (`initTocPageFeatures`, `renderQuickJumpPanel`)<br>`server/routers/books.py` (`check_translated_urls`) | 목차 페이지 감지 시 에피소드 링크별 번역 여부 배지 부착, 우측 하단 `[⚡ 미번역 N화]` 퀵 점프 드로어 제공, `N`키 순차 탐색 및 `Enter` 진입. |
 | **"번역문에 루비/방점 나오게 해줘" / "단어 위에 점/루비 표시해줘"** | `mobile_app/lib/ui/viewer/novel_ruby_text.dart`<br>`mobile_app/lib/ui/viewer/reader_screen.dart` | `NovelRubyParser`로 `글(・)` 방점 및 `단어《루비》` 패턴 자동 감지 -> O(1) 필터링 후 `NovelRubyText` 위젯으로 출판사급 상단 첨자 렌더링. |
 | **"스마트폰 독립 앱으로 보고 싶어" / "모바일 앱 동기화해줘"** | `server/routers/sync.py`<br>`mobile_app/lib/services/sync_service.dart`<br>`mobile_app/lib/services/local_db_service.dart` | 하이브리드 zlib 압축 SQLite 시드 DB를 Gzip 스트리밍 다운로드. 1ms 챕터 압축 해제 및 양방향 증분 pull/push. |
-| **"모바일 앱 업데이트 어떻게 해?" / "새 버전 앱 깔아줘" / "-BuildApk 쓰면 알아서 무설치 업데이트해줘"** | `scripts/setup_mobile.ps1`<br>`server/routers/app_release.py`<br>`mobile_app/lib/services/app_update_service.dart` | `-BuildApk` 완료 즉시 ADB 연결 기기 자동 감지 -> `adb install -r` 직배포 및 앱 실행, Wi-Fi 접속 기기에는 SSE `app_update` 실시간 푸시로 안드로이드 시스템 설치 팝업 없는 100% 무인 무설치 자동 교체. |
-| **"푸시 알림 너무 많이 와" / "배민처럼 하나로 합쳐줘" / "상단바에 진행바 띄워줘"** | `server/notifications.py` (`TranslationStatusBoard`)<br>`mobile_app/lib/services/local_notification_service.dart`<br>`mobile_app/lib/services/status_dashboard_service.dart` | 고정 ID(9001) 단일 번역 현황판 알림으로 진행률/에러 통계 실시간 갱신. 삼성 Now Bar/잠금화면 호환 및 3분 유휴 자동 해제. |
-| **"노벨업 플러스 번역해줘" / "novelup.plus 지원해줘"** | `server/routers/toc_importer.py` (`fetch_all_novelup_chapters`)<br>`server/routers/books.py` (`_crawl_and_update_summary_worker`)<br>`extension/content.js`<br>`server/settings.py` | NovelUp+ 목차 파싱, 줄거리 크롤링(`.novel_synopsis`), 뷰어 본문 치환 및 다음 화 자동 이동 전면 지원. |
+| **"모바일 앱 업데이트 어떻게 해?" / "새 버전 앱 깔아줘" / "-BuildApk 쓰면 알아서 무설치 업데이트해줘"** | `scripts/setup_mobile.ps1`<br>`server/routers/app_release.py`<br>`mobile_app/lib/services/app_update_service.dart` | `-BuildApk` 완료 즉시 ADB 직배포, Wi-Fi 접속 기기에는 안드로이드 시스템 설치 팝업 없는 100% 무인 무설치 자동 교체. |
+| **"푸시 알림 너무 많이 와" / "배민처럼 하나로 합쳐줘" / "상단바에 진행바 띄워줘"** | `server/notifications.py` (`TranslationStatusBoard`)<br>`mobile_app/lib/services/local_notification_service.dart` | 고정 ID(9001) 단일 번역 현황판 알림으로 진행률/에러 통계 실시간 갱신. 삼성 Now Bar/잠금화면 호환 및 3분 유휴 자동 해제. |
+| **"노벨업 플러스 번역해줘" / "novelup.plus 지원해줘"** | `server/routers/toc_importer.py` (`fetch_all_novelup_chapters`)<br>`extension/content.js`<br>`server/settings.py` | NovelUp+ 목차 파싱, 줄거리 크롤링(`.novel_synopsis`), 뷰어 본문 치환 및 다음 화 자동 이동 전면 지원. |
 | **"원문 복붙된 것들 다 지워줘" / "일본어가 그대로 번역이라고 나와"** | `server/routers/translation.py` (`_recover_verbatim_items`, `handle_verbatim_cleanup_items`)<br>`server/rule_classifier.py` (`is_verbatim_copy`) | 기본 모델(gemini-3.5-flash-lite)로 단일 JSON 및 순수 텍스트 2단계 자체 복구. 화살표(`->`) 분리 후 실패 항목만 격리. |
-| **"다 읽은 책 숨기고 싶어" / "서재에서 책 안 보이게 해줘"** | `server/models.py` (`BookActivity.is_visible`)<br>`server/routers/books.py` (`update_book_visibility`, `get_folders`)<br>`server/static/library.js`<br>`mobile_app/lib/ui/library/library_screen.dart` | `is_visible` 필터링 및 서재 "숨긴 도서 표시" 토글 버튼 제공. |
+| **"다 읽은 책 숨기고 싶어" / "서재에서 책 안 보이게 해줘"** | `server/models.py` (`BookActivity.is_visible`)<br>`server/routers/books.py` (`update_book_visibility`, `get_folders`)<br>`server/static/library.js` | `is_visible` 필터링 및 서재 "숨긴 도서 표시" 토글 버튼 제공. |
 | **"모바일에서 페이지 넘기려는데 자꾸 수정창이 떠"** | `server/static/viewer.js`<br>`mobile_app/lib/ui/viewer/reader_screen.dart` | 우측 넘김 터치와 편집 충돌 해결: 500ms 이상 **롱프레스(Long-press)** 시에만 수정 모달 오픈. |
 | **"번역 중에 쾌속모드 켰는데 왜 안 빨라져?"** | `extension/content.js` (`translateAllPTags`) | 루프 순회마다 실시간으로 쾌속모드 플래그 체크하여 즉각 8초 -> 2초 대기시간 단축 동적 반영. |
 | **"번역 끝나갈 때 빈칸 문장들이 남아있어"** | `extension/content.js`<br>`server/routers/translation.py` | 번역 직전 미번역 빈칸 문장들을 마지막 번역 꾸러미에 자동 포함 및 보완 메커니즘 가동. |

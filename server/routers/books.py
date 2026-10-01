@@ -56,6 +56,9 @@ class TocUrlItem(BaseModel):
 class TocUrlUpdate(BaseModel):
     urls: List[TocUrlItem]
 
+class CheckUrlsRequest(BaseModel):
+    urls: List[str]
+
 # Endpoints
 @router.put(
     "/api/books/{folder_name}/urls",
@@ -695,3 +698,45 @@ async def crawl_summary_endpoint(folder_name: str, background_tasks: BackgroundT
     background_tasks.add_task(_crawl_and_update_summary_worker, decoded_folder_name, source_url)
     
     return {"message": "Summary crawling started in the background."}
+
+@router.post(
+    "/api/check_translated_urls",
+    tags=["Books"],
+    summary="URL 목록의 번역 여부 배치 확인",
+    description="주어진 URL 목록 중 번역 DB에 데이터가 존재하는 URL들을 일괄 조회합니다."
+)
+def check_translated_urls(req: CheckUrlsRequest):
+    if not req.urls:
+        return {"translated_urls": []}
+    
+    # URL 정규화 (해시 제거, 슬래시 양방향 비교 준비)
+    normalized_map = {}
+    for raw_url in req.urls:
+        if not raw_url:
+            continue
+        clean = raw_url.split('#')[0].strip()
+        stripped = clean.rstrip('/')
+        normalized_map[stripped] = raw_url
+        normalized_map[stripped + '/'] = raw_url
+
+    lookup_keys = list(normalized_map.keys())
+    if not lookup_keys:
+        return {"translated_urls": []}
+
+    conn = get_sqlite_conn()
+    cursor = conn.cursor()
+    
+    translated_urls = set()
+    chunk_size = 900
+    for i in range(0, len(lookup_keys), chunk_size):
+        chunk = lookup_keys[i:i + chunk_size]
+        placeholders = ','.join(['?'] * len(chunk))
+        cursor.execute(f"SELECT DISTINCT url FROM translations WHERE url IN ({placeholders})", chunk)
+        for row in cursor.fetchall():
+            if row[0]:
+                orig = normalized_map.get(row[0]) or normalized_map.get(row[0].rstrip('/'))
+                if orig:
+                    translated_urls.add(orig)
+
+    conn.close()
+    return {"translated_urls": list(translated_urls)}

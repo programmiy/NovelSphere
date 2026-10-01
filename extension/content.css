@@ -512,5 +512,312 @@ tr.review-target-row:hover {
     transform: translateX(18px);
 }
 
+/* ==========================================================================
+   LANOVEL Phase 4 & 5: 미니멀 플로팅 HUD, 목차 배지 & 퀵 점프 패널
+   ========================================================================== */
+
+/* 1. 미니멀 플로팅 HUD (Heads-Up Display) */
+#lanovel-hud {
+    position: fixed;
+    top: 24px;
+    right: 24px;
+    z-index: 2147483645;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 18px;
+    background: rgba(15, 23, 42, 0.88);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(99, 102, 241, 0.4);
+    border-radius: 30px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35), 0 0 15px rgba(99, 102, 241, 0.25);
+    color: #f8fafc;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    font-size: 13px;
+    font-weight: 500;
+    pointer-events: none;
+    opacity: 0;
+    transform: translateY(-12px) scale(0.95);
+    transition: opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1), transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+#lanovel-hud.visible {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+}
+
+#lanovel-hud .hud-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: rgba(99, 102, 241, 0.25);
+    color: #818cf8;
+    font-size: 13px;
+}
+
+#lanovel-hud .hud-message {
+    letter-spacing: -0.2px;
+}
+
+/* 2. 목차 에피소드 상태 배지 */
+.lanovel-toc-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: 8px;
+    padding: 2px 7px;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1.2;
+    border-radius: 12px;
+    vertical-align: middle;
+    transition: all 0.2s ease;
+    user-select: none;
+}
+
+.lanovel-toc-badge.translated {
+    background: rgba(16, 185, 129, 0.15);
+    color: #10b981;
+    border: 1px solid rgba(16, 185, 129, 0.35);
+}
+
+.lanovel-toc-badge.untranslated {
+    background: rgba(245, 158, 11, 0.12);
+    color: #f59e0b;
+    border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.lanovel-toc-badge .badge-dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    display: inline-block;
+}
+
+.lanovel-toc-badge.translated .badge-dot {
+    background: #10b981;
+    box-shadow: 0 0 6px rgba(16, 185, 129, 0.6);
+}
+
+.lanovel-toc-badge.untranslated .badge-dot {
+    background: #f59e0b;
+    box-shadow: 0 0 6px rgba(245, 158, 11, 0.6);
+}
+
+/* 3. 목차 미번역 퀵 점프 패널 */
+#lanovel-quick-jump-container {
+    position: fixed;
+    right: 20px;
+    bottom: 24px;
+    z-index: 2147483640;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+/* 접힘 상태: 미니 플로팅 배지 버튼 */
+#lanovel-quick-jump-trigger {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 16px;
+    background: rgba(15, 23, 42, 0.92);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(245, 158, 11, 0.4);
+    border-radius: 24px;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35), 0 0 12px rgba(245, 158, 11, 0.2);
+    color: #f8fafc;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    user-select: none;
+}
+
+#lanovel-quick-jump-trigger:hover {
+    transform: translateY(-2px);
+    border-color: rgba(245, 158, 11, 0.7);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45), 0 0 16px rgba(245, 158, 11, 0.35);
+}
+
+#lanovel-quick-jump-trigger .trigger-icon {
+    font-size: 14px;
+    color: #f59e0b;
+}
+
+#lanovel-quick-jump-trigger .trigger-keyhint {
+    background: rgba(255, 255, 255, 0.12);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    padding: 1px 6px;
+    border-radius: 6px;
+    font-size: 10px;
+    color: #cbd5e1;
+}
+
+/* 펼침 상태: 드로어/패널 */
+#lanovel-quick-jump-drawer {
+    display: none;
+    position: absolute;
+    bottom: 50px;
+    right: 0;
+    width: 320px;
+    max-height: 480px;
+    background: rgba(15, 23, 42, 0.96);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(245, 158, 11, 0.35);
+    border-radius: 16px;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5), 0 0 20px rgba(245, 158, 11, 0.15);
+    overflow: hidden;
+    flex-direction: column;
+    animation: drawerSlideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+#lanovel-quick-jump-drawer.open {
+    display: flex;
+}
+
+@keyframes drawerSlideUp {
+    from {
+        opacity: 0;
+        transform: translateY(12px) scale(0.96);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+.quick-jump-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 16px;
+    background: rgba(30, 41, 59, 0.7);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.quick-jump-header .title-wrap {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.quick-jump-header h4 {
+    margin: 0;
+    font-size: 13px;
+    font-weight: 600;
+    color: #f1f5f9;
+}
+
+.quick-jump-header .count-badge {
+    background: rgba(245, 158, 11, 0.2);
+    color: #f59e0b;
+    border: 1px solid rgba(245, 158, 11, 0.3);
+    padding: 1px 7px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 700;
+}
+
+.quick-jump-header .close-btn {
+    background: transparent;
+    border: none;
+    color: #94a3b8;
+    font-size: 16px;
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 4px;
+    line-height: 1;
+}
+
+.quick-jump-header .close-btn:hover {
+    color: #f1f5f9;
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.quick-jump-list {
+    flex: 1;
+    overflow-y: auto;
+    max-height: 380px;
+    margin: 0;
+    padding: 6px;
+    list-style: none;
+}
+
+.quick-jump-list::-webkit-scrollbar {
+    width: 6px;
+}
+
+.quick-jump-list::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.18);
+    border-radius: 3px;
+}
+
+.quick-jump-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 9px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    border: 1px solid transparent;
+}
+
+.quick-jump-item:hover, .quick-jump-item.focused {
+    background: rgba(99, 102, 241, 0.18);
+    border-color: rgba(99, 102, 241, 0.35);
+}
+
+.quick-jump-item.active-target {
+    background: rgba(245, 158, 11, 0.2);
+    border-color: rgba(245, 158, 11, 0.5);
+}
+
+.quick-jump-item .item-title {
+    color: #e2e8f0;
+    font-size: 12px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 230px;
+}
+
+.quick-jump-item .item-action-hint {
+    color: #94a3b8;
+    font-size: 10px;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+}
+
+.quick-jump-item:hover .item-action-hint,
+.quick-jump-item.focused .item-action-hint {
+    opacity: 1;
+    color: #818cf8;
+}
+
+.quick-jump-footer {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px 14px;
+    background: rgba(15, 23, 42, 0.8);
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+    font-size: 11px;
+    color: #64748b;
+}
+
+.quick-jump-footer kbd {
+    background: rgba(255, 255, 255, 0.08);
+    padding: 1px 4px;
+    border-radius: 4px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    color: #94a3b8;
+}
+
+
 
 

@@ -270,4 +270,40 @@ def test_viewer_chapter_content_and_url_title_unification():
     assert urls_data[0]["title"] == "제1화 시작"
 
 
+def test_check_translated_urls_batch():
+    folder = "배치_URL_검증_소설"
+    target_url_1 = "https://kakuyomu.jp/works/12345/episodes/111"
+    target_url_2 = "https://kakuyomu.jp/works/12345/episodes/222"
+    untranslated_url = "https://kakuyomu.jp/works/12345/episodes/999"
+
+    # 1. 2개 URL 데이터 저장
+    items = [
+        {"folderName": folder, "url": target_url_1, "title": "1화", "pid": "p1", "original": "こんにちは", "translated": "안녕하세요", "timestamp": 1000},
+        {"folderName": folder, "url": target_url_2 + "/", "title": "2화", "pid": "p1", "original": "さようなら", "translated": "안녕히 가세요", "timestamp": 1001}
+    ]
+    upsert_res = client.post("/translations/upsert", json=items)
+    assert upsert_res.status_code == 200
+
+    # 2. check_translated_urls 배치 요청
+    check_payload = {
+        "urls": [
+            target_url_1,
+            target_url_2, # 끝에 슬래시 없는 요청
+            untranslated_url,
+            "https://kakuyomu.jp/works/12345/episodes/nonexistent"
+        ]
+    }
+    check_res = client.post("/api/check_translated_urls", json=check_payload)
+    assert check_res.status_code == 200
+    result = check_res.json()
+    assert "translated_urls" in result
+    translated = result["translated_urls"]
+
+    # 번역된 URL 2개는 매칭되어야 하고, 미번역 URL은 포함되지 않아야 함
+    assert target_url_1 in translated
+    assert target_url_2 in translated
+    assert untranslated_url not in translated
+
+
+
 
