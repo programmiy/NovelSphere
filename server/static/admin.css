@@ -2549,3 +2549,38 @@ body.dark-mode #bulk-actions {
     color: #ffffff;
     border-color: var(--primary-color, #4f46e5);
 }
+
+
+/* 미번역 키워드 칩 */
+.keyword-chips-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin: 4px 0 6px 0;
+}
+.keyword-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 2px 8px;
+    border: 1px solid #f59e0b;
+    background: rgba(245, 158, 11, 0.1);
+    color: #f59e0b;
+    border-radius: 12px;
+    font-size: 11px;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+    white-space: nowrap;
+}
+.keyword-chip:hover {
+    background: rgba(245, 158, 11, 0.25);
+    color: #d97706;
+}
+.dark-mode .keyword-chip {
+    border-color: #fbbf24;
+    color: #fbbf24;
+    background: rgba(251, 191, 36, 0.12);
+}
+.dark-mode .keyword-chip:hover {
+    background: rgba(251, 191, 36, 0.25);
+}

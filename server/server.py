@@ -194,16 +194,19 @@ async def lifespan(app: FastAPI):
             # Safe schema migration for book_activity
             try:
                 connection.exec_driver_sql("ALTER TABLE book_activity ADD COLUMN last_read_chapter_title TEXT")
-            except Exception:
-                pass
+            except Exception as e:
+                if 'duplicate column name' not in str(e).lower() and 'already exists' not in str(e).lower():
+                    logger.error(f"스키마 마이그레이션 실패 (last_read_chapter_title): {e}")
             try:
                 connection.exec_driver_sql("ALTER TABLE book_activity ADD COLUMN is_completed INTEGER DEFAULT 0")
-            except Exception:
-                pass
+            except Exception as e:
+                if 'duplicate column name' not in str(e).lower() and 'already exists' not in str(e).lower():
+                    logger.error(f"스키마 마이그레이션 실패 (is_completed): {e}")
             try:
                 connection.exec_driver_sql("ALTER TABLE book_activity ADD COLUMN is_visible INTEGER DEFAULT 1")
-            except Exception:
-                pass
+            except Exception as e:
+                if 'duplicate column name' not in str(e).lower() and 'already exists' not in str(e).lower():
+                    logger.error(f"스키마 마이그레이션 실패 (is_visible): {e}")
             try:
                 connection.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_book_activity_is_visible ON book_activity (is_visible)")
             except Exception:

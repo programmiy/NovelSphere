@@ -42,7 +42,7 @@ from server.rule_classifier import (
     restore_brackets,
 )
 from server.settings import settings
-from server.utils import natural_sort_key
+from server.utils import natural_sort_key, get_url_variants
 
 # --- Sub-Services Re-exports for High Cohesion & Backward Compatibility ---
 from server.services.chapter_service import clean_chapter_title
@@ -156,28 +156,7 @@ def get_translations(
             params.extend([f'%{search}%', f'%{search}%'])
 
     if url:
-        urls_to_check = set()
-        urls_to_check.add(url.rstrip('/'))
-        urls_to_check.add(url.rstrip('/') + '/')
-        no_protocol_url = re.sub(r'^https?://', '', url).rstrip('/')
-        urls_to_check.add('http://' + no_protocol_url)
-        urls_to_check.add('http://' + no_protocol_url + '/')
-        urls_to_check.add('https://' + no_protocol_url)
-        urls_to_check.add('https://' + no_protocol_url + '/')
-        if no_protocol_url.startswith('www.'):
-            no_www_url = no_protocol_url.replace('www.', '', 1)
-            urls_to_check.add('http://' + no_www_url)
-            urls_to_check.add('http://' + no_www_url + '/')
-            urls_to_check.add('https://' + no_www_url)
-            urls_to_check.add('https://' + no_www_url + '/')
-        else:
-            with_www_url = 'www.' + no_protocol_url
-            urls_to_check.add('http://' + with_www_url)
-            urls_to_check.add('http://' + with_www_url + '/')
-            urls_to_check.add('https://' + with_www_url)
-            urls_to_check.add('https://' + with_www_url + '/')
-
-        url_list = list(urls_to_check)
+        url_list = get_url_variants(url)
         placeholders = ', '.join('?' * len(url_list))
         conditions.append(f"url IN ({placeholders})")
         params.extend(url_list)

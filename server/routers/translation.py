@@ -63,16 +63,43 @@ from server.services.translation_recovery import (
     handle_verbatim_cleanup_items,
 )
 
-# Backward compatibility alias for _gemini_session
-_gemini_session = get_gemini_session()
-
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
 # --- Global State for Quota Reset Stop Condition ---
-process_started_before_cutoff = False
-process_started_before_5pm = False  # Backward compatibility alias
-_stop_lock = threading.Lock()
+class _QuotaStopState:
+    """
+    17시 안전 중단 플래그를 스레드 안전하게 관리하는 상태 컨테이너.
+    모든 읽기/쓰기는 반드시 self.lock을 획득한 상태에서 수행됩니다.
+    """
+    def __init__(self):
+        self.lock = threading.Lock()
+        self._started_before_cutoff = False
+
+    def check_and_update(self, now: datetime.datetime, cutoff_hour: int) -> bool:
+        """
+        현재 시간을 기준으로 플래그를 갱신하고, 번역 중단 여부를 반환합니다.
+        반환값: True이면 503을 던져야 함.
+        """
+        with self.lock:
+            if now.hour < (cutoff_hour - 1):
+                self._started_before_cutoff = False
+            if now.hour < cutoff_hour:
+                self._started_before_cutoff = True
+            if self._started_before_cutoff and now.hour >= cutoff_hour:
+                self._started_before_cutoff = False
+                return True
+        return False
+
+    def reset(self):
+        with self.lock:
+            self._started_before_cutoff = False
+
+_stop_state = _QuotaStopState()
+
+# Backward compatibility aliases (외부에서 직접 참조하는 코드가 있을 경우를 위해 유지)
+_stop_lock = _stop_state.lock
+
 
 
 # --- Pydantic Request Models ---
@@ -112,6 +139,31 @@ def _get_excluded_sentences_for_url(url: str, db: Session) -> set:
     return excluded_originals
 
 
+
+def _post_process_translated_text(item_text: str, raw_trans: str) -> tuple:
+    """
+    번역문 공통 후처리: 화살표 분리 → 반복문자 제거 → 괄호복원 → 품질분류
+    반환: (processed_text: str, is_verbatim: bool, verbatim_cat: str | None)
+    """
+    translated_text = raw_trans
+    if '->' in translated_text or '=>' in translated_text:
+        parts = re.split(r'\s*[-=]>\s*', translated_text, maxsplit=1)
+        if len(parts) == 2 and any(ord('가') <= ord(c) <= ord('힣') for c in parts[1]):
+            translated_text = parts[1].strip()
+    translated_text = process_repeated_chars(translated_text)
+    translated_text = restore_brackets(item_text, translated_text)
+    cls_cat = classify_translation(item_text, translated_text)
+    is_verbatim = False
+    verbatim_cat = None
+    if is_verbatim_copy(item_text, translated_text) or cls_cat in ('verbatim_or_empty', 'paraphrased_jp', 'paraphrased_zh'):
+        verbatim_cat = (
+            'verbatim' if (is_verbatim_copy(item_text, translated_text) or cls_cat == 'verbatim_or_empty')
+            else ('paraphrased_zh' if cls_cat == 'paraphrased_zh' else 'paraphrased_jp')
+        )
+        is_verbatim = True
+    return translated_text, is_verbatim, verbatim_cat
+
+
 # --- API Endpoints ---
 @router.post(
     "/translate",
@@ -120,29 +172,17 @@ def _get_excluded_sentences_for_url(url: str, db: Session) -> set:
     description="Gemini API를 호출하여 텍스트를 번역합니다. ID 기반 매칭과 재시도 로직으로 안정성을 높였습니다."
 )
 def translate_texts(req: TranslateRequest, db: Session = Depends(get_db)):
-    global process_started_before_cutoff, process_started_before_5pm
     now = datetime.datetime.now()
     cutoff_hour = get_quota_reset_hour(now)
 
-    # --- Quota Reset Boundary-Crossing Logic (Thread-safe) ---
-    with _stop_lock:
-        if now.hour < (cutoff_hour - 1):
-            process_started_before_cutoff = False
-            process_started_before_5pm = False
-
-        if now.hour < cutoff_hour:
-            process_started_before_cutoff = True
-            process_started_before_5pm = True
-
-        if (process_started_before_cutoff or process_started_before_5pm) and now.hour >= cutoff_hour:
-            process_started_before_cutoff = False
-            process_started_before_5pm = False
-            display_hour = cutoff_hour if cutoff_hour <= 12 else cutoff_hour - 12
-            logger.critical(f"초기화 시간(오후 {display_hour}시)이 되어, 이전에 시작된 자동 번역 프로세스를 중지합니다.")
-            raise HTTPException(
-                status_code=503,
-                detail=f"오후 {display_hour}시(쿼터 초기화 시간)가 되어 자동 번역을 중지합니다. 새로고침 후 다시 시도해주세요."
-            )
+    # --- Quota Reset Boundary-Crossing Logic (Thread-safe via _QuotaStopState) ---
+    if _stop_state.check_and_update(now, cutoff_hour):
+        display_hour = cutoff_hour if cutoff_hour <= 12 else cutoff_hour - 12
+        logger.critical(f"초기화 시간(오후 {display_hour}시)이 되어, 이전에 시작된 자동 번역 프로세스를 중지합니다.")
+        raise HTTPException(
+            status_code=503,
+            detail=f"오후 {display_hour}시(쿼터 초기화 시간)가 되어 자동 번역을 중지합니다. 새로고침 후 다시 시도해주세요."
+        )
 
     # URL에서 #lanovel_review 등 해시를 완벽히 제거하여 정규화
     clean_url = (req.url or "").split('#')[0].strip()
@@ -269,15 +309,8 @@ def translate_texts(req: TranslateRequest, db: Session = Depends(get_db)):
                 is_verbatim = False
                 verbatim_cat = None
                 if not is_censored and translated_text:
-                    if '->' in translated_text or '=>' in translated_text:
-                        parts = re.split(r'\s*[-=]>\s*', translated_text, maxsplit=1)
-                        if len(parts) == 2 and any(ord('가') <= ord(c) <= ord('힣') for c in parts[1]):
-                            translated_text = parts[1].strip()
-                    translated_text = process_repeated_chars(translated_text)
-                    translated_text = restore_brackets(item.text, translated_text)
-                    cls_cat = classify_translation(item.text, translated_text)
-                    if is_verbatim_copy(item.text, translated_text) or cls_cat in ('verbatim_or_empty', 'paraphrased_jp', 'paraphrased_zh'):
-                        verbatim_cat = 'verbatim' if (is_verbatim_copy(item.text, translated_text) or cls_cat == 'verbatim_or_empty') else ('paraphrased_zh' if cls_cat == 'paraphrased_zh' else 'paraphrased_jp')
+                    translated_text, is_verbatim, verbatim_cat = _post_process_translated_text(item.text, translated_text)
+                    if is_verbatim:
                         logger.warning(f"[검열 분할 중 {verbatim_cat} 감지] ID: {item.id} -> 번역문을 즉시 삭제합니다.")
                         verbatim_detected_items.append({
                             "id": item.id,
@@ -286,7 +319,6 @@ def translate_texts(req: TranslateRequest, db: Session = Depends(get_db)):
                             "category": verbatim_cat
                         })
                         translated_text = ""
-                        is_verbatim = True
 
                 translated_results[str(item.id)] = {
                     "id": item.id,
@@ -379,15 +411,8 @@ def translate_texts(req: TranslateRequest, db: Session = Depends(get_db)):
             is_verbatim = False
             verbatim_cat = None
             if translated_text:
-                if '->' in translated_text or '=>' in translated_text:
-                    parts = re.split(r'\s*[-=]>\s*', translated_text, maxsplit=1)
-                    if len(parts) == 2 and any(ord('가') <= ord(c) <= ord('힣') for c in parts[1]):
-                        translated_text = parts[1].strip()
-                translated_text = process_repeated_chars(translated_text)
-                translated_text = restore_brackets(item.text, translated_text)
-                cls_cat = classify_translation(item.text, translated_text)
-                if is_verbatim_copy(item.text, translated_text) or cls_cat in ('verbatim_or_empty', 'paraphrased_jp', 'paraphrased_zh'):
-                    verbatim_cat = 'verbatim' if (is_verbatim_copy(item.text, translated_text) or cls_cat == 'verbatim_or_empty') else ('paraphrased_zh' if cls_cat == 'paraphrased_zh' else 'paraphrased_jp')
+                translated_text, is_verbatim, verbatim_cat = _post_process_translated_text(item.text, translated_text)
+                if is_verbatim:
                     logger.warning(f"[{verbatim_cat} 감지] ID: {item.id}, 원문: '{item.text[:40]}...' -> 번역문을 즉시 삭제합니다.")
                     verbatim_detected_items.append({
                         "id": item.id,
@@ -396,7 +421,6 @@ def translate_texts(req: TranslateRequest, db: Session = Depends(get_db)):
                         "category": verbatim_cat
                     })
                     translated_text = ""
-                    is_verbatim = True
 
             translated_results[str(item.id)] = {
                 "id": item.id,

@@ -81,7 +81,8 @@ def test_red_zone_rest_and_session_rejuvenation():
 
     assert get_current_rpm(60.0) == 13
 
-    old_session = trans_module._gemini_session
+    from server.services.rpm_manager import get_gemini_session
+    old_session = get_gemini_session()
 
     with patch("time.sleep") as mock_sleep:
         proactive_rpm_rest(novel_title="테스트소설", episode_title="1화")
@@ -90,18 +91,21 @@ def test_red_zone_rest_and_session_rejuvenation():
         assert 7.0 <= sleep_arg <= 14.0
 
     # 세션 소켓이 새로 재생성되었는지 확인
-    assert trans_module._gemini_session is not old_session
-    assert isinstance(trans_module._gemini_session, requests.Session)
+    new_session = get_gemini_session()
+    assert new_session is not old_session
+    assert isinstance(new_session, requests.Session)
 
 
 def test_session_recycling():
     """recycle_gemini_session이 기존 세션을 닫고 새 인스턴스로 교체하는지 검증."""
-    original_session = trans_module._gemini_session
+    from server.services.rpm_manager import get_gemini_session
+    original_session = get_gemini_session()
     recycle_gemini_session()
-    recycled_session = trans_module._gemini_session
+    recycled_session = get_gemini_session()
 
     assert original_session is not recycled_session
     assert isinstance(recycled_session, requests.Session)
+
 
 
 def test_status_preservation_and_current_rpm():

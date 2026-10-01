@@ -13,6 +13,7 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from server.models import Translation, TranslationTrash, CleanupNotification
+from server.quota import record_api_call
 from server.rule_classifier import classify_translation, is_verbatim_copy, restore_brackets
 from server.notifications import notify_verbatim_cleanup
 from server.settings import settings
@@ -235,6 +236,8 @@ def _recover_verbatim_items(
             proactive_rpm_rest()
             _record_call_timestamp()
             res = gemini_session.post(api_url, json=plain_payload, headers=headers, timeout=60)
+            model_name = api_url.split('/models/')[1].split(':')[0] if '/models/' in api_url else 'gemini'
+            record_api_call(model=model_name, status_code=res.status_code)
             if res.status_code in (429, 503):
                 recycle_gemini_session()
             if res.ok:

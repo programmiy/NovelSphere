@@ -119,24 +119,36 @@
   - `'paraphrased_jp'`: 규칙 2 (한글 없이 가나가 포함된 원문 변형)
   - `'other_language'`: 규칙 3 (한글 없이 간체자/영어 등 타 언어로 출력)
   - `'partial_untranslated'`: 규칙 4 (한글은 있으나 가나가 잔류한 일부 미번역)
+- `extract_untranslated_keywords(original, translated)`: 번역문에 잔류한 일본어 가나 단어 및 간체자 키워드 추출.
 - `restore_brackets(original, translated)`:
   - **규칙 대상**: 원문의 처음과 끝이 `「%」`로 둘러싸인 대사 문장에만 한정 적용 (독백/중간 괄호 제외).
   - 따옴표(`"`, `'`, `“`, `‘`, `«`) 치환 및 한쪽/완전 누락된 괄호 복원. 다중 괄호(`「「...」」`) 및 화자 접두어 보존.
-- `batch_restore_brackets_in_db(db_conn)`: DB 내 누락/변형된 대사 괄호 고속 일괄 복원.
+- `batch_restore_brackets_in_db(db_conn)`: DB 내 누락/변형된 대사 괄호 고속 일괄 복원 (`TRIM(original) LIKE '「%」'` 쿼리 적용).
+
+### `server/services/rpm_manager.py` (RPM 제어 및 세션 관리)
+- `get_gemini_session()`: 항상 현재 활성화된 `requests.Session`을 반환하는 싱글톤 엔트리포인트 (직접 참조 제거 및 일원화).
+- `recycle_gemini_session()`: 고착된 TCP 소켓 해소를 위한 세션 재생성 (`sys.modules` 패치 없이 `get_gemini_session()` 동기화).
+- `proactive_rpm_rest(novel_title, episode_title)`: 60초 슬라이딩 윈도우 RPM 분석 기반 적응형 선제 휴식 (모듈 레벨 임포트 최적화).
+
+### `server/utils.py` (공통 유틸리티)
+- `get_url_variants(url)`: http/https, www/non-www, trailing slash 조합의 모든 URL 변형 세트를 생성하여 DB 조회 시 불일치 방지.
+- `natural_sort_key(s)`: 전각 숫자를 반각으로 정규화하여 자연 정렬 지원.
 
 ---
 
 ## 4. 백엔드 라우터별 세부 API 엔드포인트
 
 ### 1) `server/routers/translation.py` (번역 엔진 코어)
+- `_post_process_translated_text(item_text, raw_trans)`: 화살표(`->`, `=>`) 분리, 반복 문자 처리, 괄호 복원, 품질 분류를 단일 헬퍼로 통합 처리.
+- `_QuotaStopState`: 17시 안전 중단 플래그와 락을 클래스로 캡슐화하여 스레드 안전성 보장.
 - `POST /translate`: 17시 안전 중단 락, 최대 5회 지수 백오프, 실시간 `restore_brackets` 대사 괄호 복원.
 - `POST /translations/find_replace`: 폴더 범위, 원문 조건, 정규식을 지원하는 전역 찾아바꾸기.
 - `POST /translations/exclude`: 지정 ID 번역 제외 목록 등록 및 레코드 삭제.
 
 ### 2) `server/routers/data_crud.py` (데이터 관리 & FTS5)
-- `GET /translations`: FTS5 전문 검색(실패 시 LIKE 폴백), URL 정규화 일치 검색, 페이징.
+- `GET /translations`: FTS5 전문 검색(실패 시 LIKE 폴백), `get_url_variants`를 통한 URL 변형 일괄 매칭 검색, 페이징.
 - `POST /translations/upsert`: N+1 제거 메모리 맵 적재, `restore_brackets` 통과 후 저장, 복붙 격리.
-- `GET /translations/abnormal`: 규칙 3(타 언어), 규칙 4(일부 미번역) 검출.
+- `GET /translations/abnormal`: 규칙 3(타 언어), 규칙 4(일부 미번역) 검출 및 `untranslated_keywords` 메타데이터 제공.
 - `GET /cleanup/notifications`, `GET /translations/trash`: 알림 센터 및 휴지통 복원 관리.
 
 ### 3) `server/routers/books.py` (서재 및 도서 활동)
@@ -193,7 +205,7 @@
 
 - **`viewer.js`**: 모바일 웹 뷰어 터치 충돌 해결을 위한 롱프레스(500ms) 편집 모달 분리, 회차 내 페이지/스크롤 복원.
 - **`library.js` & `library_mobile.js`**: 도서 숨김/표시 토글 및 상단 숨김 도서 보기 필터.
-- **`admin.js`**: 경량 모드 아코디언, 이상 번역 검출, 복원 센터 모달, 전역 찾아바꾸기.
+- **`admin.js`**: 경량 모드 아코디언, 이상 번역 검출(규칙 3/4) 및 **미번역 가나 키워드 칩 UI 연동(원클릭 찾아바꾸기 모달 및 검색어/폴더 자동 주입)**, 복원 센터 모달(휴지통/알림), 전역 찾아바꾸기.
 
 ---
 

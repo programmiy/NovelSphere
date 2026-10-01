@@ -8,6 +8,11 @@ import requests
 
 logger = logging.getLogger(__name__)
 
+try:
+    from server.notifications import update_translation_status as _update_status
+except ImportError:
+    _update_status = None
+
 # --- Global State for Requests Session & RPM Sliding Window ---
 _gemini_session = requests.Session()
 _CALL_TIMESTAMPS = collections.deque()
@@ -29,9 +34,6 @@ def recycle_gemini_session():
     try:
         new_session = requests.Session()
         _gemini_session = new_session
-        import sys
-        if "server.routers.translation" in sys.modules:
-            setattr(sys.modules["server.routers.translation"], "_gemini_session", new_session)
         old_session.close()
         logger.info("[Session Rejuvenation] Gemini requests.Session이 성공적으로 재생성되었습니다.")
     except Exception as e:
@@ -70,30 +72,30 @@ def proactive_rpm_rest(novel_title: Optional[str] = None, episode_title: Optiona
             f"[RPM 선제 방지] 최근 60초 RPM {current_rpm}회 감지 (과열 위험 구간). "
             f"{rest_time}초간 휴식 후 세션을 소켓 수준에서 재생성합니다."
         )
-        try:
-            from server.notifications import update_translation_status
-            update_translation_status(
-                book_title=novel_title,
-                episode_title=episode_title,
-                is_active=True,
-                status_text=f"☕ RPM 과열 선제 방지 휴식 중... ({rest_time}초)"
-            )
-        except Exception:
-            pass
+        if _update_status:
+            try:
+                _update_status(
+                    book_title=novel_title,
+                    episode_title=episode_title,
+                    is_active=True,
+                    status_text=f"☕ RPM 과열 선제 방지 휴식 중... ({rest_time}초)"
+                )
+            except Exception:
+                pass
 
         time.sleep(rest_time)
         recycle_gemini_session()
 
-        try:
-            from server.notifications import update_translation_status
-            update_translation_status(
-                book_title=novel_title,
-                episode_title=episode_title,
-                is_active=True,
-                status_text=None
-            )
-        except Exception:
-            pass
+        if _update_status:
+            try:
+                _update_status(
+                    book_title=novel_title,
+                    episode_title=episode_title,
+                    is_active=True,
+                    status_text=None
+                )
+            except Exception:
+                pass
 
     elif current_rpm >= 9:
         rest_time = round(random.uniform(1.5, 3.5), 2)

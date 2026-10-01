@@ -505,6 +505,15 @@ function renderItem(t) {
 
     const kwList = Array.isArray(t.untranslated_keywords) ? t.untranslated_keywords.join(',') : '';
 
+    // 미번역 키워드 칩 (이상번역 모드 + partial_untranslated 카테고리일 때만)
+    let keywordChipsHtml = '';
+    if (isFindingEmpty && t.category === 'partial_untranslated' && Array.isArray(t.untranslated_keywords) && t.untranslated_keywords.length > 0) {
+        const chips = t.untranslated_keywords.map(kw =>
+            `<button class="keyword-chip" data-keyword="${escapeHtml(kw)}" data-folder="${escapeHtml(t.folderName || '')}" title="'${escapeHtml(kw)}'을(를) 찾아 바꾸기">🔍 ${escapeHtml(kw)}</button>`
+        ).join('');
+        keywordChipsHtml = `<div class="keyword-chips-container">${chips}</div>`;
+    }
+
     return `
         <tr class="history-item" data-id="${t.id}">
             <td class="item-checkbox-cell">
@@ -526,6 +535,7 @@ function renderItem(t) {
             <td class="item-translated-cell">
                 <div class="translated-cell-container">
                     ${badgeHtml}
+                    ${keywordChipsHtml}
                     <div class="text-content translated-text" contenteditable="true" data-id="${t.id}" data-folder="${escapeHtml(t.folderName || '')}" data-keywords="${escapeHtml(kwList)}" data-original="${escapeHtml(t.original)}">${escapeHtml(t.translated)}</div>
                     <div class="translated-actions">
                         <span class="edit-status-hint">✏️ 수정 가능</span>
@@ -721,6 +731,29 @@ function setupEventListeners() {
     // Stats analytics modal & app release modal
     initStatsAnalyticsModal();
     initAppReleaseModal();
+
+    // 키워드 칩 클릭 → 찾아바꾸기 모달 열기
+    document.addEventListener('click', (e) => {
+        const chip = e.target.closest('.keyword-chip');
+        if (!chip) return;
+        const keyword = chip.dataset.keyword;
+        const folder = chip.dataset.folder;
+        openFindReplaceModal();
+        if (findText) findText.value = keyword;
+        // 폴더가 있으면 folderScope 자동 선택 (dropdown 렌더링 이후)
+        if (folder && folderScope) {
+            setTimeout(() => {
+                const opt = Array.from(folderScope.options).find(o => o.value === folder);
+                if (opt) folderScope.value = folder;
+            }, 50);
+        }
+        // 카운트 자동 갱신
+        if (findText) {
+            setTimeout(() => {
+                findText.dispatchEvent(new Event('input'));
+            }, 100);
+        }
+    });
 }
 
 // --- ntfy Push Notification Modal & Actions ---

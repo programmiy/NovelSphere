@@ -28,7 +28,7 @@ def enable_autostart():
 
     if current_os == "Windows":
         try:
-            vbs_path = os.path.join(os.getenv("APPDATA"), "Microsoft\Windows\Start Menu\Programs\Startup", f"{app_name}.vbs")
+            vbs_path = os.path.join(os.getenv("APPDATA"), r"Microsoft\Windows\Start Menu\Programs\Startup", f"{app_name}.vbs")
             with open(vbs_path, "w") as vbs_file:
                 vbs_file.write(f'Set WshShell = CreateObject("WScript.Shell")\n')
                 vbs_file.write(f'WshShell.Run chr(34) & "{app_path}" & chr(34) & " -minimized", 0\n')
@@ -49,7 +49,7 @@ def disable_autostart():
 
     if current_os == "Windows":
         try:
-            vbs_path = os.path.join(os.getenv("APPDATA"), "Microsoft\Windows\Start Menu\Programs\Startup", f"{app_name}.vbs")
+            vbs_path = os.path.join(os.getenv("APPDATA"), r"Microsoft\Windows\Start Menu\Programs\Startup", f"{app_name}.vbs")
             if os.path.exists(vbs_path):
                 os.remove(vbs_path)
                 print(f"Windows autostart disabled: {vbs_path}")

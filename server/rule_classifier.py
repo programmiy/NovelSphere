@@ -333,8 +333,8 @@ def batch_restore_brackets_in_db(db_conn) -> Tuple[int, int]:
     cursor = db_conn.cursor()
     cursor.execute('''
         SELECT id, original, translated FROM translations 
-        WHERE original LIKE '「%」'
-          AND (translated NOT LIKE '「%」' OR translated IS NULL)
+        WHERE TRIM(original) LIKE '「%」'
+          AND (translated IS NULL OR TRIM(translated) NOT LIKE '「%」')
     ''')
     rows = cursor.fetchall()
     

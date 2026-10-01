@@ -71,13 +71,15 @@ def test_service_rpm_manager_sliding_window():
 
 
 def test_service_rpm_manager_session_recycling():
-    """세션 재생성 시 새 세션 인스턴스로 교체되고 라우터 _gemini_session과 동기화되는지 검증"""
+    """세션 재생성 시 새 세션 인스턴스로 교체되고 get_gemini_session()이 항상 최신 세션을 반환하는지 검증"""
     s1 = get_gemini_session()
     recycle_gemini_session()
     s2 = get_gemini_session()
 
     assert s1 is not s2
-    assert router_trans._gemini_session is s2
+    # get_gemini_session()은 항상 최신 세션을 반환해야 함
+    assert s2 is get_gemini_session()
+
 
 
 # =========================================================================
