@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import '../../services/local_db_service.dart';
 import '../../services/preferences_service.dart';
 import '../themes/reader_themes.dart';
+import 'sentence_edit_page.dart';
 
 /// LANOVEL Mobile - 유사 번역 용례 탐색기 (Similar Translations Explorer)
 /// 화면 하단에 반투명하게 붙어있어 위아래로 가볍게 접고 펼치며,
@@ -326,12 +327,12 @@ class _SimilarTranslationsPanelState extends State<SimilarTranslationsPanel> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // 출처 헤더 배지
-              if (bName.isNotEmpty || title.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 5),
-                  child: Row(
-                    children: [
+              // 출처 헤더 배지 & 단락 수정 링크
+              Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Row(
+                  children: [
+                    if (bName.isNotEmpty || title.isNotEmpty) ...[
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                         decoration: BoxDecoration(
@@ -362,10 +363,59 @@ class _SimilarTranslationsPanelState extends State<SimilarTranslationsPanel> {
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
-                      ],
-                    ],
-                  ),
+                      ] else
+                        const Spacer(),
+                    ] else
+                      const Spacer(),
+
+                    // 단락 수정 링크 버튼 (별도의 독립 편집 페이지로 진입)
+                    InkWell(
+                      borderRadius: BorderRadius.circular(6),
+                      onTap: () async {
+                        final result = await Navigator.push<String>(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => SentenceEditPage(
+                              bookName: bName.isNotEmpty ? bName : (widget.bookName ?? ''),
+                              chapterTitle: title,
+                              original: orig,
+                              currentTranslated: trans,
+                              pid: item['pid'] as String?,
+                              sentenceId: item['id'] as int?,
+                              theme: widget.theme,
+                              koreanFont: widget.koreanFont,
+                              japaneseFont: widget.japaneseFont,
+                            ),
+                          ),
+                        );
+                        if (result != null && mounted) {
+                          setState(() {
+                            item['translated'] = result;
+                          });
+                        }
+                      },
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.edit_note_rounded, size: 14, color: Colors.amber.withOpacity(0.9)),
+                            const SizedBox(width: 3),
+                            Text(
+                              '이 단락 수정',
+                              style: TextStyle(
+                                color: Colors.amber.withOpacity(0.9),
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
+              ),
 
               // 원문 (단어 선택 및 연쇄 탐색을 지원하는 대조 뷰)
               _buildSelectableHighlightedText(

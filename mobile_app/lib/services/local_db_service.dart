@@ -386,6 +386,56 @@ class LocalDbService {
     });
   }
 
+  /// [유사 번역 연동] 임의의 소설 및 챕터 컨텍스트에서 단락 번역문을 찾아 수정하고 로컬 DB 및 동기화 큐에 반영
+  static Future<bool> updateSentenceByContext({
+    required String bookName,
+    required String chapterTitle,
+    required String original,
+    required String newTranslated,
+    String? pid,
+    int? sentenceId,
+  }) async {
+    final db = await database;
+
+    // 1. 해당 챕터 레코드 조회
+    final rows = await db.query(
+      'chapters',
+      where: 'book_name = ? AND title = ?',
+      whereArgs: [bookName, chapterTitle],
+      limit: 1,
+    );
+
+    if (rows.isEmpty) return false;
+
+    final chapRow = rows.first;
+    final chapId = chapRow['id'] as int;
+    final blob = chapRow['compressed_content'] as Uint8List?;
+    if (blob == null) return false;
+
+    try {
+      final decompressed = const ZLibDecoder().decodeBytes(blob);
+      final jsonStr = utf8.decode(decompressed);
+      final List<dynamic> list = jsonDecode(jsonStr);
+      final sentences = list.map((item) => Sentence.fromJson(item as Map<String, dynamic>)).toList();
+
+      final index = sentences.indexWhere((s) {
+        if (sentenceId != null && s.id == sentenceId) return true;
+        if (pid != null && pid.isNotEmpty && s.pid == pid) return true;
+        return s.original == original;
+      });
+
+      if (index == -1) return false;
+
+      final target = sentences[index];
+      target.translated = newTranslated;
+
+      await updateSentence(chapId, target, sentences);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   /// 독서 진도 저장
   static Future<void> updateReadingProgress({
     required String bookName,

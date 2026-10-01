@@ -160,8 +160,9 @@
 
 ## 5. Flutter 모바일 독립 서재 애플리케이션 (`mobile_app/`)
 
-- **`local_db_service.dart`**: Sqflite 로컬 오프라인 DB, 1ms 챕터 zlib 압축 해제, `autoHealMissingChapters()`, **`searchSimilarTranslations()` (로컬 챕터 zlib 역색인 기반 유사 번역 초고속 0ms 검색)**.
-- **`similar_translations_panel.dart`**: 화면 하단 슬라이딩 미니 패널, **꼬리를 무는 연쇄 탐색(Chained Context Exploration)**, 단어 선택 툴바 연쇄 조회, 로컬+서버 하이브리드 병합, 뒤로가기 히스토리.
+- **`local_db_service.dart`**: Sqflite 로컬 오프라인 DB, 1ms 챕터 zlib 압축 해제, `autoHealMissingChapters()`, **`searchSimilarTranslations()` (로컬 챕터 zlib 역색인 기반 유사 번역 초고속 0ms 검색)**, **`updateSentenceByContext()` (임의 챕터 단락 번역문 교정 및 동기화 큐 적재)**.
+- **`similar_translations_panel.dart`**: 화면 하단 슬라이딩 미니 패널, **꼬리를 무는 연쇄 탐색(Chained Context Exploration)**, 단어 선택 툴바 연쇄 조회, 각 카드별 `[이 단락 수정]` 링크, 로컬+서버 하이브리드 병합, 뒤로가기 히스토리.
+- **`sentence_edit_page.dart`**: 유사 번역 카드에서 진입하는 **독립 단락 교정 화면**, 원문 대조 및 번역문 수정 저장, 상단 뒤로가기(`←`) 터치 시 **0초 만에 원래 읽던 뷰어 페이지로 원위치 복귀**.
 - **`quick_edit_dialog.dart`**: 원문 `SelectableText` 확장, 단어 드래그 시 즉시 `[🔍 유사 번역 대조]` 툴바 제공 및 헤더 원터치 대조 버튼 연동.
 - **`sync_service.dart`**: Wi-Fi 감지 -> 핑 -> 전체 시드 다운로드/해제 -> 서버 임시파일 삭제 호출 -> 증분 pull/push.
 - **`local_notification_service.dart`**: 고정 ID 9001 단일 번역 현황판 알림 (배민 스타일, 삼성 Now Bar 호환).
