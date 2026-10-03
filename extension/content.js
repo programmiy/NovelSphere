@@ -117,6 +117,7 @@ function getCleanUrl() {
 let isTurboMode = false;
 let turboCutoffHour = null; // null: 자동 판별, 16: 16시 고정, 17: 17시 고정
 let turboTargetTimestamp = 0; // 다음 목표 정각 타임스탬프 (ms)
+let turboAbortedOnLoad = false; // 정각 도달로 인한 자동 OFF 및 번역 차단 플래그
 
 // 미국 써머타임 공식 룰 (3월 둘째 일요일 02시 ~ 11월 첫째 일요일 02시)
 function isUsDstRule(d) {
@@ -236,7 +237,8 @@ async function loadTurboModeState() {
 
         if (isTurboMode) {
             if (!turboTargetTimestamp || Date.now() >= turboTargetTimestamp) {
-                // 이미 정각이 지났다면 즉시 자동 OFF
+                // 이미 정각이 지났다면 즉시 자동 OFF 및 초기화 번역 차단 플래그 설정
+                turboAbortedOnLoad = true;
                 await abortTurboMode("초기화 시간 도달");
                 return;
             }
@@ -1140,6 +1142,12 @@ function prepareNovelUpContent() {
 
 async function init() {
     try {
+        // 0. 로컬 서버(관리페이지, 뷰어 등)에서는 번역 확장 프로그램 절대 비활성화
+        const hostname = window.location.hostname;
+        if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname.startsWith('192.168.')) {
+            return;
+        }
+
         // 0. Check if the current origin is allowed
         const response = await fetch('http://127.0.0.1:8001/api/allowed_origins');
         if (!response.ok) {
@@ -1163,10 +1171,10 @@ async function init() {
         injectSidebar();
         setupEventListeners();
         setupLanovelKeyboardNavigation();
-        checkAutoTranslateNextTrigger();
 
         // 0.2. ⚡ 쾌속모드 상태 로드 및 정각 도달 여부 확인
         await loadTurboModeState();
+        checkAutoTranslateNextTrigger();
 
         // 0.5. 소설 제목 감지 및 해당 소설의 구분선 설정 로드
         currentNovelTitle = await detectNovelTitle();
@@ -1215,9 +1223,12 @@ async function init() {
         setupParagraphInteraction();
 
         // 4. 실제로 아직 번역되지 않은 문단이 있는 경우에만 사이드바를 열고 번역 진행
-        if (isTurboMode && checkCutoffTimeReached()) {
-            await abortTurboMode("초기화 시간 도달");
+        if (turboAbortedOnLoad || (isTurboMode && checkCutoffTimeReached())) {
+            if (!turboAbortedOnLoad) {
+                await abortTurboMode("초기화 시간 도달");
+            }
             console.log("[init] 쾌속모드 정각 도달로 자동 번역을 시작하지 않습니다.");
+            logToSidebar("⏰ [정각 도달] 쾌속모드 초기화 정각에 도달하여 자동 번역 및 다음 화 이동이 완전히 중단되었습니다.", "log-error");
         } else {
             const needsTranslation = hasUntranslatedParagraphs();
             if (needsTranslation) {
@@ -2392,6 +2403,10 @@ function getPendingEmptyItems(candidateItems, excludeItemIds = new Set()) {
 }
 
 async function translateAllPTags(isRetranslation = false) {
+    if (turboAbortedOnLoad) {
+        console.log("[translateAllPTags] 쾌속모드 정각 도달로 번역이 차단되었습니다.");
+        return;
+    }
     isTranslationCancelled = false;
     document.getElementById('stop-translation-btn').style.display = 'inline-block';
     document.getElementById('retry-translation-btn').style.display = 'none';
@@ -2520,12 +2535,22 @@ async function translateAllPTags(isRetranslation = false) {
 
                 // Handle explicit error response from background script
                 if (response && response.error) {
+                    if (response.error.includes("초기화 시간") || response.error.includes("자동 번역을 중지")) {
+                        await abortTurboMode("초기화 시간 도달");
+                        return;
+                    }
                     throw new Error(response.error);
                 }
     
                 if (response && response.notification) {
                     logToSidebar(response.notification, 'log-error');
                     if (response.stop) {
+                        if (response.isQuotaResetStop) {
+                            // 쿼터 초기화(16시/17시) 정각 도달: 재시도나 재개 대기 없이 즉시 완전 중단
+                            await abortTurboMode("초기화 시간 도달");
+                            return;
+                        }
+
                         document.getElementById('stop-translation-btn').style.display = 'none';
                         document.getElementById('resume-translation-btn').style.display = 'inline-block';
                         logToSidebar("번역이 일시 중지되었습니다. 수동 작업 후 재개 버튼(▶️)을 눌러주세요.");
@@ -2627,6 +2652,10 @@ async function translateAllPTags(isRetranslation = false) {
                     throw new Error('Malformed response from background script');
                 }
             } catch (error) {
+                if (error.message && (error.message.includes('초기화 시간') || error.message.includes('자동 번역을 중지'))) {
+                    await abortTurboMode("초기화 시간 도달");
+                    return;
+                }
                 if (error.message.includes('The message channel closed')) {
                     console.warn('Message channel closed, likely due to page reload. Translation chunk cancelled.');
                     return; // Stop retrying, the page is gone.
@@ -3807,9 +3836,15 @@ function setupLanovelKeyboardNavigation() {
 function checkAutoTranslateNextTrigger() {
     if (sessionStorage.getItem('lanovel_auto_translate_next') === '1') {
         sessionStorage.removeItem('lanovel_auto_translate_next');
+        if (turboAbortedOnLoad || isTranslationCancelled) {
+            console.log("[checkAutoTranslateNextTrigger] 쾌속모드 정각 도달로 새 회차 자동 번역 취소");
+            return;
+        }
         showLanovelHud('새 회차 자동 번역을 시작합니다!', '⚡', 2500);
         setTimeout(() => {
-            showSidebar();
+            if (!turboAbortedOnLoad && !isTranslationCancelled) {
+                showSidebar();
+            }
         }, 500);
     }
 }

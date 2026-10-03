@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:network_info_plus/network_info_plus.dart';
 
 import '../../services/app_update_service.dart';
+import '../../services/local_db_service.dart';
 import '../../services/local_notification_service.dart';
 import '../../services/notification_service.dart';
 import '../../services/preferences_service.dart';
@@ -267,13 +268,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     setState(() {
       _isSyncing = true;
-      _syncStatusMessage = '양방향 증분 동기화 진행 중...';
+      _syncProgress = 0.0;
+      _syncStatusMessage = '동기화 시작 준비 중...';
     });
 
-    final result = await SyncService.performIncrementalSync(ignoreWifiCheck: true);
+    final result = await SyncService.performIncrementalSync(
+      ignoreWifiCheck: true,
+      onProgress: (statusMessage, currentCount, totalEstimate) {
+        setState(() {
+          _syncStatusMessage = statusMessage;
+          if (totalEstimate != null && totalEstimate > 0) {
+            _syncProgress = (currentCount / totalEstimate).clamp(0.0, 1.0);
+          } else {
+            _syncProgress = 0.0;
+          }
+        });
+      },
+    );
 
     setState(() {
       _isSyncing = false;
+      _syncProgress = 0.0;
       _syncStatusMessage = result.message;
     });
 
@@ -282,8 +297,92 @@ class _SettingsScreenState extends State<SettingsScreen> {
         SnackBar(
           content: Text(result.message),
           backgroundColor: result.success ? Colors.green : Colors.redAccent,
+          duration: const Duration(seconds: 4),
         ),
       );
+    }
+  }
+
+  Future<void> _confirmResetLocalDatabase() async {
+    final theme = ReaderThemes.getTheme(PreferencesService.theme);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: theme.surfaceColor,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            const Icon(Icons.warning_amber_rounded, color: Colors.redAccent, size: 28),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                '모바일 DB 완전 초기화',
+                style: TextStyle(color: theme.textColor, fontWeight: FontWeight.bold, fontSize: 16),
+              ),
+            ),
+          ],
+        ),
+        content: Text(
+          '모바일 기기에 저장된 소설 캐시 및 DB를 완전히 삭제하고 초기 상태로 재구축합니다.\n\n'
+          '⚠️ DB가 손상되었거나 동기화 오류가 지속될 때 유용합니다.\n'
+          '초기화 후 PC 서버와 다시 동기화하여 데이터를 깨끗하게 다시 받으실 수 있습니다.\n\n'
+          '정말 초기화를 진행하시겠습니까?',
+          style: TextStyle(color: theme.subTextColor, fontSize: 13, height: 1.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('취소', style: TextStyle(color: theme.subTextColor)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.redAccent,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('초기화 진행'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && mounted) {
+      setState(() {
+        _isSyncing = true;
+        _syncProgress = 0.0;
+        _syncStatusMessage = '모바일 DB 초기화 진행 중...';
+      });
+
+      try {
+        await LocalDbService.resetDatabase();
+        setState(() {
+          _isSyncing = false;
+          _syncStatusMessage = '로컬 DB 초기화 완료! 이제 동기화를 진행하세요.';
+        });
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('모바일 DB가 깨끗하게 초기화되었습니다. 이제 동기화를 실행하세요.'),
+              backgroundColor: Colors.green,
+              duration: Duration(seconds: 4),
+            ),
+          );
+        }
+      } catch (e) {
+        setState(() {
+          _isSyncing = false;
+          _syncStatusMessage = 'DB 초기화 실패: $e';
+        });
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('DB 초기화 실패: $e'),
+              backgroundColor: Colors.redAccent,
+            ),
+          );
+        }
+      }
     }
   }
 
@@ -374,7 +473,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                   onPressed: _isSyncing ? null : _runIncrementalSync,
                   icon: const Icon(Icons.sync_alt_rounded),
-                  label: const Text('양방향 증분 동기화 (최신 번역문 & 진도 반영)'),
+                  label: const Text('양방향 분할 동기화 (최신 번역문 & 진도 반영)'),
                 ),
                 const SizedBox(height: 12),
                 OutlinedButton.icon(
@@ -387,6 +486,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   onPressed: _isSyncing ? null : _runFullSeedDownload,
                   icon: const Icon(Icons.cloud_download_outlined),
                   label: const Text('전체 서재 시드 다운로드 (최초 1회, 약 26MB)'),
+                ),
+                const SizedBox(height: 12),
+                OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.redAccent,
+                    side: const BorderSide(color: Colors.redAccent),
+                    minimumSize: const Size(double.infinity, 44),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                  onPressed: _isSyncing ? null : _confirmResetLocalDatabase,
+                  icon: const Icon(Icons.delete_forever_rounded, color: Colors.redAccent),
+                  label: const Text('로컬 DB 완전 초기화 (손상된 DB 복구 & 리셋)'),
                 ),
               ],
             ),

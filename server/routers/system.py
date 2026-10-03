@@ -59,11 +59,14 @@ async def get_logs(limit: int = 1000):
 @router.get(
     "/api/allowed_origins",
     tags=["System"],
-    summary="허용된 CORS 출처 조회",
-    description="CORS(Cross-Origin Resource Sharing)에 허용된 출처 목록을 반환합니다."
+    summary="허용된 출처 조회",
+    description="번역 확장이 동작할 수 있는 웹소설 플랫폼 출처 목록을 반환합니다. (로컬 서버 제외)"
 )
 def get_allowed_origins():
-    return settings.allowed_origins
+    return [
+        origin for origin in settings.allowed_origins
+        if not (origin.startswith("http://localhost") or origin.startswith("http://127.0.0.1") or origin.startswith("http://192.168."))
+    ]
 
 @router.get(
     "/debug/urls_by_folder",

@@ -187,6 +187,7 @@ async function loadAndRenderGrouped() {
         renderGroupedHistory(groupedTranslations); // Pass data to render
         populateFolderDropdowns(allFolders);
         updateStatistics(groupedTranslations);
+        checkAndLoadUnclassifiedNovels();
         
     } catch (error) {
         console.error("Failed to load data:", error);
@@ -302,7 +303,7 @@ function populateFolderDropdowns(folders) {
     const folderFilterDropdown = document.getElementById('folderFilterDropdown');
 
     if (moveSelectedToFolderDropdown) {
-        moveSelectedToFolderDropdown.innerHTML = '<option value="">폴더로 이동...</option><option value="__no_folder__">폴더 추가 대기 상태</option>';
+        moveSelectedToFolderDropdown.innerHTML = '<option value="">폴더로 이동...</option>';
         folders.forEach(folder => {
             const option = `<option value="${escapeHtml(folder.name)}">${escapeHtml(folder.name)}</option>`;
             moveSelectedToFolderDropdown.insertAdjacentHTML('beforeend', option);
@@ -728,9 +729,10 @@ function setupEventListeners() {
         }
     });
 
-    // Stats analytics modal & app release modal
+    // Stats analytics modal & app release modal & unclassified drawer
     initStatsAnalyticsModal();
     initAppReleaseModal();
+    initUnclassifiedDrawer();
 
     // 키워드 칩 클릭 → 찾아바꾸기 모달 열기
     document.addEventListener('click', (e) => {
@@ -1781,9 +1783,7 @@ function countOccurrences() {
     for (const source of dataSources) {
         for (const folderName in source) {
             if (!isSelectedScope && selectedFolder !== '__all__' && folderName !== selectedFolder) {
-                if (!(selectedFolder === '폴더 추가 대기 상태' && (folderName === '폴더 추가 대기 상태' || folderName === ''))) {
-                    continue;
-                }
+                continue;
             }
 
             const urlGroups = source[folderName];
@@ -1845,9 +1845,7 @@ function applyFindReplaceToLocalData(findTextValue, replaceTextValue, conditionT
     for (const source of sourcesToUpdate) {
         for (const folderName in source) {
             if (!isSelectedScope && selectedFolder !== '__all__' && folderName !== selectedFolder) {
-                if (!(selectedFolder === '폴더 추가 대기 상태' && (folderName === '폴더 추가 대기 상태' || folderName === ''))) {
-                    continue;
-                }
+                continue;
             }
 
             const urlGroups = source[folderName];
@@ -1887,9 +1885,7 @@ function applyFindReplaceToLocalData(findTextValue, replaceTextValue, conditionT
 
         const itemFolder = el.dataset.folder || '';
         if (!isSelectedScope && selectedFolder !== '__all__' && itemFolder !== selectedFolder) {
-            if (!(selectedFolder === '폴더 추가 대기 상태' && !itemFolder)) {
-                return;
-            }
+            return;
         }
 
         if (conditionTextValue) {
@@ -3007,9 +3003,13 @@ function initStatsAnalyticsModal() {
             if (jumpBtn && jumpBtn.dataset.novel) {
                 const targetNovel = jumpBtn.dataset.novel;
                 closeModal();
+                if (targetNovel === '미분류' || targetNovel === '폴더 추가 대기 상태') {
+                    openUnclassifiedDrawer();
+                    return;
+                }
                 const folderFilter = document.getElementById('folderFilterDropdown');
                 if (folderFilter) {
-                    folderFilter.value = targetNovel === '미분류' ? '__no_folder__' : targetNovel;
+                    folderFilter.value = targetNovel;
                     folderFilter.dispatchEvent(new Event('change'));
                 }
                 return;
@@ -4023,5 +4023,481 @@ async function fetchAppReleaseInfo() {
 
     } catch (err) {
         console.error("앱 릴리즈 정보 조회 오류:", err);
+    }
+}
+
+// =========================================================================
+// Unclassified Novels Drawer & Floating Toggle Handle (content.js style)
+// =========================================================================
+
+let unclassifiedData = null;
+let currentSelectedUnclassifiedNovel = null;
+
+function initUnclassifiedDrawer() {
+    const toggleBar = document.getElementById('unclassifiedToggleBar');
+    const closeBtn = document.getElementById('closeUnclassifiedDrawerBtn');
+    const overlay = document.getElementById('unclassifiedDrawerOverlay');
+    const refreshBtn = document.getElementById('refreshUnclassifiedBtn');
+    const searchInput = document.getElementById('unclassifiedNovelSearchInput');
+    const epListContainer = document.getElementById('unclassifiedEpisodeListContainer');
+
+    if (toggleBar) toggleBar.addEventListener('click', openUnclassifiedDrawer);
+    if (closeBtn) closeBtn.addEventListener('click', closeUnclassifiedDrawer);
+    if (overlay) {
+        overlay.addEventListener('click', (e) => {
+            if (e.target.id === 'unclassifiedDrawerOverlay') {
+                closeUnclassifiedDrawer();
+            }
+        });
+    }
+    if (refreshBtn) {
+        refreshBtn.addEventListener('click', async () => {
+            await checkAndLoadUnclassifiedNovels();
+            showToast('미분류 소설 목록을 새로고침했습니다.', 'info');
+        });
+    }
+
+    if (searchInput) {
+        searchInput.addEventListener('input', () => {
+            renderUnclassifiedNovelList();
+        });
+    }
+
+    // Attach delegated handlers to episode list container for full paragraph table interactivity
+    if (epListContainer) {
+        epListContainer.addEventListener('click', handleHistoryClick);
+        epListContainer.addEventListener('change', handleCheckboxChange);
+        epListContainer.addEventListener('focusin', (e) => {
+            if (e.target.classList.contains('translated-text')) {
+                handleTranslatedFocus(e.target);
+            }
+        });
+    }
+
+    // Toolbar Action Listeners
+    const smartMergeBtn = document.getElementById('smartMergeBtn');
+    if (smartMergeBtn) {
+        smartMergeBtn.addEventListener('click', async () => {
+            if (!currentSelectedUnclassifiedNovel || !currentSelectedUnclassifiedNovel.matched_existing_folder) return;
+            const novel = currentSelectedUnclassifiedNovel;
+            const target = novel.matched_existing_folder;
+            if (!confirm(`'${novel.novel_title}'의 모든 회차(${novel.total_episodes}개, ${novel.total_paragraphs.toLocaleString()}개 단락)를 기존 폴더 '${target}'(으)로 일괄 합치시겠습니까?`)) {
+                return;
+            }
+            await executeAssignFolder(novel.work_id, target, novel.work_url);
+        });
+    }
+
+    const assignNewFolderBtn = document.getElementById('assignNewFolderBtn');
+    if (assignNewFolderBtn) {
+        assignNewFolderBtn.addEventListener('click', async () => {
+            if (!currentSelectedUnclassifiedNovel) return;
+            const input = document.getElementById('assignNewFolderNameInput');
+            const folderName = input ? input.value.trim() : '';
+            if (!folderName) {
+                showToast('등록할 새 폴더명을 입력해주세요.', 'warning');
+                return;
+            }
+            const novel = currentSelectedUnclassifiedNovel;
+            if (!confirm(`'${novel.novel_title}'의 모든 회차를 새 폴더 '${folderName}'(으)로 일괄 등록하시겠습니까?`)) {
+                return;
+            }
+            await executeAssignFolder(novel.work_id, folderName, novel.work_url);
+        });
+    }
+
+    const assignExistingFolderBtn = document.getElementById('assignExistingFolderBtn');
+    if (assignExistingFolderBtn) {
+        assignExistingFolderBtn.addEventListener('click', async () => {
+            if (!currentSelectedUnclassifiedNovel) return;
+            const select = document.getElementById('assignExistingFolderDropdown');
+            const folderName = select ? select.value : '';
+            if (!folderName) {
+                showToast('이동할 기존 폴더를 선택해주세요.', 'warning');
+                return;
+            }
+            const novel = currentSelectedUnclassifiedNovel;
+            if (!confirm(`'${novel.novel_title}'의 모든 회차를 기존 폴더 '${folderName}'(으)로 이동하시겠습니까?`)) {
+                return;
+            }
+            await executeAssignFolder(novel.work_id, folderName, novel.work_url);
+        });
+    }
+
+    const deleteNovelBtn = document.getElementById('deleteUnclassifiedNovelBtn');
+    if (deleteNovelBtn) {
+        deleteNovelBtn.addEventListener('click', async () => {
+            if (!currentSelectedUnclassifiedNovel) return;
+            const novel = currentSelectedUnclassifiedNovel;
+            if (!confirm(`정말로 '${novel.novel_title}'의 모든 미분류 번역(${novel.total_paragraphs.toLocaleString()}개 단락)을 영구 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.`)) {
+                return;
+            }
+            try {
+                const res = await fetch('/api/unclassified_novels/delete', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ work_id: novel.work_id, work_url: novel.work_url })
+                });
+                if (!res.ok) {
+                    const err = await res.json();
+                    throw new Error(err.detail || '삭제 실패');
+                }
+                const data = await res.json();
+                showToast(data.message || '소설이 성공적으로 삭제되었습니다.', 'success');
+                currentSelectedUnclassifiedNovel = null;
+                await checkAndLoadUnclassifiedNovels();
+                await loadAndRenderGrouped();
+            } catch (e) {
+                console.error('delete unclassified novel error:', e);
+                showToast(`삭제 오류: ${e.message}`, 'error');
+            }
+        });
+    }
+
+    const editTitleBtn = document.getElementById('editNovelTitleBtn');
+    if (editTitleBtn) {
+        editTitleBtn.addEventListener('click', async () => {
+            if (!currentSelectedUnclassifiedNovel) return;
+            const novel = currentSelectedUnclassifiedNovel;
+            const newTitle = prompt('수정할 소설 원제(제목)를 입력하세요:', novel.novel_title);
+            if (!newTitle || !newTitle.trim() || newTitle.trim() === novel.novel_title) return;
+            
+            try {
+                const res = await fetch('/api/unclassified_novels/rename', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ work_id: novel.work_id, new_title: newTitle.trim() })
+                });
+                if (!res.ok) throw new Error('제목 수정 실패');
+                showToast('소설 제목이 수정되었습니다.', 'success');
+                novel.novel_title = newTitle.trim();
+                document.getElementById('detailNovelTitle').textContent = novel.novel_title;
+                const newFolderInput = document.getElementById('assignNewFolderNameInput');
+                if (newFolderInput) newFolderInput.value = novel.novel_title;
+                renderUnclassifiedNovelList();
+            } catch (e) {
+                showToast(`수정 오류: ${e.message}`, 'error');
+            }
+        });
+    }
+}
+
+async function checkAndLoadUnclassifiedNovels() {
+    try {
+        const res = await fetch(`/api/unclassified_novels?t=${Date.now()}`);
+        if (!res.ok) return;
+        unclassifiedData = await res.json();
+        
+        const toggleBar = document.getElementById('unclassifiedToggleBar');
+        const badge = document.getElementById('unclassifiedToggleBadge');
+        const headerBadge = document.getElementById('unclassifiedHeaderStatsBadge');
+        
+        const totalParas = unclassifiedData.total_unclassified_paragraphs || 0;
+        const totalNovels = unclassifiedData.total_unclassified_novels || 0;
+        
+        // 미분류 데이터가 존재할 때만 우측에 플로팅 토글바 표시
+        if (totalParas > 0) {
+            if (toggleBar) toggleBar.style.display = 'flex';
+            if (badge) badge.textContent = totalParas.toLocaleString();
+            if (headerBadge) headerBadge.textContent = `${totalNovels}개 작품 / ${totalParas.toLocaleString()}개 문장`;
+        } else {
+            if (toggleBar) toggleBar.style.display = 'none';
+            if (headerBadge) headerBadge.textContent = `0개 작품 / 0개 문장`;
+            closeUnclassifiedDrawer();
+        }
+
+        // 드로어가 열려있는 상태라면 목록 갱신
+        const overlay = document.getElementById('unclassifiedDrawerOverlay');
+        if (overlay && overlay.classList.contains('active')) {
+            renderUnclassifiedNovelList();
+            if (currentSelectedUnclassifiedNovel) {
+                const refreshed = (unclassifiedData.novels || []).find(n => n.work_id === currentSelectedUnclassifiedNovel.work_id);
+                if (refreshed) {
+                    selectUnclassifiedNovel(refreshed);
+                } else {
+                    currentSelectedUnclassifiedNovel = null;
+                    const content = document.getElementById('unclassifiedDetailContent');
+                    const emptyNotice = document.getElementById('unclassifiedDetailEmptyNotice');
+                    if (content) content.style.display = 'none';
+                    if (emptyNotice) emptyNotice.style.display = 'block';
+                }
+            }
+        }
+    } catch (e) {
+        console.warn("[UnclassifiedNovels] Failed to check unclassified novels:", e);
+    }
+}
+
+function openUnclassifiedDrawer() {
+    const overlay = document.getElementById('unclassifiedDrawerOverlay');
+    const panel = document.getElementById('unclassifiedDrawerPanel');
+    if (overlay && panel) {
+        overlay.style.display = 'block';
+        void overlay.offsetWidth; // Force layout
+        overlay.classList.add('active');
+        panel.classList.add('active');
+        renderUnclassifiedNovelList();
+    }
+}
+
+function closeUnclassifiedDrawer() {
+    const overlay = document.getElementById('unclassifiedDrawerOverlay');
+    const panel = document.getElementById('unclassifiedDrawerPanel');
+    if (overlay && panel) {
+        overlay.classList.remove('active');
+        panel.classList.remove('active');
+        setTimeout(() => {
+            if (!overlay.classList.contains('active')) {
+                overlay.style.display = 'none';
+            }
+        }, 350);
+    }
+}
+
+function renderUnclassifiedNovelList() {
+    const container = document.getElementById('unclassifiedNovelListContainer');
+    if (!container) return;
+    container.innerHTML = '';
+    
+    const searchVal = (document.getElementById('unclassifiedNovelSearchInput')?.value || '').trim().toLowerCase();
+    const novels = (unclassifiedData?.novels || []).filter(n => {
+        if (!searchVal) return true;
+        return (n.novel_title && n.novel_title.toLowerCase().includes(searchVal)) ||
+               (n.platform && n.platform.toLowerCase().includes(searchVal)) ||
+               (n.work_url && n.work_url.toLowerCase().includes(searchVal));
+    });
+
+    if (novels.length === 0) {
+        container.innerHTML = `
+            <div style="text-align: center; color: var(--text-muted); padding: 30px 10px; font-size: 13px;">
+                ${searchVal ? '검색된 소설이 없습니다.' : '미분류 소설이 없습니다.'}
+            </div>
+        `;
+        return;
+    }
+
+    novels.forEach(novel => {
+        const card = document.createElement('div');
+        card.className = 'unclassified-novel-card';
+        if (currentSelectedUnclassifiedNovel && currentSelectedUnclassifiedNovel.work_id === novel.work_id) {
+            card.classList.add('active');
+        }
+        
+        let platformClass = 'other';
+        const pLower = (novel.platform || '').toLowerCase();
+        if (pLower.includes('kakuyomu')) platformClass = 'kakuyomu';
+        else if (pLower.includes('syosetu')) platformClass = 'syosetu';
+        else if (pLower.includes('novelup')) platformClass = 'novelup';
+
+        const smartBadgeHtml = novel.matched_existing_folder ? `
+            <span class="card-smart-badge" title="기존 등록 폴더 '${escapeHtml(novel.matched_existing_folder)}'와 일치">
+                <span class="material-icons" style="font-size: 13px;">auto_awesome</span>
+                ${escapeHtml(novel.matched_existing_folder)}
+            </span>
+        ` : '';
+
+        card.innerHTML = `
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <span class="card-platform-badge ${platformClass}">${escapeHtml(novel.platform)}</span>
+                ${smartBadgeHtml}
+            </div>
+            <div class="card-title" title="${escapeHtml(novel.novel_title)}">${escapeHtml(novel.novel_title)}</div>
+            <div class="card-meta">
+                <span><strong style="color: var(--primary-color);">${novel.total_episodes}</strong>개 회차</span>
+                <span><strong>${novel.total_paragraphs.toLocaleString()}</strong>단락</span>
+            </div>
+        `;
+
+        card.addEventListener('click', () => {
+            container.querySelectorAll('.unclassified-novel-card').forEach(c => c.classList.remove('active'));
+            card.classList.add('active');
+            selectUnclassifiedNovel(novel);
+        });
+
+        container.appendChild(card);
+    });
+
+    // 자동 선택: 아직 선택된 소설이 없으면 첫 번째 소설 선택
+    if (!currentSelectedUnclassifiedNovel && novels.length > 0) {
+        selectUnclassifiedNovel(novels[0]);
+        const firstCard = container.querySelector('.unclassified-novel-card');
+        if (firstCard) firstCard.classList.add('active');
+    }
+}
+
+function selectUnclassifiedNovel(novel) {
+    currentSelectedUnclassifiedNovel = novel;
+    const emptyNotice = document.getElementById('unclassifiedDetailEmptyNotice');
+    const content = document.getElementById('unclassifiedDetailContent');
+    if (!emptyNotice || !content) return;
+
+    emptyNotice.style.display = 'none';
+    content.style.display = 'block';
+
+    // 1. 헤더 정보 바인딩
+    document.getElementById('detailNovelTitle').textContent = novel.novel_title;
+    const badgeEl = document.getElementById('detailPlatformBadge');
+    badgeEl.textContent = novel.platform;
+    let platformClass = 'other';
+    const pLower = (novel.platform || '').toLowerCase();
+    if (pLower.includes('kakuyomu')) platformClass = 'kakuyomu';
+    else if (pLower.includes('syosetu')) platformClass = 'syosetu';
+    else if (pLower.includes('novelup')) platformClass = 'novelup';
+    badgeEl.className = `card-platform-badge ${platformClass}`;
+
+    const workLink = document.getElementById('detailWorkLink');
+    if (workLink) workLink.href = novel.work_url || '#';
+
+    document.getElementById('detailNovelStats').textContent = 
+        `총 ${novel.total_episodes}개 회차 · ${novel.total_paragraphs.toLocaleString()}개 번역 단락`;
+
+    // 2. 스마트 자동 병합 액션 버튼 (기존 동일 소설 폴더가 있을 때)
+    const smartMergeContainer = document.getElementById('smartMergeContainer');
+    const smartMergeLabel = document.getElementById('smartMergeLabel');
+    if (novel.matched_existing_folder) {
+        smartMergeContainer.style.display = 'block';
+        smartMergeLabel.textContent = `기존 폴더 '${novel.matched_existing_folder}'(으)로 자동 합치기`;
+    } else {
+        smartMergeContainer.style.display = 'none';
+    }
+
+    // 새 폴더 입력창 기본값 채우기 (추출된 소설 원제)
+    const newFolderInput = document.getElementById('assignNewFolderNameInput');
+    if (newFolderInput) {
+        newFolderInput.value = novel.novel_title;
+    }
+
+    // 기존 폴더 드롭다운 채우기
+    const existingDropdown = document.getElementById('assignExistingFolderDropdown');
+    if (existingDropdown) {
+        existingDropdown.innerHTML = '<option value="">기존 폴더 선택...</option>';
+        allFolders.forEach(f => {
+            if (f.name && f.name !== '폴더 추가 대기 상태') {
+                const opt = document.createElement('option');
+                opt.value = f.name;
+                opt.textContent = f.name;
+                if (novel.matched_existing_folder === f.name) {
+                    opt.selected = true;
+                }
+                existingDropdown.appendChild(opt);
+            }
+        });
+    }
+
+    // 3. 회차 및 단락 리스트 렌더링
+    renderUnclassifiedEpisodes(novel);
+}
+
+function renderUnclassifiedEpisodes(novel) {
+    const listContainer = document.getElementById('unclassifiedEpisodeListContainer');
+    if (!listContainer) return;
+    listContainer.innerHTML = '';
+
+    (novel.episodes || []).forEach((ep, idx) => {
+        const epEl = document.createElement('div');
+        epEl.className = 'unclassified-episode-item list-group';
+        epEl.dataset.url = ep.url;
+        epEl.dataset.folderName = '미분류';
+
+        const isApplied = appliedUrlsSet.has(ep.url.split('#')[0].replace(/\/$/, ''));
+
+        epEl.innerHTML = `
+            <div class="unclassified-episode-header list-group-header">
+                <div class="unclassified-ep-title-wrap">
+                    <span class="material-icons ep-toggle-icon">expand_more</span>
+                    <h4 class="list-group-title">${escapeHtml(ep.title || `제 ${idx + 1}화`)}</h4>
+                    <span class="episode-count-badge">${ep.paragraph_count}개 단락</span>
+                </div>
+                <div class="unclassified-ep-actions list-group-actions">
+                    <a href="${ep.url}" target="_blank" class="btn btn-outline btn-sm ext-link-btn" title="원본 웹페이지 새 창으로 열기">🔗 원본 ↗</a>
+                    <button type="button" class="btn btn-outline btn-sm edit-title-btn" data-url="${escapeHtml(ep.url)}" title="회차 제목 수정">✏️ 수정</button>
+                    <button type="button" class="btn btn-secondary btn-sm btn-apply ${isApplied ? 'applied' : ''}" data-url="${escapeHtml(ep.url)}">${isApplied ? '적용 해제' : '적용'}</button>
+                </div>
+            </div>
+            <div class="unclassified-episode-content list-group-content">
+                <!-- 아코디언 오픈 시 단락 테이블 로딩 -->
+            </div>
+        `;
+
+        const header = epEl.querySelector('.unclassified-episode-header');
+        const content = epEl.querySelector('.unclassified-episode-content');
+        const icon = epEl.querySelector('.ep-toggle-icon');
+
+        header.addEventListener('click', async (e) => {
+            // 버튼 클릭 시 아코디언 토글 방지
+            if (e.target.closest('.unclassified-ep-actions') || e.target.closest('button') || e.target.closest('a')) {
+                return;
+            }
+
+            const isOpen = content.classList.contains('open');
+            if (isOpen) {
+                content.classList.remove('open');
+                icon.textContent = 'expand_more';
+            } else {
+                content.classList.add('open');
+                icon.textContent = 'expand_less';
+
+                // 아직 단락 테이블이 렌더링되지 않았으면 렌더링 수행
+                if (!content.querySelector('.history-table')) {
+                    content.innerHTML = '<div style="padding: 16px; text-align: center; color: var(--text-muted); font-size: 13px;">단락 목록 불러오는 중...</div>';
+                    
+                    let items = null;
+                    try {
+                        const res = await fetch(`/api/unclassified_novels/paragraphs?url=${encodeURIComponent(ep.url)}`);
+                        if (res.ok) {
+                            const data = await res.json();
+                            items = data.items;
+                        }
+                    } catch (err) {
+                        console.error("Failed to fetch episode paragraphs:", err);
+                    }
+
+                    if (items && items.length > 0) {
+                        content.innerHTML = `
+                            <table class="history-table">
+                                <thead>
+                                    <tr>
+                                        <th style="width: 44px; text-align: center;">선택</th>
+                                        <th style="width: 75px;">PID</th>
+                                        <th style="width: 42%;">원문 (일본어)</th>
+                                        <th style="width: 42%;">번역 (한국어)</th>
+                                        <th style="width: 150px; text-align: center;">관리</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${items.map(t => renderItem(t)).join('')}
+                                </tbody>
+                            </table>
+                        `;
+                    } else {
+                        content.innerHTML = '<div style="padding: 16px; text-align: center; color: var(--text-muted); font-size: 13px;">표시할 번역 단락이 없습니다.</div>';
+                    }
+                }
+            }
+        });
+
+        listContainer.appendChild(epEl);
+    });
+}
+
+async function executeAssignFolder(work_id, target_folder, work_url) {
+    try {
+        const res = await fetch('/api/unclassified_novels/assign_folder', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ work_id, target_folder, work_url })
+        });
+        if (!res.ok) {
+            const err = await res.json();
+            throw new Error(err.detail || '폴더 등록에 실패했습니다.');
+        }
+        const data = await res.json();
+        showToast(data.message || `'${target_folder}' 등록 완료!`, 'success');
+        currentSelectedUnclassifiedNovel = null;
+        await checkAndLoadUnclassifiedNovels();
+        await loadAndRenderGrouped();
+    } catch (e) {
+        console.error('executeAssignFolder error:', e);
+        showToast(`오류 발생: ${e.message}`, 'error');
     }
 }

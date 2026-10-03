@@ -479,12 +479,13 @@ def get_novel_analytics(folder_name: str):
             COALESCE(SUM(LENGTH(t.original)), 0) as jp_chars,
             MIN(t.timestamp) as first_ts,
             MAX(t.timestamp) as last_ts,
-            CASE WHEN a.url IS NOT NULL THEN 1 ELSE 0 END as is_applied
+            CASE WHEN a.url IS NOT NULL THEN 1 ELSE 0 END as is_applied,
+            MIN(t.id) as min_id
         FROM translations t
         LEFT JOIN applied_urls a ON t.url = a.url
         {where_sql}
         GROUP BY t.url
-        ORDER BY ep_sort ASC, first_ts ASC
+        ORDER BY ep_sort ASC, min_id ASC, first_ts ASC
         """
         cursor.execute(query, params)
         rows = cursor.fetchall()

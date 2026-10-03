@@ -950,6 +950,108 @@
         </div>
     </div>
 
+    <!-- 미분류 보관소 우측 고정 토글 핸들 (content.js 스타일) -->
+    <div id="unclassifiedToggleBar" class="unclassified-toggle-bar" style="display: none;" title="미분류 소설 보관함 열기">
+        <span class="unclassified-toggle-arrow material-icons">chevron_left</span>
+        <span class="unclassified-toggle-icon">📦</span>
+        <span class="unclassified-toggle-label">미분류 보관함</span>
+        <span id="unclassifiedToggleBadge" class="unclassified-toggle-badge">0</span>
+    </div>
+
+    <!-- 미분류 소설 보관함 사이드 드로어 패널 -->
+    <div id="unclassifiedDrawerOverlay" class="unclassified-drawer-overlay" style="display: none;">
+        <div id="unclassifiedDrawerPanel" class="unclassified-drawer-panel">
+            <!-- 드로어 헤더 -->
+            <div class="unclassified-drawer-header">
+                <div class="unclassified-header-title">
+                    <span class="material-icons">inventory_2</span>
+                    <h2>미분류 소설 보관소</h2>
+                    <span id="unclassifiedHeaderStatsBadge" class="badge-count" style="margin-left: 8px;">0개 소설 / 0개 문장</span>
+                </div>
+                <div class="unclassified-header-actions">
+                    <button type="button" class="btn btn-outline btn-sm" id="refreshUnclassifiedBtn" title="새로고침">
+                        <span class="material-icons">refresh</span> 새로고침
+                    </button>
+                    <button type="button" class="btn-close" id="closeUnclassifiedDrawerBtn" title="닫기">&times;</button>
+                </div>
+            </div>
+
+            <!-- 드로어 본문 (Master-Detail 2단 분할 뷰) -->
+            <div class="unclassified-drawer-body">
+                <!-- 좌측: 소설 목록 (Master) -->
+                <div class="unclassified-master-pane">
+                    <div class="unclassified-pane-header">
+                        <input type="text" id="unclassifiedNovelSearchInput" class="form-input" placeholder="소설 제목 검색..." style="width: 100%;">
+                    </div>
+                    <div id="unclassifiedNovelListContainer" class="unclassified-novel-list">
+                        <!-- 소설 카드들이 동적으로 렌더링됩니다 -->
+                    </div>
+                </div>
+
+                <!-- 우측: 회차 및 단락 상세 (Detail) -->
+                <div class="unclassified-detail-pane">
+                    <div id="unclassifiedDetailEmptyNotice" class="unclassified-detail-empty">
+                        <span class="material-icons">touch_app</span>
+                        <p>좌측에서 소설을 선택하면 회차 및 단락 세부 정보를 확인하고 관리할 수 있습니다.</p>
+                    </div>
+                    <div id="unclassifiedDetailContent" style="display: none;">
+                        <!-- 선택된 소설 헤더 정보 및 액션 툴바 -->
+                        <div class="unclassified-detail-header">
+                            <div class="novel-info-top">
+                                <div class="novel-title-group">
+                                    <span class="card-platform-badge" id="detailPlatformBadge">Kakuyomu</span>
+                                    <h3 id="detailNovelTitle">소설 제목</h3>
+                                    <button type="button" class="btn btn-outline btn-sm" id="editNovelTitleBtn" title="소설 원제 수정">✏️ 제목 수정</button>
+                                    <a href="#" target="_blank" id="detailWorkLink" class="btn btn-outline btn-sm" title="원작 소설 웹페이지 새 창으로 열기">🔗 원작 홈 ↗</a>
+                                </div>
+                                <div class="novel-stats-summary" id="detailNovelStats">
+                                    0개 회차 · 0개 단락
+                                </div>
+                            </div>
+
+                            <!-- 액션 바: 스마트 자동 병합 & 새 폴더 등록 & 삭제 -->
+                            <div class="unclassified-actions-toolbar">
+                                <!-- 1. 스마트 자동 병합 버튼 (기존 동일 소설 폴더 감지 시) -->
+                                <div id="smartMergeContainer" style="display: none;">
+                                    <button type="button" class="btn btn-primary btn-smart-merge" id="smartMergeBtn">
+                                        <span class="material-icons" style="font-size: 16px;">auto_awesome</span>
+                                        <span id="smartMergeLabel">기존 폴더로 자동 합치기</span>
+                                    </button>
+                                </div>
+
+                                <!-- 2. 새 폴더로 일괄 등록 -->
+                                <div class="new-folder-action-group">
+                                    <input type="text" id="assignNewFolderNameInput" class="form-input" placeholder="새 폴더 이름 입력">
+                                    <button type="button" class="btn btn-primary" id="assignNewFolderBtn">
+                                        📁 새 폴더로 등록
+                                    </button>
+                                </div>
+
+                                <!-- 3. 기존 폴더 선택 합치기 -->
+                                <div class="existing-folder-action-group">
+                                    <select id="assignExistingFolderDropdown" class="form-select">
+                                        <option value="">기존 폴더 선택...</option>
+                                    </select>
+                                    <button type="button" class="btn btn-secondary" id="assignExistingFolderBtn">이동</button>
+                                </div>
+
+                                <!-- 4. 소설 전체 삭제 -->
+                                <button type="button" class="btn btn-danger" id="deleteUnclassifiedNovelBtn" title="이 소설의 모든 미분류 단락을 삭제">
+                                    🗑️ 소설 전체 삭제
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- 회차 및 단락 리스트 컨테이너 -->
+                        <div id="unclassifiedEpisodeListContainer" class="unclassified-episode-list">
+                            <!-- 회차 아코디언 및 단락 테이블 동적 렌더링 -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- <script type="module" src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.esm.js"></script> -->
     <script type="module" src="/static/admin.js?v=2.7"></script>
     <script>

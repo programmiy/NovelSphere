@@ -578,11 +578,8 @@ def find_replace_all(req: FindReplaceRequest, db: Session = Depends(get_db)):
 
     # 폴더 범위 필터링 (인덱스를 탈 수 있도록 앞부분에 배치)
     if req.folder_scope and req.folder_scope != "__all__":
-        if req.folder_scope == "폴더 추가 대기 상태":
-            where_clauses.append("folderName IS NULL")
-        else:
-            where_clauses.append("folderName = :folder_scope")
-            params["folder_scope"] = req.folder_scope
+        where_clauses.append("folderName = :folder_scope")
+        params["folder_scope"] = req.folder_scope
 
     # 원문 조건 필터링
     if req.condition_text:

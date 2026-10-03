@@ -135,9 +135,16 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                             notification: "API 요청 한도를 초과했습니다. 번역을 중지합니다.", 
                             stop: true 
                         });
+                    } else if (error.status === 503 && (error.message.includes("초기화 시간") || error.message.includes("자동 번역을 중지"))) {
+                        // 503 쿼터 초기화(16시/17시) 정각 도달 중지
+                        sendResponse({
+                            notification: error.message,
+                            stop: true,
+                            isQuotaResetStop: true
+                        });
                     } else {
                         // Generic error for other issues
-                        sendResponse({ error: error.message });
+                        sendResponse({ error: error.message, status: error.status });
                     }
                 } catch (e) {
                     if (e.message.includes(channelClosedMessage)) {
@@ -222,7 +229,9 @@ async function handleBatchTranslate(items, sourceUrl, isRetranslation = false, m
             }
             // 다른 오류들은 서버에서 온 상세 메시지를 사용
             const errorData = await response.json().catch(() => ({ detail: `Server error: ${response.status}` }));
-            throw new Error(errorData.detail || `Server error: ${response.status}`);
+            const customError = new Error(errorData.detail || `Server error: ${response.status}`);
+            customError.status = response.status;
+            throw customError;
         }
 
         const data = await response.json();

@@ -67,7 +67,9 @@ def get_abnormal_translations_data(
         if category_filter and category_filter != 'all' and cat != category_filter:
             continue
 
-        folder_name = t_dict.get("folderName") or "폴더 추가 대기 상태"
+        folder_name = t_dict.get("folderName")
+        if not folder_name:
+            continue
         url = t_dict.get("url")
         if url:
             untrans_kw = extract_untranslated_keywords(t_dict.get("original") or "", t_dict.get("translated") or "")
@@ -92,11 +94,13 @@ def get_abnormal_translations_data(
         url_group_list = []
         for url, items in url_groups.items():
             sort_order = items[0]['toc_sort_order'] if items and items[0]['toc_sort_order'] is not None else None
-            url_group_list.append({"url": url, "items": items, "toc_sort_order": sort_order})
+            min_id = min((t['id'] for t in items if t.get('id')), default=0)
+            url_group_list.append({"url": url, "items": items, "toc_sort_order": sort_order, "min_id": min_id})
 
         url_group_list.sort(key=lambda x: (
             x['toc_sort_order'] is None,
             x['toc_sort_order'] if x['toc_sort_order'] is not None else 0,
+            x.get('min_id', 0),
             natural_sort_key(x['url'])
         ))
         final_response[folder_name] = url_group_list

@@ -139,10 +139,6 @@ def get_folders(include_hidden: bool = False):
 
     all_folders_set = translation_folders.union(activity_folders)
 
-    cursor.execute("SELECT 1 FROM translations WHERE folderName IS NULL LIMIT 1")
-    if cursor.fetchone():
-        all_folders_set.add("폴더 추가 대기 상태")
-
     # 숨김 처리된 폴더 (is_visible == 0) 필터링 (Zero overhead on translations table)
     hidden_folders = {
         row['folderName']
@@ -154,10 +150,6 @@ def get_folders(include_hidden: bool = False):
 
     cursor.execute("SELECT folderName, COUNT(DISTINCT title) as chapter_count FROM translations WHERE folderName IS NOT NULL AND title IS NOT NULL GROUP BY folderName")
     chapter_counts = {row['folderName']: row['chapter_count'] for row in cursor.fetchall()}
-    cursor.execute("SELECT COUNT(DISTINCT title) as chapter_count FROM translations WHERE folderName IS NULL AND title IS NOT NULL")
-    null_chapter_row = cursor.fetchone()
-    if null_chapter_row and null_chapter_row['chapter_count']:
-        chapter_counts["폴더 추가 대기 상태"] = null_chapter_row['chapter_count']
 
     conn.close()
     folder_objects = [
@@ -297,7 +289,8 @@ def get_book_urls(folder_name: str):
                 url
             ) as title,
             COUNT(*) as count, 
-            MIN(toc_sort_order) as toc_sort_order
+            MIN(toc_sort_order) as toc_sort_order,
+            MIN(id) as min_id
         FROM translations t1
         WHERE {folder_clause}
         GROUP BY url
@@ -307,10 +300,11 @@ def get_book_urls(folder_name: str):
     urls = cursor.fetchall()
     conn.close()
 
-    # 자연 정렬: toc_sort_order 우선, 없으면 URL 및 제목 자연 정렬 (001 -> 002 -> 010 -> 100)
+    # 자연 정렬: toc_sort_order 우선, 없으면 min_id 우선, 그 다음 URL 및 제목 자연 정렬 (001 -> 002 -> 010 -> 100)
     urls.sort(key=lambda x: (
         x.get('toc_sort_order') is None,
         x.get('toc_sort_order') if x.get('toc_sort_order') is not None else 0,
+        x.get('min_id', 0),
         natural_sort_key(x.get('url') or ''),
         natural_sort_key(x.get('title') or '')
     ))
@@ -350,6 +344,7 @@ def get_book_chapters(folder_name: str):
                 url
             ) as title,
             MIN(COALESCE(toc_sort_order, 999999)) as sort_order,
+            MIN(id) as min_id,
             MIN(url) as min_url
         FROM translations t1
         WHERE {folder_clause} AND (title IS NOT NULL OR url IS NOT NULL)
@@ -360,13 +355,14 @@ def get_book_chapters(folder_name: str):
     rows = cursor.fetchall()
     conn.close()
 
-    # 자연 정렬: toc_sort_order 우선, 없으면 URL 및 제목 자연 정렬 (001 -> 002 -> 010 -> 100)
+    # 자연 정렬: toc_sort_order 우선, 없으면 min_id 우선, 그 다음 URL 및 제목 자연 정렬 (001 -> 002 -> 010 -> 100)
     def chapter_sort_key(row):
         sort_order = row.get('sort_order')
         has_valid_toc = sort_order is not None and sort_order < 999999
         return (
             not has_valid_toc,
             sort_order if has_valid_toc else 0,
+            row.get('min_id', 0),
             natural_sort_key(row.get('min_url') or ''),
             natural_sort_key(row.get('title') or '')
         )

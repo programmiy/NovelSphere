@@ -161,8 +161,12 @@ class SyncService {
 
   /// [양방향 증분 동기화]
   /// 1. 앱에서 편집한 번역문, 독서 진도, 찾아바꾸기 룰을 압축하여 PC로 업로드 (Push)
-  /// 2. PC에서 추가/수정된 데이터를 다운로드하여 로컬에 반영 (Pull)
-  static Future<SyncResult> performIncrementalSync({bool ignoreWifiCheck = false}) async {
+  /// 2. PC에서 추가/수정된 데이터를 10,000건 단위 청크로 분할 다운로드하여 로컬에 반영 (Pull)
+  /// 3. 대량 데이터도 타임아웃과 OOM 없이 안전하게 수신하고 최종 누적 문장 수를 산출합니다.
+  static Future<SyncResult> performIncrementalSync({
+    bool ignoreWifiCheck = false,
+    Function(String statusMessage, int currentCount, int? totalEstimate)? onProgress,
+  }) async {
     if (!ignoreWifiCheck) {
       final isWifiAllowed = await isConnectedToTrustedWifi();
       if (!isWifiAllowed) {
@@ -190,6 +194,9 @@ class SyncService {
       int pushedActCount = 0;
 
       if (pendingChanges.isNotEmpty) {
+        if (onProgress != null) {
+          onProgress('모바일 변경사항 PC 서버로 업로드 중...', 0, null);
+        }
         List<Map<String, dynamic>> modifiedTrans = [];
         List<Map<String, dynamic>> activities = [];
         List<Map<String, dynamic>> glossaryRules = [];
@@ -239,24 +246,35 @@ class SyncService {
         }
       }
 
-      // --- Step 2: Pull (PC -> 모바일) ---
-      final sinceTs = PreferencesService.lastSyncedTimestamp;
-      final pullRes = await http.get(
-        Uri.parse('$serverUrl/api/sync/pull?since=$sinceTs'),
-      ).timeout(const Duration(seconds: 20));
+      // --- Step 2: Pull (PC -> 모바일 분할 청크 루프) ---
+      int totalPulledTransCount = 0;
+      int currentSince = PreferencesService.lastSyncedTimestamp;
+      int currentLastId = 0;
+      bool hasMore = true;
+      int? totalEstimate;
 
-      int pulledTransCount = 0;
-      if (pullRes.statusCode == 200) {
+      final db = await LocalDbService.database;
+
+      while (hasMore) {
+        final uri = Uri.parse('$serverUrl/api/sync/pull?since=$currentSince&last_id=$currentLastId&limit=10000');
+        final pullRes = await http.get(uri).timeout(const Duration(seconds: 30));
+
+        if (pullRes.statusCode != 200) {
+          throw Exception('서버 응답 오류 (HTTP ${pullRes.statusCode})');
+        }
+
         // Gzip 압축 해제
         final decompressed = GZipDecoder().decodeBytes(pullRes.bodyBytes);
         final pullData = jsonDecode(utf8.decode(decompressed));
 
         final newTranslations = pullData['translations'] as List? ?? [];
-        pulledTransCount = newTranslations.length;
+        final batchPulledCount = newTranslations.length;
+        totalPulledTransCount += batchPulledCount;
+
+        totalEstimate ??= pullData['total_remaining'] as int?;
+
         final activities = pullData['activities'] as List? ?? [];
         final updatedChapters = pullData['updated_chapters'] as List? ?? [];
-
-        final db = await LocalDbService.database;
 
         if (updatedChapters.isNotEmpty) {
           final touchedBooks = <String>{};
@@ -273,7 +291,7 @@ class SyncService {
 
             touchedBooks.add(bName);
 
-            // 해당 URL의 기존 챕터(과거 분리되었던 레코드 포함) 모두 제거 후 최신 통합 챕터로 일괄 저장
+            // 해당 URL의 기존 챕터 모두 제거 후 최신 통합 챕터로 일괄 저장
             batch.delete(
               'chapters',
               where: 'book_name = ? AND url = ?',
@@ -299,7 +317,7 @@ class SyncService {
           }
         }
 
-        // PC의 활동 정보를 로컬 DB에 일괄 반영
+        // PC의 활동 정보를 로컬 DB에 일괄 반영 (첫 배치에만 수신)
         if (activities.isNotEmpty) {
           final actBatch = db.batch();
           for (var act in activities) {
@@ -334,21 +352,50 @@ class SyncService {
           await actBatch.commit(noResult: true);
         }
 
-        // 과거 분리된 중복 회차 자가 치유 실행
-        await LocalDbService.healDuplicateChapters();
+        hasMore = pullData['has_more'] == true;
+        currentSince = pullData['next_since'] as int? ?? currentSince;
+        currentLastId = pullData['next_last_id'] as int? ?? 0;
 
-        final syncTime = pullData['sync_time'] as int? ?? (DateTime.now().millisecondsSinceEpoch ~/ 1000);
-        await PreferencesService.setLastSyncedTimestamp(syncTime);
+        // 실시간 진행 상태 통보
+        if (onProgress != null) {
+          final formattedCount = _formatNumber(totalPulledTransCount);
+          final estMsg = (totalEstimate != null && totalEstimate > 0)
+              ? ' ($formattedCount / ~${_formatNumber(totalEstimate)}문장)'
+              : ' ($formattedCount문장 반영)';
+          onProgress('데이터 동기화 다운로드 중...$estMsg', totalPulledTransCount, totalEstimate);
+        }
+
+        if (hasMore) {
+          // 기기 발열 방지 및 부하 분산을 위한 짧은 지연 (120ms)
+          await Future.delayed(const Duration(milliseconds: 120));
+        } else {
+          // 최종 완료 시 동기화 기준 시간 저장
+          final syncTime = pullData['sync_time'] as int? ?? (DateTime.now().millisecondsSinceEpoch ~/ 1000);
+          await PreferencesService.setLastSyncedTimestamp(syncTime);
+        }
       }
+
+      // 과거 분리된 중복 회차 자가 치유 실행
+      await LocalDbService.healDuplicateChapters();
+
+      final fPushed = _formatNumber(pushedTransCount);
+      final fPulled = _formatNumber(totalPulledTransCount);
 
       return SyncResult(
         success: true,
-        message: '동기화 완료 (업로드: $pushedTransCount문장 / 다운로드: $pulledTransCount문장)',
-        updatedTranslations: pushedTransCount + pulledTransCount,
+        message: '동기화 완료! (다운로드: $fPulled문장 / 업로드: $fPushed문장)',
+        updatedTranslations: pushedTransCount + totalPulledTransCount,
         updatedActivities: pushedActCount,
       );
     } catch (e) {
       return SyncResult(success: false, message: '증분 동기화 실패: $e');
     }
+  }
+
+  static String _formatNumber(int number) {
+    return number.toString().replaceAllMapped(
+      RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
+      (m) => '${m[1]},',
+    );
   }
 }

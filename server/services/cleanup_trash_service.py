@@ -93,7 +93,9 @@ def get_cleanup_queue_data(db: Session) -> Dict[str, Any]:
                 counts["paraphrased_count"] += 1
                 category_label = "원문 변형"
 
-            folder_name = t_dict.get("folderName") or "폴더 추가 대기 상태"
+            folder_name = t_dict.get("folderName")
+            if not folder_name:
+                continue
             url = t_dict.get("url")
             if url:
                 grouped_by_folder[folder_name][url].append({
@@ -117,7 +119,9 @@ def get_cleanup_queue_data(db: Session) -> Dict[str, Any]:
         for t in extra_items:
             counts["total"] += 1
             counts["moved_count"] += 1
-            folder_name = t.folderName or "폴더 추가 대기 상태"
+            folder_name = t.folderName
+            if not folder_name:
+                continue
             grouped_by_folder[folder_name][t.url].append({
                 "id": t.id,
                 "url": t.url,
@@ -137,11 +141,13 @@ def get_cleanup_queue_data(db: Session) -> Dict[str, Any]:
         url_group_list = []
         for url, items in url_groups.items():
             sort_order = items[0]['toc_sort_order'] if items and items[0]['toc_sort_order'] is not None else None
-            url_group_list.append({"url": url, "items": items, "toc_sort_order": sort_order})
+            min_id = min((t['id'] for t in items if t.get('id')), default=0)
+            url_group_list.append({"url": url, "items": items, "toc_sort_order": sort_order, "min_id": min_id})
 
         url_group_list.sort(key=lambda x: (
             x['toc_sort_order'] is None,
             x['toc_sort_order'] if x['toc_sort_order'] is not None else 0,
+            x.get('min_id', 0),
             natural_sort_key(x['url'])
         ))
         final_response[folder_name] = url_group_list

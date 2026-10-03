@@ -455,10 +455,11 @@ def get_translations_by_folder(
     )
 
     if folder:
-        if folder == '폴더 추가 대기 상태':
-            query = query.filter(Translation.folderName.is_(None))
-        else:
-            query = query.filter(Translation.folderName == folder)
+        query = query.filter(Translation.folderName == folder)
+    else:
+        # 미분류 번역(folderName IS NULL 또는 빈 문자열)은 우측 '미분류 보관함' 전용 드로어에서 관리하므로
+        # 메인 관리자 대시보드에서는 정식 등록된 폴더만 표시합니다.
+        query = query.filter(Translation.folderName.isnot(None)).filter(Translation.folderName != '')
 
     if search:
         query = query.filter(
@@ -471,7 +472,9 @@ def get_translations_by_folder(
 
     grouped_by_folder = defaultdict(lambda: defaultdict(list))
     for t in all_translations:
-        folder_name = t.folderName or "폴더 추가 대기 상태"
+        if not t.folderName:
+            continue
+        folder_name = t.folderName
         url = t.url
         if url:
             grouped_by_folder[folder_name][url].append({
@@ -494,11 +497,13 @@ def get_translations_by_folder(
         url_group_list = []
         for url, items in url_groups.items():
             sort_order = items[0]['toc_sort_order'] if items and items[0]['toc_sort_order'] is not None else None
-            url_group_list.append({"url": url, "items": items, "toc_sort_order": sort_order})
+            min_id = min((t['id'] for t in items if t.get('id')), default=0)
+            url_group_list.append({"url": url, "items": items, "toc_sort_order": sort_order, "min_id": min_id})
 
         url_group_list.sort(key=lambda x: (
             x['toc_sort_order'] is None,
             x['toc_sort_order'] if x['toc_sort_order'] is not None else 0,
+            x.get('min_id', 0),
             natural_sort_key(x['url'])
         ))
         final_response[folder_name] = url_group_list

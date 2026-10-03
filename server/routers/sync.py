@@ -396,25 +396,45 @@ def cleanup_temp_pack(pack_id: str):
 
 
 @router.get("/pull")
-def pull_changes_from_pc(since: int = 0):
+def pull_changes_from_pc(since: int = 0, last_id: int = 0, limit: int = 10000):
     """
-    [PC -> 모바일] 증분 동기화:
-    지정된 `since` 타임스탬프 이후에 PC에서 신규 추가되거나 변경된 번역문 및 책 활동 정보를 Gzip 압축 JSON으로 반환합니다.
+    [PC -> 모바일] 증분 동기화 (분할 배치 지원):
+    지정된 `since` 및 `last_id` 이후의 번역문을 최대 `limit`(기본 10,000건)씩 분할 반환하여
+    대량 데이터 동기화 시에도 메모리 폭증과 타임아웃 없이 안전하게 순차 수신할 수 있도록 합니다.
     """
     conn = get_sqlite_conn(as_dict=True)
     cursor = conn.cursor()
 
-    # 1. since 이후 신규/수정된 번역문
+    # 1. since/last_id 이후 신규/수정된 번역문 (Keyset Pagination)
     cursor.execute("""
         SELECT id, url, pid, original, translated, timestamp, folderName, title, toc_sort_order
         FROM translations
-        WHERE timestamp > ?
-        ORDER BY timestamp ASC
-        LIMIT 5000
-    """, (since,))
+        WHERE (timestamp > ?) OR (timestamp = ? AND id > ?)
+        ORDER BY timestamp ASC, id ASC
+        LIMIT ?
+    """, (since, since, last_id, limit))
     new_translations = cursor.fetchall()
 
-    # 2. since 이후 신규/수정된 회차들의 완전한 챕터 BLOB 패킹 (증분 동기화 시 모바일 챕터 본문 자동 갱신)
+    has_more = len(new_translations) >= limit
+    next_since = new_translations[-1]['timestamp'] if new_translations else since
+    next_last_id = new_translations[-1]['id'] if new_translations else last_id
+
+    # 총 대기 중인 번역문 수 추정 (최초 배치 시 진행률 안내용)
+    total_remaining = len(new_translations)
+    if has_more:
+        try:
+            cursor.execute("""
+                SELECT COUNT(*) as cnt
+                FROM translations
+                WHERE (timestamp > ?) OR (timestamp = ? AND id > ?)
+            """, (since, since, last_id))
+            row = cursor.fetchone()
+            if row:
+                total_remaining = row['cnt']
+        except Exception:
+            total_remaining = len(new_translations)
+
+    # 2. 이번 배치에 포함된 회차들의 완전한 챕터 BLOB 패킹
     import base64
     updated_url_tuples = list({(t['folderName'], t['url']) for t in new_translations if t.get('folderName') and t.get('url')})
     updated_chapters = []
@@ -459,23 +479,30 @@ def pull_changes_from_pc(since: int = 0):
             "compressed_content": base64.b64encode(compressed_blob).decode('ascii')
         })
 
-    # 3. 책 활동 정보 (마지막 읽은 곳, 북마크, 완료 여부 등)
-    cursor.execute("SELECT * FROM book_activity WHERE last_read_timestamp > ? OR 1=1", (since,))
-    activities = cursor.fetchall()
-
-    # 4. 고정된 책 및 태그
-    cursor.execute("SELECT folderName FROM pinned_books")
-    pinned = [row['folderName'] for row in cursor.fetchall()]
-
-    cursor.execute("SELECT bt.book_folderName, t.name FROM book_tags bt JOIN tags t ON bt.tag_id = t.id")
+    # 3. 책 활동 정보 및 메타데이터 (첫 번째 배치일 때만 전송하여 대역폭 최적화)
+    activities = []
+    pinned = []
     book_tags = defaultdict(list)
-    for row in cursor.fetchall():
-        book_tags[row['book_folderName']].append(row['name'])
+
+    if last_id == 0:
+        cursor.execute("SELECT * FROM book_activity WHERE last_read_timestamp > ? OR 1=1", (since,))
+        activities = cursor.fetchall()
+
+        cursor.execute("SELECT folderName FROM pinned_books")
+        pinned = [row['folderName'] for row in cursor.fetchall()]
+
+        cursor.execute("SELECT bt.book_folderName, t.name FROM book_tags bt JOIN tags t ON bt.tag_id = t.id")
+        for row in cursor.fetchall():
+            book_tags[row['book_folderName']].append(row['name'])
 
     conn.close()
 
     payload = {
-        "sync_time": int(time.time()),
+        "sync_time": int(time.time()) if not has_more else next_since,
+        "next_since": next_since,
+        "next_last_id": next_last_id,
+        "has_more": has_more,
+        "total_remaining": total_remaining,
         "since": since,
         "translations_count": len(new_translations),
         "translations": new_translations,

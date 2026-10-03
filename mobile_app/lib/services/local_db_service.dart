@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:archive/archive.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
@@ -9,6 +10,7 @@ import '../models/book.dart';
 import '../models/chapter.dart';
 import '../models/sentence.dart';
 import '../models/glossary_rule.dart';
+import 'preferences_service.dart';
 
 class LocalDbService {
   static Database? _database;
@@ -22,6 +24,33 @@ class LocalDbService {
   static Future<String> getDbPath() async {
     final docsDir = await getApplicationDocumentsDirectory();
     return p.join(docsDir.path, 'lanovel_local.db');
+  }
+
+  /// 모바일 로컬 DB 완전 초기화 (망가진 DB 파일 삭제 및 새로 구축)
+  static Future<void> resetDatabase() async {
+    try {
+      if (_database != null) {
+        await _database!.close();
+        _database = null;
+      }
+      final path = await getDbPath();
+      final file = File(path);
+      if (await file.exists()) {
+        await file.delete();
+      }
+      final walFile = File('$path-wal');
+      if (await walFile.exists()) await walFile.delete();
+      final shmFile = File('$path-shm');
+      if (await shmFile.exists()) await shmFile.delete();
+
+      // DB 재오픈 및 기본 테이블 재생성
+      _database = await _initDatabase();
+      await PreferencesService.setLastSyncedTimestamp(0);
+      debugPrint('[LocalDbService] 로컬 DB 완전 초기화 완료 (동기화 기준 시점 0으로 초기화)');
+    } catch (e) {
+      debugPrint('[LocalDbService] DB 초기화 실패: $e');
+      rethrow;
+    }
   }
 
   static Future<Database> _initDatabase() async {
