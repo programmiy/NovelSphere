@@ -40,18 +40,36 @@ class Book {
       } catch (_) {}
     }
 
+    bool parseBool(dynamic val, bool defaultVal) {
+      if (val == null) return defaultVal;
+      if (val is bool) return val;
+      if (val is num) return val != 0;
+      if (val is String) {
+        final s = val.trim().toLowerCase();
+        return s == '1' || s == 'true';
+      }
+      return defaultVal;
+    }
+
+    int parseInt(dynamic val, int defaultVal) {
+      if (val == null) return defaultVal;
+      if (val is num) return val.toInt();
+      if (val is String) return int.tryParse(val) ?? defaultVal;
+      return defaultVal;
+    }
+
     return Book(
-      folderName: map['folder_name'] ?? '',
-      totalChapters: map['total_chapters'] ?? 0,
-      lastReadChapterTitle: map['last_read_chapter_title'],
-      lastReadPid: map['last_read_pid'],
-      lastReadTimestamp: map['last_read_timestamp'],
-      isCompleted: (map['is_completed'] ?? 0) == 1,
-      isVisible: (map['is_visible'] ?? 1) == 1,
-      isBookmarked: (map['is_bookmarked'] ?? 0) == 1,
-      isPinned: (map['is_pinned'] ?? 0) == 1,
-      notes: map['notes'],
-      summary: map['summary'],
+      folderName: (map['folder_name'] ?? '').toString(),
+      totalChapters: parseInt(map['total_chapters'], 0),
+      lastReadChapterTitle: map['last_read_chapter_title']?.toString(),
+      lastReadPid: map['last_read_pid']?.toString(),
+      lastReadTimestamp: map['last_read_timestamp'] != null ? parseInt(map['last_read_timestamp'], 0) : null,
+      isCompleted: parseBool(map['is_completed'], false),
+      isVisible: parseBool(map['is_visible'], true),
+      isBookmarked: parseBool(map['is_bookmarked'], false),
+      isPinned: parseBool(map['is_pinned'], false),
+      notes: map['notes']?.toString(),
+      summary: map['summary']?.toString(),
       tags: parsedTags,
     );
   }

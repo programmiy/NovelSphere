@@ -85,12 +85,13 @@ class _LibraryScreenState extends State<LibraryScreen> {
 
     // 가장 최근 읽은 책 추출
     Book? recent;
-    final allBooks = await LocalDbService.getBooks(sort: 'recent');
-    final readingBooks = allBooks.where((b) => b.lastReadTimestamp != null && !b.isCompleted).toList();
+    final allBooks = await LocalDbService.getBooks(sort: 'recent', syncIntegrity: false);
+    final readingBooks = allBooks.where((b) => (b.lastReadTimestamp ?? 0) > 0 && !b.isCompleted).toList();
     if (readingBooks.isNotEmpty) {
       recent = readingBooks.first;
     }
 
+    if (!mounted) return;
     setState(() {
       _books = books;
       _recentBook = recent;

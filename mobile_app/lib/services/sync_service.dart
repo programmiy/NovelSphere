@@ -309,10 +309,14 @@ class SyncService {
 
           await batch.commit(noResult: true);
 
-          // 갱신된 책들의 total_chapters를 1회씩만 집계 갱신
+          // 갱신된 책들의 total_chapters를 1회씩만 집계 갱신 및 신규 책 books 등록 보장
           for (var bName in touchedBooks) {
             final countRow = await db.rawQuery('SELECT COUNT(*) as cnt FROM chapters WHERE book_name = ?', [bName]);
             final totalChaps = (countRow.first['cnt'] as num?)?.toInt() ?? 0;
+            await db.rawInsert('''
+              INSERT OR IGNORE INTO books (folder_name, total_chapters, is_visible)
+              VALUES (?, ?, 1)
+            ''', [bName, totalChaps]);
             await db.update('books', {'total_chapters': totalChaps}, where: 'folder_name = ?', whereArgs: [bName]);
           }
         }
@@ -332,9 +336,9 @@ class SyncService {
                 last_read_timestamp = COALESCE(excluded.last_read_timestamp, books.last_read_timestamp),
                 last_read_pid = COALESCE(excluded.last_read_pid, books.last_read_pid),
                 last_read_chapter_title = COALESCE(excluded.last_read_chapter_title, books.last_read_chapter_title),
-                is_completed = excluded.is_completed,
-                is_visible = excluded.is_visible,
-                is_bookmarked = excluded.is_bookmarked,
+                is_completed = COALESCE(excluded.is_completed, books.is_completed, 0),
+                is_visible = COALESCE(excluded.is_visible, books.is_visible, 1),
+                is_bookmarked = COALESCE(excluded.is_bookmarked, books.is_bookmarked, 0),
                 notes = COALESCE(excluded.notes, books.notes),
                 summary = COALESCE(excluded.summary, books.summary);
             ''', [
@@ -375,8 +379,9 @@ class SyncService {
         }
       }
 
-      // 과거 분리된 중복 회차 자가 치유 실행
+      // 과거 분리된 중복 회차 자가 치유 실행 및 서재 무결성 동기화
       await LocalDbService.healDuplicateChapters();
+      await LocalDbService.ensureBooksIntegrity();
 
       final fPushed = _formatNumber(pushedTransCount);
       final fPulled = _formatNumber(totalPulledTransCount);

@@ -130,30 +130,84 @@ class LocalDbService {
     );
   }
 
+  // --- 서재 (Books) 무결성 보장 및 자가 치유 ---
+  /// [서재 무결성 보장] chapters 테이블에 저장된 실제 소설들을 확인하여,
+  /// books 테이블에 누락된 소설이 있다면 즉시 자동 등록하고 챕터 수 및 표시 상태를 동기화
+  static Future<void> ensureBooksIntegrity() async {
+    final db = await database;
+
+    // 1. chapters 테이블의 고유 책 이름 및 실제 챕터 수 집계
+    final chapterBookRows = await db.rawQuery('''
+      SELECT book_name, COUNT(*) as cnt
+      FROM chapters
+      WHERE book_name IS NOT NULL AND book_name != ''
+      GROUP BY book_name
+    ''');
+
+    if (chapterBookRows.isEmpty) return;
+
+    final batch = db.batch();
+
+    // 2. 누락된 책들을 books 테이블에 자동 삽입하고 챕터 수 및 노출 상태 보정
+    for (final row in chapterBookRows) {
+      final bookName = (row['book_name'] as String).trim();
+      if (bookName.isEmpty) continue;
+      final cnt = (row['cnt'] as num?)?.toInt() ?? 0;
+
+      batch.rawInsert('''
+        INSERT OR IGNORE INTO books (folder_name, total_chapters, is_visible)
+        VALUES (?, ?, 1)
+      ''', [bookName, cnt]);
+
+      batch.rawUpdate('''
+        UPDATE books 
+        SET total_chapters = ?,
+            is_visible = CASE WHEN is_visible IS NULL THEN 1 ELSE is_visible END
+        WHERE folder_name = ?
+      ''', [cnt, bookName]);
+    }
+
+    // 3. 혹시 NULL로 남아있는 is_visible 컬럼 일괄 보정
+    batch.rawUpdate('UPDATE books SET is_visible = 1 WHERE is_visible IS NULL');
+
+    await batch.commit(noResult: true);
+  }
+
   // --- 서재 (Books) 쿼리 ---
   static Future<List<Book>> getBooks({
     String filter = 'all', // all, pinned, reading, unread, completed, hidden
     String? tag,
     String? query,
     String sort = 'recent', // recent, pinned, name, chapters
+    bool syncIntegrity = true,
   }) async {
     final db = await database;
+
+    // 조회 전 chapters 테이블 기반으로 books 테이블 자동 무결성 동기화
+    if (syncIntegrity) {
+      try {
+        await ensureBooksIntegrity();
+      } catch (e) {
+        debugPrint('[LocalDbService] ensureBooksIntegrity 경고: $e');
+      }
+    }
+
     List<String> whereClauses = [];
     List<dynamic> whereArgs = [];
 
-    // 숨김 필터
+    // 숨김 필터 (COALESCE로 NULL 안전 보장)
     if (filter == 'hidden') {
-      whereClauses.add('is_visible = 0');
+      whereClauses.add('COALESCE(is_visible, 1) = 0');
     } else {
-      whereClauses.add('is_visible = 1');
+      whereClauses.add('COALESCE(is_visible, 1) = 1');
       if (filter == 'pinned') {
-        whereClauses.add('is_pinned = 1');
+        whereClauses.add('COALESCE(is_pinned, 0) = 1');
       } else if (filter == 'reading') {
-        whereClauses.add('last_read_timestamp IS NOT NULL AND is_completed = 0');
+        whereClauses.add('COALESCE(last_read_timestamp, 0) > 0 AND COALESCE(is_completed, 0) = 0');
       } else if (filter == 'unread') {
-        whereClauses.add('last_read_timestamp IS NULL');
+        whereClauses.add('COALESCE(last_read_timestamp, 0) = 0');
       } else if (filter == 'completed') {
-        whereClauses.add('is_completed = 1');
+        whereClauses.add('COALESCE(is_completed, 0) = 1');
       }
     }
 
@@ -167,17 +221,17 @@ class LocalDbService {
     String orderSql;
     switch (sort) {
       case 'pinned':
-        orderSql = 'ORDER BY is_pinned DESC, folder_name ASC';
+        orderSql = 'ORDER BY COALESCE(is_pinned, 0) DESC, folder_name ASC';
         break;
       case 'name':
         orderSql = 'ORDER BY folder_name ASC';
         break;
       case 'chapters':
-        orderSql = 'ORDER BY total_chapters DESC';
+        orderSql = 'ORDER BY COALESCE(total_chapters, 0) DESC';
         break;
       case 'recent':
       default:
-        orderSql = 'ORDER BY is_pinned DESC, COALESCE(last_read_timestamp, 0) DESC, folder_name ASC';
+        orderSql = 'ORDER BY COALESCE(is_pinned, 0) DESC, COALESCE(last_read_timestamp, 0) DESC, folder_name ASC';
         break;
     }
 
@@ -327,6 +381,10 @@ class LocalDbService {
 
       final countRow = await db.rawQuery('SELECT COUNT(*) as cnt FROM chapters WHERE book_name = ?', [bName]);
       final totalChaps = (countRow.first['cnt'] as num?)?.toInt() ?? 0;
+      await db.rawInsert('''
+        INSERT OR IGNORE INTO books (folder_name, total_chapters, is_visible)
+        VALUES (?, ?, 1)
+      ''', [bName, totalChaps]);
       await db.update('books', {'total_chapters': totalChaps}, where: 'folder_name = ?', whereArgs: [bName]);
 
       healedCount++;
