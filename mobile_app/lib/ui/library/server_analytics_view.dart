@@ -147,7 +147,11 @@ class _ServerAnalyticsViewState extends State<ServerAnalyticsView> {
           _buildScopeSelector(theme, data),
           const SizedBox(height: 14),
 
-          // 2. 종합 요약 KPI 그리드 (2x2)
+          // 2. 오늘 번역 하이라이트 배너
+          _buildTodayBanner(theme, summary),
+          const SizedBox(height: 14),
+
+          // 3. 종합 요약 KPI 그리드 (2x2)
           _buildKpiGrid(theme, summary),
           const SizedBox(height: 14),
 
@@ -180,6 +184,112 @@ class _ServerAnalyticsViewState extends State<ServerAnalyticsView> {
             _buildNovelsRanking(theme, data.novels),
             const SizedBox(height: 24),
           ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTodayBanner(ReaderThemeData theme, AnalyticsSummary summary) {
+    final hasToday = summary.todayEpisodes > 0;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            Colors.deepOrange.withOpacity(hasToday ? 0.12 : 0.05),
+            theme.surfaceColor,
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: hasToday ? Colors.deepOrange.withOpacity(0.5) : theme.borderColor,
+          width: hasToday ? 1.5 : 1.0,
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: hasToday 
+                  ? Colors.deepOrange.withOpacity(0.18) 
+                  : theme.subTextColor.withOpacity(0.1),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              Icons.local_fire_department_rounded,
+              color: hasToday ? Colors.deepOrange : theme.subTextColor,
+              size: 26,
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      '오늘 번역한 페이지 (회차)',
+                      style: TextStyle(
+                        color: hasToday ? Colors.deepOrange : theme.subTextColor,
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const Spacer(),
+                    if (hasToday)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: Colors.deepOrange,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Text(
+                          'TODAY',
+                          style: TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.baseline,
+                  textBaseline: TextBaseline.alphabetic,
+                  children: [
+                    Text(
+                      _fmt.format(summary.todayEpisodes),
+                      style: TextStyle(
+                        color: theme.textColor,
+                        fontSize: 24,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    Text(
+                      ' 화 (페이지)',
+                      style: TextStyle(
+                        color: theme.subTextColor,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  hasToday
+                      ? '${_fmt.format(summary.todayParagraphs)}개 문단 · ${_fmt.format(summary.todayKrChars)}자 번역'
+                      : '오늘 아직 번역된 회차가 없습니다.',
+                  style: TextStyle(
+                    color: theme.subTextColor.withOpacity(0.85),
+                    fontSize: 11,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );

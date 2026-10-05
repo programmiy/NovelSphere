@@ -642,3 +642,83 @@ def update_title_for_url(req: UpdateTitleRequest, db: Session = Depends(get_db))
     )
     db.commit()
     return {"message": f"Title updated for {updated_count} entries for URL {req.url}."}
+
+
+@router.get(
+    "/api/translation_session_count",
+    tags=["Translation"],
+    summary="현재 쿼터 주기 내 소설 번역 회차 수 조회",
+    description="현재 쿼터 윈도우(오후 4시/16시 기준) 내에 해당 소설에서 번역 완료된 고유 회차(distinct URL) 수를 조회합니다."
+)
+def get_translation_session_count(
+    url: Optional[str] = None,
+    work_key: Optional[str] = None,
+    novel_title: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    window_start_ts = get_current_quota_window_start_ts()
+    cutoff_hour = get_quota_reset_hour()
+
+    count = 0
+    clean_url = (url or "").split("#")[0].strip()
+    
+    # URL 프리픽스 결정
+    prefix = None
+    if clean_url:
+        k_match = re.search(r'(https?://kakuyomu\.jp/works/\d+)', clean_url)
+        s_match = re.search(r'(https?://[^/]+\.syosetu\.com/n\w+)', clean_url)
+        nu_match = re.search(r'(https?://novelup\.plus/story/\d+)', clean_url)
+        h_match = re.search(r'(https?://syosetu\.org/novel/\d+)', clean_url)
+        a_match = re.search(r'(https?://[^/]+\.alphapolis\.co\.jp/novel/\d+)', clean_url)
+        if k_match:
+            prefix = k_match.group(1) + "%"
+        elif s_match:
+            prefix = s_match.group(1) + "%"
+        elif nu_match:
+            prefix = nu_match.group(1) + "%"
+        elif h_match:
+            prefix = h_match.group(1) + "%"
+        elif a_match:
+            prefix = a_match.group(1) + "%"
+
+    # folderName이 있다면 folderName을 우선 활용
+    folder_name = None
+    if clean_url:
+        row = db.execute(
+            text("SELECT folderName FROM translations WHERE url = :u AND folderName IS NOT NULL LIMIT 1"),
+            {"u": clean_url}
+        ).fetchone()
+        if row and row[0]:
+            folder_name = row[0]
+            
+    if not folder_name and novel_title and novel_title != "기본 소설":
+        folder_name = novel_title
+
+    if folder_name:
+        count = db.execute(
+            text("SELECT COUNT(DISTINCT url) FROM translations WHERE timestamp >= :ts AND folderName = :folder"),
+            {"ts": window_start_ts, "folder": folder_name}
+        ).scalar() or 0
+    elif prefix:
+        count = db.execute(
+            text("SELECT COUNT(DISTINCT url) FROM translations WHERE timestamp >= :ts AND url LIKE :prefix"),
+            {"ts": window_start_ts, "prefix": prefix}
+        ).scalar() or 0
+    elif clean_url:
+        count = db.execute(
+            text("SELECT COUNT(DISTINCT url) FROM translations WHERE timestamp >= :ts AND url = :u"),
+            {"ts": window_start_ts, "u": clean_url}
+        ).scalar() or 0
+
+    # 소설 불문 전체 고유 URL 번역 회차 수 (오늘/현재 쿼터 윈도우 내)
+    total_today_count = db.execute(
+        text("SELECT COUNT(DISTINCT url) FROM translations WHERE timestamp >= :ts"),
+        {"ts": window_start_ts}
+    ).scalar() or 0
+
+    return {
+        "count": count,
+        "total_today_count": total_today_count,
+        "window_start_ts": window_start_ts,
+        "cutoff_hour": cutoff_hour
+    }

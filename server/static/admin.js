@@ -227,6 +227,7 @@ function getQuotaWindowStartMs(summary) {
 function updateStatistics(groupedData) {
     let totalCount = 0;
     let todayCount = 0;
+    let todayEpisodes = 0;
     let totalLength = 0;
     let totalEpisodes = 0;
     const folders = Object.keys(groupedData || {});
@@ -239,13 +240,18 @@ function updateStatistics(groupedData) {
             totalEpisodes += urlGroups.length;
             for (const urlGroup of urlGroups) {
                 const items = urlGroup.items || [];
+                let hasTodayItem = false;
                 for (const item of items) {
                     totalCount++;
                     totalLength += item.translated ? item.translated.length : 0;
                     
                     if ((item.timestamp * 1000) >= quotaWindowStartMs) {
                         todayCount++;
+                        hasTodayItem = true;
                     }
+                }
+                if (hasTodayItem) {
+                    todayEpisodes++;
                 }
             }
         }
@@ -264,6 +270,9 @@ function updateStatistics(groupedData) {
 
     const totalCountEl = document.getElementById('totalCount');
     if (totalCountEl) totalCountEl.textContent = totalCount.toLocaleString();
+
+    const todayEpisodesStatEl = document.getElementById('todayEpisodesStat');
+    if (todayEpisodesStatEl) todayEpisodesStatEl.textContent = `${todayEpisodes.toLocaleString()}화`;
 
     const todayCountEl = document.getElementById('todayCount');
     if (todayCountEl) todayCountEl.textContent = todayCount.toLocaleString();
@@ -3071,6 +3080,19 @@ function renderActivityTab(activity) {
     if (!activity) return;
 
     // KPI 카드 업데이트
+    const todayEpisodes = document.getElementById('kpiTodayEpisodes');
+    if (todayEpisodes) {
+        const eps = activity.today_episodes || 0;
+        todayEpisodes.innerHTML = `${eps.toLocaleString()}<span class="kpi-unit">화</span>`;
+    }
+
+    const todaySub = document.getElementById('kpiTodaySub');
+    if (todaySub) {
+        const chars = (activity.today_kr_chars || 0).toLocaleString();
+        const paras = (activity.today_paragraphs || 0).toLocaleString();
+        todaySub.textContent = `${chars}자 / ${paras}문단`;
+    }
+
     const dailyAvgCount = document.getElementById('kpiDailyAvgCount');
     if (dailyAvgCount) dailyAvgCount.innerHTML = `${activity.daily_avg_count.toLocaleString()}<span class="kpi-unit">건</span>`;
 

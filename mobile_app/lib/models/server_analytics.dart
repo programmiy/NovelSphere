@@ -4,6 +4,9 @@ class AnalyticsSummary {
   final int totalParagraphs;
   final int totalKrChars;
   final int totalJpChars;
+  final int todayEpisodes;
+  final int todayParagraphs;
+  final int todayKrChars;
   final double avgCharsPerParagraph;
   final double avgParagraphsPerEpisode;
   final double avgCharsPerEpisode;
@@ -15,6 +18,9 @@ class AnalyticsSummary {
     required this.totalParagraphs,
     required this.totalKrChars,
     required this.totalJpChars,
+    this.todayEpisodes = 0,
+    this.todayParagraphs = 0,
+    this.todayKrChars = 0,
     required this.avgCharsPerParagraph,
     required this.avgParagraphsPerEpisode,
     required this.avgCharsPerEpisode,
@@ -28,6 +34,9 @@ class AnalyticsSummary {
       totalParagraphs: (json['total_paragraphs'] as num?)?.toInt() ?? 0,
       totalKrChars: (json['total_kr_chars'] as num?)?.toInt() ?? 0,
       totalJpChars: (json['total_jp_chars'] as num?)?.toInt() ?? 0,
+      todayEpisodes: (json['today_episodes'] as num?)?.toInt() ?? 0,
+      todayParagraphs: (json['today_paragraphs'] as num?)?.toInt() ?? 0,
+      todayKrChars: (json['today_kr_chars'] as num?)?.toInt() ?? 0,
       avgCharsPerParagraph: (json['avg_chars_per_paragraph'] as num?)?.toDouble() ?? 0.0,
       avgParagraphsPerEpisode: (json['avg_paragraphs_per_episode'] as num?)?.toDouble() ?? 0.0,
       avgCharsPerEpisode: (json['avg_chars_per_episode'] as num?)?.toDouble() ?? 0.0,
@@ -121,6 +130,9 @@ class HourlyDistributionItem {
 }
 
 class AnalyticsActivity {
+  final int todayEpisodes;
+  final int todayParagraphs;
+  final int todayKrChars;
   final int dailyAvgCount;
   final int dailyAvgChars;
   final int peakCount;
@@ -139,6 +151,9 @@ class AnalyticsActivity {
   final List<HourlyDistributionItem> hourlyDistribution;
 
   AnalyticsActivity({
+    this.todayEpisodes = 0,
+    this.todayParagraphs = 0,
+    this.todayKrChars = 0,
     required this.dailyAvgCount,
     required this.dailyAvgChars,
     required this.peakCount,
@@ -159,6 +174,9 @@ class AnalyticsActivity {
 
   factory AnalyticsActivity.fromJson(Map<String, dynamic> json) {
     return AnalyticsActivity(
+      todayEpisodes: (json['today_episodes'] as num?)?.toInt() ?? 0,
+      todayParagraphs: (json['today_paragraphs'] as num?)?.toInt() ?? 0,
+      todayKrChars: (json['today_kr_chars'] as num?)?.toInt() ?? 0,
       dailyAvgCount: (json['daily_avg_count'] as num?)?.toInt() ?? 0,
       dailyAvgChars: (json['daily_avg_chars'] as num?)?.toInt() ?? 0,
       peakCount: (json['peak_count'] as num?)?.toInt() ?? 0,

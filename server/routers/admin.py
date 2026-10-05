@@ -150,6 +150,26 @@ def get_admin_analytics(folder_name: Optional[str] = None):
         avg_chars_per_ep = round(total_kr_chars / total_episodes, 1) if total_episodes else 0.0
         expansion_ratio = round(total_kr_chars / total_jp_chars, 2) if total_jp_chars else 1.16
 
+        # 오늘 번역 실적 (Today's Translation Stats) - 로컬 자정 기준
+        today_start_dt = datetime.datetime.combine(datetime.date.today(), datetime.time.min)
+        today_start_ts = int(today_start_dt.timestamp())
+        
+        today_where = f"WHERE timestamp >= ? {'AND folderName = ?' if target_folder else ''}"
+        today_params = [today_start_ts] + ([target_folder] if target_folder else [])
+        today_query = f"""
+        SELECT 
+            COUNT(DISTINCT url) as today_episodes,
+            COUNT(*) as today_paragraphs,
+            COALESCE(SUM(LENGTH(translated)), 0) as today_kr_chars
+        FROM translations
+        {today_where}
+        """
+        cursor.execute(today_query, today_params)
+        today_row = cursor.fetchone()
+        today_episodes = today_row[0] or 0
+        today_paragraphs = today_row[1] or 0
+        today_kr_chars = today_row[2] or 0
+
         # 2. 일별 활동 추이 (Daily Trends)
         daily_where = f"WHERE timestamp > 0 {'AND folderName = ?' if target_folder else ''}"
         daily_query = f"""
@@ -396,12 +416,18 @@ def get_admin_analytics(folder_name: Optional[str] = None):
                 "total_paragraphs": total_paragraphs,
                 "total_kr_chars": total_kr_chars,
                 "total_jp_chars": total_jp_chars,
+                "today_episodes": today_episodes,
+                "today_paragraphs": today_paragraphs,
+                "today_kr_chars": today_kr_chars,
                 "avg_chars_per_paragraph": avg_chars_per_para,
                 "avg_paragraphs_per_episode": avg_paras_per_ep,
                 "avg_chars_per_episode": avg_chars_per_ep,
                 "expansion_ratio": expansion_ratio
             },
             "activity": {
+                "today_episodes": today_episodes,
+                "today_paragraphs": today_paragraphs,
+                "today_kr_chars": today_kr_chars,
                 "daily_avg_count": daily_avg_count,
                 "daily_avg_chars": daily_avg_chars,
                 "peak_count": peak_count,

@@ -1930,9 +1930,6 @@ function setupEventListeners() {
         document.getElementById('resume-translation-btn').style.display = 'none';
         document.getElementById('retry-translation-btn').style.display = 'inline-block';
         updateSidebarWithCancelled();
-        try {
-            resetBatchCount();
-        } catch (e) {}
     });
 
     document.getElementById('resume-translation-btn').addEventListener('click', () => {
@@ -2172,9 +2169,9 @@ function getNovelWorkKey() {
         const match = url.match(/\/works\/(\d+)/);
         if (match) return `kakuyomu_${match[1]}`;
     }
-    // 2. 쇼세츠 (소설가가 되자): /n3298hj/ or /n4913gc/
+    // 2. 쇼세츠 (소설가가 되자): /n3298hj/ or /n4913gc/ (끝 슬래시 유무 무관)
     if (host.includes('syosetu.com')) {
-        const match = url.match(/\/(n\d+[a-z]+)\//i);
+        const match = url.match(/\/(n\d+[a-z]+)(\/|$)/i);
         if (match) return `syosetu_${match[1].toLowerCase()}`;
     }
     // 3. 노벨업플러스: /story/12345
@@ -2182,8 +2179,18 @@ function getNovelWorkKey() {
         const match = url.match(/\/story\/(\d+)/);
         if (match) return `novelup_${match[1]}`;
     }
+    // 4. 하멜른: /novel/12345
+    if (host.includes('syosetu.org')) {
+        const match = url.match(/\/novel\/(\d+)/);
+        if (match) return `hameln_${match[1]}`;
+    }
+    // 5. 알파폴리스: /novel/12345
+    if (host.includes('alphapolis.co.jp')) {
+        const match = url.match(/\/novel\/(\d+)/);
+        if (match) return `alphapolis_${match[1]}`;
+    }
 
-    // 4. Fallback: 소설 제목 정규화 (일본어, 영문, 숫자, 한글 모두 포함)
+    // 6. Fallback: 소설 제목 정규화 (일본어, 영문, 숫자, 한글 모두 포함)
     if (currentNovelTitle && currentNovelTitle !== '기본 소설' && currentNovelTitle !== '閉じる') {
         const sanitized = currentNovelTitle.trim().replace(/[^a-zA-Z0-9가-힣\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff_]/g, '_');
         if (sanitized && sanitized.replace(/_/g, '').length > 0) {
@@ -2254,6 +2261,22 @@ async function updateAndGetBatchCount(currentCleanUrl) {
         state.lastUrl = '';
         state.window = currentWindow;
     }
+
+    // [서버 DB 동기화 및 복원] 서버 재시작 후에도 오늘 번역된 DB 기록을 바탕으로 카운터 안전하게 복원
+    try {
+        const syncUrl = `http://127.0.0.1:8001/api/translation_session_count?url=${encodeURIComponent(currentCleanUrl)}&work_key=${encodeURIComponent(workKey)}&novel_title=${encodeURIComponent(currentNovelTitle || '')}`;
+        const serverResp = await fetch(syncUrl);
+        if (serverResp.ok) {
+            const serverData = await serverResp.json();
+            if (typeof serverData.total_today_count === 'number') {
+                window.lanovelTodayTotalEpisodes = serverData.total_today_count;
+            }
+            if (typeof serverData.count === 'number' && serverData.count > state.count) {
+                logToSidebar(`🔄 [서버 동기화] 오늘 DB 번역 기록(${serverData.count}화)을 바탕으로 회차 카운터를 안전하게 복원했습니다.`);
+                state.count = serverData.count;
+            }
+        }
+    } catch (_) {}
 
     // 동일 URL(회차) 중복 카운트 방지
     if (state.lastUrl && state.lastUrl === currentCleanUrl) {
@@ -2866,8 +2889,9 @@ async function translateAllPTags(isRetranslation = false) {
         // [10화 단위 번역 진행 알림 (100% 완료 시에만)]
         // 4시(새벽 4시 및 쿼터 초기화 오후 4시) 자동 갱신, 세션 타임아웃, 중복 방지가 반영된 카운터 조회
         const currentBatchCount = await updateAndGetBatchCount(getCleanUrl());
+        const totalTodayMsg = window.lanovelTodayTotalEpisodes ? ` (오늘 전체 누적: ${window.lanovelTodayTotalEpisodes}화)` : '';
 
-        logToSidebar(`[번역 진행 카운터] 현재 소설 연속 번역 완료: ${currentBatchCount}화`);
+        logToSidebar(`[번역 진행 카운터] 현재 소설 연속 번역: ${currentBatchCount}화 완료${totalTodayMsg}`);
 
         // 10의 배수(10, 20, 30, ...) 화가 100% 완료되었을 때만 진행 알림 발송!
         if (currentBatchCount > 0 && currentBatchCount % 10 === 0) {
@@ -2938,7 +2962,7 @@ async function translateAllPTags(isRetranslation = false) {
                             navigateToNextChapter(nextButton.href);
                         } else {
                             logToSidebar("다음 페이지 버튼을 찾을 수 없습니다. (소설 연속 번역 종료)");
-                            // 마지막 화에 도달하여 다음 화가 없으므로 최종 완료 알림 발송 후 카운터 리셋
+                            // 마지막 화에 도달하여 다음 화가 없으므로 최종 완료 알림 발송
                             sendNtfyComplete(
                                 currentNovelTitle,
                                 extractEpisodeTitle() || document.title || '',
@@ -2946,7 +2970,6 @@ async function translateAllPTags(isRetranslation = false) {
                                 getCleanUrl(),
                                 currentBatchCount
                             );
-                            resetBatchCount();
                         }
                     } else if (currentUrl.includes('novelup.plus')) {
                         logToSidebar("노벨업플러스 '次へ' 버튼을 찾아서 클릭합니다.");
@@ -2969,7 +2992,6 @@ async function translateAllPTags(isRetranslation = false) {
                                 getCleanUrl(),
                                 currentBatchCount
                             );
-                            resetBatchCount();
                         }
                     } else if (currentUrl.includes('kakuyomu.jp')) {
                         logToSidebar("카쿠요무 '다음 에피소드' 링크를 찾아서 이동합니다.");
@@ -2989,7 +3011,6 @@ async function translateAllPTags(isRetranslation = false) {
                                 getCleanUrl(),
                                 currentBatchCount
                             );
-                            resetBatchCount();
                         }
                     } else {
                         logToSidebar("지원되지 않는 사이트입니다. 기본 'PageDown' 키를 누릅니다.");

@@ -96,11 +96,11 @@
                         <div class="stat-label">글자 수</div>
                     </div>
                 </div>
-                <div class="stat-item" id="todayStatItem" title="오늘 쿼터 주기(매일 오후 4/5시 초기화 기준) 내 번역된 문단 수">
-                    <span class="material-icons stat-icon">trending_up</span>
+                <div class="stat-item" id="todayStatItem" title="오늘 번역된 회차(페이지) 및 문단 수">
+                    <span class="material-icons stat-icon" style="color: #10b981;">auto_stories</span>
                     <div>
-                        <div class="stat-number" id="todayCount">0</div>
-                        <div class="stat-label">오늘 번역</div>
+                        <div class="stat-number" id="todayEpisodesStat">0화</div>
+                        <div class="stat-label" id="todayCountLabel">오늘 번역 (<span id="todayCount">0</span>문단)</div>
                     </div>
                 </div>
                 <div class="stat-item" id="apiQuotaStatItem" title="오늘 Gemini API 쿼터 사용량 (매일 오후 4/5시 초기화, 기본 모델 500회 기준)">
@@ -465,6 +465,11 @@
                 <div id="tabStatActivity" class="stats-tab-pane active">
                     <!-- KPI 요약 카드 그리드 -->
                     <div class="stats-kpi-grid">
+                        <div class="kpi-card highlight-today">
+                            <div class="kpi-label">🔥 오늘 번역 회차 (페이지)</div>
+                            <div class="kpi-value" id="kpiTodayEpisodes">0<span class="kpi-unit">화</span></div>
+                            <div class="kpi-sub" id="kpiTodaySub">0자 / 0문단</div>
+                        </div>
                         <div class="kpi-card">
                             <div class="kpi-label">일평균 번역량</div>
                             <div class="kpi-value" id="kpiDailyAvgCount">0<span class="kpi-unit">건</span></div>
