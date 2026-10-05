@@ -152,11 +152,10 @@ def get_translation_status() -> Dict[str, Any]:
                 data["total_sentences"] = 0
                 data["is_active"] = False
             elif not data.get("is_active"):
-                # 유휴(대기 중) 상태에서는 이전 누적 표시 클리어
+                # 유휴(대기 중) 상태에서는 이전 누적 표시 클리어 및 쿼터 사용률 표시
                 data["episode_count"] = 0
-
-            if q["percentage"] > 0 or data.get("percentage") in (0, 100, None):
-                data["percentage"] = q["percentage"]
+                if q["percentage"] > 0 or data.get("percentage") in (0, 100, None):
+                    data["percentage"] = q["percentage"]
 
             # 사용자 정의 status_text(휴식 중, 에러 등)가 설정된 경우 덮어쓰지 않고 보존
             curr_st = data.get("status_text")

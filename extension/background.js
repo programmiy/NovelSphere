@@ -110,7 +110,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             try {
                 const rawUrl = sender.tab?.url || '';
                 const cleanTabUrl = rawUrl.split('#')[0].trim();
-                const translations = await handleBatchTranslate(
+                const result = await handleBatchTranslate(
                     request.items, 
                     cleanTabUrl, 
                     request.isRetranslation || false, 
@@ -118,7 +118,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 );
                 apiErrorCount = 0; // 성공 시 카운터 리셋
                 try {
-                    sendResponse({ translations });
+                    sendResponse({
+                        translations: result.translations,
+                        recommended_turbo_delay_ms: result.recommended_turbo_delay_ms
+                    });
                 } catch (e) {
                     if (e.message.includes(channelClosedMessage)) {
                         console.log("Failed to send translation success response: Channel was closed by the client.");
@@ -243,8 +246,11 @@ async function handleBatchTranslate(items, sourceUrl, isRetranslation = false, m
         }
 
         // The server response is already in the format [{id, original, translated}, ...],
-        // so we can just return it directly.
-        return data.translations;
+        // so we can just return it directly along with the recommended turbo pacing delay.
+        return {
+            translations: data.translations,
+            recommended_turbo_delay_ms: data.recommended_turbo_delay_ms || 2000
+        };
 
     } catch (error) {
         console.error('Translation request to local server failed:', error);
