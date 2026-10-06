@@ -8,6 +8,7 @@ import '../viewer/reader_screen.dart';
 import 'reading_stats_sheet.dart';
 import 'server_analytics_view.dart';
 import '../glossary/glossary_screen.dart';
+import '../glossary/character_fixer_screen.dart';
 import '../settings/settings_screen.dart';
 import '../../services/app_update_service.dart';
 import '../../services/notification_service.dart';
@@ -123,6 +124,99 @@ class _LibraryScreenState extends State<LibraryScreen> {
         builder: (_) => ReaderScreen(bookName: book.folderName),
       ),
     ).then((_) => _loadLibrary());
+  }
+
+  void _showBookActionSheet(Book book, ReaderThemeData theme) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: theme.surfaceColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                child: Row(
+                  children: [
+                    Icon(Icons.auto_stories_rounded, color: theme.accentColor, size: 24),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        book.folderName,
+                        style: TextStyle(
+                          color: theme.textColor,
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Divider(color: theme.borderColor),
+              ListTile(
+                leading: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: theme.accentColor.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(Icons.auto_fix_high_rounded, color: theme.accentColor, size: 20),
+                ),
+                title: Text(
+                  '인명·고유명사 스마트 교정기',
+                  style: TextStyle(color: theme.textColor, fontWeight: FontWeight.bold),
+                ),
+                subtitle: Text(
+                  'PC 서버와 연동하여 오독 검수 및 실시간 Diff 교정',
+                  style: TextStyle(color: theme.subTextColor, fontSize: 12),
+                ),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => CharacterFixerScreen(initialFolderName: book.folderName),
+                    ),
+                  );
+                },
+              ),
+              ListTile(
+                leading: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.amber.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(
+                    book.isPinned ? Icons.star_rounded : Icons.star_border_rounded,
+                    color: Colors.amber,
+                    size: 20,
+                  ),
+                ),
+                title: Text(
+                  book.isPinned ? '즐겨찾기 해제' : '즐겨찾기 등록',
+                  style: TextStyle(color: theme.textColor),
+                ),
+                onTap: () async {
+                  Navigator.pop(ctx);
+                  await LocalDbService.togglePinBook(book.folderName, book.isPinned);
+                  _loadLibrary();
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   @override
@@ -761,6 +855,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
             final book = _books[index];
             return GestureDetector(
               onTap: () => _openReader(book),
+              onLongPress: () => _showBookActionSheet(book, theme),
               child: Container(
                 decoration: BoxDecoration(
                   color: theme.surfaceColor,
@@ -838,6 +933,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
               ),
               child: ListTile(
                 onTap: () => _openReader(book),
+                onLongPress: () => _showBookActionSheet(book, theme),
                 leading: CircleAvatar(
                   backgroundColor: theme.accentColor.withOpacity(0.15),
                   child: Icon(Icons.book, color: theme.accentColor, size: 20),

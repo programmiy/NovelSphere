@@ -4,6 +4,7 @@ import '../../models/glossary_rule.dart';
 import '../../services/local_db_service.dart';
 import '../../services/preferences_service.dart';
 import '../themes/reader_themes.dart';
+import 'character_fixer_screen.dart';
 
 class GlossaryScreen extends StatefulWidget {
   const GlossaryScreen({super.key});
@@ -104,16 +105,129 @@ class _GlossaryScreenState extends State<GlossaryScreen> {
         backgroundColor: theme.surfaceColor,
         elevation: 0,
         title: Text(
-          '오프라인 일괄 찾아바꾸기',
+          '용어 및 찾아바꾸기',
           style: TextStyle(color: theme.textColor, fontSize: 18, fontWeight: FontWeight.bold),
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.auto_fix_high_rounded),
+            tooltip: '스마트 인명 교정기',
+            color: theme.accentColor,
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const CharacterFixerScreen()),
+              );
+            },
+          ),
+          const SizedBox(width: 8),
+        ],
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // 인명/고유명사 스마트 교정기 (PC 서버 연동) 진입 배너 카드
+            InkWell(
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const CharacterFixerScreen()),
+                );
+              },
+              borderRadius: BorderRadius.circular(14),
+              child: Container(
+                margin: const EdgeInsets.only(bottom: 24),
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      theme.accentColor.withOpacity(0.18),
+                      theme.accentColor.withOpacity(0.06),
+                    ],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: theme.accentColor.withOpacity(0.4), width: 1.2),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.04),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: theme.accentColor,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(Icons.auto_fix_high_rounded, color: Colors.white, size: 24),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Text(
+                                '인명·고유명사 교정기',
+                                style: TextStyle(
+                                  color: theme.textColor,
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: Colors.deepOrangeAccent.withOpacity(0.2),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: const Text(
+                                  'PC 연동',
+                                  style: TextStyle(
+                                    color: Colors.deepOrangeAccent,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            '틴더식 스와이프 검수 • 오독 통계 자동 발굴 • 실시간 Diff',
+                            style: TextStyle(color: theme.subTextColor, fontSize: 11.5),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Icon(Icons.arrow_forward_ios_rounded, size: 16, color: theme.accentColor),
+                  ],
+                ),
+              ),
+            ),
+
             // 대상 범위 선택 드롭다운
+            Text(
+              '오프라인 일괄 찾아바꾸기',
+              style: TextStyle(color: theme.textColor, fontWeight: FontWeight.bold, fontSize: 16),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '스마트폰 내에 다운로드된 문단 텍스트를 즉시 교체합니다.',
+              style: TextStyle(color: theme.subTextColor, fontSize: 12),
+            ),
+            const SizedBox(height: 14),
             Text(
               '대상 소설 범위',
               style: TextStyle(color: theme.textColor, fontWeight: FontWeight.bold, fontSize: 14),
