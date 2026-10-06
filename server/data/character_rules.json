@@ -1,7 +1,7 @@
 {
   "누나가 마 니 선생이라고 느그 좋아하면 안되나?": [
     {
-      "id": "rule-1",
+      "id": "rule-45f7xqh",
       "source": "悠",
       "target": "유우",
       "enabled": true,
@@ -16,7 +16,7 @@
       ]
     },
     {
-      "id": "rule-2",
+      "id": "rule-oubsxlm",
       "source": "百合華",
       "target": "유리카",
       "enabled": true,
@@ -28,53 +28,25 @@
       ]
     },
     {
-      "id": "test-rule-3",
-      "source": "美咲",
-      "target": "미사키",
+      "id": "rule-7p2epw8",
+      "source": "中将",
+      "target": "츄죠",
       "enabled": true,
-      "description": "서브 히로인",
+      "description": "같은 반 친구",
       "misreadings": [
-        "미사"
-      ]
-    },
-    {
-      "id": "test-rule-3",
-      "source": "美咲",
-      "target": "미사키",
-      "enabled": true,
-      "description": "서브 히로인",
-      "misreadings": [
-        "미사"
-      ]
-    },
-    {
-      "id": "test-rule-3",
-      "source": "美咲",
-      "target": "미사키",
-      "enabled": true,
-      "description": "서브 히로인",
-      "misreadings": [
-        "미사"
-      ]
-    },
-    {
-      "id": "test-rule-3",
-      "source": "美咲",
-      "target": "미사키",
-      "enabled": true,
-      "description": "서브 히로인",
-      "misreadings": [
-        "미사"
-      ]
-    },
-    {
-      "id": "test-rule-3",
-      "source": "美咲",
-      "target": "미사키",
-      "enabled": true,
-      "description": "서브 히로인",
-      "misreadings": [
-        "미사"
+        "츄조",
+        "쥬조",
+        "나카조",
+        "나카죠",
+        "주죠",
+        "중장",
+        "추",
+        "추주",
+        "추중",
+        "나카미",
+        "주장",
+        "주",
+        "주조"
       ]
     }
   ]

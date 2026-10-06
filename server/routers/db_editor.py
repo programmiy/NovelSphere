@@ -5,6 +5,7 @@ import sqlite3
 import logging
 from datetime import datetime
 from typing import List, Optional, Dict, Any
+from collections import Counter
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Body
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -271,6 +272,11 @@ class ApproveBatchRequest(BaseModel):
     items: List[BatchItem]
     backup: bool = True
 
+class DiscoverMisreadingsRequest(BaseModel):
+    folderName: str
+    source: str
+    target: Optional[str] = ""
+
 
 # --- Endpoints ---
 
@@ -531,3 +537,121 @@ async def manual_backup():
     except Exception as e:
         logger.error(f"Manual backup failed: {e}")
         raise HTTPException(status_code=500, detail=f"백업 생성 실패: {str(e)}")
+
+
+PARTICLES_FOR_DISCOVERY = [
+    '에게서', '에게', '한테', '으로', '에서', '부터', '까지', '처럼', '보다', '마저',
+    '조차', '라면', '지만', '이며', '하고', '이나', '이라', '이란', '이다', '였다',
+    '였고', '로서', '로써', '은', '는', '이', '가', '을', '를', '의',
+    '와', '과', '도', '로', '에', '랑', '였', '네', '군', '씨', '님'
+]
+PARTICLES_SORTED_DISC = sorted(PARTICLES_FOR_DISCOVERY, key=len, reverse=True)
+_particle_disc_alt = '|'.join(PARTICLES_SORTED_DISC)
+
+_disc_stem_regex = re.compile(r'(?<![가-힣])([가-힣]{1,5})(?:' + _particle_disc_alt + r')(?![가-힣])')
+_disc_quote_regex = re.compile(r'[『「"\'\(]([가-힣]{1,5})[』」"\'\)]')
+
+DISCOVERY_STOPWORDS = {
+    '그', '이', '저', '것', '수', '등', '더', '또', '때', '안', '못', '잘', '왜', 
+    '참', '좀', '막', '다', '더욱', '그냥', '지금', '다시', '정말', '진짜', '아주',
+    '너무', '매우', '가장', '제일', '이미', '벌써', '자꾸', '계속', '항상', '언제',
+    '어디', '누구', '무엇', '어떻게', '아마', '혹시', '설마', '과연', '비록', '만약',
+    '자신', '그녀', '생각', '사람', '우리', '모습', '순간', '얼굴', '마음', '소리', '이야기'
+}
+
+def clean_discovered_word(w: str) -> str:
+    w = w.strip()
+    changed = True
+    while changed:
+        changed = False
+        for p in PARTICLES_SORTED_DISC:
+            if w.endswith(p) and len(w) > len(p):
+                w = w[:-len(p)]
+                changed = True
+                break
+    return w
+
+
+@router.post(
+    "/api/db_editor/discover_misreadings",
+    tags=["DB Editor"],
+    summary="원문 한자 기반 오역 단어 로컬 통계 자동 발굴"
+)
+async def discover_misreadings(req: DiscoverMisreadingsRequest, db: Session = Depends(get_db)):
+    """
+    Analyzes co-occurrence frequency of Korean words in sentences with the source character
+    versus baseline sentences without the source character to automatically discover misreadings.
+    """
+    source = req.source.strip()
+    target = req.target.strip()
+    if not source:
+        raise HTTPException(status_code=400, detail="원문 한자/단어를 입력하세요.")
+
+    params = {"folder": req.folderName, "src": f"%{source}%"}
+    if target:
+        err_sql = """
+            SELECT translated FROM translations
+            WHERE folderName = :folder AND original LIKE :src AND (translated IS NULL OR translated NOT LIKE :tgt)
+        """
+        params["tgt"] = f"%{target}%"
+    else:
+        err_sql = """
+            SELECT translated FROM translations
+            WHERE folderName = :folder AND original LIKE :src
+        """
+    err_rows = db.execute(text(err_sql), params).fetchall()
+    err_trans = [r[0] for r in err_rows if r[0]]
+    if not err_trans:
+        return {"status": "success", "candidates": []}
+
+    norm_sql = """
+        SELECT translated FROM translations
+        WHERE folderName = :folder AND original NOT LIKE :src
+    """
+    norm_rows = db.execute(text(norm_sql), {"folder": req.folderName, "src": f"%{source}%"}).fetchall()
+    norm_trans = [r[0] for r in norm_rows if r[0]]
+
+    err_counts = Counter()
+    for t in err_trans:
+        for w in _disc_stem_regex.findall(t):
+            cw = clean_discovered_word(w)
+            if cw and cw != target and cw not in DISCOVERY_STOPWORDS:
+                err_counts[cw] += 1
+        for w in _disc_quote_regex.findall(t):
+            cw = clean_discovered_word(w)
+            if cw and cw != target and cw not in DISCOVERY_STOPWORDS:
+                err_counts[cw] += 1
+
+    norm_counts = Counter()
+    for t in norm_trans:
+        for w in _disc_stem_regex.findall(t):
+            cw = clean_discovered_word(w)
+            if cw in err_counts:
+                norm_counts[cw] += 1
+        for w in _disc_quote_regex.findall(t):
+            cw = clean_discovered_word(w)
+            if cw in err_counts:
+                norm_counts[cw] += 1
+
+    candidates = []
+    for word, err_c in err_counts.items():
+        if len(word) < 1:
+            continue
+        norm_c = norm_counts[word]
+        ratio = err_c / (err_c + norm_c)
+        if (err_c >= 2 and ratio >= 0.70) or (err_c >= 1 and ratio >= 0.90 and len(word) >= 2):
+            candidates.append({
+                "word": word,
+                "count": err_c,
+                "norm_count": norm_c,
+                "ratio": round(ratio, 3)
+            })
+
+    candidates.sort(key=lambda x: (x["count"], x["ratio"]), reverse=True)
+    return {
+        "status": "success",
+        "folderName": req.folderName,
+        "source": source,
+        "target": target,
+        "candidates": candidates
+    }

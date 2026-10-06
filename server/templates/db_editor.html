@@ -21,6 +21,11 @@
             --card-border-radius: 16px;
         }
 
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
         body {
             background-color: var(--bg-color);
             color: var(--text-color);
@@ -429,6 +434,168 @@
             color: #fca5a5;
         }
 
+        /* Visual Diff Highlighting */
+        .diff-del {
+            background-color: #fee2e2;
+            color: #b91c1c;
+            text-decoration: line-through;
+            text-decoration-color: #ef4444;
+            text-decoration-thickness: 2px;
+            border-radius: 4px;
+            padding: 1px 4px;
+            font-weight: 600;
+            margin: 0 1px;
+            display: inline-block;
+            line-height: 1.4;
+        }
+
+        body.dark-mode .diff-del {
+            background-color: rgba(239, 68, 68, 0.25);
+            color: #fca5a5;
+            text-decoration-color: #f87171;
+        }
+
+        .diff-ins {
+            background-color: #d1fae5;
+            color: #047857;
+            text-decoration: none;
+            border-radius: 4px;
+            padding: 1px 4px;
+            font-weight: 700;
+            margin: 0 1px;
+            display: inline-block;
+            line-height: 1.4;
+            border-bottom: 2px solid #10b981;
+        }
+
+        body.dark-mode .diff-ins {
+            background-color: rgba(16, 185, 129, 0.25);
+            color: #6ee7b7;
+            border-bottom-color: #34d399;
+        }
+
+        .card-diff-preview-box {
+            font-size: 15px;
+            line-height: 1.8;
+            padding: 12px 16px;
+            background: var(--bg-color);
+            border: 1px dashed var(--border-color);
+            border-radius: var(--border-radius);
+            color: var(--text-color);
+            word-break: break-word;
+            white-space: pre-wrap;
+            margin-bottom: 8px;
+        }
+
+        .diff-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 2px 8px;
+            font-size: 11.5px;
+            font-weight: 600;
+        }
+
+        .chip-del {
+            color: var(--fixer-danger);
+            text-decoration: line-through;
+        }
+
+        .chip-arrow {
+            color: var(--text-muted);
+            font-size: 10px;
+        }
+
+        .chip-ins {
+            color: var(--fixer-success);
+            font-weight: 700;
+        }
+
+        .list-diff-preview-box {
+            font-size: 12px;
+            line-height: 1.5;
+            padding: 5px 8px;
+            background: var(--bg-color);
+            border: 1px dashed var(--border-color);
+            border-radius: var(--border-radius-sm);
+            color: var(--text-color);
+            word-break: break-word;
+            margin-bottom: 5px;
+        }
+
+        .list-diff-chips-wrap {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+            margin-bottom: 4px;
+        }
+
+        /* Warning State for Unchanged Items */
+        .card-diff-warning-box {
+            background: #fffbeb;
+            border: 2px solid #f59e0b;
+            border-radius: var(--border-radius);
+            padding: 14px 18px;
+            margin-bottom: 10px;
+            box-shadow: 0 4px 14px rgba(245, 158, 11, 0.18);
+        }
+
+        body.dark-mode .card-diff-warning-box {
+            background: rgba(245, 158, 11, 0.14);
+            border-color: #d97706;
+            box-shadow: 0 4px 14px rgba(245, 158, 11, 0.1);
+        }
+
+        .diff-warning-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: #b45309;
+            font-weight: 700;
+            font-size: 14.5px;
+            margin-bottom: 8px;
+        }
+
+        body.dark-mode .diff-warning-header {
+            color: #fbbf24;
+        }
+
+        .diff-warning-body {
+            font-size: 13.5px;
+            color: var(--text-color);
+            line-height: 1.65;
+        }
+
+        .diff-warning-rule-badge {
+            background: #fef3c7;
+            color: #92400e;
+            border: 1px solid #fde68a;
+            padding: 2px 7px;
+            border-radius: 4px;
+            font-weight: 700;
+            font-family: var(--font-mono);
+            font-size: 13px;
+        }
+
+        body.dark-mode .diff-warning-rule-badge {
+            background: rgba(245, 158, 11, 0.25);
+            color: #fde68a;
+            border-color: rgba(245, 158, 11, 0.4);
+        }
+
+        @keyframes shakeAlert {
+            0%, 100% { transform: translateX(0); }
+            20%, 60% { transform: translateX(-8px); }
+            40%, 80% { transform: translateX(8px); }
+        }
+
+        .shake-box {
+            animation: shakeAlert 0.35s ease;
+        }
+
         .card-after-textarea {
             width: 100%;
             font-size: 15px;
@@ -491,6 +658,17 @@
             background: linear-gradient(135deg, #059669 0%, #047857 100%);
             box-shadow: 0 6px 16px rgba(16, 185, 129, 0.45);
             transform: translateY(-1px);
+        }
+
+        .btn-approve.btn-warning-state {
+            background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%) !important;
+            box-shadow: 0 4px 12px rgba(245, 158, 11, 0.35) !important;
+            color: #ffffff !important;
+        }
+
+        .btn-approve.btn-warning-state:hover {
+            background: linear-gradient(135deg, #d97706 0%, #b45309 100%) !important;
+            box-shadow: 0 6px 16px rgba(245, 158, 11, 0.45) !important;
         }
 
         .btn-skip {
@@ -913,11 +1091,15 @@
                         <!-- 3. After (Smart Auto-Suggested & Editable) -->
                         <div class="card-section">
                             <div class="card-section-label label-after">
-                                <span>✅ 스마트 교정 제안 (After - 직접 수정 가능)</span>
+                                <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                                    <span>✅ 교정 번역 (After)</span>
+                                    <div id="cardDiffChips" style="display:inline-flex; gap:4px; flex-wrap:wrap;"></div>
+                                </div>
                                 <button type="button" class="btn btn-sm btn-outline" id="btnResetSuggestionCard" style="padding:2px 8px; font-size:11px;" title="초기 제안문으로 다시 복원 (R)">
                                     🔄 제안 초기화 [R]
                                 </button>
                             </div>
+                            <div class="card-diff-preview-box" id="cardDiffPreview"></div>
                             <textarea class="card-after-textarea" id="cardAfterInput" rows="3" placeholder="교정 번역문 입력..."></textarea>
                         </div>
                     </div>
@@ -942,8 +1124,9 @@
 
             <!-- Bottom Keyboard Shortcut Guide -->
             <div class="shortcut-legend-bar">
-                <div class="shortcut-item"><span class="key-badge">Enter</span> 또는 <span class="key-badge">Space</span> 승인 및 다음</div>
+                <div class="shortcut-item"><span class="key-badge">Enter</span> 교정 승인 및 다음</div>
                 <div class="shortcut-item"><span class="key-badge">S</span> 또는 <span class="key-badge">Esc</span> 건너뛰기</div>
+                <div class="shortcut-item"><span class="key-badge">Shift+Enter</span> 원문 강제 승인</div>
                 <div class="shortcut-item"><span class="key-badge">R</span> 제안 복원</div>
                 <div class="shortcut-item"><span class="key-badge">A</span> 또는 <span class="key-badge">&larr;</span> 이전 카드</div>
             </div>
@@ -1068,6 +1251,8 @@
         const cardOrigText = document.getElementById("cardOrigText");
         const cardBeforeText = document.getElementById("cardBeforeText");
         const cardAfterInput = document.getElementById("cardAfterInput");
+        const cardDiffPreview = document.getElementById("cardDiffPreview");
+        const cardDiffChips = document.getElementById("cardDiffChips");
         const btnApproveCard = document.getElementById("btnApproveCard");
         const btnSkipCard = document.getElementById("btnSkipCard");
         const btnPrevCard = document.getElementById("btnPrevCard");
@@ -1198,14 +1383,120 @@
                         </div>
                     </div>
                     <div>
-                        <label style="font-size:11px; font-weight:600; color:var(--text-muted); display:block; margin-bottom:4px;">오독/오번역 단어 목록 (쉼표 구분)</label>
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                            <label style="font-size:11px; font-weight:600; color:var(--text-muted);">오독/오번역 단어 목록 (쉼표 구분)</label>
+                            <button type="button" class="btn btn-sm btn-outline btn-discover-misreadings" style="padding:2px 8px; font-size:11px;" title="소설 전체에서 이 한자가 번역될 때 나타난 오역 단어를 로컬 통계로 자동 발굴">
+                                <span class="material-icons" style="font-size:13px; vertical-align:middle;">insights</span> 🔍 오독 단어 통계 자동 발굴
+                            </button>
+                        </div>
                         <input type="text" class="form-input rule-misreadings" value="${misreadingsStr}" style="width:100%; font-size:12px;" placeholder="예: 하루토, 유토, 하루카, 유카루">
+                        <div class="discovered-candidates-box" style="display:none; margin-top:8px; padding:10px 12px; background:var(--card-bg); border:1px dashed var(--border-color); border-radius:6px;">
+                            <div style="font-size:11.5px; font-weight:600; color:var(--primary-color); display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                                <span class="discovered-summary-text">🎯 발굴된 오역 단어 후보:</span>
+                                <button type="button" class="btn btn-sm btn-primary btn-add-all-candidates" style="padding:2px 8px; font-size:11px;">+ 추천 전체 추가</button>
+                            </div>
+                            <div class="discovered-chips-list" style="display:flex; flex-wrap:wrap; gap:4px;"></div>
+                        </div>
                     </div>
                 `;
 
+                // Delete rule event
                 card.querySelector(".btn-delete-rule").addEventListener("click", () => {
                     state.rules.splice(idx, 1);
                     renderRulesInModal();
+                });
+
+                // Statistical Misreadings Discovery event
+                const btnDiscover = card.querySelector(".btn-discover-misreadings");
+                const candidatesBox = card.querySelector(".discovered-candidates-box");
+                const chipsList = card.querySelector(".discovered-chips-list");
+                const summaryText = card.querySelector(".discovered-summary-text");
+                const btnAddAll = card.querySelector(".btn-add-all-candidates");
+                const misreadingsInput = card.querySelector(".rule-misreadings");
+
+                btnDiscover.addEventListener("click", async () => {
+                    const src = card.querySelector(".rule-source").value.trim();
+                    const tgt = card.querySelector(".rule-target").value.trim();
+                    if (!src) {
+                        showToast("원문 한자/단어를 먼저 입력해주세요.", false);
+                        card.querySelector(".rule-source").focus();
+                        return;
+                    }
+
+                    const origBtnHtml = btnDiscover.innerHTML;
+                    btnDiscover.innerHTML = '<span class="material-icons" style="font-size:13px; vertical-align:middle; animation:spin 1s linear infinite;">sync</span> 통계 분석 중...';
+                    btnDiscover.disabled = true;
+
+                    try {
+                        const res = await fetch("/api/db_editor/discover_misreadings", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({
+                                folderName: state.folderName,
+                                source: src,
+                                target: tgt
+                            })
+                        });
+                        const data = await res.json();
+                        btnDiscover.innerHTML = origBtnHtml;
+                        btnDiscover.disabled = false;
+
+                        const candidates = data.candidates || [];
+                        if (candidates.length === 0) {
+                            showToast("발굴된 오역 단어 후보가 없습니다.", false);
+                            candidatesBox.style.display = "none";
+                            return;
+                        }
+
+                        chipsList.innerHTML = "";
+                        summaryText.textContent = `🎯 통계 발굴된 오역 단어 (${candidates.length}건):`;
+
+                        candidates.forEach(cand => {
+                            const chip = document.createElement("button");
+                            chip.type = "button";
+                            chip.className = "btn btn-sm btn-outline";
+                            chip.style.cssText = "padding:3px 7px; font-size:11.5px; border-radius:12px; display:inline-flex; align-items:center; gap:4px;";
+                            chip.innerHTML = `+ <strong>${cand.word}</strong> <span style="font-size:10px; color:var(--text-muted); font-family:var(--font-mono);">(${cand.count}회 / ${(cand.ratio*100).toFixed(0)}%)</span>`;
+
+                            chip.addEventListener("click", () => {
+                                const currentVals = misreadingsInput.value.split(",").map(s => s.trim()).filter(Boolean);
+                                if (!currentVals.includes(cand.word)) {
+                                    currentVals.push(cand.word);
+                                    misreadingsInput.value = currentVals.join(", ");
+                                    chip.style.opacity = "0.5";
+                                    chip.disabled = true;
+                                    showToast(`'${cand.word}' 추가되었습니다.`);
+                                }
+                            });
+
+                            chipsList.appendChild(chip);
+                        });
+
+                        btnAddAll.onclick = () => {
+                            const currentVals = misreadingsInput.value.split(",").map(s => s.trim()).filter(Boolean);
+                            let addedCount = 0;
+                            candidates.forEach(cand => {
+                                if (!currentVals.includes(cand.word)) {
+                                    currentVals.push(cand.word);
+                                    addedCount++;
+                                }
+                            });
+                            misreadingsInput.value = currentVals.join(", ");
+                            chipsList.querySelectorAll("button").forEach(b => {
+                                b.style.opacity = "0.5";
+                                b.disabled = true;
+                            });
+                            showToast(`${addedCount}개의 오역 후보가 목록에 일괄 추가되었습니다!`);
+                        };
+
+                        candidatesBox.style.display = "block";
+                        showToast(`${candidates.length}개의 오역 단어 후보를 자동 발굴했습니다!`);
+                    } catch (err) {
+                        btnDiscover.innerHTML = origBtnHtml;
+                        btnDiscover.disabled = false;
+                        console.error("오역 단어 발굴 실패:", err);
+                        showToast("오역 단어 발굴 중 오류 발생", false);
+                    }
                 });
 
                 rulesListContainer.appendChild(card);
@@ -1385,20 +1676,245 @@
             statRemainingCount.textContent = state.items.length - state.approvedIds.size;
         }
 
-        // --- Card Mode Logic ---
+        // --- Diff & Highlighting Engine ---
+        function escapeHtml(str) {
+            if (!str) return "";
+            return String(str)
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+        }
+
+        function tokenize(text) {
+            if (!text) return [];
+            return text.match(/[\s]+|[^\s]+/g) || [];
+        }
+
+        function computeDiff(beforeText, afterText) {
+            if (!beforeText && !afterText) return { ops: [], changes: [] };
+            if (!beforeText) return { ops: [{ type: 'insert', text: afterText }], changes: [{ from: '', to: afterText }] };
+            if (!afterText) return { ops: [{ type: 'delete', text: beforeText }], changes: [{ from: beforeText, to: '' }] };
+            if (beforeText === afterText) return { ops: [{ type: 'equal', text: beforeText }], changes: [] };
+
+            const tokensA = tokenize(beforeText);
+            const tokensB = tokenize(afterText);
+            const n = tokensA.length;
+            const m = tokensB.length;
+
+            const dp = Array.from({ length: n + 1 }, () => new Uint16Array(m + 1));
+            for (let i = 0; i < n; i++) {
+                for (let j = 0; j < m; j++) {
+                    if (tokensA[i] === tokensB[j]) {
+                        dp[i + 1][j + 1] = dp[i][j] + 1;
+                    } else {
+                        dp[i + 1][j + 1] = Math.max(dp[i + 1][j], dp[i][j + 1]);
+                    }
+                }
+            }
+
+            const rawOps = [];
+            let i = n, j = m;
+            while (i > 0 || j > 0) {
+                if (i > 0 && j > 0 && tokensA[i - 1] === tokensB[j - 1]) {
+                    rawOps.push({ type: 'equal', text: tokensA[i - 1] });
+                    i--; j--;
+                } else if (j > 0 && (i === 0 || dp[i][j - 1] >= dp[i - 1][j])) {
+                    rawOps.push({ type: 'insert', text: tokensB[j - 1] });
+                    j--;
+                } else {
+                    rawOps.push({ type: 'delete', text: tokensA[i - 1] });
+                    i--;
+                }
+            }
+            rawOps.reverse();
+
+            const refined = [];
+            const changes = [];
+
+            for (let k = 0; k < rawOps.length; k++) {
+                const curr = rawOps[k];
+                const next = rawOps[k + 1];
+
+                if (curr.type === 'delete' && next && next.type === 'insert') {
+                    let del = curr.text;
+                    let ins = next.text;
+
+                    // Strip common leading punctuation (e.g. 「, ", ')
+                    let pLen = 0;
+                    while (pLen < del.length && pLen < ins.length && del[pLen] === ins[pLen] && !/[가-힣a-zA-Z0-9]/.test(del[pLen])) {
+                        pLen++;
+                    }
+                    if (pLen > 0) {
+                        refined.push({ type: 'equal', text: del.slice(0, pLen) });
+                        del = del.slice(pLen);
+                        ins = ins.slice(pLen);
+                    }
+
+                    // Strip common trailing suffix (particles or punctuation, e.g. 는, 가, 를, 의, .)
+                    let sLen = 0;
+                    while (sLen < del.length && sLen < ins.length && del[del.length - 1 - sLen] === ins[ins.length - 1 - sLen]) {
+                        sLen++;
+                    }
+                    let suffix = '';
+                    if (sLen > 0) {
+                        suffix = del.slice(del.length - sLen);
+                        del = del.slice(0, del.length - sLen);
+                        ins = ins.slice(0, ins.length - sLen);
+                    }
+
+                    if (del) refined.push({ type: 'delete', text: del });
+                    if (ins) refined.push({ type: 'insert', text: ins });
+                    if (del || ins) changes.push({ from: del, to: ins });
+                    if (suffix) refined.push({ type: 'equal', text: suffix });
+
+                    k++; // skip next
+                } else if (curr.type === 'delete') {
+                    refined.push(curr);
+                    changes.push({ from: curr.text, to: '' });
+                } else if (curr.type === 'insert') {
+                    refined.push(curr);
+                    changes.push({ from: '', to: curr.text });
+                } else {
+                    refined.push(curr);
+                }
+            }
+
+            return { ops: refined, changes };
+        }
+
+        function renderChipsHtml(changes, isUnchanged = false) {
+            if (isUnchanged || !changes || changes.length === 0) {
+                return `<span class="diff-chip" style="background:#fffbeb; color:#b45309; border-color:#fde68a; font-weight:700;"><span class="material-icons" style="font-size:12px; color:#f59e0b;">warning</span> 수동 수정 필요</span>`;
+            }
+            return changes.map(c => `
+                <span class="diff-chip" title="교정 내역">
+                    <span class="chip-del">${escapeHtml(c.from || '빈칸')}</span>
+                    <span class="chip-arrow">&rarr;</span>
+                    <span class="chip-ins">${escapeHtml(c.to || '삭제')}</span>
+                </span>
+            `).join(' ');
+        }
+
+        function renderDiffPreviewHtml(ops, changes, item, afterText = '') {
+            const isUnchanged = (!changes || changes.length === 0) || (item && afterText.trim() === (item.translated || '').trim());
+            if (isUnchanged) {
+                // Find missing rule info
+                let missingHint = "";
+                if (state.rules && item && item.original) {
+                    const rule = state.rules.find(r => r.enabled && item.original.includes(r.source) && !(afterText || '').includes(r.target));
+                    if (rule) {
+                        missingHint = `
+                            <div style="margin-top:8px; display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                                <span>원문 한자: <strong class="diff-warning-rule-badge">${escapeHtml(rule.source)}</strong> &rarr; 올바른 표기: <strong class="diff-warning-rule-badge" style="color:var(--fixer-success); background:#d1fae5; border-color:#a7f3d0;">${escapeHtml(rule.target)}</strong></span>
+                                <button type="button" class="btn btn-sm btn-outline btn-copy-target" data-target="${escapeHtml(rule.target)}" style="padding:2px 8px; font-size:11.5px; border-radius:12px; background:var(--card-bg);" title="이 단어를 클립보드에 복사">
+                                    📋 '${escapeHtml(rule.target)}' 복사
+                                </button>
+                            </div>
+                        `;
+                    }
+                }
+
+                const text = ops.map(op => escapeHtml(op.text)).join('');
+                return `
+                    <div class="card-diff-warning-box">
+                        <div class="diff-warning-header">
+                            <span class="material-icons" style="font-size:19px; color:#f59e0b;">warning</span>
+                            <span>⚠️ 자동 교정 불가 — 번역문 수동 수정 필요 (수정 전과 동일)</span>
+                        </div>
+                        <div class="diff-warning-body">
+                            등록된 오역 규칙과 일치하는 단어를 찾지 못해 <strong>변경 사항이 없습니다.</strong><br>
+                            번역문에서 오역된 인명을 찾아 아래 입력창에서 <strong>직접 수정한 후 승인</strong>해주세요. (수정이 불필요하면 <strong>[S] 건너뛰기</strong>)
+                            ${missingHint}
+                        </div>
+                    </div>
+                    <div style="color:var(--text-secondary); font-size:14px; line-height:1.7;">${text}</div>
+                `;
+            }
+            return ops.map(op => {
+                if (op.type === 'delete') return `<del class="diff-del">${escapeHtml(op.text)}</del>`;
+                if (op.type === 'insert') return `<ins class="diff-ins">${escapeHtml(op.text)}</ins>`;
+                return escapeHtml(op.text);
+            }).join('');
+        }
+
+        function renderBeforeWithDiff(ops, item) {
+            const hasDeletes = ops.some(op => op.type === 'delete');
+            if (!hasDeletes) {
+                return highlightErrors(item.translated || '', item);
+            }
+            return ops
+                .filter(op => op.type !== 'insert')
+                .map(op => {
+                    if (op.type === 'delete') {
+                        return `<del class="diff-del">${escapeHtml(op.text)}</del>`;
+                    }
+                    return escapeHtml(op.text);
+                })
+                .join('');
+        }
+
         function highlightErrors(text, item) {
             if (!text) return "";
-            let html = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+            let html = escapeHtml(text);
             const tags = item.tags || [];
             tags.forEach(tag => {
                 if (tag !== "all" && tag !== "수동검토" && tag !== "기타" && !tag.includes("누락")) {
-                    const regex = new RegExp(`(${tag})`, "g");
+                    const regex = new RegExp(`(${escapeHtml(tag)})`, "g");
                     html = html.replace(regex, '<mark class="err-mark">$1</mark>');
                 }
             });
             return html;
         }
 
+        function updateCardDiffView(beforeText, afterText) {
+            const item = state.filteredItems[state.currentIndex];
+            const { ops, changes } = computeDiff(beforeText, afterText);
+            const isUnchanged = (afterText.trim() === beforeText.trim()) || (changes.length === 0);
+
+            cardDiffChips.innerHTML = renderChipsHtml(changes, isUnchanged);
+            cardDiffPreview.innerHTML = renderDiffPreviewHtml(ops, changes, item, afterText);
+
+            // Bind any copy target buttons inside preview
+            cardDiffPreview.querySelectorAll(".btn-copy-target").forEach(btn => {
+                btn.addEventListener("click", (e) => {
+                    e.stopPropagation();
+                    const tgt = btn.dataset.target;
+                    navigator.clipboard.writeText(tgt);
+                    showToast(`'${tgt}' 가 클립보드에 복사되었습니다! (Ctrl+V로 원하는 위치에 붙여넣으세요)`);
+                });
+            });
+
+            if (item) {
+                cardBeforeText.innerHTML = renderBeforeWithDiff(ops, item);
+            }
+
+            // Visual feedback on After input & Approve button
+            if (isUnchanged) {
+                cardAfterInput.style.borderColor = "var(--fixer-warning)";
+                cardAfterInput.style.boxShadow = "0 0 0 3px rgba(245, 158, 11, 0.2)";
+                btnApproveCard.classList.add("btn-warning-state");
+                btnApproveCard.innerHTML = `<span class="material-icons" style="font-size:18px;">warning</span> 수동 수정 필요 [Enter 차단]`;
+                btnApproveCard.title = "번역문이 수정되지 않았습니다. 직접 수정한 후 승인하거나, [S] 건너뛰기를 누르세요. (강제 승인은 Shift+Enter 또는 클릭)";
+            } else {
+                cardAfterInput.style.borderColor = "var(--fixer-success)";
+                cardAfterInput.style.boxShadow = "0 0 0 3px rgba(16, 185, 129, 0.12)";
+                btnApproveCard.classList.remove("btn-warning-state");
+                btnApproveCard.innerHTML = `<span class="material-icons" style="font-size:18px;">check_circle</span> 승인 및 다음 [Enter]`;
+                btnApproveCard.title = "DB에 즉시 저장하고 다음 카드로 (Enter / Space)";
+            }
+        }
+
+        // Live Diff update on Card textarea input
+        cardAfterInput.addEventListener("input", () => {
+            const item = state.filteredItems[state.currentIndex];
+            if (item) {
+                updateCardDiffView(item.translated || "", cardAfterInput.value);
+            }
+        });
+
+        // --- Card Mode Logic ---
         function renderCurrentCard() {
             if (state.filteredItems.length === 0 || state.currentIndex >= state.filteredItems.length) {
                 cardModeSection.style.display = "none";
@@ -1429,10 +1945,11 @@
                 cardBadgesWrap.appendChild(b);
             });
 
-            // Texts
+            // Texts & Live Diff
             cardOrigText.textContent = item.original || "";
-            cardBeforeText.innerHTML = highlightErrors(item.translated || "", item);
-            cardAfterInput.value = item.suggested || item.translated || "";
+            const currentVal = item.suggested || item.translated || "";
+            cardAfterInput.value = currentVal;
+            updateCardDiffView(item.translated || "", currentVal);
 
             // Auto-focus after input
             cardAfterInput.focus();
@@ -1460,15 +1977,17 @@
         btnResetSuggestionCard.addEventListener("click", () => {
             const item = state.filteredItems[state.currentIndex];
             if (item) {
-                cardAfterInput.value = item.suggested || item.translated || "";
+                const val = item.suggested || item.translated || "";
+                cardAfterInput.value = val;
+                updateCardDiffView(item.translated || "", val);
                 showToast("초기 자동 제안문으로 복원되었습니다.");
             }
         });
 
         // Approve Single (Card Mode)
-        btnApproveCard.addEventListener("click", approveCurrentCard);
+        btnApproveCard.addEventListener("click", () => approveCurrentCard(true));
 
-        async function approveCurrentCard() {
+        async function approveCurrentCard(isForced = false) {
             if (state.filteredItems.length === 0 || state.currentIndex >= state.filteredItems.length) return;
             const item = state.filteredItems[state.currentIndex];
             const newTranslated = cardAfterInput.value.trim();
@@ -1476,6 +1995,27 @@
             if (!newTranslated) {
                 showToast("번역문이 비어 있습니다.", false);
                 return;
+            }
+
+            const isUnchanged = newTranslated === (item.translated || "").trim();
+
+            // Guard: Prevent blind/reflexive Enter approval on unchanged sentences
+            if (isUnchanged && !isForced) {
+                // Trigger shake animation on input
+                cardAfterInput.classList.remove("shake-box");
+                void cardAfterInput.offsetWidth; // trigger reflow
+                cardAfterInput.classList.add("shake-box");
+                cardAfterInput.focus();
+
+                showToast("⚠️ 수정된 내용이 없습니다! 번역문을 직접 수정한 후 [Enter]를 누르거나, 건너뛰려면 [S]를 누르세요.", false);
+                return;
+            }
+
+            // If forced via Shift+Enter or Button click on unchanged item, require explicit confirm
+            if (isUnchanged && isForced) {
+                if (!confirm("⚠️ 수정된 내용이 전혀 없는 원본 번역문입니다.\n\n정말 수정 없이 원문 그대로 승인하시겠습니까?\n(수정이 필요 없는 문장이면 [취소] 후 [S] 건너뛰기를 권장합니다)")) {
+                    return;
+                }
             }
 
             const isFirst = !state.backupDone;
@@ -1552,9 +2092,13 @@
 
             // Check key
             if (e.key === "Enter" && !e.shiftKey) {
-                // If textarea focused and Shift+Enter -> newline, plain Enter -> approve
+                // Plain Enter -> approve with unchanged guard (isForced = false)
                 e.preventDefault();
-                approveCurrentCard();
+                approveCurrentCard(false);
+            } else if (e.key === "Enter" && e.shiftKey) {
+                // Shift+Enter -> force approve with confirmation dialog if unchanged
+                e.preventDefault();
+                approveCurrentCard(true);
             } else if (e.key === "Escape" || e.key.toLowerCase() === "s" && e.target !== cardAfterInput) {
                 e.preventDefault();
                 btnSkipCard.click();
@@ -1590,33 +2134,64 @@
 
                 const reasonsHtml = (item.reasons || []).map(r => `<span class="reason-badge" style="font-size:10.5px; padding:1px 5px; margin:1px;">${r}</span>`).join(" ");
 
+                const currentSuggested = item.suggested || item.translated || '';
+                const { ops, changes } = computeDiff(item.translated || '', currentSuggested);
+                const beforeHtml = renderBeforeWithDiff(ops, item);
+                const diffHtml = renderDiffPreviewHtml(ops, changes, item, currentSuggested);
+                const isUnchanged = (currentSuggested.trim() === (item.translated || '').trim()) || (changes.length === 0);
+                const chipsHtml = renderChipsHtml(changes, isUnchanged);
+
                 tr.innerHTML = `
                     <td style="text-align:center; vertical-align:middle;">
                         <input type="checkbox" class="list-item-checkbox" data-id="${item.id}" ${state.approvedIds.has(item.id) ? '' : 'checked'} style="width:17px; height:17px; cursor:pointer;">
                     </td>
                     <td>
-                        <div style="font-weight:600; font-size:12.5px; margin-bottom:4px;">${item.title || '회차'}</div>
+                        <div style="font-weight:600; font-size:12.5px; margin-bottom:4px;">${escapeHtml(item.title || '회차')}</div>
                         <div style="display:flex; flex-wrap:wrap; gap:2px;">${reasonsHtml}</div>
                     </td>
                     <td class="list-cell-orig">
-                        <div>${item.original || ''}</div>
+                        <div>${escapeHtml(item.original || '')}</div>
                     </td>
                     <td class="list-cell-before">
-                        <div>${highlightErrors(item.translated || '', item)}</div>
+                        <div class="row-before-text">${beforeHtml}</div>
                     </td>
                     <td class="list-cell-after">
-                        <textarea class="list-inline-textarea" data-id="${item.id}">${item.suggested || item.translated || ''}</textarea>
+                        <div class="list-diff-chips-wrap" style="display:flex;">${chipsHtml}</div>
+                        <div class="list-diff-preview-box" style="display:block;">${diffHtml}</div>
+                        <textarea class="list-inline-textarea" data-id="${item.id}">${escapeHtml(currentSuggested)}</textarea>
                     </td>
                     <td style="text-align:center; vertical-align:middle;">
                         <button type="button" class="btn btn-sm btn-outline btn-save-row" data-id="${item.id}" style="padding:4px 8px;">저장</button>
                     </td>
                 `;
 
+                // Live diff update on row textarea input
+                const rowTextarea = tr.querySelector(".list-inline-textarea");
+                const rowChipsWrap = tr.querySelector(".list-diff-chips-wrap");
+                const rowDiffBox = tr.querySelector(".list-diff-preview-box");
+                const rowBeforeDiv = tr.querySelector(".row-before-text");
+
+                rowTextarea.addEventListener("input", () => {
+                    const newSuggested = rowTextarea.value;
+                    const res = computeDiff(item.translated || '', newSuggested);
+                    const rowUnchanged = (newSuggested.trim() === (item.translated || '').trim()) || (res.changes.length === 0);
+                    rowBeforeDiv.innerHTML = renderBeforeWithDiff(res.ops, item);
+                    rowChipsWrap.innerHTML = renderChipsHtml(res.changes, rowUnchanged);
+                    rowDiffBox.innerHTML = renderDiffPreviewHtml(res.ops, res.changes, item, newSuggested);
+                });
+
                 // Single Row Save
                 tr.querySelector(".btn-save-row").addEventListener("click", async () => {
                     const rowTextarea = tr.querySelector(".list-inline-textarea");
                     const newTrans = rowTextarea.value.trim();
                     if (!newTrans) return;
+
+                    const isRowUnchanged = newTrans === (item.translated || "").trim();
+                    if (isRowUnchanged) {
+                        if (!confirm("⚠️ 수정된 내용이 전혀 없는 원본 번역문입니다.\n\n정말 수정 없이 그대로 저장하시겠습니까?\n(수정이 필요 없는 항목이면 [취소]하세요)")) {
+                            return;
+                        }
+                    }
 
                     const isFirst = !state.backupDone;
                     try {
@@ -1691,7 +2266,20 @@
                 });
             });
 
-            if (!confirm(`선택한 ${itemsToSave.length}건의 교정 번역문을 DB에 일괄 저장하시겠습니까?\n(자동 안전 백업이 먼저 실행됩니다)`)) {
+            const unchangedItems = [];
+            itemsToSave.forEach(it => {
+                const itemObj = state.items.find(x => x.id === it.id);
+                if (itemObj && it.translated === (itemObj.translated || '').trim()) {
+                    unchangedItems.push(it.id);
+                }
+            });
+
+            let confirmMsg = `선택한 ${itemsToSave.length}건의 교정 번역문을 DB에 일괄 저장하시겠습니까?\n(자동 안전 백업이 먼저 실행됩니다)`;
+            if (unchangedItems.length > 0) {
+                confirmMsg = `⚠️ [주의] 선택한 항목 중 수정 사항이 전혀 없는 문장이 ${unchangedItems.length}건 포함되어 있습니다!\n(원문과 동일한 상태로 저장됩니다)\n\n정말 계속 일괄 저장하시겠습니까?`;
+            }
+
+            if (!confirm(confirmMsg)) {
                 return;
             }
 

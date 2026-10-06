@@ -104,10 +104,10 @@ def test_get_and_save_rules():
     assert "rules" in data
     assert len(data["rules"]) >= 2
     
-    # Test saving modified rules
-    rules = data["rules"]
-    rules.append({
-        "id": "test-rule-3",
+    original_rules = [r for r in data["rules"] if r.get("id") != "test-rule-temp"]
+    test_rules = list(original_rules)
+    test_rules.append({
+        "id": "test-rule-temp",
         "source": "美咲",
         "target": "미사키",
         "enabled": True,
@@ -116,7 +116,7 @@ def test_get_and_save_rules():
     })
     save_res = client.post("/api/db_editor/rules", json={
         "folderName": folder,
-        "rules": rules
+        "rules": test_rules
     })
     assert save_res.status_code == 200
     assert save_res.json()["status"] == "success"
@@ -124,6 +124,12 @@ def test_get_and_save_rules():
     # Verify persistence
     verify_res = client.get(f"/api/db_editor/rules?folderName={folder}")
     assert any(r["source"] == "美咲" for r in verify_res.json()["rules"])
+
+    # Clean up: restore original rules
+    client.post("/api/db_editor/rules", json={
+        "folderName": folder,
+        "rules": original_rules
+    })
 
 
 def test_scan_sentences():
@@ -233,4 +239,29 @@ def test_no_duplicate_particles():
     suggested, _, _ = generate_smart_suggestion("悠が言った", "유리가 말했다", rules)
     assert suggested == "유우가 말했다"
     assert "유우가가" not in suggested
+
+
+def test_discover_misreadings_endpoint():
+    folder = "누나가 마 니 선생이라고 느그 좋아하면 안되나?"
+    res = client.post("/api/db_editor/discover_misreadings", json={
+        "folderName": folder,
+        "source": "悠",
+        "target": "유우"
+    })
+    assert res.status_code == 200
+    data = res.json()
+    assert data["status"] == "success"
+    assert "candidates" in data
+    words = [c["word"] for c in data["candidates"]]
+    # In test fixture: p1 has 하루를, p2 has 하루가, p3 has 유카는
+    assert any("하루" in w for w in words) or any("유카" in w for w in words)
+
+    # Empty source validation
+    fail_res = client.post("/api/db_editor/discover_misreadings", json={
+        "folderName": folder,
+        "source": "   ",
+        "target": "유우"
+    })
+    assert fail_res.status_code == 400
+
 
