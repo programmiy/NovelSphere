@@ -34,14 +34,25 @@ def get_abnormal_translations_data(
     whitelisted_ids = {row.translation_id for row in whitelisted_rows}
     whitelisted_url_pids = {(row.url, row.pid) for row in whitelisted_rows if row.url and row.pid}
 
-    # 1. 빠른 1차 후보군 필터링 (가나 또는 한자 포함 번역문)
-    candidate_regex = r'[\u3040-\u309f\u30a0-\u30fa\u4e00-\u9faf\u3400-\u4dbf]'
+    # 1. 빠른 1차 후보군 필터링 (가나/한자 포함 또는 한글 없는 영어/스페인어 라틴 문자, 연속된 외래어 구절 포함)
+    cjk_regex = r'[\u3040-\u309f\u30a0-\u30fa\u4e00-\u9faf\u3400-\u4dbf]'
+    hangul_regex = r'[\uac00-\ud7af\u1100-\u11ff\u3130-\u318f]'
+    latin_regex = r'[a-zA-Z\u00C0-\u00FF]'
+    latin_phrase_regex = r'(?:[a-zA-Z\u00C0-\u00FF]+(?:[\'’][a-zA-Z\u00C0-\u00FF]+)?\s+){3,}[a-zA-Z\u00C0-\u00FF]+'
+
     query = text("""
         SELECT id, url, pid, original, translated, timestamp, folderName, title, toc_sort_order
         FROM translations
-        WHERE translated REGEXP :pattern
+        WHERE translated REGEXP :cjk_pattern
+           OR (translated NOT REGEXP :hangul_pattern AND translated REGEXP :latin_pattern)
+           OR translated REGEXP :latin_phrase_pattern
     """)
-    candidates = db.execute(query, {"pattern": candidate_regex}).fetchall()
+    candidates = db.execute(query, {
+        "cjk_pattern": cjk_regex,
+        "hangul_pattern": hangul_regex,
+        "latin_pattern": latin_regex,
+        "latin_phrase_pattern": latin_phrase_regex
+    }).fetchall()
 
     grouped_by_folder = defaultdict(lambda: defaultdict(list))
     cat_counts = {"total": 0, "partial_untranslated": 0, "other_language": 0}

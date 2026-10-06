@@ -45,6 +45,22 @@ document.addEventListener('DOMContentLoaded', async () => {
     const closeShortcutModalBtn = document.getElementById('close-shortcut-modal-btn');
     const closeShortcutBottomBtn = document.getElementById('close-shortcut-bottom-btn');
 
+    // Dictionary & Corpus Study Drawer Elements
+    const dictStudyBtn = document.getElementById('dict-study-btn');
+    const dictSidebar = document.getElementById('dict-sidebar');
+    const closeDictSidebarBtn = document.getElementById('close-dict-sidebar-btn');
+    const dictSearchInput = document.getElementById('dict-search-input');
+    const dictClearBtn = document.getElementById('dict-clear-btn');
+    const dictSearchBtn = document.getElementById('dict-search-btn');
+    const dictLinkNaver = document.getElementById('dict-link-naver');
+    const dictLinkWeblio = document.getElementById('dict-link-weblio');
+    const dictLinkJisho = document.getElementById('dict-link-jisho');
+    const dictStatsContainer = document.getElementById('dict-stats-container');
+    const dictStatsText = document.getElementById('dict-stats-text');
+    const dictCandidatesWrap = document.getElementById('dict-candidates-wrap');
+    const dictExamplesList = document.getElementById('dict-examples-list');
+    const dictSelectionPill = document.getElementById('dict-selection-pill');
+
     // Overlay & Mobile Nav
     const overlay = document.getElementById('overlay');
     const mobileNavSetting = document.getElementById('mobile-nav-setting');
@@ -60,6 +76,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     let pages = [];
     let currentPageInChapter = 0;
     let saveTimeout = null;
+
+    // Dictionary & Editing State
+    let activeEditingItem = null;
+    let currentDictKeyword = '';
 
     // Preferences State
     let prefs = {
@@ -666,6 +686,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // --- Sidebar & Drawer Open/Close ---
     function openSidebar() {
         closeSettingsDrawer();
+        closeDictDrawer();
         sidebar.classList.add('open');
         overlay.classList.add('visible');
         if (tocSearchInput) {
@@ -677,20 +698,21 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     function closeSidebar() {
         sidebar.classList.remove('open');
-        if (!settingsDrawer.classList.contains('open') && !shortcutModal.style.display.includes('flex')) {
+        if (!settingsDrawer.classList.contains('open') && !(dictSidebar && dictSidebar.classList.contains('open')) && !shortcutModal.style.display.includes('flex')) {
             overlay.classList.remove('visible');
         }
     }
 
     function openSettingsDrawer() {
         closeSidebar();
+        closeDictDrawer();
         settingsDrawer.classList.add('open');
         overlay.classList.add('visible');
     }
 
     function closeSettingsDrawer() {
         settingsDrawer.classList.remove('open');
-        if (!sidebar.classList.contains('open') && !shortcutModal.style.display.includes('flex')) {
+        if (!sidebar.classList.contains('open') && !(dictSidebar && dictSidebar.classList.contains('open')) && !shortcutModal.style.display.includes('flex')) {
             overlay.classList.remove('visible');
         }
     }
@@ -712,9 +734,246 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     function closeShortcutModal() {
         shortcutModal.style.display = 'none';
-        if (!sidebar.classList.contains('open') && !settingsDrawer.classList.contains('open')) {
+        if (!sidebar.classList.contains('open') && !settingsDrawer.classList.contains('open') && !(dictSidebar && dictSidebar.classList.contains('open'))) {
             overlay.classList.remove('visible');
         }
+    }
+
+    // --- Dictionary & Corpus Study Drawer ---
+    function openDictDrawer(initialKeyword = '') {
+        closeSidebar();
+        closeSettingsDrawer();
+        closeShortcutModal();
+        hideSelectionPill();
+
+        if (dictSidebar) dictSidebar.classList.add('open');
+        overlay.classList.add('visible');
+
+        const kw = (initialKeyword || '').trim();
+        if (kw) {
+            if (dictSearchInput) {
+                dictSearchInput.value = kw;
+                if (dictClearBtn) dictClearBtn.style.display = 'block';
+            }
+            executeDictSearch(kw);
+        } else {
+            setTimeout(() => {
+                if (dictSearchInput) dictSearchInput.focus();
+            }, 150);
+        }
+    }
+
+    function closeDictDrawer() {
+        if (dictSidebar) dictSidebar.classList.remove('open');
+        if (!sidebar.classList.contains('open') && !settingsDrawer.classList.contains('open') && !shortcutModal.style.display.includes('flex')) {
+            overlay.classList.remove('visible');
+        }
+    }
+
+    function toggleDictDrawer() {
+        if (dictSidebar && dictSidebar.classList.contains('open')) {
+            closeDictDrawer();
+        } else {
+            const sel = window.getSelection().toString().trim();
+            openDictDrawer(sel);
+        }
+    }
+
+    function hideSelectionPill() {
+        if (dictSelectionPill) {
+            dictSelectionPill.style.display = 'none';
+        }
+    }
+
+    function highlightKeyword(text, keyword) {
+        if (!text || !keyword) return escapeHtml(text || '');
+        const escapedText = escapeHtml(text);
+        const escapedKw = escapeHtml(keyword).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        try {
+            const regex = new RegExp(`(${escapedKw})`, 'gi');
+            return escapedText.replace(regex, '<mark class="dict-highlight">$1</mark>');
+        } catch {
+            return escapedText;
+        }
+    }
+
+    async function executeDictSearch(keyword) {
+        const kw = (keyword || '').trim();
+        currentDictKeyword = kw;
+
+        if (!kw) {
+            if (dictClearBtn) dictClearBtn.style.display = 'none';
+            if (dictStatsContainer) dictStatsContainer.style.display = 'none';
+            if (dictExamplesList) {
+                dictExamplesList.innerHTML = `
+                    <div class="dict-empty-guide">
+                        <span class="material-icons" style="font-size: 40px; opacity: 0.35;">auto_stories</span>
+                        <p>원문이나 번역문 단어를 드래그하거나<br>상단에 단어를 입력하여 검색하세요.</p>
+                        <span class="sub-guide">34만 개 이상의 누적 번역 데이터에서 실제 소설 용례를 대조하고 네이버/Weblio/Jisho 사전과 연동할 수 있습니다.</span>
+                    </div>
+                `;
+            }
+            if (dictLinkNaver) dictLinkNaver.href = 'https://ja.dict.naver.com/';
+            if (dictLinkWeblio) dictLinkWeblio.href = 'https://www.weblio.jp/';
+            if (dictLinkJisho) dictLinkJisho.href = 'https://jisho.org/';
+            return;
+        }
+
+        if (dictClearBtn) dictClearBtn.style.display = 'block';
+
+        // Update direct dictionary links
+        const encodedKw = encodeURIComponent(kw);
+        if (dictLinkNaver) dictLinkNaver.href = `https://ja.dict.naver.com/#/search?range=all&q=${encodedKw}`;
+        if (dictLinkWeblio) dictLinkWeblio.href = `https://www.weblio.jp/content/${encodedKw}`;
+        if (dictLinkJisho) dictLinkJisho.href = `https://jisho.org/search/${encodedKw}`;
+
+        // Show loading in list
+        if (dictExamplesList) {
+            dictExamplesList.innerHTML = `
+                <div style="text-align: center; padding: 40px; color: var(--text-muted);">
+                    <div style="display: inline-block; width: 24px; height: 24px; border: 3px solid var(--border-color); border-top-color: var(--primary-color); border-radius: 50%; animation: spin 0.8s linear infinite;"></div>
+                    <p style="margin-top: 12px; font-size: 13px;">누적 번역 DB 및 사전 연동 데이터 조회 중...</p>
+                </div>
+            `;
+        }
+
+        try {
+            const url = `/api/dictionary/lookup?keyword=${encodedKw}&folder=${encodeURIComponent(bookName || '')}&limit=30`;
+            const resp = await fetch(url);
+            if (!resp.ok) throw new Error('사전 및 용례 조회 실패');
+            const data = await resp.json();
+
+            // Stats badge
+            if (dictStatsContainer) {
+                dictStatsContainer.style.display = 'flex';
+                if (dictStatsText) {
+                    dictStatsText.textContent = `누적 소설 DB ${data.total_occurrences}건 발견 (${data.frequency_level})`;
+                }
+                if (dictCandidatesWrap) {
+                    dictCandidatesWrap.innerHTML = '';
+                    if (data.candidate_terms && data.candidate_terms.length > 0) {
+                        const label = document.createElement('span');
+                        label.className = 'dict-candidate-label';
+                        label.textContent = '주요 대응어:';
+                        dictCandidatesWrap.appendChild(label);
+
+                        data.candidate_terms.forEach(term => {
+                            const chip = document.createElement('button');
+                            chip.className = 'dict-candidate-chip';
+                            chip.textContent = term;
+                            chip.title = `'${term}' 키워드로 연쇄 탐색`;
+                            chip.onclick = () => {
+                                if (dictSearchInput) dictSearchInput.value = term;
+                                executeDictSearch(term);
+                            };
+                            dictCandidatesWrap.appendChild(chip);
+                        });
+                    }
+                }
+            }
+
+            // Render Examples
+            if (!dictExamplesList) return;
+            const examples = data.examples || [];
+            if (examples.length === 0) {
+                dictExamplesList.innerHTML = `
+                    <div class="dict-empty-guide">
+                        <span class="material-icons" style="font-size: 36px; opacity: 0.4;">search_off</span>
+                        <p>'${escapeHtml(kw)}'에 대한 누적 소설 용례가 없습니다.</p>
+                        <span class="sub-guide">상단 네이버/Weblio/Jisho 사전 버튼을 클릭하면 온라인 사전 전문 검색으로 바로 연결됩니다.</span>
+                    </div>
+                `;
+                return;
+            }
+
+            dictExamplesList.innerHTML = '';
+            examples.forEach(item => {
+                const card = document.createElement('div');
+                card.className = 'dict-example-card';
+
+                const sourceTitle = item.folderName ? `${item.folderName} • ${item.title || ''}` : (item.title || '');
+                const origHtml = highlightKeyword(item.original, kw);
+                const transHtml = highlightKeyword(item.translated, kw);
+
+                let actionsHtml = `<div class="dict-example-actions">`;
+                if (activeEditingItem) {
+                    actionsHtml += `<button class="dict-apply-btn" title="현재 수정 중인 단락에 이 번역 표현 삽입/반영">이 표현 반영</button>`;
+                }
+                actionsHtml += `<button class="dict-copy-btn" title="번역문 복사">복사</button></div>`;
+
+                card.innerHTML = `
+                    <div class="dict-example-meta">
+                        <span class="dict-example-source" title="${escapeHtml(sourceTitle)}">
+                            <span class="material-icons" style="font-size: 13px;">bookmark_border</span>
+                            ${escapeHtml(sourceTitle)}
+                        </span>
+                    </div>
+                    <div class="dict-example-orig">${origHtml}</div>
+                    <div class="dict-example-trans">${transHtml}</div>
+                    ${actionsHtml}
+                `;
+
+                // Apply button handler
+                const applyBtn = card.querySelector('.dict-apply-btn');
+                if (applyBtn) {
+                    applyBtn.onclick = (e) => {
+                        e.stopPropagation();
+                        applyTranslationToActiveEditor(item.translated);
+                    };
+                }
+
+                // Copy button handler
+                const copyBtn = card.querySelector('.dict-copy-btn');
+                if (copyBtn) {
+                    copyBtn.onclick = (e) => {
+                        e.stopPropagation();
+                        navigator.clipboard.writeText(item.translated);
+                        showToast('번역문이 클립보드에 복사되었습니다.');
+                    };
+                }
+
+                dictExamplesList.appendChild(card);
+            });
+
+        } catch (err) {
+            console.error('Dictionary search error:', err);
+            if (dictExamplesList) {
+                dictExamplesList.innerHTML = `
+                    <div style="text-align: center; padding: 40px; color: #ef4444;">
+                        <p style="font-size: 13px;">용례 검색 중 오류가 발생했습니다: ${escapeHtml(err.message)}</p>
+                    </div>
+                `;
+            }
+        }
+    }
+
+    function applyTranslationToActiveEditor(translatedText) {
+        if (!activeEditingItem) {
+            showToast('현재 수정 중인 단락이 없습니다.');
+            return;
+        }
+        const translatedTextElement = activeEditingItem.querySelector('.translated-text');
+        if (translatedTextElement) {
+            translatedTextElement.textContent = translatedText;
+            showToast('번역 표현이 수정창에 적용되었습니다.');
+        }
+    }
+
+    function openDictDrawerForEditing(translationItem) {
+        activeEditingItem = translationItem;
+        const orig = translationItem.dataset.original || '';
+
+        // Extract candidate keyword from selection or original
+        let kw = window.getSelection().toString().trim();
+        if (!kw && orig) {
+            const kanjiMatch = orig.match(/[\u4e00-\u9faf]{2,}/);
+            const katakanaMatch = orig.match(/[\u30a0-\u30ff]{2,}/);
+            if (kanjiMatch) kw = kanjiMatch[0];
+            else if (katakanaMatch) kw = katakanaMatch[0];
+            else kw = orig.substring(0, Math.min(8, orig.length));
+        }
+
+        openDictDrawer(kw);
     }
 
     // --- Paragraph Inline Editing ---
@@ -727,6 +986,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (translationItem.classList.contains('editing')) return;
 
         translationItem.classList.add('editing');
+        activeEditingItem = translationItem;
         const translatedTextElement = translationItem.querySelector('.translated-text');
         
         // Find raw unparsed text from currentChapterItems or dataset so tags like 《...》 or (・) can be edited
@@ -749,11 +1009,16 @@ document.addEventListener('DOMContentLoaded', async () => {
             actionBox.className = 'inline-edit-actions';
             const isTouchUI = isMobile || window.innerWidth <= 768;
             actionBox.innerHTML = `
+                <button class="btn btn-sm btn-outline dict-lookup-btn" title="사전 및 누적 용례 대조">📖 사전·용례</button>
                 <button class="btn btn-sm btn-outline cancel-edit-btn">${isTouchUI ? '취소' : '취소 (Esc)'}</button>
                 <button class="btn btn-sm btn-primary save-edit-btn">${isTouchUI ? '저장' : '저장 (Ctrl+Enter)'}</button>
             `;
             translationItem.appendChild(actionBox);
 
+            actionBox.querySelector('.dict-lookup-btn').onclick = (e) => {
+                e.stopPropagation();
+                openDictDrawerForEditing(translationItem);
+            };
             actionBox.querySelector('.save-edit-btn').onclick = (e) => {
                 e.stopPropagation();
                 saveParagraphChanges(translationItem);
@@ -776,6 +1041,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     function disableEditing(translationItem, revert = false) {
         translationItem.classList.remove('editing');
+        if (activeEditingItem === translationItem) {
+            activeEditingItem = null;
+        }
         const translatedTextElement = translationItem.querySelector('.translated-text');
         if (translatedTextElement) {
             translatedTextElement.contentEditable = 'false';
@@ -859,6 +1127,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         } else if (key === 'f' || key === 'F') {
             e.preventDefault();
             toggleFocusMode();
+        } else if ((e.shiftKey && (key === 'd' || key === 'D')) || key === 'w' || key === 'W') {
+            e.preventDefault();
+            toggleDictDrawer();
         } else if (key === 'd' || key === 'D') {
             e.preventDefault();
             // Fast toggle between light (paper) and dark (dark)
@@ -889,6 +1160,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             closeSidebar();
             closeSettingsDrawer();
             closeShortcutModal();
+            closeDictDrawer();
             if (viewerContainer.classList.contains('focus-mode')) {
                 toggleFocusMode();
             }
@@ -1056,6 +1328,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Top Header Buttons
     tocBtn.addEventListener('click', openSidebar);
     readerSettingsBtn.addEventListener('click', openSettingsDrawer);
+    if (dictStudyBtn) dictStudyBtn.addEventListener('click', toggleDictDrawer);
     focusModeBtn.addEventListener('click', toggleFocusMode);
     nightModeBtn.addEventListener('click', () => {
         prefs.theme = (prefs.theme === 'dark' || prefs.theme === 'oled') ? 'paper' : 'dark';
@@ -1063,6 +1336,90 @@ document.addEventListener('DOMContentLoaded', async () => {
         savePreferences();
     });
     shortcutHelpBtn.addEventListener('click', openShortcutModal);
+
+    // Dictionary Drawer Events
+    if (closeDictSidebarBtn) closeDictSidebarBtn.addEventListener('click', closeDictDrawer);
+    if (dictSearchBtn) {
+        dictSearchBtn.addEventListener('click', () => {
+            if (dictSearchInput) executeDictSearch(dictSearchInput.value);
+        });
+    }
+    if (dictSearchInput) {
+        dictSearchInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                executeDictSearch(dictSearchInput.value);
+            }
+        });
+        dictSearchInput.addEventListener('input', () => {
+            if (dictClearBtn) {
+                dictClearBtn.style.display = dictSearchInput.value ? 'block' : 'none';
+            }
+        });
+    }
+    if (dictClearBtn) {
+        dictClearBtn.addEventListener('click', () => {
+            if (dictSearchInput) dictSearchInput.value = '';
+            executeDictSearch('');
+            if (dictSearchInput) dictSearchInput.focus();
+        });
+    }
+
+    // Selection Pill Listener for Reading & Study
+    document.addEventListener('mouseup', handleTextSelection);
+    document.addEventListener('touchend', () => {
+        setTimeout(handleTextSelection, 100);
+    });
+
+    function handleTextSelection(e) {
+        if (e && e.target && e.target.closest('#dict-selection-pill')) return;
+
+        const selection = window.getSelection();
+        const selectedText = selection ? selection.toString().trim() : '';
+
+        if (selectedText.length > 0 && selectedText.length <= 40) {
+            const anchorNode = selection.anchorNode;
+            const parentEl = anchorNode ? (anchorNode.nodeType === Node.ELEMENT_NODE ? anchorNode : anchorNode.parentElement) : null;
+            const isInsideReader = parentEl && (
+                parentEl.closest('#content-area') ||
+                parentEl.closest('#dict-sidebar')
+            );
+
+            if (isInsideReader && dictSelectionPill) {
+                try {
+                    const range = selection.getRangeAt(0);
+                    const rect = range.getBoundingClientRect();
+                    if (rect.width > 0 && rect.height > 0) {
+                        const top = Math.max(12, rect.top - 46);
+                        const left = Math.max(10, Math.min(window.innerWidth - 150, rect.left + (rect.width / 2) - 50));
+
+                        dictSelectionPill.style.top = `${top}px`;
+                        dictSelectionPill.style.left = `${left}px`;
+                        dictSelectionPill.style.display = 'flex';
+                        dictSelectionPill.dataset.kw = selectedText;
+                        const pillLabel = dictSelectionPill.querySelector('.pill-label');
+                        if (pillLabel) {
+                            const displayKw = selectedText.length > 8 ? selectedText.substring(0, 8) + '…' : selectedText;
+                            pillLabel.textContent = `사전·용례 ('${displayKw}')`;
+                        }
+                        return;
+                    }
+                } catch {
+                    // Ignore range get error
+                }
+            }
+        }
+
+        hideSelectionPill();
+    }
+
+    if (dictSelectionPill) {
+        dictSelectionPill.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const kw = dictSelectionPill.dataset.kw || '';
+            hideSelectionPill();
+            openDictDrawer(kw);
+        });
+    }
 
     // Paging Arrows & Buttons
     const navArrowLeft = document.getElementById('nav-arrow-left');
@@ -1079,6 +1436,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         closeSidebar();
         closeSettingsDrawer();
         closeShortcutModal();
+        closeDictDrawer();
     });
     closeShortcutModalBtn.addEventListener('click', closeShortcutModal);
     closeShortcutBottomBtn.addEventListener('click', closeShortcutModal);

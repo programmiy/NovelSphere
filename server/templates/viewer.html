@@ -48,6 +48,9 @@
                 <button id="night-mode-btn" class="btn btn-icon" title="다크 테마 토글 (D)">
                     <span class="material-icons">dark_mode</span>
                 </button>
+                <button id="dict-study-btn" class="btn btn-icon" title="사전 연동 및 누적 용례 학습 (Shift+D 또는 W)">
+                    <span class="material-icons">menu_book</span>
+                </button>
                 <button id="shortcut-help-btn" class="btn btn-icon" title="단축키 안내 (?)">
                     <span class="material-icons">help_outline</span>
                 </button>
@@ -232,6 +235,61 @@
         </div>
     </div>
 
+    <!-- 사전 연동 & 누적 용례 학습 패널 (Dictionary & Corpus Study Panel) -->
+    <div id="dict-sidebar" class="sidebar dict-drawer">
+        <div class="sidebar-header">
+            <div class="sidebar-title-group">
+                <span class="material-icons sidebar-icon">menu_book</span>
+                <h2>사전 연동 &amp; 용례 학습</h2>
+            </div>
+            <div class="sidebar-header-actions">
+                <button id="close-dict-sidebar-btn" class="btn btn-icon btn-sm" title="닫기 (Esc)">&times;</button>
+            </div>
+        </div>
+
+        <!-- 검색창 -->
+        <div class="dict-search-bar">
+            <div class="dict-input-wrap">
+                <span class="material-icons">search</span>
+                <input type="text" id="dict-search-input" placeholder="일본어 단어 또는 한국어 표현 검색...">
+                <button id="dict-clear-btn" class="btn btn-icon btn-xs" style="display:none;" title="지우기">&times;</button>
+            </div>
+            <button id="dict-search-btn" class="btn btn-sm btn-primary">검색</button>
+        </div>
+
+        <!-- 사전 바로가기 링크 툴바 -->
+        <div class="dict-portal-links-bar" id="dict-portal-links-bar">
+            <span class="dict-portal-label">사전:</span>
+            <a id="dict-link-naver" class="dict-portal-btn portal-naver" href="https://ja.dict.naver.com/" target="_blank" rel="noopener noreferrer" title="네이버 일본어사전 새 창 열기">
+                <span class="portal-badge">N</span> 네이버 사전 ↗
+            </a>
+            <a id="dict-link-weblio" class="dict-portal-btn portal-weblio" href="https://www.weblio.jp/" target="_blank" rel="noopener noreferrer" title="Weblio 국어사전 새 창 열기">
+                <span class="portal-badge">W</span> Weblio ↗
+            </a>
+            <a id="dict-link-jisho" class="dict-portal-btn portal-jisho" href="https://jisho.org/" target="_blank" rel="noopener noreferrer" title="Jisho 한자/요미가나 사전 새 창 열기">
+                <span class="portal-badge">J</span> Jisho ↗
+            </a>
+        </div>
+
+        <!-- 학습 통계 및 대응 어휘 요약 -->
+        <div class="dict-stats-container" id="dict-stats-container" style="display:none;">
+            <div class="dict-stats-badge">
+                <span class="material-icons" style="font-size: 15px;">analytics</span>
+                <span id="dict-stats-text">누적 소설 DB 0건</span>
+            </div>
+            <div class="dict-candidates-wrap" id="dict-candidates-wrap"></div>
+        </div>
+
+        <!-- 용례 목록 영역 -->
+        <div id="dict-examples-list" class="dict-examples-list">
+            <div class="dict-empty-guide">
+                <span class="material-icons" style="font-size: 40px; opacity: 0.35;">auto_stories</span>
+                <p>원문이나 번역문 단어를 드래그하거나<br>상단에 단어를 입력하여 검색하세요.</p>
+                <span class="sub-guide">34만 개 이상의 누적 번역 데이터에서 실제 소설 용례를 대조하고 네이버/Weblio/Jisho 사전과 연동할 수 있습니다.</span>
+            </div>
+        </div>
+    </div>
+
     <!-- 키보드 단축키 안내 모달 -->
     <div id="shortcut-help-modal" class="modal-overlay" style="display: none;">
         <div class="modal-content shortcut-modal-content">
@@ -277,12 +335,16 @@
                         <span>야간 / 다크 모드 빠른 토글</span>
                     </div>
                     <div class="shortcut-item">
+                        <kbd>Shift + D</kbd> 또는 <kbd>W</kbd>
+                        <span>사전 연동 &amp; 용례 학습 패널 토글</span>
+                    </div>
+                    <div class="shortcut-item">
                         <kbd>+</kbd> / <kbd>-</kbd>
                         <span>본문 글자 크기 확대 / 축소</span>
                     </div>
                     <div class="shortcut-item">
                         <kbd>Esc</kbd>
-                        <span>열린 사이드바 / 설정 드로어 닫기</span>
+                        <span>열린 사이드바 / 사전 / 설정 드로어 닫기</span>
                     </div>
                     <div class="shortcut-item">
                         <kbd>?</kbd>
@@ -302,6 +364,12 @@
                 <button id="close-shortcut-bottom-btn" class="btn btn-outline">닫기</button>
             </footer>
         </div>
+    </div>
+
+    <!-- 독서 중 단어 선택 플로팅 툴팁 버튼 -->
+    <div id="dict-selection-pill" class="dict-selection-pill" style="display: none;">
+        <span class="material-icons" style="font-size: 16px;">menu_book</span>
+        <span class="pill-label">사전·용례</span>
     </div>
 
     <!-- 배경 어둡게 오버레이 -->

@@ -53,6 +53,28 @@ DEFAULT_RULES = {
                 "유리하",
                 "유리리카"
             ]
+        },
+        {
+            "id": "rule-3",
+            "source": "中将",
+            "target": "츄죠",
+            "enabled": True,
+            "description": "같은 반 친구",
+            "misreadings": [
+                "츄조",
+                "쥬조",
+                "나카조",
+                "나카죠",
+                "주죠",
+                "중장",
+                "추",
+                "추주",
+                "추중",
+                "나카미",
+                "주장",
+                "주",
+                "주조"
+            ]
         }
     ]
 }
@@ -341,6 +363,29 @@ async def get_novels(db: Session = Depends(get_db)):
 
 
 @router.get(
+    "/api/db_editor/folders",
+    tags=["DB Editor"],
+    summary="소설 목록 조회 (모바일/웹 공용 폴더 형식)"
+)
+async def get_folders(db: Session = Depends(get_db)):
+    """Returns list of all available novel folders in dictionary format with 'folders' key."""
+    query = text("""
+        SELECT DISTINCT folderName, COUNT(*) as cnt
+        FROM translations
+        WHERE folderName IS NOT NULL AND folderName != ''
+        GROUP BY folderName
+        ORDER BY folderName ASC
+    """)
+    rows = db.execute(query).fetchall()
+    folders = [{"folderName": r[0], "count": r[1]} for r in rows]
+    return {
+        "status": "success",
+        "folders": folders,
+        "count": len(folders)
+    }
+
+
+@router.get(
     "/api/db_editor/rules",
     tags=["DB Editor"],
     summary="소설별 인명/단어 규칙 조회"
@@ -467,7 +512,9 @@ async def approve_single(req: ApproveSingleRequest, db: Session = Depends(get_db
         raise HTTPException(status_code=404, detail="해당 문장을 찾을 수 없습니다.")
 
     try:
+        now_ts = int(datetime.now().timestamp())
         record.translated = req.translated
+        record.timestamp = now_ts
         db.commit()
         return {
             "status": "success",
@@ -503,11 +550,12 @@ async def approve_batch(req: ApproveBatchRequest, db: Session = Depends(get_db))
 
     updated_count = 0
     try:
+        now_ts = int(datetime.now().timestamp())
         # Batch update inside an atomic transaction
         for item in req.items:
             db.execute(
-                text("UPDATE translations SET translated = :trans WHERE id = :id"),
-                {"trans": item.translated, "id": item.id}
+                text("UPDATE translations SET translated = :trans, timestamp = :ts WHERE id = :id"),
+                {"trans": item.translated, "ts": now_ts, "id": item.id}
             )
             updated_count += 1
         db.commit()

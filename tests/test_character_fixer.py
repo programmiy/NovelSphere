@@ -96,6 +96,15 @@ def test_get_novels():
     assert any(n["folderName"] == "누나가 마 니 선생이라고 느그 좋아하면 안되나?" for n in data)
 
 
+def test_get_folders():
+    res = client.get("/api/db_editor/folders")
+    assert res.status_code == 200
+    data = res.json()
+    assert "folders" in data
+    assert len(data["folders"]) >= 1
+    assert any(n["folderName"] == "누나가 마 니 선생이라고 느그 좋아하면 안되나?" for n in data["folders"])
+
+
 def test_get_and_save_rules():
     folder = "누나가 마 니 선생이라고 느그 좋아하면 안되나?"
     res = client.get(f"/api/db_editor/rules?folderName={folder}")

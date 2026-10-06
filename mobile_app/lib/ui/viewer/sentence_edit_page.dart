@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../services/local_db_service.dart';
 import '../themes/reader_themes.dart';
 
@@ -193,13 +194,41 @@ class _SentenceEditPageState extends State<SentenceEditPage> {
             const SizedBox(height: 16),
 
             // 원문 섹션
-            Text(
-              '원문 (日本語)',
-              style: TextStyle(
-                color: theme.subTextColor,
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
-              ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  '원문 (日本語)',
+                  style: TextStyle(
+                    color: theme.subTextColor,
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                if (widget.original.isNotEmpty)
+                  InkWell(
+                    borderRadius: BorderRadius.circular(6),
+                    onTap: () => _openDictBottomSheet(),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.menu_book_rounded, size: 14, color: theme.accentColor),
+                          const SizedBox(width: 4),
+                          Text(
+                            '사전 연동 & 용례',
+                            style: TextStyle(
+                              color: theme.accentColor,
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+              ],
             ),
             const SizedBox(height: 6),
             Container(
@@ -218,6 +247,26 @@ class _SentenceEditPageState extends State<SentenceEditPage> {
                   fontFamily: widget.japaneseFont,
                   height: 1.5,
                 ),
+                contextMenuBuilder: (context, editableTextState) {
+                  final selectedText = editableTextState.textEditingValue.selection.textInside(
+                    editableTextState.textEditingValue.text,
+                  ).trim();
+
+                  return AdaptiveTextSelectionToolbar.buttonItems(
+                    anchors: editableTextState.contextMenuAnchors,
+                    buttonItems: [
+                      if (selectedText.isNotEmpty)
+                        ContextMenuButtonItem(
+                          onPressed: () {
+                            editableTextState.hideToolbar();
+                            _openDictBottomSheet(selectedText);
+                          },
+                          label: '📖 사전 연동',
+                        ),
+                      ...editableTextState.contextMenuButtonItems,
+                    ],
+                  );
+                },
               ),
             ),
             const SizedBox(height: 20),
@@ -283,5 +332,225 @@ class _SentenceEditPageState extends State<SentenceEditPage> {
         ),
       ),
     );
+  }
+
+  void _openDictBottomSheet([String? keyword]) {
+    String kw = (keyword ?? '').trim();
+    if (kw.isEmpty && widget.original.isNotEmpty) {
+      final match = RegExp(r'[\u4e00-\u9faf]{2,}|[\u30a0-\u30ff]{2,}').firstMatch(widget.original);
+      kw = match != null ? match.group(0)! : widget.original.substring(0, widget.original.length > 8 ? 8 : widget.original.length);
+    }
+    if (kw.isEmpty) return;
+
+    final encKw = Uri.encodeComponent(kw);
+    final naverUrl = 'https://ja.dict.naver.com/#/search?range=all&q=$encKw';
+    final weblioUrl = 'https://www.weblio.jp/content/$encKw';
+    final jishoUrl = 'https://jisho.org/search/$encKw';
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: widget.theme.surfaceColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return FutureBuilder<List<Map<String, dynamic>>>(
+          future: LocalDbService.searchSimilarTranslations(
+            keyword: kw,
+            currentBookName: widget.bookName,
+            limit: 10,
+          ),
+          builder: (context, snapshot) {
+            final examples = snapshot.data ?? [];
+            return Container(
+              padding: const EdgeInsets.all(16),
+              height: 380,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(Icons.menu_book_rounded, color: widget.theme.accentColor, size: 20),
+                          const SizedBox(width: 8),
+                          Text(
+                            '사전 연동 & 용례 대조',
+                            style: TextStyle(
+                              color: widget.theme.textColor,
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: widget.theme.accentColor.withOpacity(0.18),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          kw,
+                          style: TextStyle(
+                            color: widget.theme.accentColor,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  // 사전 바로가기 버튼 바
+                  Row(
+                    children: [
+                      Text(
+                        '사전: ',
+                        style: TextStyle(
+                          color: widget.theme.subTextColor,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      _buildPortalChip('네이버 ↗', const Color(0xFF03C75A), () => _openUrl(naverUrl)),
+                      const SizedBox(width: 6),
+                      _buildPortalChip('Weblio ↗', const Color(0xFF0F6FEC), () => _openUrl(weblioUrl)),
+                      const SizedBox(width: 6),
+                      _buildPortalChip('Jisho ↗', const Color(0xFF7952B3), () => _openUrl(jishoUrl)),
+                    ],
+                  ),
+                  const Divider(height: 20),
+                  // 용례 리스트
+                  Expanded(
+                    child: snapshot.connectionState == ConnectionState.waiting
+                        ? const Center(child: CircularProgressIndicator(strokeWidth: 2))
+                        : examples.isEmpty
+                            ? Center(
+                                child: Text(
+                                  '로컬 DB에 \'$kw\'에 대한 다른 번역 사례가 없습니다.\n상단 사전 링크를 통해 뜻을 확인하세요.',
+                                  style: TextStyle(color: widget.theme.subTextColor, fontSize: 13),
+                                  textAlign: TextAlign.center,
+                                ),
+                              )
+                            : ListView.builder(
+                                itemCount: examples.length,
+                                itemBuilder: (context, idx) {
+                                  final ex = examples[idx];
+                                  final exOrig = ex['original'] as String? ?? '';
+                                  final exTrans = ex['translated'] as String? ?? '';
+                                  final exBook = ex['book_name'] as String? ?? '';
+                                  return Container(
+                                    margin: const EdgeInsets.only(bottom: 8),
+                                    padding: const EdgeInsets.all(10),
+                                    decoration: BoxDecoration(
+                                      color: widget.theme.background,
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(color: widget.theme.borderColor),
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        if (exBook.isNotEmpty)
+                                          Text(
+                                            exBook,
+                                            style: TextStyle(
+                                              color: widget.theme.subTextColor,
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        Text(
+                                          exOrig,
+                                          style: TextStyle(
+                                            color: widget.theme.originalTextColor,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 3),
+                                        Text(
+                                          exTrans,
+                                          style: TextStyle(
+                                            color: widget.theme.textColor,
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                        Align(
+                                          alignment: Alignment.centerRight,
+                                          child: TextButton(
+                                            style: TextButton.styleFrom(
+                                              padding: EdgeInsets.zero,
+                                              minimumSize: const Size(50, 24),
+                                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                            ),
+                                            onPressed: () {
+                                              Navigator.pop(ctx);
+                                              setState(() {
+                                                _controller.text = exTrans;
+                                              });
+                                              ScaffoldMessenger.of(this.context).showSnackBar(
+                                                const SnackBar(
+                                                  content: Text('번역 표현이 수정창에 적용되었습니다.'),
+                                                  duration: Duration(seconds: 1),
+                                                ),
+                                              );
+                                            },
+                                            child: Text(
+                                              '이 표현 적용',
+                                              style: TextStyle(
+                                                color: widget.theme.accentColor,
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                },
+                              ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildPortalChip(String label, Color color, VoidCallback onTap) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(6),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.18),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: color.withOpacity(0.4)),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: color,
+            fontSize: 10,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      ),
+    );
+  }
+
+  static Future<void> _openUrl(String url) async {
+    try {
+      const channel = MethodChannel('com.lanovel.lanovel_reader/app_installer');
+      await channel.invokeMethod('openUrl', {'url': url});
+    } catch (e) {
+      debugPrint('Error opening URL: $e');
+    }
   }
 }

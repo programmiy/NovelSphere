@@ -515,9 +515,9 @@ function renderItem(t) {
 
     const kwList = Array.isArray(t.untranslated_keywords) ? t.untranslated_keywords.join(',') : '';
 
-    // 미번역 키워드 칩 (이상번역 모드 + partial_untranslated 카테고리일 때만)
+    // 미번역 키워드 칩 (이상번역 모드 + partial_untranslated 또는 other_language 카테고리)
     let keywordChipsHtml = '';
-    if (isFindingEmpty && t.category === 'partial_untranslated' && Array.isArray(t.untranslated_keywords) && t.untranslated_keywords.length > 0) {
+    if (isFindingEmpty && (t.category === 'partial_untranslated' || t.category === 'other_language') && Array.isArray(t.untranslated_keywords) && t.untranslated_keywords.length > 0) {
         const chips = t.untranslated_keywords.map(kw =>
             `<button class="keyword-chip" data-keyword="${escapeHtml(kw)}" data-folder="${escapeHtml(t.folderName || '')}" title="'${escapeHtml(kw)}'을(를) 찾아 바꾸기">🔍 ${escapeHtml(kw)}</button>`
         ).join('');
@@ -562,7 +562,7 @@ function renderItem(t) {
                     <div class="action-cluster work-cluster">
                         <button class="btn btn-sm btn-action retranslate-item-btn" title="고성능 AI 모델로 재번역">🔄 AI 재번역</button>
                         ${isFindingEmpty ? `
-                            <button class="btn btn-sm btn-action-whitelist whitelist-item-btn" title="이 단락은 의도된 번역이므로 이상번역 찾기에서 제외합니다." data-id="${t.id}">🛡️ 이상 제외</button>
+                            <button class="btn btn-sm btn-action-whitelist whitelist-item-btn" title="이 단락은 의도된 원문/외국어(일본어/영어/스페인어 등) 표기이므로 이상번역 찾기에서 제외합니다." data-id="${t.id}">🛡️ 이상 제외</button>
                         ` : ''}
                     </div>
                     <!-- 분리선: 오클릭 방지를 위한 시각적/물리적 격리 -->
@@ -1079,7 +1079,7 @@ async function whitelistSelectedAbnormal() {
         return;
     }
     const count = selectedIds.size;
-    if (!confirm(`선택한 ${count}개 항목을 이상번역 검사에서 제외하시겠습니까?\n(의도적으로 일본어를 남겨둔 문장으로 처리되며, 복원 센터의 [이상번역 예외 목록] 탭에서 언제든지 다시 포함할 수 있습니다.)`)) {
+    if (!confirm(`선택한 ${count}개 항목을 이상번역 검사에서 제외하시겠습니까?\n(의도적으로 외국어(일본어/영어/스페인어 등)를 남겨둔 문장으로 처리되며, 복원 센터의 [이상번역 예외 목록] 탭에서 언제든지 다시 포함할 수 있습니다.)`)) {
         return;
     }
 
@@ -1584,7 +1584,18 @@ function renderSimilarRecommendations(keyword, examples, allKeywords = []) {
             <span class="kw-chip ${k === keyword ? 'active' : ''}" style="cursor: pointer; text-decoration: underline; margin-right: 4px;" data-kw="${escapeHtml(k)}">${escapeHtml(k)}</span>
         `).join(' ');
     }
-    recommendKeyword.innerHTML = kwHeaderHtml;
+
+    const encKw = encodeURIComponent(keyword);
+    const dictLinksHtml = `
+        <div class="recommend-dict-links" style="display: flex; gap: 6px; margin-top: 6px; margin-bottom: 8px; flex-wrap: wrap;">
+            <span style="font-size: 11px; color: var(--text-muted); align-self: center;">사전 연동:</span>
+            <a href="https://ja.dict.naver.com/#/search?range=all&q=${encKw}" target="_blank" rel="noopener noreferrer" class="btn btn-xs btn-outline" style="font-size: 11px; padding: 2px 7px; color: #03c75a; border-color: #03c75a; text-decoration: none;">네이버 사전 ↗</a>
+            <a href="https://www.weblio.jp/content/${encKw}" target="_blank" rel="noopener noreferrer" class="btn btn-xs btn-outline" style="font-size: 11px; padding: 2px 7px; color: #0f6fec; border-color: #0f6fec; text-decoration: none;">Weblio ↗</a>
+            <a href="https://jisho.org/search/${encKw}" target="_blank" rel="noopener noreferrer" class="btn btn-xs btn-outline" style="font-size: 11px; padding: 2px 7px; color: #7952b3; border-color: #7952b3; text-decoration: none;">Jisho ↗</a>
+        </div>
+    `;
+
+    recommendKeyword.innerHTML = kwHeaderHtml + dictLinksHtml;
 
     if (!examples || examples.length === 0) {
         recommendCardsContainer.innerHTML = `<div style="padding: 16px; text-align: center; color: var(--text-muted);">'${escapeHtml(keyword)}'에 대한 다른 번역 사례를 찾지 못했습니다.</div>`;

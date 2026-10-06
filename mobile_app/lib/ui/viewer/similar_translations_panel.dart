@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 
 import '../../services/local_db_service.dart';
@@ -156,7 +157,7 @@ class _SimilarTranslationsPanelState extends State<SimilarTranslationsPanel> {
     return AnimatedContainer(
       duration: const Duration(milliseconds: 250),
       curve: Curves.easeOutCubic,
-      height: _isCollapsed ? 56 : 280,
+      height: _isCollapsed ? 56 : 315,
       decoration: BoxDecoration(
         color: panelBg,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
@@ -177,6 +178,8 @@ class _SimilarTranslationsPanelState extends State<SimilarTranslationsPanel> {
         children: [
           // 상단 컨트롤 바
           _buildHeaderBar(),
+          // 사전 연동 바로가기 바
+          if (!_isCollapsed) _buildDictLinksBar(),
           // 본문 카드 목록
           if (!_isCollapsed)
             Expanded(
@@ -283,6 +286,68 @@ class _SimilarTranslationsPanelState extends State<SimilarTranslationsPanel> {
         ),
       ),
     );
+  }
+
+  Widget _buildDictLinksBar() {
+    if (_currentKeyword.isEmpty) return const SizedBox.shrink();
+
+    final kw = Uri.encodeComponent(_currentKeyword);
+    final naverUrl = 'https://ja.dict.naver.com/#/search?range=all&q=$kw';
+    final weblioUrl = 'https://www.weblio.jp/content/$kw';
+    final jishoUrl = 'https://jisho.org/search/$kw';
+
+    return Container(
+      padding: const EdgeInsets.only(left: 14, right: 14, bottom: 6),
+      child: Row(
+        children: [
+          Text(
+            '사전 연동: ',
+            style: TextStyle(
+              color: Colors.white.withOpacity(0.55),
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          _buildDictButton('네이버 ↗', const Color(0xFF03C75A), () => _openExternalUrl(naverUrl)),
+          const SizedBox(width: 6),
+          _buildDictButton('Weblio ↗', const Color(0xFF0F6FEC), () => _openExternalUrl(weblioUrl)),
+          const SizedBox(width: 6),
+          _buildDictButton('Jisho ↗', const Color(0xFF7952B3), () => _openExternalUrl(jishoUrl)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDictButton(String label, Color color, VoidCallback onTap) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(6),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.18),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: color.withOpacity(0.4)),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: color,
+            fontSize: 10,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      ),
+    );
+  }
+
+  static Future<void> _openExternalUrl(String url) async {
+    try {
+      const channel = MethodChannel('com.lanovel.lanovel_reader/app_installer');
+      await channel.invokeMethod('openUrl', {'url': url});
+    } catch (e) {
+      debugPrint('Error opening dictionary URL: $e');
+    }
   }
 
   Widget _buildEmptyState() {

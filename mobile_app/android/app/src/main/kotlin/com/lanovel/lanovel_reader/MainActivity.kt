@@ -28,6 +28,23 @@ class MainActivity: FlutterActivity() {
                         result.error("INVALID_PATH", "File path is null", null)
                     }
                 }
+                "openUrl" -> {
+                    val url = call.argument<String>("url")
+                    if (url != null) {
+                        try {
+                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            context.startActivity(intent)
+                            result.success(true)
+                        } catch (e: Exception) {
+                            Log.e(TAG, "openUrl error: ${e.message}", e)
+                            result.success(false)
+                        }
+                    } else {
+                        result.error("INVALID_URL", "URL is null", null)
+                    }
+                }
                 else -> {
                     result.notImplemented()
                 }

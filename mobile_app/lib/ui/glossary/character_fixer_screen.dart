@@ -459,11 +459,11 @@ class _CharacterFixerScreenState extends State<CharacterFixerScreen> with Single
                     ),
                   );
                 }).toList(),
-                onChanged: (val) {
+                onChanged: (val) async {
                   if (val != null && val != _selectedFolder) {
                     setState(() => _selectedFolder = val);
-                    _loadRules(val);
-                    _startScan();
+                    await _loadRules(val);
+                    await _startScan();
                   }
                 },
               ),

@@ -7,6 +7,8 @@ HANGUL_RE = re.compile(r'[\uac00-\ud7af\u1100-\u11ff\u3130-\u318f]')
 KANA_RE = re.compile(r'[\u3040-\u309f\u30a0-\u30fa\u30fd-\u30ff]') # 히라가나, 가타카나
 HANJA_RE = re.compile(r'[\u4e00-\u9faf\u3400-\u4dbf]')
 LATIN_RE = re.compile(r'[a-zA-Z]')
+# 라틴 알파벳 및 스페인어/서유럽 확장 문자 (á, é, í, ó, ú, ü, ñ, ¿, ¡ 등)
+LATIN_EXTENDED_RE = re.compile(r'[a-zA-Z\u00C0-\u00FF¿¡]')
 
 # 한국에서 쓰이지 않는 대표적인 중국어 간체자(Simplified Chinese) 집합
 SIMPLIFIED_CHINESE_SET = set(
@@ -160,8 +162,8 @@ def is_verbatim_copy(original: str, translated: Optional[str]) -> bool:
 
 def extract_untranslated_keywords(original: str, translated: str) -> List[str]:
     """
-    번역문에 남아있는 미번역 일본어 단어(가나 연속 토큰) 또는 간체자 키워드를 추출합니다.
-    유사 사례 추천 단락 검색 시 키워드로 활용됩니다.
+    번역문에 남아있는 미번역 일본어 단어(가나), 간체자 및 외국어(영어/스페인어 등) 키워드를 추출합니다.
+    유사 사례 추천 단락 검색 및 찾아바꾸기 키워드로 활용됩니다.
     """
     n_tra = normalize_text(translated)
     keywords = []
@@ -177,6 +179,16 @@ def extract_untranslated_keywords(original: str, translated: str) -> List[str]:
     for ch in n_tra:
         if ch in SIMPLIFIED_CHINESE_SET and ch not in keywords:
             keywords.append(ch)
+
+    # 3. 영문 및 스페인어 등 외국어 단어 추출 (URL 제외, 3자 이상 유의미한 단어)
+    text_without_urls = re.sub(r'https?://\S+', '', n_tra)
+    latin_tokens = re.findall(r'[a-zA-Z\u00C0-\u00FF]{3,}', text_without_urls)
+    for w in latin_tokens:
+        w_clean = w.strip()
+        if w_clean and w_clean.lower() not in ('http', 'https', 'www') and w_clean not in keywords:
+            keywords.append(w_clean)
+            if len(keywords) >= 10:
+                break
             
     return keywords
 
@@ -188,7 +200,7 @@ def classify_translation(original: str, translated: Optional[str]) -> str:
     - 'verbatim_or_empty': 규칙 1 (원문 그대로 반환 또는 빈 번역)
     - 'paraphrased_zh': 규칙 2 (원문 변형: 번역문에 중국어가 감지되는 경우 - 사용자 기준: 변형은 중국어 기준)
     - 'paraphrased_jp': 규칙 2-1 (원문 변형: 한국어 없이 일본어 가나가 포함된 일본어 패러프레이징)
-    - 'other_language': 규칙 3 (다른 언어로 번역: 한국어 없이 영어 등 타 언어만 존재)
+    - 'other_language': 규칙 3 (다른 언어로 번역: 한국어 없이 영어/스페인어 등 타 언어만 존재하거나 외국어 문장이 혼입된 경우)
     - 'partial_untranslated': 규칙 4 (일부 번역 안 함: 한국어가 존재하지만 일본어 가나가 잔류)
     - 'normal': 정상 번역
     """
@@ -226,13 +238,18 @@ def classify_translation(original: str, translated: Optional[str]) -> str:
             # 일본어 가나가 포함되어 있으면 원문 변형 (동일 언어 패러프레이징)
             return 'paraphrased_jp'
         else:
-            # 한글도 없고 가나도 없는데 기호 외 글자가 있음 -> 타 언어로 번역 (영어 등)
+            # 한글도 없고 가나도 없는데 기호 외 글자가 있음 -> 타 언어로 번역 (영어, 스페인어, 기타 라틴/한자 등)
             return 'other_language'
             
     # 4. 한국어가 존재하는 경우
     if has_kana:
         # 한국어가 있는데 일본어 가나가 섞여 있음 -> 일부 번역 안 함 (조사/어휘 누출)
         return 'partial_untranslated'
+
+    # 5. 한국어가 존재하더라도 URL 제외 4단어 이상의 연속된 영문/스페인어 구절이 혼입된 경우 -> 다른 언어로 번역
+    clean_without_urls = re.sub(r'https?://\S+', '', n_tra)
+    if re.search(r'(?:[a-zA-Z\u00C0-\u00FF]+(?:[\'’][a-zA-Z\u00C0-\u00FF]+)?\s+){3,}[a-zA-Z\u00C0-\u00FF]+', clean_without_urls):
+        return 'other_language'
         
     return 'normal'
 

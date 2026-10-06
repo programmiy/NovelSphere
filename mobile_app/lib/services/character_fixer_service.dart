@@ -11,12 +11,20 @@ class CharacterFixerService {
   static Future<List<Map<String, dynamic>>> fetchFolders() async {
     if (_serverUrl.isEmpty) return [];
     try {
-      final uri = Uri.parse('$_serverUrl/api/db_editor/folders');
-      final res = await http.get(uri).timeout(const Duration(seconds: 8));
+      var uri = Uri.parse('$_serverUrl/api/db_editor/folders');
+      var res = await http.get(uri).timeout(const Duration(seconds: 8));
+      if (res.statusCode != 200) {
+        uri = Uri.parse('$_serverUrl/api/db_editor/novels');
+        res = await http.get(uri).timeout(const Duration(seconds: 8));
+      }
       if (res.statusCode == 200) {
-        final decoded = json.decode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
-        final folders = decoded['folders'] as List<dynamic>? ?? [];
-        return folders.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+        final decoded = json.decode(utf8.decode(res.bodyBytes));
+        if (decoded is List) {
+          return decoded.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+        } else if (decoded is Map) {
+          final folders = (decoded['folders'] ?? decoded['novels'] ?? []) as List<dynamic>;
+          return folders.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+        }
       }
       return [];
     } catch (e) {
@@ -25,16 +33,20 @@ class CharacterFixerService {
     }
   }
 
-  /// 소설별 인명/고유명사 교정 규칙 조회
+  /// 소설별 인명/고유명사 교정 규칙 조회 (PC 서버와 1:1 일원화)
   static Future<List<CharacterRule>> fetchRules(String folderName) async {
     if (_serverUrl.isEmpty) return [];
     try {
       final uri = Uri.parse('$_serverUrl/api/db_editor/rules?folderName=${Uri.encodeComponent(folderName)}');
       final res = await http.get(uri).timeout(const Duration(seconds: 8));
       if (res.statusCode == 200) {
-        final decoded = json.decode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
-        final rulesList = decoded['rules'] as List<dynamic>? ?? [];
-        return rulesList.map((e) => CharacterRule.fromJson(Map<String, dynamic>.from(e as Map))).toList();
+        final decoded = json.decode(utf8.decode(res.bodyBytes));
+        if (decoded is Map) {
+          final rulesList = (decoded['rules'] as List<dynamic>?) ?? [];
+          return rulesList.map((e) => CharacterRule.fromJson(Map<String, dynamic>.from(e as Map))).toList();
+        } else if (decoded is List) {
+          return decoded.map((e) => CharacterRule.fromJson(Map<String, dynamic>.from(e as Map))).toList();
+        }
       }
       return [];
     } catch (e) {
