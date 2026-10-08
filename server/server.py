@@ -29,16 +29,20 @@ log_file_path = os.path.join(settings.log_dir, "app.log")
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
-handler = logging.handlers.TimedRotatingFileHandler(
-    log_file_path,
-    when="midnight",
-    interval=1,
-    backupCount=7,
-    encoding="utf-8"
-)
 formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-handler.setFormatter(formatter)
-logger.addHandler(handler)
+handler = None
+try:
+    handler = logging.handlers.TimedRotatingFileHandler(
+        log_file_path,
+        when="midnight",
+        interval=1,
+        backupCount=7,
+        encoding="utf-8"
+    )
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+except Exception:
+    pass
 
 console_handler = logging.StreamHandler()
 console_handler.setFormatter(formatter)
@@ -50,13 +54,15 @@ console_warning_handler.setLevel(logging.WARNING)
 
 root_logger = logging.getLogger()
 root_logger.setLevel(logging.INFO)
-root_logger.addHandler(handler)
+if handler:
+    root_logger.addHandler(handler)
 root_logger.addHandler(console_warning_handler)
 
 uvicorn_access_logger = logging.getLogger("uvicorn.access")
 uvicorn_access_logger.setLevel(logging.INFO)
 uvicorn_access_logger.propagate = False
-uvicorn_access_logger.addHandler(handler)
+if handler:
+    uvicorn_access_logger.addHandler(handler)
 uvicorn_access_logger.addHandler(console_handler)
 
 # --- App state for Backup ---
@@ -79,66 +85,38 @@ def _update_runtime_metadata():
     except Exception as e:
         logger.error(f"Error saving metadata: {e}")
 
-def perform_sqlite_backup(src_path: str, dst_path: str):
-    """Safely backs up a SQLite database (including WAL mode) using the online backup API."""
-    src_conn = sqlite3.connect(src_path, timeout=30)
-    try:
-        dst_conn = sqlite3.connect(dst_path, timeout=30)
-        try:
-            src_conn.backup(dst_conn)
-        finally:
-            dst_conn.close()
-    finally:
-        src_conn.close()
-
-def rotate_backups(backup_dir: str, max_backups: int = 7):
-    """Keep only the latest max_backups backup files and delete older ones."""
-    try:
-        backup_files = [
-            f for f in os.listdir(backup_dir)
-            if f.startswith("translations_backup_") and f.endswith(".db")
-        ]
-        if len(backup_files) > max_backups:
-            backup_files.sort()  # Timestamps %Y%m%d_%H%M%S sort chronologically
-            files_to_delete = backup_files[:-max_backups]
-            for file_name in files_to_delete:
-                file_path = os.path.join(backup_dir, file_name)
-                try:
-                    os.remove(file_path)
-                    logger.info(f"Rotated and deleted old backup: {file_name}")
-                except Exception as del_err:
-                    logger.warning(f"Failed to delete old backup {file_name}: {del_err}")
-    except Exception as e:
-        logger.error(f"Error during backup rotation: {e}")
+from server.backup_utils import (
+    perform_sqlite_backup,
+    rotate_backups,
+    create_unified_backup,
+    get_latest_backup_info,
+)
 
 async def backup_check_task():
-    """Periodically checks if a backup is needed based on cumulative runtime."""
+    """
+    Periodically checks every 10 minutes if an automated backup is needed.
+    Dynamically creates a unified backup every 3 days and rotates to keep the latest 3 backups.
+    """
     while True:
         await asyncio.sleep(600)
 
-        if not APP_START_TIME:
-            continue
-
-        session_duration = time.time() - APP_START_TIME
-        current_total_runtime = SERVER_METADATA.get("cumulative_runtime_seconds", 0) + session_duration
-
-        if current_total_runtime > settings.backup_threshold_seconds:
-            logger.info("Backup threshold exceeded. Performing backup...")
-            
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            backup_filename = f"translations_backup_{timestamp}.db"
-            backup_path = os.path.join(settings.backup_dir, backup_filename)
-
-            try:
-                await asyncio.to_thread(perform_sqlite_backup, get_db_path(), backup_path)
-                logger.info(f"Successfully created backup: {backup_path}")
-                rotate_backups(settings.backup_dir, max_backups=7)
-                
-                SERVER_METADATA["cumulative_runtime_seconds"] = 0
-                _update_runtime_metadata()
-                
-            except Exception as e:
-                logger.error(f"Error during backup: {e}")
+        try:
+            # Check and perform unified 3-day backup in thread pool
+            result = await asyncio.to_thread(
+                create_unified_backup,
+                src_db_path=get_db_path(),
+                backup_dir=settings.backup_dir,
+                force=False,
+                cooldown_days=3.0,
+                max_backups=3
+            )
+            if result.get("created"):
+                logger.info(f"[Periodic Backup] Successfully created automated backup: {result['backup_file']}")
+                if APP_START_TIME:
+                    SERVER_METADATA["cumulative_runtime_seconds"] = 0
+                    _update_runtime_metadata()
+        except Exception as e:
+            logger.error(f"[Periodic Backup] Error during automatic backup check: {e}")
 
 def run_sync_bracket_restoration():
     """DB 커넥션을 열어 룰베이스 대사 괄호 누락 복원을 1회 실행합니다."""
@@ -191,26 +169,6 @@ async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
     try:
         with engine.begin() as connection:
-            # Safe schema migration for book_activity
-            try:
-                connection.exec_driver_sql("ALTER TABLE book_activity ADD COLUMN last_read_chapter_title TEXT")
-            except Exception as e:
-                if 'duplicate column name' not in str(e).lower() and 'already exists' not in str(e).lower():
-                    logger.error(f"스키마 마이그레이션 실패 (last_read_chapter_title): {e}")
-            try:
-                connection.exec_driver_sql("ALTER TABLE book_activity ADD COLUMN is_completed INTEGER DEFAULT 0")
-            except Exception as e:
-                if 'duplicate column name' not in str(e).lower() and 'already exists' not in str(e).lower():
-                    logger.error(f"스키마 마이그레이션 실패 (is_completed): {e}")
-            try:
-                connection.exec_driver_sql("ALTER TABLE book_activity ADD COLUMN is_visible INTEGER DEFAULT 1")
-            except Exception as e:
-                if 'duplicate column name' not in str(e).lower() and 'already exists' not in str(e).lower():
-                    logger.error(f"스키마 마이그레이션 실패 (is_visible): {e}")
-            try:
-                connection.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_book_activity_is_visible ON book_activity (is_visible)")
-            except Exception:
-                pass
 
             connection.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_title ON translations (title)")
             connection.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_folder_title ON translations (folderName, title)")
@@ -338,7 +296,7 @@ async def redirect_service_worker():
     return RedirectResponse(url="/service-worker.js")
 
 # --- Routers ---
-from server.routers import ui, translation, data_crud, books, system, tasks, admin, url_config, db_editor, toc_importer, separators, notifications, sync, app_release, unclassified, dictionary
+from server.routers import ui, translation, data_crud, books, system, tasks, admin, url_config, db_editor, toc_importer, separators, notifications, sync, app_release, unclassified, dictionary, corpus_ai, ai_review
 app.include_router(ui.router)
 app.include_router(translation.router)
 app.include_router(data_crud.router)
@@ -355,6 +313,8 @@ app.include_router(sync.router)
 app.include_router(app_release.router)
 app.include_router(unclassified.router)
 app.include_router(dictionary.router)
+app.include_router(corpus_ai.router)
+app.include_router(ai_review.router)
 
 @app.get("/api/status/summary", tags=["Status"])
 def get_api_status_summary():

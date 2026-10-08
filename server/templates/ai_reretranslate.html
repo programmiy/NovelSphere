@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Multi-Model Retranslation Hub</title>
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-base: #090d16;
+            --surface: rgba(18, 26, 43, 0.75);
+            --surface-card: rgba(23, 33, 56, 0.6);
+            --glass-border: rgba(255, 255, 255, 0.08);
+            --glass-border-focus: rgba(99, 102, 241, 0.5);
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+            --text-muted: #64748b;
+            --accent-brand: #3b82f6;
+            --accent-gold: #f59e0b;
+            --accent-purple: #8b5cf6;
+            --accent-emerald: #10b981;
+            --accent-rose: #f43f5e;
+            --accent-cyan: #06b6d4;
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background: radial-gradient(circle at 50% 0%, #151d33 0%, var(--bg-base) 70%);
+            color: var(--text-primary);
+            font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            min-height: 100vh;
+            padding-top: 80px;
+            padding-bottom: 60px;
+        }
+
+        /* Top Navbar */
+        header {
+            position: fixed; top: 0; left: 0; right: 0; height: 70px;
+            background: rgba(9, 13, 22, 0.85); backdrop-filter: blur(20px);
+            border-bottom: 1px solid var(--glass-border);
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 0 32px; z-index: 1000;
+        }
+        .header-title {
+            display: flex; align-items: center; gap: 10px;
+            font-size: 18px; font-weight: 800; letter-spacing: -0.5px;
+        }
+        nav { display: flex; gap: 8px; align-items: center; }
+
+        /* Buttons */
+        .btn {
+            background: rgba(255, 255, 255, 0.05); color: white;
+            border: 1px solid var(--glass-border); padding: 8px 16px;
+            border-radius: 10px; cursor: pointer; display: inline-flex;
+            align-items: center; gap: 8px; font-weight: 600; font-size: 13px;
+            transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); text-decoration: none;
+        }
+        .btn:hover { background: rgba(255, 255, 255, 0.1); border-color: rgba(255,255,255,0.2); }
+        .btn-active {
+            background: rgba(245, 158, 11, 0.2) !important;
+            border-color: var(--accent-gold) !important;
+            color: #fcd34d !important;
+        }
+        .btn-glow {
+            background: linear-gradient(135deg, #f59e0b, #d97706); border: none;
+            box-shadow: 0 4px 15px rgba(245, 158, 11, 0.35); font-weight: 700;
+        }
+        .btn-glow:hover {
+            box-shadow: 0 6px 25px rgba(245, 158, 11, 0.55);
+            transform: translateY(-1px);
+        }
+
+        .container {
+            max-width: 1280px; margin: 0 auto; padding: 0 24px;
+        }
+
+        /* Hero / Control Panel */
+        .control-panel {
+            background: var(--surface); backdrop-filter: blur(20px);
+            border: 1px solid var(--glass-border); border-radius: 20px;
+            padding: 24px 28px; margin-bottom: 28px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+        }
+        .panel-top {
+            display: flex; justify-content: space-between; align-items: center;
+            flex-wrap: wrap; gap: 16px; margin-bottom: 24px;
+        }
+        .panel-title {
+            display: flex; flex-direction: column; gap: 4px;
+        }
+        .panel-title h2 {
+            margin: 0; font-size: 22px; font-weight: 800; display: flex; align-items: center; gap: 10px;
+        }
+        .panel-title p {
+            margin: 0; font-size: 13px; color: var(--text-secondary);
+        }
+
+        .stats-strip {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 12px; margin-bottom: 20px;
+        }
+        .stat-card {
+            background: rgba(0, 0, 0, 0.25); border: 1px solid var(--glass-border);
+            border-radius: 12px; padding: 14px 18px;
+        }
+        .stat-label { font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
+        .stat-val { font-size: 22px; font-weight: 800; margin-top: 4px; color: var(--text-primary); }
+
+        /* Percentile Bar */
+        .percentile-bar {
+            background: rgba(0,0,0,0.3); border: 1px solid var(--glass-border);
+            border-radius: 12px; padding: 16px; margin-top: 10px;
+        }
+        .p-grid {
+            display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; text-align: center;
+        }
+        .p-cell {
+            padding: 8px; border-radius: 8px; background: rgba(255,255,255,0.02);
+            border: 1px solid var(--glass-border);
+        }
+        .p-model { font-size: 11px; font-weight: 800; color: var(--accent-gold); }
+        .p-range { font-size: 12px; font-family: 'JetBrains Mono', monospace; margin-top: 4px; color: var(--text-secondary); }
+
+        /* Model Cards */
+        .model-card {
+            background: var(--surface); backdrop-filter: blur(16px);
+            border: 1px solid var(--glass-border); border-radius: 18px;
+            margin-bottom: 20px; overflow: hidden;
+            transition: border-color 0.2s;
+        }
+        .model-card:hover { border-color: rgba(255,255,255,0.18); }
+        .model-header {
+            padding: 20px 24px; display: flex; justify-content: space-between; align-items: center;
+            background: rgba(255,255,255,0.02); cursor: pointer; user-select: none;
+        }
+        .model-info { display: flex; align-items: center; gap: 14px; }
+        .model-badge {
+            font-size: 14px; font-weight: 800; padding: 6px 14px; border-radius: 10px;
+            display: inline-flex; align-items: center; gap: 6px;
+        }
+        .model-count-chip {
+            background: rgba(255,255,255,0.06); padding: 4px 10px; border-radius: 8px;
+            font-size: 12px; font-weight: 700; color: var(--text-secondary);
+        }
+        .model-actions { display: flex; gap: 10px; align-items: center; }
+
+        /* Sentence Accordion Content */
+        .sentence-drawer {
+            display: none; padding: 0 24px 20px 24px;
+            border-top: 1px solid var(--glass-border);
+            max-height: 500px; overflow-y: auto;
+        }
+        .sentence-drawer.open { display: block; }
+        
+        .sentence-table {
+            width: 100%; border-collapse: collapse; margin-top: 12px;
+        }
+        .sentence-row {
+            border-bottom: 1px solid rgba(255,255,255,0.04);
+            padding: 12px 0; display: grid; grid-template-columns: 70px 1.2fr 1fr 120px 50px;
+            gap: 16px; align-items: center; font-size: 13px;
+        }
+        .s-len { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text-muted); }
+        .s-orig { color: var(--text-primary); font-weight: 600; line-height: 1.5; cursor: pointer; }
+        .s-orig:hover { color: var(--accent-cyan); }
+        .s-old { color: var(--text-secondary); text-decoration: line-through; opacity: 0.65; line-height: 1.5; }
+        .s-model-select {
+            background: rgba(0,0,0,0.4); border: 1px solid var(--glass-border);
+            color: white; border-radius: 6px; padding: 4px 6px; font-size: 11px; outline: none;
+        }
+
+        /* Empty state */
+        .empty-box {
+            text-align: center; padding: 60px 20px; color: var(--text-secondary);
+            background: var(--surface); border-radius: 20px; border: 1px dashed var(--glass-border);
+        }
+
+        /* Toast */
+        .toast {
+            position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%) translateY(120px);
+            background: rgba(15, 23, 42, 0.95); backdrop-filter: blur(15px);
+            border: 1px solid var(--glass-border); padding: 12px 24px;
+            border-radius: 12px; font-weight: 700; font-size: 14px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.5); z-index: 9999;
+            transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        .toast.show { transform: translateX(-50%) translateY(0); }
+
+        @keyframes spin { 100% { transform: rotate(360deg); } }
+        .animate-spin { animation: spin 1s linear infinite; }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="header-title">
+            <span class="material-icons-round" style="color: var(--accent-gold);">auto_awesome</span>
+            AI Review Studio
+        </div>
+        <nav>
+            <a href="/ai_review" class="btn">
+                <span class="material-icons-round" style="font-size: 16px; color: var(--accent-brand);">swipe</span> 1차 AI 검수
+            </a>
+            <a href="/ai_reretranslate" class="btn btn-active">
+                <span class="material-icons-round" style="font-size: 16px; color: var(--accent-gold);">auto_fix_high</span> 2차 재재번역 센터
+            </a>
+            <a href="/admin" class="btn">
+                <span class="material-icons-round" style="font-size: 16px;">dashboard</span> 관리자 홈
+            </a>
+        </nav>
+    </header>
+
+    <div class="container">
+        <!-- Control Panel -->
+        <div class="control-panel">
+            <div class="panel-top">
+                <div class="panel-title">
+                    <h2><span class="material-icons-round" style="color: var(--accent-gold); font-size: 26px;">tune</span> 2차 다중 모델 정밀 재재번역 통제실</h2>
+                    <p>검수 중 거절(Reject)된 문장들을 길이 백분위 통계에 따라 5개의 Gemini 3.X 모델로 스마트 라우팅합니다.</p>
+                </div>
+                <div style="display: flex; gap: 10px; align-items: center;">
+                    
+                    <button class="btn" onclick="loadData()" title="새로고침">
+                        <span class="material-icons-round">refresh</span>
+                    </button>
+                    <button id="runAllBtn" class="btn btn-glow" onclick="runAllModels()">
+                        <span class="material-icons-round">bolt</span> 전체 일괄 재재번역 실행
+                    </button>
+                </div>
+            </div>
+
+            <!-- Stats strip -->
+            <div class="stats-strip">
+                <div class="stat-card">
+                    <div class="stat-label">총 대기 문장</div>
+                    <div class="stat-val" id="statTotal" style="color: var(--accent-gold);">-</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">평균 문장 길이</div>
+                    <div class="stat-val" id="statAvg">-</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">할당 모델 수</div>
+                    <div class="stat-val" id="statActiveModels">5 Models</div>
+                </div>
+            </div>
+
+            <!-- Percentiles Distribution -->
+            <div class="percentile-bar">
+                <div style="font-size: 11px; font-weight: 800; color: var(--text-muted); text-transform: uppercase; margin-bottom: 8px;">
+                    문장 길이 백분위 기반 모델 분배 기준 (Percentiles Routing)
+                </div>
+                <div class="p-grid" id="percentileGrid">
+                    <!-- Dynamic -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Model Buckets List -->
+        <div id="modelsContainer">
+            <div class="empty-box">로딩 중...</div>
+        </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script>
+        let queueData = null;
+        let activeFolder = "";
+
+        const MODEL_META = {
+            'gemini-3.0-flash': { color: '#60a5fa', desc: '초단문/감탄사 (하위 20%)', icon: 'bolt' },
+            'gemini-3.5-flash': { color: '#34d399', desc: '단문 대화체 (20~40%)', icon: 'chat' },
+            'gemini-3.6-flash': { color: '#a78bfa', desc: '중문 일반 서술 (40~60%)', icon: 'auto_stories' },
+            'gemini-3.7-flash': { color: '#f472b6', desc: '장문 복합 문장 (60~80%)', icon: 'psychology' },
+            'gemini-3.8-flash': { color: '#fbbf24', desc: '초장문/고난도 묘사 (상위 20%)', icon: 'diamond' }
+        };
+
+        document.addEventListener('DOMContentLoaded', () => {
+            loadData();
+            
+        });
+
+        function showToast(msg, isSuccess = true) {
+            const t = document.getElementById('toast');
+            t.textContent = msg;
+            t.style.borderColor = isSuccess ? 'var(--accent-emerald)' : 'var(--accent-rose)';
+            t.classList.add('show');
+            setTimeout(() => t.classList.remove('show'), 3200);
+        }
+
+        async function loadData() {
+            try {
+                const url = activeFolder 
+                    ? `/api/ai_review/reretranslate/queue?folderName=${encodeURIComponent(activeFolder)}`
+                    : '/api/ai_review/reretranslate/queue';
+                const res = await fetch(url);
+                queueData = await res.json();
+                
+                // Populate folder select if first time
+                " ${f === curVal ? 'selected' : ''}>${f}</option>`;
+                    });
+                }
+
+                renderStats();
+                renderModels();
+            } catch(e) {
+                document.getElementById('modelsContainer').innerHTML = '<div class="empty-box">데이터 로드 실패</div>';
+            }
+        }
+
+        function renderStats() {
+            document.getElementById('statTotal').textContent = (queueData.total || 0) + '건';
+            document.getElementById('statAvg').textContent = (queueData.avg_length || 0) + '자';
+            
+            const p = queueData.percentiles || {};
+            const pGrid = document.getElementById('percentileGrid');
+            pGrid.innerHTML = `
+                <div class="p-cell">
+                    <div class="p-model">3.0 Flash</div>
+                    <div class="p-range">≤ ${p.p20 || 0}자</div>
+                </div>
+                <div class="p-cell">
+                    <div class="p-model">3.5 Flash</div>
+                    <div class="p-range">${(p.p20||0)+1} ~ ${p.p40 || 0}자</div>
+                </div>
+                <div class="p-cell">
+                    <div class="p-model">3.6 Flash</div>
+                    <div class="p-range">${(p.p40||0)+1} ~ ${p.p60 || 0}자</div>
+                </div>
+                <div class="p-cell">
+                    <div class="p-model">3.7 Flash</div>
+                    <div class="p-range">${(p.p60||0)+1} ~ ${p.p80 || 0}자</div>
+                </div>
+                <div class="p-cell">
+                    <div class="p-model">3.8 Flash</div>
+                    <div class="p-range">> ${p.p80 || 0}자</div>
+                </div>
+            `;
+        }
+
+        function renderModels() {
+            const container = document.getElementById('modelsContainer');
+            container.innerHTML = '';
+
+            const models = queueData.models || {};
+            let totalItems = 0;
+
+            for (const [modelName, items] of Object.entries(models)) {
+                totalItems += items.length;
+                const meta = MODEL_META[modelName] || { color: '#fff', desc: 'Gemini Model', icon: 'memory' };
+                
+                const card = document.createElement('div');
+                card.className = 'model-card';
+                card.id = `card-${modelName}`;
+
+                const rowsHtml = items.map(item => `
+                    <div class="sentence-row" id="row-${item.queue_id}">
+                        <div class="s-len">Len: ${item.length}</div>
+                        <div class="s-orig" title="클릭하여 원문 복사" onclick="navigator.clipboard.writeText('${item.original_text.replace(/'/g, "\\'")}'); showToast('원문이 복사되었습니다.');">
+                            ${item.original_text}
+                        </div>
+                        <div class="s-old">${item.old_translated_text || ''}</div>
+                        <div>
+                            <select class="s-model-select" onchange="changeItemModel(${item.queue_id}, '${modelName}', this.value)">
+                                <option value="gemini-3.0-flash" ${modelName === 'gemini-3.0-flash' ? 'selected' : ''}>3.0 Flash</option>
+                                <option value="gemini-3.5-flash" ${modelName === 'gemini-3.5-flash' ? 'selected' : ''}>3.5 Flash</option>
+                                <option value="gemini-3.6-flash" ${modelName === 'gemini-3.6-flash' ? 'selected' : ''}>3.6 Flash</option>
+                                <option value="gemini-3.7-flash" ${modelName === 'gemini-3.7-flash' ? 'selected' : ''}>3.7 Flash</option>
+                                <option value="gemini-3.8-flash" ${modelName === 'gemini-3.8-flash' ? 'selected' : ''}>3.8 Flash</option>
+                            </select>
+                        </div>
+                        <div style="text-align: right;">
+                            <button onclick="deleteItem(${item.queue_id})" class="btn" style="padding: 4px 8px; border-color: rgba(244,63,94,0.4); color: var(--accent-rose);" title="재재번역 큐에서 제외">
+                                <span class="material-icons-round" style="font-size: 14px;">delete</span>
+                            </button>
+                        </div>
+                    </div>
+                `).join('');
+
+                card.innerHTML = `
+                    <div class="model-header" onclick="toggleDrawer('${modelName}')">
+                        <div class="model-info">
+                            <span class="model-badge" style="background: ${meta.color}20; color: ${meta.color}; border: 1px solid ${meta.color}40;">
+                                <span class="material-icons-round" style="font-size: 16px;">${meta.icon}</span> ${modelName}
+                            </span>
+                            <span style="font-size: 13px; color: var(--text-secondary);">${meta.desc}</span>
+                            <span class="model-count-chip">${items.length}건 대기</span>
+                        </div>
+                        <div class="model-actions" onclick="event.stopPropagation()">
+                            <button class="btn" onclick="toggleDrawer('${modelName}')">
+                                <span class="material-icons-round" id="icon-toggle-${modelName}">expand_more</span> 단락 보기
+                            </button>
+                            <button id="btn-run-${modelName}" class="btn" style="border-color: ${meta.color}; color: ${meta.color};" onclick="runSingleModel('${modelName}')" ${items.length === 0 ? 'disabled style="opacity:0.4"' : ''}>
+                                <span class="material-icons-round">play_arrow</span> 이 모델만 실행 (${items.length})
+                            </button>
+                        </div>
+                    </div>
+                    <div class="sentence-drawer" id="drawer-${modelName}">
+                        ${items.length > 0 ? `
+                            <div style="display: grid; grid-template-columns: 70px 1.2fr 1fr 120px 50px; gap: 16px; padding: 12px 0 6px 0; font-size: 11px; font-weight: 700; color: var(--text-muted); border-bottom: 1px solid var(--glass-border);">
+                                <div>길이</div>
+                                <div>일본어 원문 (클릭 시 복사)</div>
+                                <div>거절된 이전 번역</div>
+                                <div>모델 변경</div>
+                                <div style="text-align: right;">제외</div>
+                            </div>
+                                <div>거절된 번역문 (재재번역 대상)</div>
+                                <div>모델 변경</div>
+                                <div style="text-align: right;">제외</div>
+                            </div>
+                            <div class="sentence-table">${rowsHtml}</div>
+                        ` : '<div style="padding: 20px 0; text-align: center; color: var(--text-muted);">할당된 문장이 없습니다.</div>'}
+                    </div>
+                `;
+                container.appendChild(card);
+            }
+
+            if (totalItems === 0) {
+                container.innerHTML = `
+                    <div class="empty-box">
+                        <span class="material-icons-round" style="font-size: 48px; opacity: 0.4; margin-bottom: 12px; display: block; color: var(--accent-gold);">task_alt</span>
+                        <h3>재재번역 대기 중인 문장이 없습니다</h3>
+                        <p style="font-size: 14px; margin-top: 8px;">1차 AI 검수 스튜디오에서 번역이 마음에 들지 않아 거절(Swipe Left / Esc)한 문장들이 이곳으로 모이게 됩니다.</p>
+                        <a href="/ai_review" class="btn btn-glow" style="margin-top: 16px; display: inline-flex;">
+                            <span class="material-icons-round">swipe</span> 1차 AI 검수하러 가기
+                        </a>
+                    </div>
+                `;
+            }
+        }
+
+        function toggleDrawer(modelName) {
+            const drawer = document.getElementById(`drawer-${modelName}`);
+            const icon = document.getElementById(`icon-toggle-${modelName}`);
+            if (drawer) {
+                const isOpen = drawer.classList.contains('open');
+                drawer.classList.toggle('open');
+                if (icon) icon.textContent = isOpen ? 'expand_more' : 'expand_less';
+            }
+        }
+
+        async function runSingleModel(modelName) {
+            const items = queueData.models[modelName];
+            if (!items || items.length === 0) return;
+
+            const btn = document.getElementById(`btn-run-${modelName}`);
+            btn.innerHTML = '<span class="material-icons-round animate-spin">sync</span> 번역 중...';
+            btn.disabled = true;
+
+            const ids = items.map(i => i.queue_id);
+            try {
+                const res = await fetch('/api/ai_review/reretranslate/run', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ queue_ids: ids, model: modelName })
+                });
+                const data = await res.json();
+                showToast(data.message);
+                
+                // Refresh data after brief delay
+                setTimeout(loadData, 1500);
+            } catch(e) {
+                showToast('실행 요청 실패', false);
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        async function runAllModels() {
+            if (!queueData || queueData.total === 0) {
+                showToast('재재번역할 문장이 없습니다.', false);
+                return;
+            }
+
+            const btn = document.getElementById('runAllBtn');
+            btn.innerHTML = '<span class="material-icons-round animate-spin">sync</span> 전체 번역 실행 중...';
+            btn.disabled = true;
+
+            let launched = 0;
+            for (const [modelName, items] of Object.entries(queueData.models)) {
+                if (items && items.length > 0) {
+                    const ids = items.map(i => i.queue_id);
+                    await fetch('/api/ai_review/reretranslate/run', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ queue_ids: ids, model: modelName })
+                    });
+                    launched += items.length;
+                }
+            }
+
+            showToast(`총 ${launched}건의 문장이 5개 모델로 분산 번역 시작되었습니다!`);
+            setTimeout(() => {
+                btn.innerHTML = '<span class="material-icons-round">bolt</span> 전체 일괄 재재번역 실행';
+                btn.disabled = false;
+                loadData();
+            }, 2000);
+        }
+
+        function changeItemModel(queueId, fromModel, toModel) {
+            if (fromModel === toModel) return;
+            const itemIdx = queueData.models[fromModel].findIndex(i => i.queue_id === queueId);
+            if (itemIdx > -1) {
+                const [item] = queueData.models[fromModel].splice(itemIdx, 1);
+                queueData.models[toModel].push(item);
+                showToast(`문장이 ${toModel} 모델로 재할당되었습니다.`);
+                renderModels();
+                // Reopen the target drawer
+                toggleDrawer(toModel);
+            }
+        }
+
+        async function deleteItem(queueId) {
+            if (!confirm('이 문장을 재재번역 큐에서 제외하시겠습니까?')) return;
+            try {
+                const res = await fetch(`/api/ai_review/reretranslate/item/${queueId}`, { method: 'DELETE' });
+                if (res.ok) {
+                    showToast('문장이 큐에서 제외되었습니다.');
+                    loadData();
+                } else {
+                    showToast('제외 실패', false);
+                }
+            } catch(e) {
+                showToast('네트워크 오류', false);
+            }
+        }
+    </script>
+</body>
+</html>

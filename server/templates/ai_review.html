@@ -1,0 +1,1076 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>AI Review Studio</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet">
+    <style>
+        /* Ultra Premium Design System */
+        :root {
+            --bg-grad-1: #0f172a;
+            --bg-grad-2: #1e1b4b;
+            --bg-grad-3: #312e81;
+            
+            --glass-bg: rgba(255, 255, 255, 0.03);
+            --glass-border: rgba(255, 255, 255, 0.08);
+            --glass-highlight: rgba(255, 255, 255, 0.15);
+            
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+            
+            --accent-approve: #10b981;
+            --accent-approve-glow: rgba(16, 185, 129, 0.4);
+            
+            --accent-reject: #ef4444;
+            --accent-reject-glow: rgba(239, 68, 68, 0.4);
+            
+            --accent-brand: #6366f1;
+            --accent-brand-glow: rgba(99, 102, 241, 0.5);
+        }
+
+        body { 
+            font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif; 
+            background: linear-gradient(135deg, var(--bg-grad-1), var(--bg-grad-2), var(--bg-grad-3));
+            background-size: 400% 400%;
+            animation: gradientBG 15s ease infinite;
+            color: var(--text-primary); 
+            margin: 0; 
+            padding: 0; 
+            display: flex; 
+            flex-direction: column; 
+            height: 100vh; 
+            overflow: hidden; 
+            -webkit-font-smoothing: antialiased;
+        }
+
+        @keyframes gradientBG {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+
+        /* Glassmorphism Header */
+        header { 
+            background: rgba(15, 23, 42, 0.4);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border-bottom: 1px solid var(--glass-border);
+            padding: 16px 32px; 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center; 
+            z-index: 100;
+        }
+        
+        .header-title { 
+            font-size: 20px; 
+            font-weight: 800; 
+            display: flex; 
+            align-items: center; 
+            gap: 12px; 
+            letter-spacing: -0.5px;
+            background: linear-gradient(to right, #fff, #a5b4fc);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        
+        /* Premium Buttons */
+        .btn { 
+            padding: 10px 20px; 
+            border-radius: 12px; 
+            border: 1px solid var(--glass-border); 
+            font-size: 14px; 
+            font-weight: 600; 
+            cursor: pointer; 
+            transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1); 
+            display: inline-flex; 
+            align-items: center; 
+            gap: 8px; 
+            color: var(--text-primary);
+            backdrop-filter: blur(10px);
+        }
+        
+        .btn-glass { 
+            background: rgba(255, 255, 255, 0.05); 
+        }
+        .btn-glass:hover { 
+            background: rgba(255, 255, 255, 0.1); 
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px -10px rgba(0,0,0,0.5);
+            border-color: var(--glass-highlight);
+        }
+        
+        .btn-glow {
+            background: var(--accent-brand);
+            border: none;
+            box-shadow: 0 0 20px var(--accent-brand-glow);
+        }
+        .btn-glow:hover {
+            background: #818cf8;
+            box-shadow: 0 0 30px var(--accent-brand-glow);
+            transform: translateY(-2px) scale(1.02);
+        }
+
+        .main-container { 
+            flex: 1; 
+            display: flex; 
+            flex-direction: column; 
+            align-items: center; 
+            padding: 32px; 
+            overflow-y: auto; 
+            position: relative;
+        }
+        
+        /* Floating Stats Panel */
+        .stats-panel { 
+            width: 100%; 
+            max-width: 800px; 
+            background: var(--glass-bg); 
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border-radius: 24px; 
+            padding: 24px 32px; 
+            margin-bottom: 40px; 
+            border: 1px solid var(--glass-border); 
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5); 
+            display: flex; 
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .stats-grid { 
+            display: flex; 
+            gap: 40px; 
+        }
+        
+        .stat-item { 
+            display: flex; 
+            flex-direction: column; 
+            gap: 4px;
+        }
+        
+        .stat-value { 
+            font-size: 28px; 
+            font-weight: 800; 
+            background: linear-gradient(to right, #818cf8, #c084fc);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            font-variant-numeric: tabular-nums;
+        }
+        .stat-label { 
+            font-size: 12px; 
+            color: var(--text-secondary); 
+            font-weight: 600; 
+            text-transform: uppercase; 
+            letter-spacing: 1px;
+        }
+
+        /* 3D Swipe Stage */
+        .stage { 
+            width: 100%; 
+            max-width: 900px; 
+            height: 600px; 
+            display: flex; 
+            gap: 30px;
+            align-items: stretch;
+            perspective: 2000px;
+        }
+
+        /* Context Sidebar (Left & Right) */
+        .side-context {
+            flex: 1;
+            background: linear-gradient(180deg, rgba(255,255,255,0.02) 0%, rgba(255,255,255,0.05) 100%);
+            border: 1px solid var(--glass-border);
+            border-radius: 20px;
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            opacity: 0.7;
+            transition: opacity 0.3s;
+            backdrop-filter: blur(10px);
+        }
+        .side-context:hover { opacity: 1; }
+        
+        .context-title {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            color: var(--text-secondary);
+            font-weight: 700;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .context-title::after { content: ''; flex: 1; height: 1px; background: var(--glass-border); }
+
+        .ctx-item { display: flex; flex-direction: column; gap: 6px; }
+        .ctx-orig { font-size: 13px; color: var(--text-secondary); }
+        .ctx-trans { font-size: 14px; color: var(--text-primary); line-height: 1.6;}
+
+        /* Central Card Stack */
+        .card-stack { 
+            position: relative; 
+            width: 450px; 
+            height: 100%; 
+            transform-style: preserve-3d;
+        }
+        
+        .swipe-card { 
+            position: absolute; 
+            width: 100%; 
+            height: 100%; 
+            background: rgba(30, 41, 59, 0.7); 
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border-radius: 30px; 
+            box-shadow: 0 30px 60px -12px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255,255,255,0.1); 
+            border: 1px solid var(--glass-border); 
+            display: flex; 
+            flex-direction: column; 
+            overflow: hidden;
+            transition: transform 0.6s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.4s ease; 
+            cursor: grab;
+            transform-origin: 50% 100%;
+            will-change: transform;
+        }
+        
+        .swipe-card:active { cursor: grabbing; transition: none; }
+        
+        .card-header { 
+            padding: 20px 24px; 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center; 
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+            background: rgba(0,0,0,0.2);
+        }
+        
+        .folder-chip {
+            font-size: 12px;
+            font-weight: 700;
+            background: rgba(255,255,255,0.1);
+            padding: 6px 12px;
+            border-radius: 20px;
+            letter-spacing: 0.5px;
+        }
+
+        .model-chip {
+            font-size: 11px;
+            font-weight: 800;
+            color: #a5b4fc;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .card-body { 
+            flex: 1; 
+            padding: 32px 24px; 
+            display: flex; 
+            flex-direction: column; 
+            gap: 32px; 
+            pointer-events: none;
+        }
+        
+        .swipe-card.is-active .card-body { pointer-events: auto; }
+        
+        .orig-text {
+            font-size: 16px;
+            color: var(--text-secondary);
+            line-height: 1.6;
+            user-select: text;
+        }
+
+        /* Editable Magic Textarea */
+        .edit-wrap { position: relative; flex: 1; display: flex; flex-direction: column;}
+        .trans-editor {
+            flex: 1;
+            width: 100%;
+            background: transparent;
+            border: none;
+            color: var(--text-primary);
+            font-size: 22px;
+            font-weight: 600;
+            line-height: 1.5;
+            font-family: inherit;
+            resize: none;
+            outline: none;
+            padding: 0;
+            text-shadow: 0 2px 10px rgba(0,0,0,0.5);
+            transition: all 0.3s;
+        }
+        
+        .trans-editor:focus {
+            background: rgba(0,0,0,0.2);
+            padding: 16px;
+            border-radius: 16px;
+            margin: -16px;
+            box-shadow: inset 0 0 0 1px var(--glass-highlight);
+        }
+
+        /* Cinematic Action Dock */
+        .action-dock { 
+            position: absolute;
+            bottom: -40px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex; 
+            gap: 24px; 
+            z-index: 50;
+        }
+        
+        .circle-btn { 
+            width: 80px; 
+            height: 80px; 
+            border-radius: 50%; 
+            border: none; 
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+            cursor: pointer; 
+            background: rgba(15, 23, 42, 0.6);
+            backdrop-filter: blur(10px);
+            border: 1px solid var(--glass-border);
+            color: white; 
+            transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+            box-shadow: 0 10px 25px -5px rgba(0,0,0,0.5);
+        }
+        
+        .circle-btn .material-icons-round { font-size: 36px; transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1); }
+        
+        .circle-btn.reject:hover { 
+            background: var(--accent-reject); 
+            border-color: var(--accent-reject);
+            box-shadow: 0 0 40px var(--accent-reject-glow);
+            transform: translateY(-8px) scale(1.1); 
+        }
+        .circle-btn.reject:hover .material-icons-round { transform: rotate(-90deg); }
+        
+        .circle-btn.approve:hover { 
+            background: var(--accent-approve); 
+            border-color: var(--accent-approve);
+            box-shadow: 0 0 40px var(--accent-approve-glow);
+            transform: translateY(-8px) scale(1.1); 
+        }
+        .circle-btn.approve:hover .material-icons-round { transform: scale(1.2); }
+        
+        .circle-btn.undo { 
+            width: 60px; height: 60px; 
+            position: absolute; right: -90px; bottom: 10px;
+        }
+        .circle-btn.undo .material-icons-round { font-size: 28px; }
+        .circle-btn.undo:hover { 
+            background: var(--warning); 
+            border-color: var(--warning);
+            box-shadow: 0 0 30px rgba(245, 158, 11, 0.4);
+            transform: rotate(-360deg) scale(1.1); 
+        }
+
+        /* Swipe Hologram Stamps */
+        .stamp { 
+            position: absolute; 
+            top: 40px; 
+            padding: 10px 20px; 
+            border-radius: 12px; 
+            font-weight: 900; 
+            font-size: 32px; 
+            text-transform: uppercase; 
+            letter-spacing: 4px; 
+            border: 4px solid; 
+            opacity: 0; 
+            z-index: 100; 
+            pointer-events: none;
+            text-shadow: 0 0 20px rgba(0,0,0,0.5);
+        }
+        .stamp-approve { right: -20px; color: var(--accent-approve); border-color: var(--accent-approve); transform: rotate(15deg) scale(1.5); }
+        .stamp-reject { left: -20px; color: var(--accent-reject); border-color: var(--accent-reject); transform: rotate(-15deg) scale(1.5); }
+
+        .toast { position: fixed; top: 40px; left: 50%; transform: translateX(-50%) translateY(-20px); background: rgba(255,255,255,0.9); color: #000; padding: 16px 32px; border-radius: 30px; font-size: 15px; font-weight: 700; opacity: 0; transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1); pointer-events: none; z-index: 2000; box-shadow: 0 20px 40px rgba(0,0,0,0.3);}
+        .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+        .empty-state { display: none; position: absolute; inset: 0; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+        
+        #recommendPopup { position: absolute; background: rgba(15, 23, 42, 0.9); backdrop-filter: blur(10px); border: 1px solid var(--glass-highlight); border-radius: 16px; padding: 16px; box-shadow: 0 20px 40px rgba(0,0,0,0.5); z-index: 1000; display: none; max-width: 300px; }
+        .rec-item { padding: 10px; border-radius: 8px; cursor: pointer; transition: background 0.2s; margin-bottom: 4px;}
+        .rec-item:hover { background: rgba(255,255,255,0.1); }
+        .rec-trans { color: var(--text-primary); font-size: 15px; font-weight: 700; }
+        .rec-meta { font-size: 11px; color: var(--accent-brand); margin-top: 4px; font-weight: 800;}
+        .ctx-tool-btn {
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            color: var(--text-secondary);
+            border-radius: 6px;
+            padding: 3px 6px;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            text-decoration: none;
+            transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        .ctx-tool-btn:hover {
+            background: rgba(255, 255, 255, 0.16);
+            color: #fff;
+            border-color: rgba(255, 255, 255, 0.3);
+            transform: translateY(-1px);
+        }
+
+
+        @keyframes spin { 100% { transform: rotate(360deg); } }
+        .animate-spin { animation: spin 1s linear infinite; }
+    </style>
+</head>
+<body>
+        <header style="display: flex; justify-content: space-between; align-items: center; padding: 16px 32px; background: rgba(15, 23, 42, 0.7); backdrop-filter: blur(20px); border-bottom: 1px solid var(--glass-border); position: fixed; top: 0; left: 0; right: 0; z-index: 100;">
+        <div style="display: flex; align-items: center; gap: 24px;">
+            <div class="header-title" style="margin: 0; font-size: 18px; font-weight: 800; display: flex; align-items: center; gap: 8px;">
+                <span class="material-icons-round" style="color: var(--accent-brand);">auto_awesome</span>
+                AI Review Studio
+            </div>
+            <nav style="display: flex; gap: 8px;">
+                <a href="/ai_review" class="btn btn-glass" style="background: rgba(59, 130, 246, 0.2); border-color: var(--accent-brand); color: #fff; text-decoration: none;">
+                    <span class="material-icons-round" style="font-size: 16px; color: #60a5fa;">swipe</span> 1차 AI 검수
+                </a>
+                <a href="/ai_reretranslate" class="btn btn-glass" style="border-color: rgba(245, 158, 11, 0.4); text-decoration: none; display: flex; align-items: center; gap: 6px;">
+                    <span class="material-icons-round" style="font-size: 16px; color: #f59e0b;">auto_fix_high</span> 2차 재재번역 센터
+                    <span id="navRejectedBadge" style="background: #f59e0b; color: #000; font-size: 10px; font-weight: 800; padding: 1px 6px; border-radius: 10px; display: none;">0</span>
+                </a>
+            </nav>
+        </div>
+        <div style="display: flex; gap: 10px; align-items: center;">
+            <a href="/admin" class="btn btn-glass" style="text-decoration: none;">
+                <span class="material-icons-round" style="font-size: 16px;">dashboard</span> 관리자 홈
+            </a>
+        </div>
+    </header>
+
+    <div class="main-container">
+        <!-- Floating Stats Panel -->
+        <div class="stats-panel">
+            <div class="stats-grid">
+                
+                <div class="stat-item">
+                    <div class="stat-label">Total Found</div>
+                    <div class="stat-value" id="statTotal">-</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">Avg Length</div>
+                    <div class="stat-value" id="statAvg">-</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">Pending Queue</div>
+                    <div class="stat-value" id="statQCount">-</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">Rejected (재재번역 대기)</div>
+                    <div class="stat-value" id="statRejected" style="color: var(--accent-reject);">-</div>
+                </div>
+            </div>
+            <div style="display: flex; gap: 12px; align-items: center; justify-content: flex-end; width: 100%; margin-top: 12px;">
+                <button id="triggerInitialBtn" class="btn btn-glow" style="flex: 1; justify-content: center;">
+                    <span class="material-icons-round">play_arrow</span> 
+                    BATCH TRANSLATE (초벌 번역 시작)
+                </button>
+            </div>
+        </div>
+
+        <!-- 3D Stage -->
+        <div class="stage" id="workspace" style="display: none;">
+            
+            <!-- Context Before -->
+            <div class="side-context" id="ctxBefore">
+                <div class="context-title"><span class="material-icons-round" style="font-size: 14px;">history</span> PREVIOUS</div>
+                <div id="ctxBeforeContent"></div>
+            </div>
+
+            <!-- Card Stack -->
+            <div class="card-stack" id="cardContainer">
+                <div class="empty-state" id="emptyState">
+                    <span class="material-icons-round" style="font-size: 80px; color: var(--accent-approve); margin-bottom: 20px; filter: drop-shadow(0 0 20px rgba(16,185,129,0.5));">verified</span>
+                    <h2 style="margin: 0 0 10px 0; font-size: 28px;">All clear!</h2>
+                    <p style="color: var(--text-secondary); margin: 0;">큐에 대기 중인 항목이 없습니다.</p>
+                </div>
+                <!-- Cards injected here -->
+                
+                <!-- Dock -->
+                <div class="action-dock" id="dock" style="display: none;">
+                    <button class="circle-btn reject" onclick="triggerAction('left')" title="거절 (재재번역 큐)">
+                        <span class="material-icons-round">close</span>
+                    </button>
+                    <button class="circle-btn approve" onclick="triggerAction('right')" title="승인 (저장)">
+                        <span class="material-icons-round">favorite</span>
+                    </button>
+                    <button class="circle-btn undo" id="undoBtn" style="display: none;" title="실행 취소">
+                        <span class="material-icons-round">undo</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Context After -->
+            <div class="side-context" id="ctxAfter">
+                <div class="context-title"><span class="material-icons-round" style="font-size: 14px;">update</span> NEXT</div>
+                <div id="ctxAfterContent"></div>
+            </div>
+
+        </div>
+    </div>
+    
+    <div class="toast" id="toast"></div>
+
+    <div id="recommendPopup">
+        <div style="font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: var(--text-secondary); margin-bottom: 12px; border-bottom: 1px solid var(--glass-border); padding-bottom: 8px;">Recommendation</div>
+        <div id="recommendContent"></div>
+    </div>
+
+    <script>
+        let currentQueue = [];
+        let currentIndex = 0;
+        let lastAction = null;
+        let activeFolder = "";
+
+        // Physics State
+        let isDragging = false;
+        let startX = 0, currentX = 0;
+        let startY = 0, currentY = 0;
+        let activeCardEl = null;
+
+        document.addEventListener('DOMContentLoaded', () => {
+            loadStats(); loadQueue();
+            
+            
+            
+            document.getElementById('triggerInitialBtn').addEventListener('click', triggerTranslation);
+            document.getElementById('undoBtn').addEventListener('click', undoLastAction);
+            
+            // Drag to select text logic
+            document.addEventListener('mouseup', handleTextSelection);
+            document.addEventListener('mousedown', (e) => {
+                if(!e.target.closest('#recommendPopup') && !e.target.closest('.orig-text')) {
+                    document.getElementById('recommendPopup').style.display = 'none';
+                }
+            });
+            
+            // Card Physics Events
+            const stack = document.getElementById('cardContainer');
+            stack.addEventListener('mousedown', dragStart);
+            stack.addEventListener('touchstart', dragStart, {passive: true});
+            document.addEventListener('mousemove', dragMove);
+            document.addEventListener('touchmove', dragMove, {passive: false});
+            document.addEventListener('mouseup', dragEnd);
+            document.addEventListener('touchend', dragEnd);
+            
+            // Global Shortcuts
+            document.addEventListener('keydown', (e) => {
+                if (document.getElementById('rulesModal').style.display === 'flex') return;
+                const isTextarea = e.target.tagName === 'TEXTAREA';
+                
+                if (e.key === 'Enter' && e.ctrlKey) {
+                    e.preventDefault(); triggerAction('right'); return;
+                }
+                if (e.key === 'Escape') {
+                    e.preventDefault(); triggerAction('left'); return;
+                }
+                if (isTextarea) return;
+                if (e.key === 'ArrowRight') triggerAction('right');
+                else if (e.key === 'ArrowLeft') triggerAction('left');
+                else if (e.key === 'z' && e.ctrlKey) undoLastAction();
+            });
+        });
+        
+        function showToast(msg) {
+            const toast = document.getElementById('toast');
+            toast.textContent = msg;
+            toast.classList.add('show');
+            setTimeout(() => toast.classList.remove('show'), 3000);
+        }
+
+        async function loadFolders() {
+            try {
+                const res = await fetch('/api/ai_review/folders');
+                const data = await res.json();
+                const sel = document.getElementById('novelSelect');
+                data.folders.forEach(f => {
+                    if (f) sel.innerHTML += `<option value="${f}">${f}</option>`;
+                });
+                loadStats();
+                loadQueue();
+            } catch(e) {}
+        }
+
+        async function loadStats() {
+            try {
+                const url = '/api/ai_review/stats';
+                const res = await fetch(url);
+                const data = await res.json();
+                document.getElementById('statTotal').textContent = data.total;
+                document.getElementById('statAvg').textContent = data.avg;
+                if(data.rejected_count !== undefined) {
+                    document.getElementById('statRejected').textContent = data.rejected_count;
+                    const badge = document.getElementById('navRejectedBadge');
+                    if (badge) {
+                        badge.textContent = data.rejected_count;
+                        badge.style.display = data.rejected_count > 0 ? 'inline-block' : 'none';
+                    }
+                }
+            } catch (e) {}
+        }
+
+        async function triggerTranslation() {
+            const btn = document.getElementById('triggerInitialBtn');
+            btn.innerHTML = '<span class="material-icons-round animate-spin">sync</span> PROCESSING...';
+            try {
+                const res = await fetch('/api/ai_review/trigger_initial', { method: 'POST' });
+                const data = await res.json();
+                showToast(data.message);
+                setTimeout(loadQueue, 1500);
+            } catch (e) {
+                showToast('Failed to trigger', false);
+            } finally {
+                btn.innerHTML = '<span class="material-icons-round">play_arrow</span> BATCH TRANSLATE (초벌 번역 시작)';
+            }
+        }
+
+        async function loadQueue() {
+            try {
+                const url = '/api/ai_review/queue';
+                const res = await fetch(url);
+                const data = await res.json();
+                currentQueue = data.items;
+                currentIndex = 0;
+                renderCards();
+            } catch (e) {}
+        }
+
+        // --- AI Review specific features ---
+        async function rerollTranslation(queue_id) {
+            const textarea = document.getElementById(`trans-${queue_id}`);
+            const btn = document.getElementById(`rerollBtn-${queue_id}`);
+            const icon = btn.querySelector('.material-icons-round');
+            
+            textarea.style.opacity = '0.5';
+            icon.classList.add('animate-spin');
+            icon.textContent = 'sync';
+            
+            try {
+                const res = await fetch(`/api/ai_review/reroll?queue_id=${queue_id}`);
+                const data = await res.json();
+                if (res.ok && data.translated_text) {
+                    textarea.value = cleanAiTranslation(data.translated_text);
+                    showToast("문장이 재번역되었습니다.");
+                    
+                    textarea.style.background = 'rgba(16, 185, 129, 0.2)';
+                    setTimeout(() => textarea.style.background = '', 400);
+                } else {
+                    showToast(data.message || "재번역 실패", false);
+                }
+            } catch(e) {
+                showToast("네트워크 오류", false);
+            } finally {
+                textarea.style.opacity = '1';
+                icon.classList.remove('animate-spin');
+                icon.textContent = 'auto_fix_high';
+            }
+        }
+
+        function cleanAiTranslation(text) {
+            if (!text) return "";
+            text = text.trim();
+            
+            // 0. 마크다운 코드블록 내부에 들어있는 경우 추출
+            const codeBlockMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+            if (codeBlockMatch && codeBlockMatch[1]) {
+                text = codeBlockMatch[1].trim();
+            } else {
+                if (text.startsWith('```json')) text = text.substring(7).trim();
+                else if (text.startsWith('```')) text = text.substring(3).trim();
+                if (text.endsWith('```')) text = text.substring(0, text.length - 3).trim();
+            }
+            
+            // 1. If the entire text is a JSON string (e.g. from Python str(dict) or raw JSON)
+            // We will aggressively look for the "translated" or "translation" key's value
+            // Works for both double quotes and single quotes (Python dict stringification)
+            let match = text.match(/(?:"|')(?:translated|translation|text)(?:"|')\s*:\s*(?:"|')((?:\\.|[^"\\])*)(?:"|')/i);
+            if (match && match[1]) {
+                // Unescape JSON string if necessary
+                try {
+                    return JSON.parse('"' + match[1] + '"');
+                } catch(e) {
+                    return match[1].replace(/\\n/g, '\n').replace(/\\"/g, '"');
+                }
+            }
+            
+            // 2. If it's a simple JSON array structure like ["text"] or object
+            if ((text.startsWith('[') && text.endsWith(']')) || (text.startsWith('{') && text.endsWith('}'))) {
+                try {
+                    const parsed = JSON.parse(text);
+                    if (Array.isArray(parsed) && parsed.length > 0) {
+                        if (typeof parsed[0] === 'string') return parsed[0].trim();
+                        if (typeof parsed[0] === 'object') {
+                            return (parsed[0].translated || parsed[0].translation || parsed[0].text || text).trim();
+                        }
+                    } else if (typeof parsed === 'object') {
+                        return (parsed.translated || parsed.translation || parsed.text || text).trim();
+                    }
+                } catch(e) {}
+            }
+            
+            // 3. Fallback: just return the raw text if no JSON structure was found
+            return text;
+        }
+
+        function renderCards() {
+            document.getElementById('statQCount').textContent = Math.max(0, currentQueue.length - currentIndex);
+            
+            const container = document.getElementById('cardContainer');
+            const ws = document.getElementById('workspace');
+            const empty = document.getElementById('emptyState');
+            const dock = document.getElementById('dock');
+            
+            // Remove old cards
+            container.querySelectorAll('.swipe-card').forEach(c => c.remove());
+            
+            if (currentQueue.length === 0 || currentIndex >= currentQueue.length) {
+                ws.style.display = 'flex';
+                empty.style.display = 'flex';
+                dock.style.display = 'none';
+                document.getElementById('ctxBeforeContent').innerHTML = '';
+                document.getElementById('ctxAfterContent').innerHTML = '';
+                return;
+            }
+            
+            ws.style.display = 'flex';
+            empty.style.display = 'none';
+            dock.style.display = 'flex';
+            
+            // Render up to 3 cards for 3D depth
+            for (let i = Math.min(currentIndex + 2, currentQueue.length - 1); i >= currentIndex; i--) {
+                const item = currentQueue[i];
+                const card = document.createElement('div');
+                const offset = i - currentIndex;
+                
+                card.className = `swipe-card ${offset === 0 ? 'is-active' : ''}`;
+                card.dataset.index = i;
+                
+                if (offset > 0) {
+                    const scale = 1 - (offset * 0.08);
+                    const y = offset * 20;
+                    const z = offset * -100;
+                    card.style.transform = `translate3d(0, ${y}px, ${z}px) scale(${scale})`;
+                    card.style.opacity = 1 - (offset * 0.2);
+                    card.style.zIndex = 10 - offset;
+                } else {
+                    card.style.zIndex = 10;
+                    activeCardEl = card;
+                    updateContextSidebars(item);
+                }
+                
+                const cleanText = cleanAiTranslation(item.ai_translated_text);
+                
+                card.innerHTML = `
+                    <div class="stamp stamp-approve">YES</div>
+                    <div class="stamp stamp-reject">NO</div>
+                    
+                    <div class="card-header">
+                        <div style="display: flex; gap: 8px; align-items: center;">
+                            <span class="folder-chip">${item.folderName || 'Uncategorized'}</span>
+                            ${item.is_reretranslated ? '<span class="badge" style="background: linear-gradient(135deg, #f59e0b, #d97706); color: #000; font-weight: 800; font-size: 11px; padding: 3px 8px; border-radius: 8px; display: inline-flex; align-items: center; gap: 4px;"><span class="material-icons-round" style="font-size: 13px;">bolt</span> 2차 재재번역 우선검수</span>' : ''}
+                        </div>
+                        <div style="display:flex; gap:8px; align-items:center;">
+                            ${item.url ? `<a href="${item.url}" target="_blank" class="ctx-tool-btn" style="padding: 4px 8px; border-radius: 8px;" title="이 화의 원본 웹소설 페이지 즉시 이동"><span class="material-icons-round" style="font-size: 13px;">open_in_new</span> 원본</a>` : ''}
+                            <a href="/admin?search=${encodeURIComponent(item.ai_translated_text || '')}&folder=${encodeURIComponent(item.folderName || '')}" target="_blank" class="ctx-tool-btn" style="padding: 4px 8px; border-radius: 8px;" title="관리자 페이지에서 열기"><span class="material-icons-round" style="font-size: 13px;">tune</span> 관리자</a>
+                            <span class="model-chip">${item.model_used || 'AI MODEL'}</span>
+                            <button id="rerollBtn-${item.queue_id}" onclick="rerollTranslation(${item.queue_id})" class="btn btn-glass" style="padding: 4px 8px; font-size: 11px; border-radius: 12px; border-color: var(--accent-brand);" title="가장 똑똑한 모델로 현재 문장만 즉시 재번역">
+                                <span class="material-icons-round" style="font-size: 14px;">auto_fix_high</span> REROLL
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card-body" style="display: flex; flex-direction: column; height: 100%; gap: 14px;">
+                        <div class="orig-text" style="font-size: 15px; color: var(--text-secondary); background: rgba(0,0,0,0.35); padding: 14px 18px; border-radius: 14px; border: 1px solid var(--glass-border); line-height: 1.6; user-select: text; cursor: pointer;" title="클릭하여 원문 복사" onclick="navigator.clipboard.writeText('${(item.original_text || '').replace(/'/g, "\\'")}'); showToast('일본어 원문이 복사되었습니다.');">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                                <span style="font-size: 11px; font-weight: 800; color: var(--accent-brand); letter-spacing: 0.5px;">ORIGINAL (일본어 원문)</span>
+                                <span class="material-icons-round" style="font-size: 14px; color: var(--text-muted);">content_copy</span>
+                            </div>
+                            <div style="color: #e2e8f0; font-weight: 500;">${item.original_text || ''}</div>
+                        </div>
+                        <div class="edit-wrap" style="flex: 1; display: flex;">
+                            <textarea class="trans-editor" id="trans-${item.queue_id}" spellcheck="false" style="width: 100%; height: 100%; min-height: 120px; font-size: 18px; line-height: 1.6; font-weight: 600; padding: 18px;" placeholder="번역문을 입력하거나 수정하세요...">${cleanText}</textarea>
+                        </div>
+                    </div>
+                `;
+                
+                // insert before dock
+                container.insertBefore(card, dock);
+            }
+        }
+        
+        function updateContextSidebars(item) {
+            const buildHtml = (ctxArr, isBefore) => {
+                if(!ctxArr || ctxArr.length === 0) return '<div style="opacity:0.3; font-size:12px;">No context</div>';
+                return ctxArr.map((c, idx) => {
+                    const label = isBefore 
+                        ? `이전 맥락 #${ctxArr.length - idx}`
+                        : `이후 맥락 #${idx + 1}`;
+                    const targetFolder = c.folderName || item.folderName || '';
+                    const adminLink = `/admin?search=${encodeURIComponent(c.translated || c.original || '')}&folder=${encodeURIComponent(targetFolder)}`;
+                    const origSafe = (c.original || '').replace(/'/g, "\\'");
+                    const urlWithPid = c.url ? (c.url + (c.pid ? '#p' + c.pid : '')) : '';
+
+                    return `
+                        <div class="ctx-item" id="ctx-card-${c.id || Math.random()}" style="position: relative;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid rgba(255,255,255,0.06);">
+                                <span style="font-size: 10px; font-weight: 800; color: var(--accent-brand); letter-spacing: 0.5px;">${label}</span>
+                                <div style="display: flex; gap: 4px; align-items: center;">
+                                    ${urlWithPid ? `
+                                        <a href="${urlWithPid}" target="_blank" class="ctx-tool-btn" title="원본 웹소설 화 페이지로 즉시 이동">
+                                            <span class="material-icons-round" style="font-size: 13px;">open_in_new</span>
+                                        </a>
+                                    ` : ''}
+                                    <a href="${adminLink}" target="_blank" class="ctx-tool-btn" title="관리자 페이지에서 해당 단락 즉시 검색 및 확인">
+                                        <span class="material-icons-round" style="font-size: 13px;">tune</span>
+                                    </a>
+                                    ${c.id ? `
+                                        <button onclick="toggleContextQuickEdit(${c.id})" class="ctx-tool-btn" title="이 화면에서 문맥 번역 즉시 수정">
+                                            <span class="material-icons-round" style="font-size: 13px;">edit</span>
+                                        </button>
+                                    ` : ''}
+                                </div>
+                            </div>
+                            <div class="ctx-orig" title="클릭 시 원문 복사" onclick="navigator.clipboard.writeText('${origSafe}'); showToast('문맥 원문 복사 완료');">
+                                ${c.original}
+                            </div>
+                            <div class="ctx-trans" id="ctx-trans-view-${c.id}">${c.translated}</div>
+                            ${c.id ? `
+                                <div id="ctx-edit-box-${c.id}" style="display: none; margin-top: 8px;">
+                                    <textarea id="ctx-edit-input-${c.id}" style="width: 100%; box-sizing: border-box; background: rgba(0,0,0,0.6); border: 1px solid var(--accent-brand); color: #fff; padding: 8px; border-radius: 8px; font-size: 13px; line-height: 1.5; outline: none; resize: vertical;" rows="2">${c.translated}</textarea>
+                                    <div style="display: flex; justify-content: flex-end; gap: 6px; margin-top: 6px;">
+                                        <button class="btn btn-glass" style="padding: 3px 8px; font-size: 11px;" onclick="toggleContextQuickEdit(${c.id})">취소</button>
+                                        <button class="btn btn-glow" style="padding: 3px 10px; font-size: 11px;" onclick="saveContextQuickEdit(${c.id})">저장</button>
+                                    </div>
+                                </div>
+                            ` : ''}
+                        </div>
+                    `;
+                }).join('<div style="height:12px;"></div>');
+            };
+            document.getElementById('ctxBeforeContent').innerHTML = buildHtml(item.context_before, true);
+            document.getElementById('ctxAfterContent').innerHTML = buildHtml(item.context_after, false);
+        }
+
+        async function saveContextQuickEdit(transId) {
+            const input = document.getElementById(`ctx-edit-input-${transId}`);
+            if (!input) return;
+            const newText = input.value.trim();
+            if (!newText) {
+                showToast("수정할 번역 내용을 입력해주세요.", false);
+                return;
+            }
+            try {
+                const res = await fetch('/api/ai_review/context/quick_edit', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ translation_id: transId, translated_text: newText })
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    showToast(data.message || "문맥 번역이 성공적으로 저장되었습니다.");
+                    const viewEl = document.getElementById(`ctx-trans-view-${transId}`);
+                    if (viewEl) viewEl.textContent = newText;
+                    toggleContextQuickEdit(transId);
+                } else {
+                    showToast(data.message || "저장 실패", false);
+                }
+            } catch(e) {
+                showToast("네트워크 오류", false);
+            }
+        }
+
+        function toggleContextQuickEdit(transId) {
+            const box = document.getElementById(`ctx-edit-box-${transId}`);
+            const view = document.getElementById(`ctx-trans-view-${transId}`);
+            if (box) {
+                const isHidden = box.style.display === 'none';
+                box.style.display = isHidden ? 'block' : 'none';
+                if (view) view.style.display = isHidden ? 'none' : 'block';
+                if (isHidden) {
+                    const input = document.getElementById(`ctx-edit-input-${transId}`);
+                    if (input) input.focus();
+                }
+            }
+        }
+
+        // --- Cinematic Physics ---
+        function getClientX(e) { return e.type.includes('touch') ? e.touches[0].clientX : e.clientX; }
+        function getClientY(e) { return e.type.includes('touch') ? e.touches[0].clientY : e.clientY; }
+        
+        function dragStart(e) {
+            if (e.target.tagName === 'TEXTAREA' || e.target.closest('.orig-text')) return;
+            if (!activeCardEl) return;
+            isDragging = true;
+            startX = getClientX(e);
+            startY = getClientY(e);
+            activeCardEl.style.transition = 'none'; // Disable CSS transition for raw physics
+        }
+        
+        function dragMove(e) {
+            if (!isDragging || !activeCardEl) return;
+            
+            currentX = getClientX(e) - startX;
+            currentY = getClientY(e) - startY;
+            
+            // Calculate 3D rotation based on drag
+            const rotateZ = currentX * 0.05;
+            const rotateY = currentX * 0.02;
+            const rotateX = -currentY * 0.02;
+            
+            activeCardEl.style.transform = `translate3d(${currentX}px, ${currentY}px, 0) rotateX(${rotateX}deg) rotateY(${rotateY}deg) rotateZ(${rotateZ}deg)`;
+            
+            // Stamps opacity
+            const approveStamp = activeCardEl.querySelector('.stamp-approve');
+            const rejectStamp = activeCardEl.querySelector('.stamp-reject');
+            if (currentX > 0) {
+                approveStamp.style.opacity = Math.min(currentX / 150, 1);
+                approveStamp.style.transform = `rotate(15deg) scale(${1 + (currentX/500)})`;
+                rejectStamp.style.opacity = 0;
+            } else {
+                rejectStamp.style.opacity = Math.min(Math.abs(currentX) / 150, 1);
+                rejectStamp.style.transform = `rotate(-15deg) scale(${1 + (Math.abs(currentX)/500)})`;
+                approveStamp.style.opacity = 0;
+            }
+        }
+        
+        function dragEnd() {
+            if (!isDragging || !activeCardEl) return;
+            isDragging = false;
+            
+            // Re-enable cinematic CSS transition
+            activeCardEl.style.transition = 'transform 0.6s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.4s ease';
+            
+            const threshold = 120;
+            if (currentX > threshold) triggerAction('right', currentX, currentY);
+            else if (currentX < -threshold) triggerAction('left', currentX, currentY);
+            else {
+                // Snap back physics
+                activeCardEl.style.transform = `translate3d(0, 0, 0) rotateX(0) rotateY(0) rotateZ(0)`;
+                activeCardEl.querySelector('.stamp-approve').style.opacity = 0;
+                activeCardEl.querySelector('.stamp-reject').style.opacity = 0;
+            }
+            currentX = 0; currentY = 0;
+        }
+
+        async function triggerAction(direction, velX = 0, velY = 0) {
+            if (currentIndex >= currentQueue.length || !activeCardEl) return;
+            const item = currentQueue[currentIndex];
+            const editedText = document.getElementById(`trans-${item.queue_id}`).value.trim();
+            
+            // Fly away math
+            const flyX = direction === 'right' ? window.innerWidth : -window.innerWidth;
+            const flyY = velY * 2;
+            const rotZ = direction === 'right' ? 45 : -45;
+            
+            activeCardEl.style.transition = 'transform 0.6s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.4s ease';
+            activeCardEl.style.transform = `translate3d(${flyX}px, ${flyY}px, 0) rotateZ(${rotZ}deg)`;
+            activeCardEl.style.opacity = '0';
+            
+            // Add stamp immediately if clicked by button
+            if (velX === 0) {
+                const stamp = activeCardEl.querySelector(direction === 'right' ? '.stamp-approve' : '.stamp-reject');
+                stamp.style.opacity = 1;
+                stamp.style.transform = `rotate(${direction === 'right' ? 15 : -15}deg) scale(1.5)`;
+            }
+            
+            if (direction === 'left') await sendAction('reject', item.queue_id, null);
+            else await sendAction('approve', item.queue_id, editedText);
+            
+            lastAction = { type: direction, id: item.queue_id };
+            document.getElementById('undoBtn').style.display = 'flex';
+            
+            setTimeout(() => {
+                currentIndex++;
+                activeCardEl = null;
+                renderCards();
+            }, 300);
+        }
+
+        async function sendAction(action, queue_id, translated_text) {
+            try {
+                const res = await fetch(`/api/ai_review/${action}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ queue_id, translated_text })
+                });
+                const data = await res.json();
+                loadStats();
+            } catch (e) {}
+        }
+
+        async function undoLastAction() {
+            if (!lastAction) return;
+            document.getElementById('undoBtn').style.display = 'none';
+            try {
+                await fetch('/api/ai_review/undo', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ queue_id: lastAction.id })
+                });
+                lastAction = null;
+                if (currentIndex > 0) {
+                    currentIndex--;
+                    renderCards();
+                    showToast('Undo Successful');
+                }
+            } catch (e) {}
+        }
+
+        async function handleTextSelection() {
+            const selection = window.getSelection();
+            const text = selection.toString().trim();
+            if (text.length < 2) return;
+            
+            if (!activeCardEl || !activeCardEl.contains(selection.anchorNode)) return;
+            const origNode = activeCardEl.querySelector('.orig-text');
+            if (!origNode.contains(selection.anchorNode)) return;
+            
+            const folder = origNode.dataset.folder || '';
+            
+            try {
+                const res = await fetch(`/api/admin/similar_recommendation?keyword=${encodeURIComponent(text)}&folderName=${encodeURIComponent(folder)}`);
+                const data = await res.json();
+                
+                const popup = document.getElementById('recommendPopup');
+                const content = document.getElementById('recommendContent');
+                content.innerHTML = '';
+                
+                if (data.results && data.results.length > 0) {
+                    data.results.forEach(r => {
+                        const div = document.createElement('div');
+                        div.className = 'rec-item';
+                        div.innerHTML = `
+                            <div class="rec-trans">${r.translated}</div>
+                            <div class="rec-meta">Frequency: ${r.count}</div>
+                        `;
+                        div.onclick = () => {
+                            const textarea = activeCardEl.querySelector('textarea');
+                            textarea.value = r.translated;
+                            popup.style.display = 'none';
+                            window.getSelection().removeAllRanges();
+                            
+                            // Flash effect
+                            textarea.style.background = 'rgba(16, 185, 129, 0.2)';
+                            setTimeout(() => textarea.style.background = '', 400);
+                        };
+                        content.appendChild(div);
+                    });
+                    
+                    const rect = selection.getRangeAt(0).getBoundingClientRect();
+                    popup.style.left = `${Math.max(10, rect.left)}px`;
+                    popup.style.top = `${rect.bottom + window.scrollY + 10}px`;
+                    popup.style.display = 'block';
+                }
+            } catch (e) {}
+        }
+    </script>
+</body>
+</html>

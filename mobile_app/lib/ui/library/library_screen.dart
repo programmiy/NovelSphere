@@ -9,6 +9,7 @@ import 'reading_stats_sheet.dart';
 import 'server_analytics_view.dart';
 import '../glossary/glossary_screen.dart';
 import '../glossary/character_fixer_screen.dart';
+import '../ai_review/ai_review_screen.dart';
 import '../settings/settings_screen.dart';
 import '../../services/app_update_service.dart';
 import '../../services/notification_service.dart';
@@ -185,6 +186,33 @@ class _LibraryScreenState extends State<LibraryScreen> {
                     context,
                     MaterialPageRoute(
                       builder: (_) => CharacterFixerScreen(initialFolderName: book.folderName),
+                    ),
+                  );
+                },
+              ),
+              ListTile(
+                leading: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.amber.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(Icons.swipe_rounded, color: Colors.amber, size: 20),
+                ),
+                title: Text(
+                  'AI 번역 검수 스튜디오',
+                  style: TextStyle(color: theme.textColor, fontWeight: FontWeight.bold),
+                ),
+                subtitle: Text(
+                  '이상 번역 슬라이드 승인/거절 & 2차 재재번역',
+                  style: TextStyle(color: theme.subTextColor, fontSize: 12),
+                ),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const AiReviewScreen(),
                     ),
                   );
                 },
