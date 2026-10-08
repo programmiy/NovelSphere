@@ -2274,7 +2274,7 @@
                 }
             });
 
-            let confirmMsg = `선택한 ${itemsToSave.length}건의 교정 번역문을 DB에 일괄 저장하시겠습니까?\n(자동 안전 백업이 먼저 실행됩니다)`;
+            let confirmMsg = `선택한 ${itemsToSave.length}건의 교정 번역문을 DB에 일괄 저장하시겠습니까?`;
             if (unchangedItems.length > 0) {
                 confirmMsg = `⚠️ [주의] 선택한 항목 중 수정 사항이 전혀 없는 문장이 ${unchangedItems.length}건 포함되어 있습니다!\n(원문과 동일한 상태로 저장됩니다)\n\n정말 계속 일괄 저장하시겠습니까?`;
             }
@@ -2301,7 +2301,8 @@
                     state.backupDone = true;
                     itemsToSave.forEach(it => state.approvedIds.add(it.id));
                     updateStatsUI();
-                    showToast(`✅ ${data.count}건 일괄 승인 완료! 안전 백업: ${data.backup_file}`);
+                    const bkpNotice = data.backup_created ? ` (🛡️ 새 백업: ${data.backup_file})` : '';
+                    showToast(`✅ ${data.count}건 일괄 승인 및 저장 완료!${bkpNotice}`);
                     renderBatchList();
                 } else {
                     showToast("일괄 저장 실패: " + (data.detail || "오류"), false);

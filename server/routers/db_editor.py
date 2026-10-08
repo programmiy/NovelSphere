@@ -17,6 +17,7 @@ from sqlalchemy import text
 from server.settings import settings
 from server.database import get_db, get_sqlite_conn, get_db_path
 from server.models import Translation
+from server.backup_utils import create_unified_backup
 
 logger = logging.getLogger(__name__)
 
@@ -113,26 +114,15 @@ def save_character_rules(data: Dict[str, List[Dict[str, Any]]]) -> bool:
         return False
 
 
-def create_name_fix_backup() -> str:
-    """Creates a timestamped SQLite database backup before applying fixes."""
-    os.makedirs(settings.backup_dir, exist_ok=True)
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    backup_filename = f"translations_backup_before_name_fix_{timestamp}.db"
-    backup_path = os.path.join(settings.backup_dir, backup_filename)
-    src_db_path = get_db_path()
-
-    src_conn = sqlite3.connect(src_db_path, timeout=30)
-    try:
-        dst_conn = sqlite3.connect(backup_path, timeout=30)
-        try:
-            src_conn.backup(dst_conn)
-            logger.info(f"[DB Backup] Successfully created backup at {backup_path}")
-        finally:
-            dst_conn.close()
-    finally:
-        src_conn.close()
-
-    return backup_filename
+def create_name_fix_backup(force: bool = False, cooldown_days: float = 3.0, max_backups: int = 3) -> Dict[str, Any]:
+    """Creates a unified SQLite database backup with 3-day cooldown and rotation to 3 files."""
+    return create_unified_backup(
+        src_db_path=get_db_path(),
+        backup_dir=settings.backup_dir,
+        force=force,
+        cooldown_days=cooldown_days,
+        max_backups=max_backups
+    )
 
 
 def generate_smart_suggestion(
@@ -499,10 +489,10 @@ async def approve_single(req: ApproveSingleRequest, db: Session = Depends(get_db
     Approves and updates a single translation record.
     Optionally creates a backup before the first approval.
     """
-    backup_file = None
+    backup_res = None
     if req.backup:
         try:
-            backup_file = create_name_fix_backup()
+            backup_res = create_name_fix_backup(force=False, cooldown_days=3.0, max_backups=3)
         except Exception as e:
             logger.error(f"Backup creation failed: {e}")
             raise HTTPException(status_code=500, detail=f"백업 생성 실패: {str(e)}")
@@ -519,8 +509,9 @@ async def approve_single(req: ApproveSingleRequest, db: Session = Depends(get_db
         return {
             "status": "success",
             "id": req.id,
-            "backup_created": bool(backup_file),
-            "backup_file": backup_file
+            "backup_created": backup_res["created"] if backup_res else False,
+            "backup_file": backup_res["backup_file"] if backup_res else None,
+            "backup_message": backup_res["message"] if backup_res else None
         }
     except Exception as e:
         db.rollback()
@@ -538,12 +529,12 @@ async def approve_batch(req: ApproveBatchRequest, db: Session = Depends(get_db))
     Batch approves multiple items with automatic backup and atomic transaction.
     """
     if not req.items:
-        return {"status": "success", "count": 0, "backup_file": None}
+        return {"status": "success", "count": 0, "backup_file": None, "backup_created": False}
 
-    backup_file = None
+    backup_res = None
     if req.backup:
         try:
-            backup_file = create_name_fix_backup()
+            backup_res = create_name_fix_backup(force=False, cooldown_days=3.0, max_backups=3)
         except Exception as e:
             logger.error(f"Auto backup creation failed: {e}")
             raise HTTPException(status_code=500, detail=f"안전 백업 생성 실패: {str(e)}")
@@ -564,7 +555,9 @@ async def approve_batch(req: ApproveBatchRequest, db: Session = Depends(get_db))
         return {
             "status": "success",
             "count": updated_count,
-            "backup_file": backup_file
+            "backup_created": backup_res["created"] if backup_res else False,
+            "backup_file": backup_res["backup_file"] if backup_res else None,
+            "backup_message": backup_res["message"] if backup_res else None
         }
     except Exception as e:
         db.rollback()
@@ -578,10 +571,15 @@ async def approve_batch(req: ApproveBatchRequest, db: Session = Depends(get_db))
     summary="수동 온디맨드 백업 생성"
 )
 async def manual_backup():
-    """Triggers an on-demand SQLite database backup."""
+    """Triggers an on-demand SQLite database backup (force=True)."""
     try:
-        backup_file = create_name_fix_backup()
-        return {"status": "success", "backup_file": backup_file}
+        res = create_name_fix_backup(force=True, cooldown_days=3.0, max_backups=3)
+        return {
+            "status": "success",
+            "backup_file": res["backup_file"],
+            "backup_created": res["created"],
+            "backup_message": res["message"]
+        }
     except Exception as e:
         logger.error(f"Manual backup failed: {e}")
         raise HTTPException(status_code=500, detail=f"백업 생성 실패: {str(e)}")

@@ -3039,7 +3039,7 @@ body.dark-mode #bulk-actions {
 }
 
 .unclassified-episode-content.open {
-    display: block;
+    display: block !important;
 }
 
 /* Dark mode adjustments */

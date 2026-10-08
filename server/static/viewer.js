@@ -977,6 +977,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     // --- Paragraph Inline Editing ---
+    let currentGhostSuggestion = '';
+    let ghostDebounceTimer = null;
+    let toneDebounceTimer = null;
+
     function enableEditing(translationItem) {
         // Disable other editing items
         document.querySelectorAll('.editing').forEach(item => {
@@ -1003,18 +1007,34 @@ document.addEventListener('DOMContentLoaded', async () => {
             translationItem.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }, 150);
 
+        // Ghost Suggestion Bar
+        let ghostBar = translationItem.querySelector('.corpus-ghost-bar');
+        if (!ghostBar) {
+            ghostBar = document.createElement('div');
+            ghostBar.className = 'corpus-ghost-bar';
+            ghostBar.style.display = 'none';
+            ghostBar.innerHTML = `<span class="ghost-badge">Tab</span><span class="ghost-text"></span>`;
+            translationItem.appendChild(ghostBar);
+        }
+
         let actionBox = translationItem.querySelector('.inline-edit-actions');
         if (!actionBox) {
             actionBox = document.createElement('div');
             actionBox.className = 'inline-edit-actions';
             const isTouchUI = isMobile || window.innerWidth <= 768;
             actionBox.innerHTML = `
+                <button class="btn btn-sm btn-outline corpus-ai-btn" title="34만 코퍼스 기반 로컬 AI 초안 생성">🤖 AI 초안</button>
                 <button class="btn btn-sm btn-outline dict-lookup-btn" title="사전 및 누적 용례 대조">📖 사전·용례</button>
+                <span class="corpus-tone-indicator" style="display:none;" title="어투 일치율 분석"></span>
                 <button class="btn btn-sm btn-outline cancel-edit-btn">${isTouchUI ? '취소' : '취소 (Esc)'}</button>
                 <button class="btn btn-sm btn-primary save-edit-btn">${isTouchUI ? '저장' : '저장 (Ctrl+Enter)'}</button>
             `;
             translationItem.appendChild(actionBox);
 
+            actionBox.querySelector('.corpus-ai-btn').onclick = (e) => {
+                e.stopPropagation();
+                synthesizeWithCorpusAI(translationItem);
+            };
             actionBox.querySelector('.dict-lookup-btn').onclick = (e) => {
                 e.stopPropagation();
                 openDictDrawerForEditing(translationItem);
@@ -1029,14 +1049,201 @@ document.addEventListener('DOMContentLoaded', async () => {
             };
         }
 
+        // Real-time Ghost Autocomplete & Tone Check on input
+        translatedTextElement.oninput = () => {
+            triggerGhostAutocomplete(translationItem);
+            triggerToneCheck(translationItem);
+        };
+
         translatedTextElement.onkeydown = (e) => {
-            if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+            if (e.key === 'Tab' && currentGhostSuggestion) {
+                e.preventDefault();
+                insertGhostSuggestion(translatedTextElement);
+                currentGhostSuggestion = '';
+                const gBar = translationItem.querySelector('.corpus-ghost-bar');
+                if (gBar) gBar.style.display = 'none';
+                triggerToneCheck(translationItem);
+            } else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
                 e.preventDefault();
                 saveParagraphChanges(translationItem);
             } else if (e.key === 'Escape') {
-                disableEditing(translationItem, true);
+                const gBar = translationItem.querySelector('.corpus-ghost-bar');
+                if (gBar && gBar.style.display !== 'none') {
+                    gBar.style.display = 'none';
+                    currentGhostSuggestion = '';
+                } else {
+                    disableEditing(translationItem, true);
+                }
             }
         };
+
+        // Initial tone check
+        triggerToneCheck(translationItem);
+    }
+
+    async function synthesizeWithCorpusAI(translationItem) {
+        const originalText = translationItem.dataset.original;
+        const translatedTextElement = translationItem.querySelector('.translated-text');
+        const actionBox = translationItem.querySelector('.inline-edit-actions');
+        const aiBtn = actionBox?.querySelector('.corpus-ai-btn');
+
+        if (!originalText || !originalText.trim()) {
+            showToast('원문 텍스트가 없습니다.');
+            return;
+        }
+
+        const prevBtnText = aiBtn ? aiBtn.innerHTML : '🤖 AI 초안';
+        if (aiBtn) {
+            aiBtn.innerHTML = '🤖 합성 중...';
+            aiBtn.disabled = true;
+        }
+
+        try {
+            const resp = await fetch('/api/corpus-ai/synthesize', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    original: originalText,
+                    folderName: bookName || ''
+                })
+            });
+            if (!resp.ok) throw new Error('AI 초안 생성 실패');
+            const data = await resp.json();
+
+            if (data.synthesized_text) {
+                translatedTextElement.textContent = data.synthesized_text;
+                let tierMsg = '';
+                if (data.tier_used === 'tier1_exact') tierMsg = '🎯 완전 일치 (100%)';
+                else if (data.tier_used === 'tier1_template') tierMsg = `📋 템플릿 매칭 (${data.confidence}%)`;
+                else tierMsg = `🧩 구문 합성 (${data.coverage_percent}% 커버)`;
+                showToast(`코퍼스 AI 초안: ${tierMsg}`);
+                triggerToneCheck(translationItem);
+            } else {
+                showToast('대응되는 코퍼스 데이터가 부족합니다.');
+            }
+        } catch (err) {
+            console.error('Error synthesizing translation:', err);
+            showToast('로컬 AI 초안 생성 중 오류가 발생했습니다.');
+        } finally {
+            if (aiBtn) {
+                aiBtn.innerHTML = prevBtnText;
+                aiBtn.disabled = false;
+            }
+        }
+    }
+
+    function triggerGhostAutocomplete(translationItem) {
+        clearTimeout(ghostDebounceTimer);
+        ghostDebounceTimer = setTimeout(async () => {
+            const ghostBar = translationItem.querySelector('.corpus-ghost-bar');
+            if (!ghostBar) return;
+
+            const originalText = translationItem.dataset.original;
+            const currentText = translationItem.querySelector('.translated-text')?.textContent || '';
+            const trimmed = currentText.trim();
+
+            if (!trimmed || trimmed.length < 2) {
+                ghostBar.style.display = 'none';
+                currentGhostSuggestion = '';
+                return;
+            }
+
+            try {
+                const url = `/api/corpus-ai/autocomplete?original=${encodeURIComponent(originalText || '')}&prefix=${encodeURIComponent(trimmed)}&folderName=${encodeURIComponent(bookName || '')}`;
+                const resp = await fetch(url);
+                if (!resp.ok) return;
+                const data = await resp.json();
+
+                if (data.suggestion && data.suggestion.trim()) {
+                    currentGhostSuggestion = data.suggestion;
+                    const ghostSpan = ghostBar.querySelector('.ghost-text');
+                    if (ghostSpan) ghostSpan.textContent = data.suggestion;
+                    ghostBar.style.display = 'inline-flex';
+                } else {
+                    ghostBar.style.display = 'none';
+                    currentGhostSuggestion = '';
+                }
+            } catch (err) {
+                ghostBar.style.display = 'none';
+                currentGhostSuggestion = '';
+            }
+        }, 180);
+    }
+
+    function insertGhostSuggestion(element) {
+        if (!currentGhostSuggestion) return;
+        element.textContent += currentGhostSuggestion;
+        const range = document.createRange();
+        const sel = window.getSelection();
+        range.selectNodeContents(element);
+        range.collapse(false);
+        sel.removeAllRanges();
+        sel.addRange(range);
+    }
+
+    function triggerToneCheck(translationItem) {
+        clearTimeout(toneDebounceTimer);
+        toneDebounceTimer = setTimeout(async () => {
+            const actionBox = translationItem.querySelector('.inline-edit-actions');
+            if (!actionBox) return;
+            const tonePill = actionBox.querySelector('.corpus-tone-indicator');
+            if (!tonePill) return;
+
+            const originalText = translationItem.dataset.original;
+            const currentTranslated = translationItem.querySelector('.translated-text')?.textContent.trim();
+            if (!originalText || !currentTranslated) {
+                tonePill.style.display = 'none';
+                return;
+            }
+
+            try {
+                const resp = await fetch('/api/corpus-ai/style-check', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        original: originalText,
+                        translated: currentTranslated,
+                        folderName: bookName || ''
+                    })
+                });
+                if (!resp.ok) return;
+                const data = await resp.json();
+
+                tonePill.style.display = 'inline-flex';
+                tonePill.className = `corpus-tone-indicator tone-${data.color}`;
+                tonePill.title = `${data.reason} (신뢰도: ${Math.round(data.score * 100)}%)`;
+
+                if (data.color === 'green') {
+                    tonePill.innerHTML = `🟢 ${Math.round(data.score * 100)}% 일치`;
+                    tonePill.onclick = null;
+                } else if (data.color === 'yellow') {
+                    tonePill.innerHTML = `🟡 어투 참고`;
+                    tonePill.onclick = null;
+                } else if (data.color === 'red') {
+                    tonePill.innerHTML = `🔴 추천: ~${data.recommended_ko_ending}`;
+                    tonePill.title = `클릭 시 추천 어미(~${data.recommended_ko_ending})로 변경합니다.\n${data.reason}`;
+                    tonePill.onclick = (e) => {
+                        e.stopPropagation();
+                        applyRecommendedEnding(translationItem, data.recommended_ko_ending);
+                    };
+                }
+            } catch (err) {
+                // ignore
+            }
+        }, 220);
+    }
+
+    function applyRecommendedEnding(translationItem, recEnding) {
+        if (!recEnding) return;
+        const textEl = translationItem.querySelector('.translated-text');
+        if (!textEl) return;
+        let cur = textEl.textContent.trim();
+        const m = cur.match(/^(.*?)([가-힣]{1,3})([」』！？\.\…\s]*)$/);
+        if (m) {
+            textEl.textContent = m[1] + recEnding + m[3];
+            showToast(`추천 어미(~${recEnding})가 적용되었습니다.`);
+            triggerToneCheck(translationItem);
+        }
     }
 
     function disableEditing(translationItem, revert = false) {
@@ -1048,12 +1255,16 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (translatedTextElement) {
             translatedTextElement.contentEditable = 'false';
             translatedTextElement.onkeydown = null;
+            translatedTextElement.oninput = null;
             if (revert && translationItem._originalRawText !== undefined) {
                 translatedTextElement.innerHTML = renderNovelRubyHtml(translationItem._originalRawText);
             }
         }
         const actionBox = translationItem.querySelector('.inline-edit-actions');
         if (actionBox) actionBox.remove();
+        const ghostBar = translationItem.querySelector('.corpus-ghost-bar');
+        if (ghostBar) ghostBar.remove();
+        currentGhostSuggestion = '';
         delete translationItem._originalRawText;
     }
 
@@ -1087,6 +1298,17 @@ document.addEventListener('DOMContentLoaded', async () => {
             disableEditing(translationItem);
             translatedTextElement.innerHTML = renderNovelRubyHtml(newTranslatedText);
             showToast('번역문이 수정되었습니다.');
+
+            // Background incremental sync with corpus_ai.db
+            fetch('/api/corpus-ai/sync', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    original: itemData.original,
+                    translated: newTranslatedText,
+                    folderName: bookName || ''
+                })
+            }).catch(() => {});
 
         } catch (error) {
             console.error('Error saving changes:', error);

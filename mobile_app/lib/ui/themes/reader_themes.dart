@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../services/preferences_service.dart';
 
 class ReaderThemeData {
   final String id;
@@ -185,6 +186,15 @@ class ReaderThemes {
       isDark: true,
     ),
   ];
+
+  /// 현재 설정된 사용자 리더 테마 반환 (미초기화 시 기본 테마 반환)
+  static ReaderThemeData get currentTheme {
+    try {
+      return getTheme(PreferencesService.theme);
+    } catch (_) {
+      return allThemes.first;
+    }
+  }
 
   static ReaderThemeData getTheme(String id) {
     return allThemes.firstWhere(
