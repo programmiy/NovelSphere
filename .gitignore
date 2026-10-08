@@ -36,3 +36,9 @@ cloudflared.exe
 # 임시 벤치마킹/테스트 DB 파일 (명시적 제외)
 server/temp_*.db
 LANOVEL.db
+
+# 임시 분석/스크래치 스크립트 및 검색 덤프
+search_*.txt
+calc_lengths.py
+check_db*.py
+create_tables.py
