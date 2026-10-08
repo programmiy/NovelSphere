@@ -59,6 +59,8 @@ class TocUrlUpdate(BaseModel):
 class CheckUrlsRequest(BaseModel):
     urls: List[str]
 
+from server.services.book_service import get_all_folders, update_book_toc_order
+
 # Endpoints
 @router.put(
     "/api/books/{folder_name}/urls",
@@ -68,49 +70,11 @@ class CheckUrlsRequest(BaseModel):
 )
 def update_book_urls_order(folder_name: str, req: TocUrlUpdate):
     decoded_folder_name = unquote(folder_name)
-    conn = get_sqlite_conn()
-    cursor = conn.cursor()
-    updated_count = 0
-
     try:
-        # Reset existing sort orders for this book
-        if decoded_folder_name == "미분류":
-            cursor.execute("UPDATE translations SET toc_sort_order = NULL WHERE folderName IS NULL")
-        else:
-            cursor.execute("UPDATE translations SET toc_sort_order = NULL WHERE folderName = ?", (decoded_folder_name,))
-
-        # Update with new sort order
-        for i, item in enumerate(req.urls):
-            normalized_url = item.url.rstrip('/')
-            
-            if decoded_folder_name == "미분류":
-                cursor.execute(
-                    "UPDATE translations SET toc_sort_order = ?, title = ? WHERE folderName IS NULL AND (RTRIM(url, '/') = ? OR url = ?)",
-                    (i, item.title, normalized_url, item.url)
-                )
-            else:
-                cursor.execute(
-                    "UPDATE translations SET toc_sort_order = ?, title = ? WHERE folderName = ? AND (RTRIM(url, '/') = ? OR url = ?)",
-                    (i, item.title, decoded_folder_name, normalized_url, item.url)
-                )
-            if cursor.rowcount > 0:
-                updated_count += 1
-
-            # Sync with url_metadata if table exists
-            try:
-                cursor.execute(
-                    "UPDATE url_metadata SET sort_order = ?, title = ? WHERE RTRIM(url, '/') = ? OR url = ?",
-                    (i, item.title, normalized_url, item.url)
-                )
-            except Exception:
-                pass
-
-        conn.commit()
+        urls_dict = [{"url": u.url, "title": u.title} for u in req.urls]
+        updated_count = update_book_toc_order(decoded_folder_name, urls_dict)
     except Exception as e:
-        conn.rollback()
         raise HTTPException(status_code=500, detail=f"데이터베이스 오류: {e}")
-    finally:
-        conn.close()
 
     return {"message": f"'{decoded_folder_name}'의 순서 업데이트 완료. 총 {len(req.urls)}개 중 {updated_count}개가 일치했습니다."}
 
@@ -121,48 +85,7 @@ def update_book_urls_order(folder_name: str, req: TocUrlUpdate):
     description="모든 폴더(책) 목록과 각 폴더의 고정 상태, 태그, 활동 정보를 조회합니다. include_hidden=True 지정 시 숨김 처리된 책도 포함합니다."
 )
 def get_folders(include_hidden: bool = False):
-    conn = get_sqlite_conn(as_dict=True)
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM book_activity")
-    activity_map = {row['folderName']: row for row in cursor.fetchall()}
-    cursor.execute("SELECT bt.book_folderName, t.id, t.name FROM book_tags bt JOIN tags t ON bt.tag_id = t.id")
-    book_tags_map = defaultdict(list)
-    for row in cursor.fetchall():
-        book_tags_map[row['book_folderName']].append({'id': row['id'], 'name': row['name']})
-    cursor.execute("SELECT folderName FROM pinned_books")
-    pinned_set = {row['folderName'] for row in cursor.fetchall()}
-    cursor.execute("SELECT DISTINCT folderName FROM translations WHERE folderName IS NOT NULL")
-    translation_folders = {row['folderName'] for row in cursor.fetchall()}
-
-    cursor.execute("SELECT DISTINCT folderName FROM book_activity WHERE folderName IS NOT NULL")
-    activity_folders = {row['folderName'] for row in cursor.fetchall()}
-
-    all_folders_set = translation_folders.union(activity_folders)
-
-    # 숨김 처리된 폴더 (is_visible == 0) 필터링 (Zero overhead on translations table)
-    hidden_folders = {
-        row['folderName']
-        for row in activity_map.values()
-        if row.get('is_visible') == 0
-    }
-    if not include_hidden:
-        all_folders_set = {f for f in all_folders_set if f not in hidden_folders}
-
-    cursor.execute("SELECT folderName, COUNT(DISTINCT title) as chapter_count FROM translations WHERE folderName IS NOT NULL AND title IS NOT NULL GROUP BY folderName")
-    chapter_counts = {row['folderName']: row['chapter_count'] for row in cursor.fetchall()}
-
-    conn.close()
-    folder_objects = [
-        {
-            'name': f,
-            'pinned': f in pinned_set,
-            'tags': book_tags_map.get(f, []),
-            'activity': activity_map.get(f),
-            'chapter_count': chapter_counts.get(f, 0),
-            'is_visible': 0 if f in hidden_folders else 1
-        } for f in all_folders_set
-    ]
-    sorted_folders = sorted(folder_objects, key=lambda x: (not x['pinned'], x['name']))
+    sorted_folders = get_all_folders(include_hidden=include_hidden)
     
     headers = {
         "Cache-Control": "no-cache, no-store, must-revalidate",
