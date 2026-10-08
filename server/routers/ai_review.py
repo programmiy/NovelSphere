@@ -487,18 +487,29 @@ async def get_review_queue(folderName: Optional[str] = None, db: Session = Depen
                     "title": c.title
                 }
 
-            if base_trans.toc_sort_order is not None:
-                context_before = db.query(Translation).filter(Translation.url == url, Translation.toc_sort_order < base_trans.toc_sort_order).order_by(Translation.toc_sort_order.desc()).limit(2).all()
-                context_before = [format_ctx(c) for c in reversed(context_before)]
+            # Fetch context (before/after) with intelligent fallback
+            # 1. Primary: Same URL (episode-level context)
+            if url:
+                if base_trans.toc_sort_order is not None:
+                    ctx_b = db.query(Translation).filter(Translation.url == url, Translation.toc_sort_order < base_trans.toc_sort_order).order_by(Translation.toc_sort_order.desc()).limit(3).all()
+                    context_before = [format_ctx(c) for c in reversed(ctx_b)]
+                    
+                    ctx_a = db.query(Translation).filter(Translation.url == url, Translation.toc_sort_order > base_trans.toc_sort_order).order_by(Translation.toc_sort_order.asc()).limit(3).all()
+                    context_after = [format_ctx(c) for c in ctx_a]
+                else:
+                    ctx_b = db.query(Translation).filter(Translation.url == url, Translation.id < base_trans.id).order_by(Translation.id.desc()).limit(3).all()
+                    context_before = [format_ctx(c) for c in reversed(ctx_b)]
+                    
+                    ctx_a = db.query(Translation).filter(Translation.url == url, Translation.id > base_trans.id).order_by(Translation.id.asc()).limit(3).all()
+                    context_after = [format_ctx(c) for c in ctx_a]
+
+            # 2. Secondary fallback: Same Folder if URL returned no context
+            if not context_before and not context_after and folder:
+                ctx_b = db.query(Translation).filter(Translation.folderName == folder, Translation.id < base_trans.id).order_by(Translation.id.desc()).limit(3).all()
+                context_before = [format_ctx(c) for c in reversed(ctx_b)]
                 
-                context_after = db.query(Translation).filter(Translation.url == url, Translation.toc_sort_order > base_trans.toc_sort_order).order_by(Translation.toc_sort_order.asc()).limit(2).all()
-                context_after = [format_ctx(c) for c in context_after]
-            else:
-                context_before = db.query(Translation).filter(Translation.url == url, Translation.id < base_trans.id).order_by(Translation.id.desc()).limit(2).all()
-                context_before = [format_ctx(c) for c in reversed(context_before)]
-                
-                context_after = db.query(Translation).filter(Translation.url == url, Translation.id > base_trans.id).order_by(Translation.id.asc()).limit(2).all()
-                context_after = [format_ctx(c) for c in context_after]
+                ctx_a = db.query(Translation).filter(Translation.folderName == folder, Translation.id > base_trans.id).order_by(Translation.id.asc()).limit(3).all()
+                context_after = [format_ctx(c) for c in ctx_a]
                 
         res.append({
             "queue_id": queue_item.id,

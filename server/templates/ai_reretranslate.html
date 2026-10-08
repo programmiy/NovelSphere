@@ -6,16 +6,52 @@
     <title>AI Multi-Model Retranslation Hub</title>
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+    <script>
+        (function() {
+            try {
+                if (localStorage.getItem('lanovel_dark_mode') === 'true') {
+                    document.documentElement.classList.add('dark-mode');
+                }
+            } catch(e) {}
+        })();
+    </script>
     <style>
         :root {
+            --bg-base: #f8fafc;
+            --surface: #ffffff;
+            --surface-card: #f8fafc;
+            --glass-border: #e2e8f0;
+            --glass-border-focus: rgba(79, 70, 229, 0.5);
+            --text-primary: #0f172a;
+            --text-secondary: #475569;
+            --text-muted: #64748b;
+            --btn-bg: #ffffff;
+            --btn-border: #cbd5e1;
+            --btn-color: #0f172a;
+            --btn-hover: #f1f5f9;
+            --card-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.08);
+            --accent-brand: #4f46e5;
+            --accent-gold: #d97706;
+            --accent-purple: #7c3aed;
+            --accent-emerald: #059669;
+            --accent-rose: #e11d48;
+            --accent-cyan: #0891b2;
+        }
+
+        html.dark-mode, body.dark-mode {
             --bg-base: #090d16;
-            --surface: rgba(18, 26, 43, 0.75);
-            --surface-card: rgba(23, 33, 56, 0.6);
-            --glass-border: rgba(255, 255, 255, 0.08);
+            --surface: rgba(18, 26, 43, 0.85);
+            --surface-card: rgba(23, 33, 56, 0.7);
+            --glass-border: rgba(255, 255, 255, 0.12);
             --glass-border-focus: rgba(99, 102, 241, 0.5);
             --text-primary: #f8fafc;
-            --text-secondary: #94a3b8;
-            --text-muted: #64748b;
+            --text-secondary: #cbd5e1;
+            --text-muted: #94a3b8;
+            --btn-bg: rgba(255, 255, 255, 0.08);
+            --btn-border: rgba(255, 255, 255, 0.15);
+            --btn-color: #ffffff;
+            --btn-hover: rgba(255, 255, 255, 0.14);
+            --card-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
             --accent-brand: #3b82f6;
             --accent-gold: #f59e0b;
             --accent-purple: #8b5cf6;
@@ -29,37 +65,44 @@
         body {
             margin: 0;
             padding: 0;
-            background: radial-gradient(circle at 50% 0%, #151d33 0%, var(--bg-base) 70%);
+            background: var(--bg-base);
             color: var(--text-primary);
             font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
             min-height: 100vh;
             padding-top: 80px;
             padding-bottom: 60px;
+            transition: background 0.3s ease, color 0.3s ease;
+        }
+
+        html.dark-mode body {
+            background: radial-gradient(circle at 50% 0%, #151d33 0%, var(--bg-base) 70%);
         }
 
         /* Top Navbar */
         header {
             position: fixed; top: 0; left: 0; right: 0; height: 70px;
-            background: rgba(9, 13, 22, 0.85); backdrop-filter: blur(20px);
+            background: var(--surface); backdrop-filter: blur(20px);
             border-bottom: 1px solid var(--glass-border);
             display: flex; justify-content: space-between; align-items: center;
             padding: 0 32px; z-index: 1000;
+            transition: background 0.3s ease, border-color 0.3s ease;
         }
         .header-title {
             display: flex; align-items: center; gap: 10px;
             font-size: 18px; font-weight: 800; letter-spacing: -0.5px;
+            color: var(--text-primary);
         }
         nav { display: flex; gap: 8px; align-items: center; }
 
         /* Buttons */
         .btn {
-            background: rgba(255, 255, 255, 0.05); color: white;
-            border: 1px solid var(--glass-border); padding: 8px 16px;
+            background: var(--btn-bg); color: var(--btn-color);
+            border: 1px solid var(--btn-border); padding: 8px 16px;
             border-radius: 10px; cursor: pointer; display: inline-flex;
             align-items: center; gap: 8px; font-weight: 600; font-size: 13px;
             transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); text-decoration: none;
         }
-        .btn:hover { background: rgba(255, 255, 255, 0.1); border-color: rgba(255,255,255,0.2); }
+        .btn:hover { background: var(--btn-hover); border-color: var(--accent-brand); }
         .btn-active {
             background: rgba(245, 158, 11, 0.2) !important;
             border-color: var(--accent-gold) !important;
@@ -207,6 +250,10 @@
             <a href="/ai_reretranslate" class="btn btn-active">
                 <span class="material-icons-round" style="font-size: 16px; color: var(--accent-gold);">auto_fix_high</span> 2차 재재번역 센터
             </a>
+            <button id="themeToggleBtn" onclick="toggleTheme()" class="btn" title="테마 전환 (라이트/다크)">
+                <span class="material-icons-round" id="themeIcon" style="font-size: 18px;">dark_mode</span>
+                <span id="themeText">다크 모드</span>
+            </button>
             <a href="/admin" class="btn">
                 <span class="material-icons-round" style="font-size: 16px;">dashboard</span> 관리자 홈
             </a>
@@ -279,9 +326,39 @@
             'gemini-3.8-flash': { color: '#fbbf24', desc: '초장문/고난도 묘사 (상위 20%)', icon: 'diamond' }
         };
 
+        function initTheme() {
+            try {
+                const isDark = localStorage.getItem('lanovel_dark_mode') === 'true';
+                applyTheme(isDark);
+            } catch(e) {}
+        }
+
+        function applyTheme(isDark) {
+            if (isDark) {
+                document.documentElement.classList.add('dark-mode');
+                document.body.classList.add('dark-mode');
+            } else {
+                document.documentElement.classList.remove('dark-mode');
+                document.body.classList.remove('dark-mode');
+            }
+            const themeIcon = document.getElementById('themeIcon');
+            const themeText = document.getElementById('themeText');
+            if (themeIcon) themeIcon.textContent = isDark ? 'light_mode' : 'dark_mode';
+            if (themeText) themeText.textContent = isDark ? '라이트 모드' : '다크 모드';
+        }
+
+        function toggleTheme() {
+            const isCurrentlyDark = document.body.classList.contains('dark-mode') || document.documentElement.classList.contains('dark-mode');
+            const newDark = !isCurrentlyDark;
+            applyTheme(newDark);
+            try {
+                localStorage.setItem('lanovel_dark_mode', newDark ? 'true' : 'false');
+            } catch(e) {}
+        }
+
         document.addEventListener('DOMContentLoaded', () => {
+            initTheme();
             loadData();
-            
         });
 
         function showToast(msg, isSuccess = true) {

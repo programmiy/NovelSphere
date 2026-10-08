@@ -6,19 +6,139 @@
     <title>AI Review Studio</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css">
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet">
+    <script>
+        (function() {
+            try {
+                if (localStorage.getItem('lanovel_dark_mode') === 'true') {
+                    document.documentElement.classList.add('dark-mode');
+                }
+            } catch(e) {}
+        })();
+    </script>
     <style>
-        /* Ultra Premium Design System */
+        /* Light Theme (Default: Bright & High Visibility) */
         :root {
+            --bg-base: #f8fafc;
+            --bg-grad-1: #f8fafc;
+            --bg-grad-2: #f1f5f9;
+            --bg-grad-3: #e2e8f0;
+            
+            --header-bg: rgba(255, 255, 255, 0.94);
+            --header-border: #e2e8f0;
+            
+            --glass-bg: rgba(255, 255, 255, 0.95);
+            --glass-border: #cbd5e1;
+            --glass-highlight: rgba(79, 70, 229, 0.2);
+            
+            --card-bg: #ffffff;
+            --card-border: #cbd5e1;
+            --card-header-bg: #f8fafc;
+            --card-header-border: #e2e8f0;
+            --card-shadow: 0 20px 45px -10px rgba(15, 23, 42, 0.12), 0 0 0 1px rgba(15, 23, 42, 0.05);
+            
+            --side-bg: #ffffff;
+            --side-border: #e2e8f0;
+            --side-item-bg: #f8fafc;
+            --side-item-border: #e2e8f0;
+            --side-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.06);
+            
+            --orig-box-bg: #f1f5f9;
+            --orig-box-border: #cbd5e1;
+            --orig-text-color: #0f172a;
+            
+            --editor-box-bg: #ffffff;
+            --editor-box-border: #cbd5e1;
+            --editor-focus-border: #4f46e5;
+            --editor-focus-bg: #ffffff;
+            --editor-text-color: #0f172a;
+            
+            --text-primary: #0f172a;
+            --text-secondary: #475569;
+            --text-muted: #64748b;
+            
+            --circle-btn-bg: #ffffff;
+            --circle-btn-border: #cbd5e1;
+            --circle-btn-color: #1e293b;
+            --circle-btn-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.15);
+            
+            --btn-glass-bg: #ffffff;
+            --btn-glass-color: #0f172a;
+            --btn-glass-border: #cbd5e1;
+            --btn-glass-hover-bg: #f1f5f9;
+            
+            --stats-panel-bg: #ffffff;
+            --stats-panel-border: #e2e8f0;
+            --stats-panel-shadow: 0 10px 30px -10px rgba(15, 23, 42, 0.08);
+            
+            --stat-value-grad: linear-gradient(135deg, #4338ca, #7c3aed);
+            
+            --accent-approve: #059669;
+            --accent-approve-glow: rgba(5, 150, 105, 0.35);
+            
+            --accent-reject: #dc2626;
+            --accent-reject-glow: rgba(220, 38, 38, 0.35);
+            
+            --accent-brand: #4f46e5;
+            --accent-brand-glow: rgba(79, 70, 229, 0.35);
+            
+            --accent-warning: #d97706;
+        }
+
+        /* High-Contrast Dark Mode */
+        html.dark-mode, body.dark-mode {
+            --bg-base: #0b0f19;
             --bg-grad-1: #0f172a;
             --bg-grad-2: #1e1b4b;
-            --bg-grad-3: #312e81;
+            --bg-grad-3: #111827;
             
-            --glass-bg: rgba(255, 255, 255, 0.03);
-            --glass-border: rgba(255, 255, 255, 0.08);
-            --glass-highlight: rgba(255, 255, 255, 0.15);
+            --header-bg: rgba(15, 23, 42, 0.9);
+            --header-border: rgba(255, 255, 255, 0.12);
+            
+            --glass-bg: rgba(30, 41, 59, 0.7);
+            --glass-border: rgba(255, 255, 255, 0.14);
+            --glass-highlight: rgba(255, 255, 255, 0.2);
+            
+            --card-bg: #1e293b;
+            --card-border: rgba(255, 255, 255, 0.16);
+            --card-header-bg: rgba(15, 23, 42, 0.65);
+            --card-header-border: rgba(255, 255, 255, 0.08);
+            --card-shadow: 0 30px 60px -12px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+            
+            --side-bg: rgba(30, 41, 59, 0.88);
+            --side-border: rgba(255, 255, 255, 0.12);
+            --side-item-bg: rgba(15, 23, 42, 0.65);
+            --side-item-border: rgba(255, 255, 255, 0.08);
+            --side-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.4);
+            
+            --orig-box-bg: rgba(15, 23, 42, 0.8);
+            --orig-box-border: rgba(255, 255, 255, 0.15);
+            --orig-text-color: #f1f5f9;
+            
+            --editor-box-bg: rgba(15, 23, 42, 0.85);
+            --editor-box-border: rgba(255, 255, 255, 0.18);
+            --editor-focus-border: #818cf8;
+            --editor-focus-bg: rgba(15, 23, 42, 0.98);
+            --editor-text-color: #ffffff;
             
             --text-primary: #f8fafc;
-            --text-secondary: #94a3b8;
+            --text-secondary: #cbd5e1;
+            --text-muted: #94a3b8;
+            
+            --circle-btn-bg: #1e293b;
+            --circle-btn-border: rgba(255, 255, 255, 0.16);
+            --circle-btn-color: #ffffff;
+            --circle-btn-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.6);
+            
+            --btn-glass-bg: rgba(255, 255, 255, 0.08);
+            --btn-glass-color: #f8fafc;
+            --btn-glass-border: rgba(255, 255, 255, 0.15);
+            --btn-glass-hover-bg: rgba(255, 255, 255, 0.16);
+            
+            --stats-panel-bg: rgba(30, 41, 59, 0.8);
+            --stats-panel-border: rgba(255, 255, 255, 0.12);
+            --stats-panel-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            
+            --stat-value-grad: linear-gradient(135deg, #818cf8, #c084fc);
             
             --accent-approve: #10b981;
             --accent-approve-glow: rgba(16, 185, 129, 0.4);
@@ -28,13 +148,15 @@
             
             --accent-brand: #6366f1;
             --accent-brand-glow: rgba(99, 102, 241, 0.5);
+            
+            --accent-warning: #f59e0b;
         }
 
         body { 
             font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif; 
             background: linear-gradient(135deg, var(--bg-grad-1), var(--bg-grad-2), var(--bg-grad-3));
             background-size: 400% 400%;
-            animation: gradientBG 15s ease infinite;
+            animation: gradientBG 20s ease infinite;
             color: var(--text-primary); 
             margin: 0; 
             padding: 0; 
@@ -43,6 +165,7 @@
             height: 100vh; 
             overflow: hidden; 
             -webkit-font-smoothing: antialiased;
+            transition: background 0.3s ease, color 0.3s ease;
         }
 
         @keyframes gradientBG {
@@ -51,66 +174,98 @@
             100% { background-position: 0% 50%; }
         }
 
-        /* Glassmorphism Header */
+        /* Top Header */
         header { 
-            background: rgba(15, 23, 42, 0.4);
+            background: var(--header-bg);
             backdrop-filter: blur(20px);
             -webkit-backdrop-filter: blur(20px);
-            border-bottom: 1px solid var(--glass-border);
-            padding: 16px 32px; 
+            border-bottom: 1px solid var(--header-border);
+            padding: 14px 32px; 
             display: flex; 
             justify-content: space-between; 
             align-items: center; 
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
             z-index: 100;
+            transition: background 0.3s ease, border-color 0.3s ease;
         }
         
         .header-title { 
-            font-size: 20px; 
+            font-size: 19px; 
             font-weight: 800; 
             display: flex; 
             align-items: center; 
-            gap: 12px; 
+            gap: 10px; 
             letter-spacing: -0.5px;
-            background: linear-gradient(to right, #fff, #a5b4fc);
+            color: var(--text-primary);
+        }
+        
+        .header-title-text {
+            background: var(--stat-value-grad);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
         }
         
-        /* Premium Buttons */
+        /* Buttons */
         .btn { 
-            padding: 10px 20px; 
+            padding: 8px 16px; 
             border-radius: 12px; 
-            border: 1px solid var(--glass-border); 
-            font-size: 14px; 
+            border: 1px solid var(--btn-glass-border); 
+            font-size: 13px; 
             font-weight: 600; 
             cursor: pointer; 
-            transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1); 
+            transition: all 0.2s cubic-bezier(0.25, 0.8, 0.25, 1); 
             display: inline-flex; 
             align-items: center; 
             gap: 8px; 
-            color: var(--text-primary);
-            backdrop-filter: blur(10px);
+            color: var(--btn-glass-color);
+            background: var(--btn-glass-bg);
+            text-decoration: none;
+            user-select: none;
         }
         
-        .btn-glass { 
-            background: rgba(255, 255, 255, 0.05); 
-        }
         .btn-glass:hover { 
-            background: rgba(255, 255, 255, 0.1); 
-            transform: translateY(-2px);
-            box-shadow: 0 10px 20px -10px rgba(0,0,0,0.5);
+            background: var(--btn-glass-hover-bg); 
+            transform: translateY(-1px);
             border-color: var(--glass-highlight);
+        }
+        
+        .btn-nav-active {
+            background: rgba(79, 70, 229, 0.12) !important;
+            border-color: var(--accent-brand) !important;
+            color: var(--accent-brand) !important;
+            font-weight: 700;
+        }
+
+        html.dark-mode .btn-nav-active {
+            background: rgba(99, 102, 241, 0.25) !important;
+            color: #a5b4fc !important;
         }
         
         .btn-glow {
             background: var(--accent-brand);
             border: none;
-            box-shadow: 0 0 20px var(--accent-brand-glow);
+            color: #ffffff !important;
+            box-shadow: 0 4px 15px var(--accent-brand-glow);
         }
         .btn-glow:hover {
+            background: #4338ca;
+            box-shadow: 0 6px 22px var(--accent-brand-glow);
+            transform: translateY(-1px);
+        }
+        html.dark-mode .btn-glow:hover {
             background: #818cf8;
-            box-shadow: 0 0 30px var(--accent-brand-glow);
-            transform: translateY(-2px) scale(1.02);
+        }
+
+        #ambientCanvas {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100vw; height: 100vh;
+            pointer-events: none;
+            z-index: 0;
+            opacity: 0.95;
         }
 
         .main-container { 
@@ -118,255 +273,705 @@
             display: flex; 
             flex-direction: column; 
             align-items: center; 
-            padding: 32px; 
+            padding: 92px 32px 32px 32px; 
             overflow-y: auto; 
             position: relative;
+            z-index: 2;
         }
         
-        /* Floating Stats Panel */
+        /* Floating Stats Panel - Hyper-Visual Neon Aura */
         .stats-panel { 
             width: 100%; 
-            max-width: 800px; 
-            background: var(--glass-bg); 
-            backdrop-filter: blur(16px);
-            -webkit-backdrop-filter: blur(16px);
+            max-width: 880px; 
+            background: var(--stats-panel-bg); 
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
             border-radius: 24px; 
-            padding: 24px 32px; 
-            margin-bottom: 40px; 
-            border: 1px solid var(--glass-border); 
-            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5); 
+            padding: 22px 28px; 
+            margin-bottom: 28px; 
+            border: 1px solid var(--stats-panel-border); 
+            box-shadow: var(--stats-panel-shadow), 0 0 35px -10px var(--accent-brand-glow); 
             display: flex; 
-            justify-content: space-between;
-            align-items: center;
+            flex-direction: column;
+            gap: 18px;
+            position: relative;
+            overflow: hidden;
+            transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+        
+        .stats-panel::before {
+            content: '';
+            position: absolute;
+            inset: -2px;
+            border-radius: 26px;
+            background: conic-gradient(from var(--border-angle, 0deg), #6366f1, #a855f7, #ec4899, #06b6d4, #10b981, #6366f1);
+            z-index: -2;
+            animation: rotateBorder 8s linear infinite;
+            opacity: 0.65;
+            filter: blur(5px);
+        }
+
+        .stats-panel::after {
+            content: '';
+            position: absolute;
+            inset: 1px;
+            border-radius: 23px;
+            background: var(--stats-panel-bg);
+            z-index: -1;
+        }
+
+        .stats-panel:hover {
+            box-shadow: 0 20px 45px -10px rgba(0,0,0,0.12), 0 0 50px var(--accent-brand-glow);
+            transform: translateY(-2px);
         }
         
         .stats-grid { 
             display: flex; 
-            gap: 40px; 
+            justify-content: space-between;
+            align-items: stretch;
+            width: 100%;
+            gap: 16px;
         }
         
         .stat-item { 
+            flex: 1;
             display: flex; 
             flex-direction: column; 
-            gap: 4px;
+            gap: 6px;
+            background: var(--btn-glass-bg);
+            border: 1px solid var(--stats-panel-border);
+            border-radius: 16px;
+            padding: 14px 18px;
+            backdrop-filter: blur(10px);
+            position: relative;
+            overflow: hidden;
+            transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.03);
+        }
+
+        .stat-item:hover {
+            transform: translateY(-5px) scale(1.03);
+            border-color: var(--accent-brand);
+            box-shadow: 0 12px 28px -5px var(--accent-brand-glow);
+        }
+
+        .stat-item::after {
+            content: '';
+            position: absolute;
+            top: 0; left: -100%; width: 60%; height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.25), transparent);
+            transform: skewX(-25deg);
+        }
+
+        .stat-item:hover::after {
+            animation: itemSheen 0.8s ease-out;
         }
         
         .stat-value { 
             font-size: 28px; 
             font-weight: 800; 
-            background: linear-gradient(to right, #818cf8, #c084fc);
+            background: var(--stat-value-grad);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             font-variant-numeric: tabular-nums;
+            text-shadow: 0 0 20px var(--accent-brand-glow);
         }
         .stat-label { 
-            font-size: 12px; 
+            font-size: 11px; 
             color: var(--text-secondary); 
-            font-weight: 600; 
+            font-weight: 700; 
             text-transform: uppercase; 
-            letter-spacing: 1px;
+            letter-spacing: 0.8px;
+        }
+
+        #triggerInitialBtn {
+            position: relative;
+            background: linear-gradient(135deg, #4f46e5, #7c3aed, #ec4899, #4f46e5);
+            background-size: 300% 300%;
+            animation: pulseAurora 6s ease infinite;
+            box-shadow: 0 4px 20px rgba(99, 102, 241, 0.5), 0 0 35px rgba(236, 72, 153, 0.35);
+            border: none;
+            color: #fff !important;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            overflow: hidden;
+            border-radius: 14px;
+            padding: 12px 24px;
+        }
+        #triggerInitialBtn::after {
+            content: '';
+            position: absolute;
+            top: 0; left: -100%; width: 70%; height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent);
+            transform: skewX(-20deg);
+            animation: sheenPass 3.5s infinite;
+        }
+        #triggerInitialBtn:hover {
+            transform: translateY(-2px) scale(1.02);
+            box-shadow: 0 8px 30px rgba(99, 102, 241, 0.7), 0 0 55px rgba(236, 72, 153, 0.5);
         }
 
         /* 3D Swipe Stage */
+        /* 3D Swipe Stage */
         .stage { 
             width: 100%; 
-            max-width: 900px; 
-            height: 600px; 
+            max-width: 1440px; 
+            height: 650px; 
             display: flex; 
-            gap: 30px;
+            gap: 24px;
             align-items: stretch;
-            perspective: 2000px;
+            justify-content: center;
+            perspective: 1600px;
+            transform-style: preserve-3d;
+            position: relative;
         }
 
-        /* Context Sidebar (Left & Right) */
+        /* Context Sidebar (Left & Right) - Dynamic 3D Folding Glass Wings */
         .side-context {
-            flex: 1;
-            background: linear-gradient(180deg, rgba(255,255,255,0.02) 0%, rgba(255,255,255,0.05) 100%);
-            border: 1px solid var(--glass-border);
-            border-radius: 20px;
-            padding: 24px;
+            flex: 1 1 360px;
+            min-width: 290px;
+            max-width: 440px;
+            background: var(--side-bg);
+            border: 1px solid var(--side-border);
+            border-radius: 24px;
+            padding: 20px 22px;
             display: flex;
             flex-direction: column;
-            gap: 16px;
-            opacity: 0.7;
-            transition: opacity 0.3s;
-            backdrop-filter: blur(10px);
+            gap: 14px;
+            box-shadow: var(--side-shadow);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            overflow-y: auto;
+            max-height: 100%;
+            position: relative;
+            scrollbar-width: thin;
+            will-change: transform, opacity, filter, box-shadow;
+            transition: transform 0.48s cubic-bezier(0.25, 1, 0.5, 1),
+                        opacity 0.35s ease,
+                        filter 0.35s ease,
+                        box-shadow 0.35s ease,
+                        border-color 0.35s ease;
         }
-        .side-context:hover { opacity: 1; }
+
+        .side-context::-webkit-scrollbar {
+            width: 6px;
+        }
+        .side-context::-webkit-scrollbar-thumb {
+            background: var(--accent-brand);
+            border-radius: 6px;
+        }
+
+        .side-context::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0; height: 3px;
+            background: linear-gradient(90deg, #6366f1, #a855f7, #ec4899, #06b6d4);
+            border-radius: 24px 24px 0 0;
+            opacity: 0.8;
+            transition: opacity 0.3s;
+        }
+
+        /* 3D Folded Wings (Default Rest Mode) */
+        /* Left Panel: Left edge tilts deep into Z space, right edge (near main card) is anchored */
+        #ctxBefore {
+            transform-origin: right center;
+            transform: perspective(1200px) rotateY(26deg) translateZ(-45px) scale(0.96);
+            opacity: 0.68;
+            filter: blur(1.5px);
+            border-right: 2.5px solid var(--accent-brand);
+            box-shadow: var(--side-shadow), 8px 0 26px -6px var(--accent-brand-glow);
+        }
+
+        /* Right Panel: Right edge tilts deep into Z space, left edge (near main card) is anchored */
+        #ctxAfter {
+            transform-origin: left center;
+            transform: perspective(1200px) rotateY(-26deg) translateZ(-45px) scale(0.96);
+            opacity: 0.68;
+            filter: blur(1.5px);
+            border-left: 2.5px solid var(--accent-brand);
+            box-shadow: var(--side-shadow), -8px 0 26px -6px var(--accent-brand-glow);
+        }
+
+        /* Active / Hover / Pinned Unfolded Mode (0 degrees, pop-up forward) */
+        #ctxBefore:hover,
+        #ctxBefore.is-pinned,
+        #ctxBefore:focus-within {
+            transform-origin: right center;
+            transform: perspective(1200px) rotateY(0deg) translateZ(35px) scale(1.02);
+            opacity: 1;
+            filter: blur(0px);
+            z-index: 45;
+            border-color: var(--accent-brand);
+            box-shadow: 0 25px 60px -10px rgba(0, 0, 0, 0.28), 0 0 35px var(--accent-brand-glow);
+        }
+
+        #ctxAfter:hover,
+        #ctxAfter.is-pinned,
+        #ctxAfter:focus-within {
+            transform-origin: left center;
+            transform: perspective(1200px) rotateY(0deg) translateZ(35px) scale(1.02);
+            opacity: 1;
+            filter: blur(0px);
+            z-index: 45;
+            border-color: var(--accent-brand);
+            box-shadow: 0 25px 60px -10px rgba(0, 0, 0, 0.28), 0 0 35px var(--accent-brand-glow);
+        }
+
+        #ctxBefore:hover::before,
+        #ctxAfter:hover::before,
+        #ctxBefore.is-pinned::before,
+        #ctxAfter.is-pinned::before {
+            opacity: 1;
+            box-shadow: 0 0 15px var(--accent-brand-glow);
+        }
+
+        .context-header-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 4px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid var(--side-border);
+            user-select: none;
+        }
         
         .context-title {
-            font-size: 11px;
+            font-size: 12px;
             text-transform: uppercase;
-            letter-spacing: 2px;
-            color: var(--text-secondary);
-            font-weight: 700;
-            margin-bottom: 8px;
+            letter-spacing: 1.5px;
+            color: var(--accent-brand);
+            font-weight: 800;
             display: flex;
             align-items: center;
-            gap: 8px;
+            gap: 6px;
+            margin: 0;
         }
-        .context-title::after { content: ''; flex: 1; height: 1px; background: var(--glass-border); }
 
-        .ctx-item { display: flex; flex-direction: column; gap: 6px; }
-        .ctx-orig { font-size: 13px; color: var(--text-secondary); }
-        .ctx-trans { font-size: 14px; color: var(--text-primary); line-height: 1.6;}
+        .ctx-shortcut-badge {
+            font-size: 10px;
+            font-weight: 800;
+            background: rgba(99, 102, 241, 0.15);
+            color: var(--accent-brand);
+            padding: 2px 6px;
+            border-radius: 6px;
+            border: 1px solid rgba(99, 102, 241, 0.3);
+            line-height: 1;
+        }
+
+        .ctx-expand-hint {
+            font-size: 10px;
+            font-weight: 700;
+            color: var(--text-muted);
+            letter-spacing: 0.3px;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            transition: opacity 0.3s;
+        }
+
+        .side-context:hover .ctx-expand-hint,
+        .side-context.is-pinned .ctx-expand-hint {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .ctx-pin-btn {
+            background: var(--btn-glass-bg);
+            border: 1px solid var(--btn-glass-border);
+            color: var(--text-muted);
+            border-radius: 8px;
+            padding: 4px 6px;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+
+        .ctx-pin-btn:hover {
+            color: var(--accent-brand);
+            border-color: var(--accent-brand);
+            transform: scale(1.1);
+        }
+
+        .side-context.is-pinned .ctx-pin-btn {
+            background: var(--accent-brand);
+            color: #ffffff;
+            border-color: var(--accent-brand);
+            box-shadow: 0 0 12px var(--accent-brand-glow);
+            transform: rotate(-35deg);
+        }
+
+        .ctx-container-inner {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            flex: 1;
+        }
+
+        .ctx-item { 
+            position: relative;
+            display: flex; 
+            flex-direction: column; 
+            gap: 8px; 
+            background: var(--side-item-bg);
+            border: 1px solid var(--side-item-border);
+            border-left: 3px solid var(--accent-brand);
+            border-radius: 14px;
+            padding: 14px;
+            transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+        .ctx-item:hover {
+            transform: translateX(4px) scale(1.02);
+            border-color: var(--accent-brand);
+            box-shadow: 0 8px 25px -5px var(--accent-brand-glow);
+        }
+        .ctx-orig { 
+            font-size: 13px; 
+            color: var(--text-secondary); 
+            line-height: 1.5;
+            cursor: pointer;
+            word-break: break-word;
+        }
+        .ctx-orig:hover { 
+            color: var(--text-primary); 
+        }
+        .ctx-trans { 
+            font-size: 14px; 
+            color: var(--text-primary); 
+            font-weight: 600; 
+            line-height: 1.6;
+            word-break: break-word;
+        }
+
+        .ctx-empty-box {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 36px 18px;
+            border-radius: 16px;
+            background: var(--side-item-bg);
+            border: 1.5px dashed var(--side-border);
+            color: var(--text-secondary);
+            font-size: 13px;
+            font-weight: 600;
+            text-align: center;
+            gap: 10px;
+            margin-top: 8px;
+        }
+        .ctx-empty-box .material-icons-round {
+            font-size: 32px;
+            color: var(--accent-brand);
+            opacity: 0.8;
+        }
 
         /* Central Card Stack */
         .card-stack { 
             position: relative; 
-            width: 450px; 
+            width: 480px; 
+            flex-shrink: 0;
             height: 100%; 
             transform-style: preserve-3d;
+        }
+
+        @media (max-width: 1160px) {
+            .stage {
+                height: auto;
+                min-height: 640px;
+                flex-direction: column;
+                align-items: center;
+                gap: 32px;
+                perspective: none;
+            }
+            .card-stack {
+                width: 100%;
+                max-width: 500px;
+                height: 600px;
+                order: 1;
+            }
+            #ctxBefore, #ctxAfter {
+                width: 100%;
+                max-width: 500px;
+                max-height: 300px;
+                transform: none !important;
+                filter: none !important;
+                opacity: 1 !important;
+            }
+            #ctxBefore {
+                order: 2;
+            }
+            #ctxAfter {
+                order: 3;
+            }
         }
         
         .swipe-card { 
             position: absolute; 
             width: 100%; 
             height: 100%; 
-            background: rgba(30, 41, 59, 0.7); 
-            backdrop-filter: blur(20px);
-            -webkit-backdrop-filter: blur(20px);
-            border-radius: 30px; 
-            box-shadow: 0 30px 60px -12px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255,255,255,0.1); 
-            border: 1px solid var(--glass-border); 
+            background: var(--card-bg); 
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+            border-radius: 28px; 
+            box-shadow: var(--card-shadow); 
+            border: 1.5px solid var(--card-border); 
             display: flex; 
             flex-direction: column; 
             overflow: hidden;
-            transition: transform 0.6s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.4s ease; 
+            transition: transform 0.6s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.4s ease, box-shadow 0.3s ease; 
             cursor: grab;
             transform-origin: 50% 100%;
             will-change: transform;
         }
         
+        .swipe-card.is-active {
+            box-shadow: 0 25px 60px -10px var(--accent-brand-glow),
+                        0 0 0 1.5px var(--accent-brand),
+                        0 0 35px var(--accent-brand-glow);
+            animation: activeCardBreathing 4s ease-in-out infinite alternate;
+        }
+
+        .card-spotlight {
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            background: radial-gradient(circle 350px at var(--mouse-x, 50%) var(--mouse-y, 50%), rgba(255,255,255,0.18), transparent 70%);
+            z-index: 5;
+            transition: opacity 0.3s;
+            opacity: 0;
+        }
+        .swipe-card:hover .card-spotlight {
+            opacity: 1;
+        }
+        html.dark-mode .card-spotlight {
+            background: radial-gradient(circle 350px at var(--mouse-x, 50%) var(--mouse-y, 50%), rgba(99,102,241,0.22), transparent 70%);
+        }
+        
         .swipe-card:active { cursor: grabbing; transition: none; }
         
         .card-header { 
-            padding: 20px 24px; 
+            padding: 16px 20px; 
             display: flex; 
             justify-content: space-between; 
             align-items: center; 
-            border-bottom: 1px solid rgba(255,255,255,0.05);
-            background: rgba(0,0,0,0.2);
+            border-bottom: 1px solid var(--card-header-border);
+            background: var(--card-header-bg);
+            position: relative;
+            z-index: 6;
         }
         
         .folder-chip {
             font-size: 12px;
             font-weight: 700;
-            background: rgba(255,255,255,0.1);
-            padding: 6px 12px;
+            background: var(--btn-glass-bg);
+            color: var(--text-primary);
+            border: 1px solid var(--card-header-border);
+            padding: 5px 12px;
             border-radius: 20px;
-            letter-spacing: 0.5px;
+            letter-spacing: 0.3px;
         }
 
         .model-chip {
             font-size: 11px;
             font-weight: 800;
-            color: #a5b4fc;
+            color: var(--accent-brand);
             text-transform: uppercase;
-            letter-spacing: 1px;
+            letter-spacing: 0.8px;
+            background: rgba(79, 70, 229, 0.08);
+            padding: 4px 10px;
+            border-radius: 8px;
+            border: 1px solid rgba(79, 70, 229, 0.15);
         }
 
         .card-body { 
             flex: 1; 
-            padding: 32px 24px; 
+            padding: 20px; 
             display: flex; 
             flex-direction: column; 
-            gap: 32px; 
+            gap: 16px; 
             pointer-events: none;
+            position: relative;
+            z-index: 6;
         }
         
         .swipe-card.is-active .card-body { pointer-events: auto; }
         
         .orig-text {
-            font-size: 16px;
-            color: var(--text-secondary);
+            position: relative;
+            background: var(--orig-box-bg);
+            border: 1.5px solid var(--orig-box-border);
+            border-radius: 16px;
+            padding: 16px 20px;
             line-height: 1.6;
             user-select: text;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+            overflow: hidden;
+        }
+        .orig-text::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; width: 4px; height: 100%;
+            background: linear-gradient(180deg, var(--accent-brand), #ec4899);
+        }
+        .orig-text:hover {
+            transform: translateY(-2px);
+            border-color: var(--accent-brand);
+            box-shadow: 0 8px 25px -5px var(--accent-brand-glow);
+        }
+        .orig-label {
+            font-size: 11px;
+            font-weight: 800;
+            color: var(--accent-brand);
+            letter-spacing: 0.5px;
+        }
+        .orig-content {
+            color: var(--orig-text-color);
+            font-size: 15px;
+            font-weight: 600;
+            margin-top: 4px;
         }
 
         /* Editable Magic Textarea */
-        .edit-wrap { position: relative; flex: 1; display: flex; flex-direction: column;}
+        .edit-wrap { position: relative; flex: 1; display: flex; flex-direction: column; }
         .trans-editor {
             flex: 1;
             width: 100%;
-            background: transparent;
-            border: none;
-            color: var(--text-primary);
-            font-size: 22px;
+            box-sizing: border-box;
+            background: var(--editor-box-bg);
+            border: 2px solid var(--editor-box-border);
+            border-radius: 18px;
+            color: var(--editor-text-color);
+            font-size: 19px;
             font-weight: 600;
-            line-height: 1.5;
+            line-height: 1.6;
             font-family: inherit;
             resize: none;
             outline: none;
-            padding: 0;
-            text-shadow: 0 2px 10px rgba(0,0,0,0.5);
-            transition: all 0.3s;
+            padding: 18px;
+            text-shadow: none;
+            transition: all 0.3s ease;
+            box-shadow: inset 0 2px 4px rgba(0,0,0,0.02);
         }
         
         .trans-editor:focus {
-            background: rgba(0,0,0,0.2);
-            padding: 16px;
-            border-radius: 16px;
-            margin: -16px;
-            box-shadow: inset 0 0 0 1px var(--glass-highlight);
+            background: var(--editor-focus-bg);
+            border-color: var(--accent-brand);
+            box-shadow: 0 0 0 4px var(--accent-brand-glow), 0 0 25px var(--accent-brand-glow);
+            animation: cyberBreath 3s ease-in-out infinite alternate;
         }
 
-        /* Cinematic Action Dock */
+        /* Action Dock - Dynamic 3D Physics */
         .action-dock { 
             position: absolute;
-            bottom: -40px;
+            bottom: -44px;
             left: 50%;
             transform: translateX(-50%);
             display: flex; 
-            gap: 24px; 
-            z-index: 50;
+            gap: 28px; 
+            z-index: 55;
+            perspective: 1000px;
+            pointer-events: none;
         }
         
         .circle-btn { 
-            width: 80px; 
-            height: 80px; 
+            width: 78px; 
+            height: 78px; 
             border-radius: 50%; 
-            border: none; 
+            border: 2px solid var(--circle-btn-border); 
             display: flex; 
             align-items: center; 
             justify-content: center; 
             cursor: pointer; 
-            background: rgba(15, 23, 42, 0.6);
-            backdrop-filter: blur(10px);
-            border: 1px solid var(--glass-border);
-            color: white; 
-            transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
-            box-shadow: 0 10px 25px -5px rgba(0,0,0,0.5);
+            background: var(--circle-btn-bg);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            color: var(--circle-btn-color); 
+            box-shadow: var(--circle-btn-shadow);
+            position: relative;
+            pointer-events: auto;
+            will-change: transform, box-shadow, opacity, background-color, border-color;
+            transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.3s ease, opacity 0.3s ease, background 0.3s ease, border-color 0.3s ease;
         }
         
-        .circle-btn .material-icons-round { font-size: 36px; transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1); }
+        .circle-btn .material-icons-round { 
+            font-size: 36px; 
+            transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1); 
+            pointer-events: none;
+        }
         
+        .circle-btn.reject {
+            color: var(--accent-reject);
+        }
         .circle-btn.reject:hover { 
-            background: var(--accent-reject); 
-            border-color: var(--accent-reject);
-            box-shadow: 0 0 40px var(--accent-reject-glow);
-            transform: translateY(-8px) scale(1.1); 
+            background: var(--accent-reject) !important; 
+            border-color: var(--accent-reject) !important;
+            color: #ffffff !important;
+            box-shadow: 0 0 40px var(--accent-reject-glow), 0 0 70px var(--accent-reject-glow) !important;
+            transform: translateY(-12px) scale(1.18) !important; 
         }
-        .circle-btn.reject:hover .material-icons-round { transform: rotate(-90deg); }
+        .circle-btn.reject:hover .material-icons-round { transform: rotate(-90deg) scale(1.1); }
         
-        .circle-btn.approve:hover { 
-            background: var(--accent-approve); 
-            border-color: var(--accent-approve);
-            box-shadow: 0 0 40px var(--accent-approve-glow);
-            transform: translateY(-8px) scale(1.1); 
+        .circle-btn.approve {
+            color: var(--accent-approve);
         }
-        .circle-btn.approve:hover .material-icons-round { transform: scale(1.2); }
+        .circle-btn.approve:hover { 
+            background: var(--accent-approve) !important; 
+            border-color: var(--accent-approve) !important;
+            color: #ffffff !important;
+            box-shadow: 0 0 40px var(--accent-approve-glow), 0 0 70px var(--accent-approve-glow) !important;
+            transform: translateY(-12px) scale(1.18) !important; 
+        }
+        .circle-btn.approve:hover .material-icons-round { transform: scale(1.22); }
         
         .circle-btn.undo { 
-            width: 60px; height: 60px; 
-            position: absolute; right: -90px; bottom: 10px;
+            width: 54px; height: 54px; 
+            position: absolute; right: -84px; bottom: 10px;
+            color: var(--accent-warning);
         }
-        .circle-btn.undo .material-icons-round { font-size: 28px; }
+        .circle-btn.undo .material-icons-round { font-size: 26px; }
         .circle-btn.undo:hover { 
-            background: var(--warning); 
-            border-color: var(--warning);
-            box-shadow: 0 0 30px rgba(245, 158, 11, 0.4);
-            transform: rotate(-360deg) scale(1.1); 
+            background: var(--accent-warning); 
+            border-color: var(--accent-warning);
+            color: #ffffff;
+            box-shadow: 0 6px 25px rgba(245, 158, 11, 0.5);
+            transform: rotate(-360deg) scale(1.12); 
+        }
+
+        /* Keyframe FX Library */
+        @keyframes rotateBorder {
+            0% { --border-angle: 0deg; filter: hue-rotate(0deg); }
+            100% { --border-angle: 360deg; filter: hue-rotate(360deg); }
+        }
+        @keyframes pulseAurora {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+        @keyframes sheenPass {
+            0%, 60% { left: -100%; }
+            100% { left: 200%; }
+        }
+        @keyframes itemSheen {
+            0% { left: -100%; }
+            100% { left: 200%; }
+        }
+        @keyframes activeCardBreathing {
+            0% { box-shadow: 0 25px 60px -10px var(--accent-brand-glow), 0 0 0 1.5px var(--accent-brand), 0 0 25px var(--accent-brand-glow); }
+            100% { box-shadow: 0 30px 75px -5px var(--accent-brand-glow), 0 0 0 2px #ec4899, 0 0 45px rgba(236, 72, 153, 0.4); }
+        }
+        @keyframes cyberBreath {
+            0% { box-shadow: 0 0 0 3px var(--accent-brand-glow), 0 0 15px var(--accent-brand-glow); }
+            100% { box-shadow: 0 0 0 5px var(--accent-brand-glow), 0 0 35px var(--accent-brand-glow); }
+        }
+        @keyframes ringPulseReject {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+            50% { box-shadow: 0 0 0 8px rgba(239, 68, 68, 0); }
+        }
+        @keyframes ringPulseApprove {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4); }
+            50% { box-shadow: 0 0 0 8px rgba(16, 185, 129, 0); }
         }
 
         /* Swipe Hologram Stamps */
@@ -388,19 +993,32 @@
         .stamp-approve { right: -20px; color: var(--accent-approve); border-color: var(--accent-approve); transform: rotate(15deg) scale(1.5); }
         .stamp-reject { left: -20px; color: var(--accent-reject); border-color: var(--accent-reject); transform: rotate(-15deg) scale(1.5); }
 
-        .toast { position: fixed; top: 40px; left: 50%; transform: translateX(-50%) translateY(-20px); background: rgba(255,255,255,0.9); color: #000; padding: 16px 32px; border-radius: 30px; font-size: 15px; font-weight: 700; opacity: 0; transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1); pointer-events: none; z-index: 2000; box-shadow: 0 20px 40px rgba(0,0,0,0.3);}
+        .toast { 
+            position: fixed; top: 40px; left: 50%; transform: translateX(-50%) translateY(-20px); 
+            background: var(--card-bg); color: var(--text-primary); 
+            border: 1px solid var(--card-border);
+            padding: 14px 28px; border-radius: 30px; font-size: 14px; font-weight: 700; 
+            opacity: 0; transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1); 
+            pointer-events: none; z-index: 2000; 
+            box-shadow: 0 20px 40px rgba(0,0,0,0.15);
+        }
         .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
         .empty-state { display: none; position: absolute; inset: 0; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
         
-        #recommendPopup { position: absolute; background: rgba(15, 23, 42, 0.9); backdrop-filter: blur(10px); border: 1px solid var(--glass-highlight); border-radius: 16px; padding: 16px; box-shadow: 0 20px 40px rgba(0,0,0,0.5); z-index: 1000; display: none; max-width: 300px; }
-        .rec-item { padding: 10px; border-radius: 8px; cursor: pointer; transition: background 0.2s; margin-bottom: 4px;}
-        .rec-item:hover { background: rgba(255,255,255,0.1); }
+        #recommendPopup { 
+            position: absolute; background: var(--card-bg); backdrop-filter: blur(10px); 
+            border: 1px solid var(--card-border); border-radius: 16px; padding: 16px; 
+            box-shadow: 0 20px 40px rgba(0,0,0,0.15); z-index: 1000; display: none; max-width: 300px; 
+        }
+        .rec-item { padding: 10px; border-radius: 8px; cursor: pointer; transition: background 0.2s; margin-bottom: 4px; }
+        .rec-item:hover { background: var(--btn-glass-hover-bg); }
         .rec-trans { color: var(--text-primary); font-size: 15px; font-weight: 700; }
-        .rec-meta { font-size: 11px; color: var(--accent-brand); margin-top: 4px; font-weight: 800;}
+        .rec-meta { font-size: 11px; color: var(--accent-brand); margin-top: 4px; font-weight: 800; }
+        
         .ctx-tool-btn {
-            background: rgba(255, 255, 255, 0.06);
-            border: 1px solid rgba(255, 255, 255, 0.12);
+            background: var(--btn-glass-bg);
+            border: 1px solid var(--btn-glass-border);
             color: var(--text-secondary);
             border-radius: 6px;
             padding: 3px 6px;
@@ -412,35 +1030,39 @@
             transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
         }
         .ctx-tool-btn:hover {
-            background: rgba(255, 255, 255, 0.16);
-            color: #fff;
-            border-color: rgba(255, 255, 255, 0.3);
+            background: var(--btn-glass-hover-bg);
+            color: var(--text-primary);
+            border-color: var(--accent-brand);
             transform: translateY(-1px);
         }
-
 
         @keyframes spin { 100% { transform: rotate(360deg); } }
         .animate-spin { animation: spin 1s linear infinite; }
     </style>
 </head>
 <body>
-        <header style="display: flex; justify-content: space-between; align-items: center; padding: 16px 32px; background: rgba(15, 23, 42, 0.7); backdrop-filter: blur(20px); border-bottom: 1px solid var(--glass-border); position: fixed; top: 0; left: 0; right: 0; z-index: 100;">
-        <div style="display: flex; align-items: center; gap: 24px;">
-            <div class="header-title" style="margin: 0; font-size: 18px; font-weight: 800; display: flex; align-items: center; gap: 8px;">
+    <canvas id="ambientCanvas"></canvas>
+    <header>
+        <div style="display: flex; align-items: center; gap: 20px;">
+            <div class="header-title">
                 <span class="material-icons-round" style="color: var(--accent-brand);">auto_awesome</span>
-                AI Review Studio
+                <span class="header-title-text">AI Review Studio</span>
             </div>
             <nav style="display: flex; gap: 8px;">
-                <a href="/ai_review" class="btn btn-glass" style="background: rgba(59, 130, 246, 0.2); border-color: var(--accent-brand); color: #fff; text-decoration: none;">
-                    <span class="material-icons-round" style="font-size: 16px; color: #60a5fa;">swipe</span> 1차 AI 검수
+                <a href="/ai_review" class="btn btn-glass btn-nav-active">
+                    <span class="material-icons-round" style="font-size: 16px;">swipe</span> 1차 AI 검수
                 </a>
-                <a href="/ai_reretranslate" class="btn btn-glass" style="border-color: rgba(245, 158, 11, 0.4); text-decoration: none; display: flex; align-items: center; gap: 6px;">
+                <a href="/ai_reretranslate" class="btn btn-glass" style="border-color: rgba(245, 158, 11, 0.4);">
                     <span class="material-icons-round" style="font-size: 16px; color: #f59e0b;">auto_fix_high</span> 2차 재재번역 센터
                     <span id="navRejectedBadge" style="background: #f59e0b; color: #000; font-size: 10px; font-weight: 800; padding: 1px 6px; border-radius: 10px; display: none;">0</span>
                 </a>
             </nav>
         </div>
         <div style="display: flex; gap: 10px; align-items: center;">
+            <button id="themeToggleBtn" onclick="toggleTheme()" class="btn btn-glass" title="테마 전환 (라이트/다크)">
+                <span class="material-icons-round" id="themeIcon" style="font-size: 18px;">dark_mode</span>
+                <span id="themeText">다크 모드</span>
+            </button>
             <a href="/admin" class="btn btn-glass" style="text-decoration: none;">
                 <span class="material-icons-round" style="font-size: 16px;">dashboard</span> 관리자 홈
             </a>
@@ -482,8 +1104,19 @@
             
             <!-- Context Before -->
             <div class="side-context" id="ctxBefore">
-                <div class="context-title"><span class="material-icons-round" style="font-size: 14px;">history</span> PREVIOUS</div>
-                <div id="ctxBeforeContent"></div>
+                <div class="context-header-bar">
+                    <div class="context-title">
+                        <span class="material-icons-round" style="font-size: 16px;">history</span> PREVIOUS
+                        <span class="ctx-shortcut-badge" title="단축키: Q">Q</span>
+                    </div>
+                    <div style="display: flex; gap: 6px; align-items: center;">
+                        <span class="ctx-expand-hint"><span class="material-icons-round" style="font-size: 13px;">pan_tool_alt</span> 호버하여 펼치기</span>
+                        <button class="ctx-pin-btn" id="pinBeforeBtn" onclick="toggleContextPin('ctxBefore', event)" title="패널 펼친 상태로 고정 (Q)">
+                            <span class="material-icons-round" style="font-size: 16px;">push_pin</span>
+                        </button>
+                    </div>
+                </div>
+                <div id="ctxBeforeContent" class="ctx-container-inner"></div>
             </div>
 
             <!-- Card Stack -->
@@ -511,8 +1144,19 @@
 
             <!-- Context After -->
             <div class="side-context" id="ctxAfter">
-                <div class="context-title"><span class="material-icons-round" style="font-size: 14px;">update</span> NEXT</div>
-                <div id="ctxAfterContent"></div>
+                <div class="context-header-bar">
+                    <div class="context-title">
+                        <span class="material-icons-round" style="font-size: 16px;">update</span> NEXT
+                        <span class="ctx-shortcut-badge" title="단축키: E">E</span>
+                    </div>
+                    <div style="display: flex; gap: 6px; align-items: center;">
+                        <span class="ctx-expand-hint"><span class="material-icons-round" style="font-size: 13px;">pan_tool_alt</span> 호버하여 펼치기</span>
+                        <button class="ctx-pin-btn" id="pinAfterBtn" onclick="toggleContextPin('ctxAfter', event)" title="패널 펼친 상태로 고정 (E)">
+                            <span class="material-icons-round" style="font-size: 16px;">push_pin</span>
+                        </button>
+                    </div>
+                </div>
+                <div id="ctxAfterContent" class="ctx-container-inner"></div>
             </div>
 
         </div>
@@ -537,7 +1181,40 @@
         let startY = 0, currentY = 0;
         let activeCardEl = null;
 
+        // Theme System
+        function initTheme() {
+            try {
+                const isDark = localStorage.getItem('lanovel_dark_mode') === 'true';
+                applyTheme(isDark);
+            } catch(e) {}
+        }
+
+        function applyTheme(isDark) {
+            if (isDark) {
+                document.documentElement.classList.add('dark-mode');
+                document.body.classList.add('dark-mode');
+            } else {
+                document.documentElement.classList.remove('dark-mode');
+                document.body.classList.remove('dark-mode');
+            }
+            const themeIcon = document.getElementById('themeIcon');
+            const themeText = document.getElementById('themeText');
+            if (themeIcon) themeIcon.textContent = isDark ? 'light_mode' : 'dark_mode';
+            if (themeText) themeText.textContent = isDark ? '라이트 모드' : '다크 모드';
+        }
+
+        function toggleTheme() {
+            const isCurrentlyDark = document.body.classList.contains('dark-mode') || document.documentElement.classList.contains('dark-mode');
+            const newDark = !isCurrentlyDark;
+            applyTheme(newDark);
+            try {
+                localStorage.setItem('lanovel_dark_mode', newDark ? 'true' : 'false');
+            } catch(e) {}
+        }
+
         document.addEventListener('DOMContentLoaded', () => {
+            initTheme();
+            initAmbientCanvas();
             loadStats(); loadQueue();
             
             
@@ -564,8 +1241,9 @@
             
             // Global Shortcuts
             document.addEventListener('keydown', (e) => {
-                if (document.getElementById('rulesModal').style.display === 'flex') return;
-                const isTextarea = e.target.tagName === 'TEXTAREA';
+                const rulesModal = document.getElementById('rulesModal');
+                if (rulesModal && rulesModal.style.display === 'flex') return;
+                const isTextarea = e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT';
                 
                 if (e.key === 'Enter' && e.ctrlKey) {
                     e.preventDefault(); triggerAction('right'); return;
@@ -574,12 +1252,34 @@
                     e.preventDefault(); triggerAction('left'); return;
                 }
                 if (isTextarea) return;
+
+                // Context Panel Q/E Toggle
+                if (e.key === 'q' || e.key === 'Q') {
+                    e.preventDefault();
+                    toggleContextPin('ctxBefore');
+                    return;
+                }
+                if (e.key === 'e' || e.key === 'E') {
+                    e.preventDefault();
+                    toggleContextPin('ctxAfter');
+                    return;
+                }
+
                 if (e.key === 'ArrowRight') triggerAction('right');
                 else if (e.key === 'ArrowLeft') triggerAction('left');
                 else if (e.key === 'z' && e.ctrlKey) undoLastAction();
             });
         });
         
+        function toggleContextPin(panelId, event) {
+            if (event) event.stopPropagation();
+            const panel = document.getElementById(panelId);
+            if (!panel) return;
+            const isPinned = panel.classList.toggle('is-pinned');
+            const label = panelId === 'ctxBefore' ? '이전 맥락' : '다음 맥락';
+            showToast(isPinned ? `📌 ${label} 패널이 펼쳐진 상태로 고정되었습니다.` : `🔓 ${label} 패널 고정이 해제되었습니다.`);
+        }
+
         function showToast(msg) {
             const toast = document.getElementById('toast');
             toast.textContent = msg;
@@ -736,8 +1436,16 @@
                 ws.style.display = 'flex';
                 empty.style.display = 'flex';
                 dock.style.display = 'none';
-                document.getElementById('ctxBeforeContent').innerHTML = '';
-                document.getElementById('ctxAfterContent').innerHTML = '';
+                document.getElementById('ctxBeforeContent').innerHTML = `
+                    <div class="ctx-empty-box">
+                        <span class="material-icons-round">check_circle</span>
+                        <div style="font-weight: 700; color: var(--text-primary);">대기 중인 검수 항목이 없습니다</div>
+                    </div>`;
+                document.getElementById('ctxAfterContent').innerHTML = `
+                    <div class="ctx-empty-box">
+                        <span class="material-icons-round">done_all</span>
+                        <div style="font-weight: 700; color: var(--text-primary);">모든 검수가 완료되었습니다</div>
+                    </div>`;
                 return;
             }
             
@@ -764,18 +1472,20 @@
                 } else {
                     card.style.zIndex = 10;
                     activeCardEl = card;
-                    updateContextSidebars(item);
                 }
                 
                 const cleanText = cleanAiTranslation(item.ai_translated_text);
+                const safeOrig = escapeHtml(item.original_text || '');
+                const safeFolder = escapeHtml(item.folderName || 'Uncategorized');
                 
                 card.innerHTML = `
+                    <div class="card-spotlight"></div>
                     <div class="stamp stamp-approve">YES</div>
                     <div class="stamp stamp-reject">NO</div>
                     
                     <div class="card-header">
                         <div style="display: flex; gap: 8px; align-items: center;">
-                            <span class="folder-chip">${item.folderName || 'Uncategorized'}</span>
+                            <span class="folder-chip">${safeFolder}</span>
                             ${item.is_reretranslated ? '<span class="badge" style="background: linear-gradient(135deg, #f59e0b, #d97706); color: #000; font-weight: 800; font-size: 11px; padding: 3px 8px; border-radius: 8px; display: inline-flex; align-items: center; gap: 4px;"><span class="material-icons-round" style="font-size: 13px;">bolt</span> 2차 재재번역 우선검수</span>' : ''}
                         </div>
                         <div style="display:flex; gap:8px; align-items:center;">
@@ -788,40 +1498,107 @@
                         </div>
                     </div>
                     <div class="card-body" style="display: flex; flex-direction: column; height: 100%; gap: 14px;">
-                        <div class="orig-text" style="font-size: 15px; color: var(--text-secondary); background: rgba(0,0,0,0.35); padding: 14px 18px; border-radius: 14px; border: 1px solid var(--glass-border); line-height: 1.6; user-select: text; cursor: pointer;" title="클릭하여 원문 복사" onclick="navigator.clipboard.writeText('${(item.original_text || '').replace(/'/g, "\\'")}'); showToast('일본어 원문이 복사되었습니다.');">
+                        <div class="orig-text" title="클릭하여 원문 복사" data-copy-text="${safeOrig}" onclick="copyTextFromData(this)">
                             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                                <span style="font-size: 11px; font-weight: 800; color: var(--accent-brand); letter-spacing: 0.5px;">ORIGINAL (일본어 원문)</span>
+                                <span class="orig-label">ORIGINAL (일본어 원문)</span>
                                 <span class="material-icons-round" style="font-size: 14px; color: var(--text-muted);">content_copy</span>
                             </div>
-                            <div style="color: #e2e8f0; font-weight: 500;">${item.original_text || ''}</div>
+                            <div class="orig-content">${safeOrig}</div>
                         </div>
                         <div class="edit-wrap" style="flex: 1; display: flex;">
-                            <textarea class="trans-editor" id="trans-${item.queue_id}" spellcheck="false" style="width: 100%; height: 100%; min-height: 120px; font-size: 18px; line-height: 1.6; font-weight: 600; padding: 18px;" placeholder="번역문을 입력하거나 수정하세요...">${cleanText}</textarea>
+                            <textarea class="trans-editor" id="trans-${item.queue_id}" spellcheck="false" placeholder="번역문을 입력하거나 수정하세요...">${cleanText}</textarea>
                         </div>
                     </div>
                 `;
+
+                if (offset === 0) {
+                    card.addEventListener('mousemove', (e) => {
+                        if (isDragging) return;
+                        const rect = card.getBoundingClientRect();
+                        const x = e.clientX - rect.left;
+                        const y = e.clientY - rect.top;
+                        card.style.setProperty('--mouse-x', `${x}px`);
+                        card.style.setProperty('--mouse-y', `${y}px`);
+                        
+                        const centerX = rect.width / 2;
+                        const centerY = rect.height / 2;
+                        const rotateX = ((y - centerY) / centerY) * -6;
+                        const rotateY = ((x - centerX) / centerX) * 6;
+                        card.style.transform = `perspective(1000px) rotateX(${rotateX}deg) rotateY(${rotateY}deg) scale3d(1.02, 1.02, 1.02)`;
+
+                        // 마우스 좌우 위치(-1.0 ~ +1.0)에 따라 하단 X / 하트 버튼 즉각적 3D 팝업
+                        updateDockButtonsByRatio((x - centerX) / centerX);
+                    });
+                    card.addEventListener('mouseleave', () => {
+                        if (isDragging) return;
+                        card.style.transform = 'perspective(1000px) rotateX(0deg) rotateY(0deg) scale3d(1, 1, 1)';
+                        resetDockButtons();
+                    });
+                }
                 
                 // insert before dock
                 container.insertBefore(card, dock);
             }
+
+            // Always guarantee context sidebars update for the current active card
+            const currentActiveItem = currentQueue[currentIndex];
+            if (currentActiveItem) {
+                updateContextSidebars(currentActiveItem);
+            }
+        }
+
+        function escapeHtml(str) {
+            if (!str) return '';
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+        }
+
+        function copyTextFromData(el) {
+            const text = el.getAttribute('data-copy-text');
+            if (text) {
+                navigator.clipboard.writeText(text);
+                showToast('원문이 클립보드에 복사되었습니다.');
+            }
         }
         
         function updateContextSidebars(item) {
+            if (!item) return;
             const buildHtml = (ctxArr, isBefore) => {
-                if(!ctxArr || ctxArr.length === 0) return '<div style="opacity:0.3; font-size:12px;">No context</div>';
+                if(!ctxArr || ctxArr.length === 0) {
+                    return `
+                        <div class="ctx-empty-box">
+                            <span class="material-icons-round">${isBefore ? 'history' : 'update'}</span>
+                            <div style="font-weight: 700; color: var(--text-primary); font-size: 13px;">
+                                ${isBefore ? '이전 맥락 없음' : '다음 맥락 없음'}
+                            </div>
+                            <div style="font-size: 11px; color: var(--text-muted); line-height: 1.4;">
+                                ${isBefore ? '소설의 첫 문장이거나 이전 단락이 없습니다.' : '소설의 마지막 문장이거나 다음 단락이 없습니다.'}
+                            </div>
+                        </div>
+                    `;
+                }
+
                 return ctxArr.map((c, idx) => {
                     const label = isBefore 
                         ? `이전 맥락 #${ctxArr.length - idx}`
                         : `이후 맥락 #${idx + 1}`;
                     const targetFolder = c.folderName || item.folderName || '';
                     const adminLink = `/admin?search=${encodeURIComponent(c.translated || c.original || '')}&folder=${encodeURIComponent(targetFolder)}`;
-                    const origSafe = (c.original || '').replace(/'/g, "\\'");
+                    const safeOriginal = escapeHtml(c.original || '');
+                    const safeTranslated = escapeHtml(c.translated || '');
                     const urlWithPid = c.url ? (c.url + (c.pid ? '#p' + c.pid : '')) : '';
 
                     return `
-                        <div class="ctx-item" id="ctx-card-${c.id || Math.random()}" style="position: relative;">
-                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid rgba(255,255,255,0.06);">
-                                <span style="font-size: 10px; font-weight: 800; color: var(--accent-brand); letter-spacing: 0.5px;">${label}</span>
+                        <div class="ctx-item" id="ctx-card-${c.id || Math.random()}">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid var(--side-item-border);">
+                                <span style="font-size: 11px; font-weight: 800; color: var(--accent-brand); letter-spacing: 0.5px; display: inline-flex; align-items: center; gap: 4px;">
+                                    <span class="material-icons-round" style="font-size: 13px;">${isBefore ? 'arrow_back' : 'arrow_forward'}</span>
+                                    ${label}
+                                </span>
                                 <div style="display: flex; gap: 4px; align-items: center;">
                                     ${urlWithPid ? `
                                         <a href="${urlWithPid}" target="_blank" class="ctx-tool-btn" title="원본 웹소설 화 페이지로 즉시 이동">
@@ -838,25 +1615,42 @@
                                     ` : ''}
                                 </div>
                             </div>
-                            <div class="ctx-orig" title="클릭 시 원문 복사" onclick="navigator.clipboard.writeText('${origSafe}'); showToast('문맥 원문 복사 완료');">
-                                ${c.original}
+                            <div class="ctx-orig" title="클릭 시 원문 복사" data-copy-text="${safeOriginal}" onclick="copyTextFromData(this)">
+                                ${safeOriginal}
                             </div>
-                            <div class="ctx-trans" id="ctx-trans-view-${c.id}">${c.translated}</div>
+                            <div class="ctx-trans" id="ctx-trans-view-${c.id}">${safeTranslated}</div>
                             ${c.id ? `
                                 <div id="ctx-edit-box-${c.id}" style="display: none; margin-top: 8px;">
-                                    <textarea id="ctx-edit-input-${c.id}" style="width: 100%; box-sizing: border-box; background: rgba(0,0,0,0.6); border: 1px solid var(--accent-brand); color: #fff; padding: 8px; border-radius: 8px; font-size: 13px; line-height: 1.5; outline: none; resize: vertical;" rows="2">${c.translated}</textarea>
+                                    <textarea id="ctx-edit-input-${c.id}" style="width: 100%; box-sizing: border-box; background: var(--editor-box-bg); border: 1.5px solid var(--accent-brand); color: var(--text-primary); padding: 8px 10px; border-radius: 8px; font-size: 13px; line-height: 1.5; outline: none; resize: vertical;" rows="2">${safeTranslated}</textarea>
                                     <div style="display: flex; justify-content: flex-end; gap: 6px; margin-top: 6px;">
-                                        <button class="btn btn-glass" style="padding: 3px 8px; font-size: 11px;" onclick="toggleContextQuickEdit(${c.id})">취소</button>
-                                        <button class="btn btn-glow" style="padding: 3px 10px; font-size: 11px;" onclick="saveContextQuickEdit(${c.id})">저장</button>
+                                        <button class="btn btn-glass" style="padding: 4px 10px; font-size: 11px;" onclick="toggleContextQuickEdit(${c.id})">취소</button>
+                                        <button class="btn btn-glow" style="padding: 4px 12px; font-size: 11px;" onclick="saveContextQuickEdit(${c.id})">저장</button>
                                     </div>
                                 </div>
                             ` : ''}
                         </div>
                     `;
-                }).join('<div style="height:12px;"></div>');
+                }).join('');
             };
-            document.getElementById('ctxBeforeContent').innerHTML = buildHtml(item.context_before, true);
-            document.getElementById('ctxAfterContent').innerHTML = buildHtml(item.context_after, false);
+
+            const beforeEl = document.getElementById('ctxBeforeContent');
+            const afterEl = document.getElementById('ctxAfterContent');
+            if (beforeEl) {
+                beforeEl.style.opacity = '0';
+                beforeEl.innerHTML = buildHtml(item.context_before, true);
+                requestAnimationFrame(() => {
+                    beforeEl.style.transition = 'opacity 0.28s ease';
+                    beforeEl.style.opacity = '1';
+                });
+            }
+            if (afterEl) {
+                afterEl.style.opacity = '0';
+                afterEl.innerHTML = buildHtml(item.context_after, false);
+                requestAnimationFrame(() => {
+                    afterEl.style.transition = 'opacity 0.28s ease';
+                    afterEl.style.opacity = '1';
+                });
+            }
         }
 
         async function saveContextQuickEdit(transId) {
@@ -901,6 +1695,127 @@
             }
         }
 
+        // --- Dynamic Dock Button Physics ---
+        function updateDockButtonsByRatio(ratioX) {
+            // ratioX: -1.0 (가장 왼쪽) ~ +1.0 (가장 오른쪽)
+            const rejectBtn = document.querySelector('.circle-btn.reject');
+            const approveBtn = document.querySelector('.circle-btn.approve');
+            if (!rejectBtn || !approveBtn) return;
+
+            // 마우스 움직임 중에는 transition을 제거하여 딜레이 0ms 즉각 반응!
+            rejectBtn.style.transition = 'none';
+            approveBtn.style.transition = 'none';
+
+            if (ratioX < -0.05) {
+                // 마우스가 왼쪽(거절/X)으로 이동 -> X 버튼 실시간 3D 팝업 돌출!
+                const intensity = Math.min(Math.abs(ratioX), 1.0);
+                const scale = 1 + (intensity * 0.28);
+                const ty = -intensity * 16;
+                rejectBtn.style.transform = `translate3d(0, ${ty}px, 25px) scale(${scale})`;
+                rejectBtn.style.boxShadow = `0 15px 35px -5px rgba(220, 38, 38, ${0.3 + intensity * 0.45}), 0 0 ${intensity * 35}px var(--accent-reject-glow)`;
+                rejectBtn.style.borderColor = `rgba(239, 68, 68, ${0.4 + intensity * 0.6})`;
+                
+                // 반대편 하트 버튼은 살짝 축소 및 페이드
+                const dimScale = Math.max(0.85, 1 - intensity * 0.15);
+                approveBtn.style.transform = `scale(${dimScale})`;
+                approveBtn.style.opacity = `${Math.max(0.45, 1 - intensity * 0.45)}`;
+                approveBtn.style.boxShadow = 'var(--circle-btn-shadow)';
+                approveBtn.style.borderColor = 'var(--circle-btn-border)';
+            } else if (ratioX > 0.05) {
+                // 마우스가 오른쪽(승인/하트)으로 이동 -> 하트 버튼 실시간 3D 팝업 돌출!
+                const intensity = Math.min(ratioX, 1.0);
+                const scale = 1 + (intensity * 0.28);
+                const ty = -intensity * 16;
+                approveBtn.style.transform = `translate3d(0, ${ty}px, 25px) scale(${scale})`;
+                approveBtn.style.boxShadow = `0 15px 35px -5px rgba(16, 185, 129, ${0.3 + intensity * 0.45}), 0 0 ${intensity * 35}px var(--accent-approve-glow)`;
+                approveBtn.style.borderColor = `rgba(16, 185, 129, ${0.4 + intensity * 0.6})`;
+
+                // 반대편 X 버튼은 살짝 축소 및 페이드
+                const dimScale = Math.max(0.85, 1 - intensity * 0.15);
+                rejectBtn.style.transform = `scale(${dimScale})`;
+                rejectBtn.style.opacity = `${Math.max(0.45, 1 - intensity * 0.45)}`;
+                rejectBtn.style.boxShadow = 'var(--circle-btn-shadow)';
+                rejectBtn.style.borderColor = 'var(--circle-btn-border)';
+            } else {
+                resetDockButtons();
+            }
+        }
+
+        function updateDockButtonsByDrag(dragRatio) {
+            // dragRatio: currentX / 120 (임계값 120px 기준)
+            const rejectBtn = document.querySelector('.circle-btn.reject');
+            const approveBtn = document.querySelector('.circle-btn.approve');
+            if (!rejectBtn || !approveBtn) return;
+
+            rejectBtn.style.transition = 'none';
+            approveBtn.style.transition = 'none';
+
+            if (dragRatio < 0) {
+                // 왼쪽 드래그(거절): X 버튼 대폭 팽창 및 네온 폭발
+                const progress = Math.min(Math.abs(dragRatio), 1.6);
+                const scale = 1 + (progress * 0.35); // 최대 1.45배 이상 팝업
+                const ty = -progress * 22;
+                rejectBtn.style.transform = `translate3d(0, ${ty}px, 40px) scale(${scale})`;
+                rejectBtn.style.boxShadow = `0 20px 45px -5px rgba(220, 38, 38, 0.65), 0 0 ${progress * 50}px var(--accent-reject-glow)`;
+                rejectBtn.style.borderColor = 'var(--accent-reject)';
+                rejectBtn.style.background = 'var(--accent-reject)';
+                rejectBtn.style.color = '#ffffff';
+
+                const icon = rejectBtn.querySelector('.material-icons-round');
+                if (icon) icon.style.transform = `rotate(${-progress * 90}deg) scale(1.18)`;
+
+                approveBtn.style.transform = `scale(${Math.max(0.65, 1 - progress * 0.28)})`;
+                approveBtn.style.opacity = `${Math.max(0.2, 1 - progress * 0.7)}`;
+            } else if (dragRatio > 0) {
+                // 오른쪽 드래그(승인): 하트 버튼 대폭 팽창 및 네온 폭발
+                const progress = Math.min(dragRatio, 1.6);
+                const scale = 1 + (progress * 0.35); // 최대 1.45배 이상 팝업
+                const ty = -progress * 22;
+                approveBtn.style.transform = `translate3d(0, ${ty}px, 40px) scale(${scale})`;
+                approveBtn.style.boxShadow = `0 20px 45px -5px rgba(16, 185, 129, 0.65), 0 0 ${progress * 50}px var(--accent-approve-glow)`;
+                approveBtn.style.borderColor = 'var(--accent-approve)';
+                approveBtn.style.background = 'var(--accent-approve)';
+                approveBtn.style.color = '#ffffff';
+
+                const icon = approveBtn.querySelector('.material-icons-round');
+                if (icon) icon.style.transform = `scale(${1 + progress * 0.28})`;
+
+                rejectBtn.style.transform = `scale(${Math.max(0.65, 1 - progress * 0.28)})`;
+                rejectBtn.style.opacity = `${Math.max(0.2, 1 - progress * 0.7)}`;
+            } else {
+                resetDockButtons();
+            }
+        }
+
+        function resetDockButtons() {
+            const rejectBtn = document.querySelector('.circle-btn.reject');
+            const approveBtn = document.querySelector('.circle-btn.approve');
+            if (!rejectBtn || !approveBtn) return;
+
+            const springTransition = 'transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.3s ease, opacity 0.3s ease, border-color 0.3s ease, background 0.3s ease, color 0.3s ease';
+            rejectBtn.style.transition = springTransition;
+            approveBtn.style.transition = springTransition;
+
+            rejectBtn.style.transform = '';
+            rejectBtn.style.opacity = '1';
+            rejectBtn.style.boxShadow = '';
+            rejectBtn.style.borderColor = '';
+            rejectBtn.style.background = '';
+            rejectBtn.style.color = '';
+
+            approveBtn.style.transform = '';
+            approveBtn.style.opacity = '1';
+            approveBtn.style.boxShadow = '';
+            approveBtn.style.borderColor = '';
+            approveBtn.style.background = '';
+            approveBtn.style.color = '';
+
+            const rIcon = rejectBtn.querySelector('.material-icons-round');
+            const aIcon = approveBtn.querySelector('.material-icons-round');
+            if (rIcon) rIcon.style.transform = '';
+            if (aIcon) aIcon.style.transform = '';
+        }
+
         // --- Cinematic Physics ---
         function getClientX(e) { return e.type.includes('touch') ? e.touches[0].clientX : e.clientX; }
         function getClientY(e) { return e.type.includes('touch') ? e.touches[0].clientY : e.clientY; }
@@ -939,6 +1854,9 @@
                 rejectStamp.style.transform = `rotate(-15deg) scale(${1 + (Math.abs(currentX)/500)})`;
                 approveStamp.style.opacity = 0;
             }
+
+            // 드래그 거리에 비례하여 X / 하트 버튼 즉각적 대폭 팝업!
+            updateDockButtonsByDrag(currentX / 120);
         }
         
         function dragEnd() {
@@ -956,6 +1874,7 @@
                 activeCardEl.style.transform = `translate3d(0, 0, 0) rotateX(0) rotateY(0) rotateZ(0)`;
                 activeCardEl.querySelector('.stamp-approve').style.opacity = 0;
                 activeCardEl.querySelector('.stamp-reject').style.opacity = 0;
+                resetDockButtons();
             }
             currentX = 0; currentY = 0;
         }
@@ -980,6 +1899,14 @@
                 stamp.style.opacity = 1;
                 stamp.style.transform = `rotate(${direction === 'right' ? 15 : -15}deg) scale(1.5)`;
             }
+
+            const actionBtn = document.querySelector(direction === 'right' ? '.circle-btn.approve' : '.circle-btn.reject');
+            if (actionBtn) {
+                actionBtn.style.transform = 'scale(1.32)';
+                setTimeout(() => { if (actionBtn) actionBtn.style.transform = ''; }, 200);
+            }
+
+            spawnActionConfetti(direction);
             
             if (direction === 'left') await sendAction('reject', item.queue_id, null);
             else await sendAction('approve', item.queue_id, editedText);
@@ -990,6 +1917,7 @@
             setTimeout(() => {
                 currentIndex++;
                 activeCardEl = null;
+                resetDockButtons();
                 renderCards();
             }, 300);
         }
@@ -1070,6 +1998,158 @@
                     popup.style.display = 'block';
                 }
             } catch (e) {}
+        }
+
+        // --- Hyper-Visual Ambient Canvas & Particle System ---
+        let fxParticles = [];
+        let fxConfetti = [];
+        let mousePos = { x: -1000, y: -1000 };
+
+        function initAmbientCanvas() {
+            const canvas = document.getElementById('ambientCanvas');
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
+            
+            function resize() {
+                canvas.width = window.innerWidth;
+                canvas.height = window.innerHeight;
+            }
+            window.addEventListener('resize', resize);
+            resize();
+
+            window.addEventListener('mousemove', (e) => {
+                mousePos.x = e.clientX;
+                mousePos.y = e.clientY;
+            });
+
+            // 55 Ambient Glowing Stars/Particles
+            const colors = ['#6366f1', '#a855f7', '#ec4899', '#06b6d4', '#10b981', '#f59e0b'];
+            for (let i = 0; i < 55; i++) {
+                fxParticles.push({
+                    x: Math.random() * canvas.width,
+                    y: Math.random() * canvas.height,
+                    vx: (Math.random() - 0.5) * 0.8,
+                    vy: (Math.random() - 0.5) * 0.8,
+                    radius: Math.random() * 2.5 + 1.2,
+                    color: colors[Math.floor(Math.random() * colors.length)],
+                    alpha: Math.random() * 0.5 + 0.3,
+                    pulseSpeed: Math.random() * 0.02 + 0.01
+                });
+            }
+
+            function loop() {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+                // Draw Connecting Constellation Webs
+                for (let i = 0; i < fxParticles.length; i++) {
+                    const p1 = fxParticles[i];
+                    for (let j = i + 1; j < fxParticles.length; j++) {
+                        const p2 = fxParticles[j];
+                        const dx = p1.x - p2.x;
+                        const dy = p1.y - p2.y;
+                        const dist = Math.hypot(dx, dy);
+                        if (dist < 110) {
+                            ctx.beginPath();
+                            ctx.strokeStyle = p1.color;
+                            ctx.globalAlpha = (1 - dist / 110) * 0.18;
+                            ctx.lineWidth = 1;
+                            ctx.moveTo(p1.x, p1.y);
+                            ctx.lineTo(p2.x, p2.y);
+                            ctx.stroke();
+                        }
+                    }
+                }
+
+                // Draw Ambient Floating Particles
+                for (let p of fxParticles) {
+                    p.x += p.vx;
+                    p.y += p.vy;
+                    if (p.x < 0) p.x = canvas.width;
+                    if (p.x > canvas.width) p.x = 0;
+                    if (p.y < 0) p.y = canvas.height;
+                    if (p.y > canvas.height) p.y = 0;
+
+                    // Mouse interaction
+                    const mdx = mousePos.x - p.x;
+                    const mdy = mousePos.y - p.y;
+                    const mdist = Math.hypot(mdx, mdy);
+                    if (mdist < 150) {
+                        p.x -= (mdx / mdist) * 1.5;
+                        p.y -= (mdy / mdist) * 1.5;
+                    }
+
+                    p.alpha += Math.sin(Date.now() * p.pulseSpeed) * 0.01;
+                    const curAlpha = Math.max(0.15, Math.min(0.85, p.alpha));
+
+                    ctx.beginPath();
+                    ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+                    ctx.fillStyle = p.color;
+                    ctx.globalAlpha = curAlpha;
+                    ctx.shadowBlur = 12;
+                    ctx.shadowColor = p.color;
+                    ctx.fill();
+                    ctx.shadowBlur = 0;
+                }
+
+                // Render Action Confetti Explosions
+                for (let i = fxConfetti.length - 1; i >= 0; i--) {
+                    const c = fxConfetti[i];
+                    c.x += c.vx;
+                    c.y += c.vy;
+                    c.vy += c.gravity;
+                    c.rot += c.vRot;
+                    c.life -= 0.016;
+
+                    if (c.life <= 0) {
+                        fxConfetti.splice(i, 1);
+                        continue;
+                    }
+
+                    ctx.save();
+                    ctx.translate(c.x, c.y);
+                    ctx.rotate(c.rot);
+                    ctx.fillStyle = c.color;
+                    ctx.globalAlpha = Math.max(0, c.life);
+                    ctx.shadowBlur = 15;
+                    ctx.shadowColor = c.color;
+                    ctx.fillRect(-c.size / 2, -c.size / 2, c.size, c.size * (c.isSparkle ? 0.4 : 1));
+                    ctx.restore();
+                }
+
+                ctx.globalAlpha = 1;
+                requestAnimationFrame(loop);
+            }
+            requestAnimationFrame(loop);
+        }
+
+        function spawnActionConfetti(direction) {
+            const container = document.getElementById('cardContainer') || document.body;
+            const rect = container.getBoundingClientRect();
+            const originX = rect.left + rect.width / 2;
+            const originY = rect.top + rect.height / 2;
+
+            const isApprove = direction === 'right';
+            const colors = isApprove
+                ? ['#10b981', '#34d399', '#06b6d4', '#38bdf8', '#fbbf24', '#ffffff']
+                : ['#ef4444', '#f43f5e', '#fb7185', '#f97316', '#a855f7', '#ffffff'];
+
+            for (let i = 0; i < 48; i++) {
+                const angle = (isApprove ? -Math.PI / 4 : -Math.PI * 0.75) + (Math.random() - 0.5) * 1.6;
+                const speed = Math.random() * 16 + 8;
+                fxConfetti.push({
+                    x: originX + (Math.random() - 0.5) * 60,
+                    y: originY + (Math.random() - 0.5) * 60,
+                    vx: Math.cos(angle) * speed,
+                    vy: Math.sin(angle) * speed,
+                    gravity: 0.35,
+                    rot: Math.random() * Math.PI * 2,
+                    vRot: (Math.random() - 0.5) * 0.3,
+                    size: Math.random() * 9 + 5,
+                    color: colors[Math.floor(Math.random() * colors.length)],
+                    life: Math.random() * 0.5 + 0.8,
+                    isSparkle: Math.random() > 0.5
+                });
+            }
         }
     </script>
 </body>
