@@ -13,7 +13,10 @@ from server.models import Base, Translation
 from server.services.dictionary_service import (
     get_dictionary_links,
     search_dictionary_corpus,
-    extract_korean_candidate_terms
+    extract_korean_candidate_terms,
+    tokenize_japanese_sentence,
+    get_sentence_word_breakdown,
+    generate_duo_study_quiz
 )
 
 
@@ -124,3 +127,41 @@ def test_empty_keyword_handling(memory_db):
     assert res["keyword"] == ""
     assert res["total_occurrences"] == 0
     assert res["examples"] == []
+
+
+def test_tokenize_japanese_sentence():
+    sentence = "「本当にバカだな、スライム野郎！」"
+    tokens = tokenize_japanese_sentence(sentence)
+    token_texts = [t["text"] for t in tokens]
+    
+    assert "本当に" in token_texts or "本当" in token_texts
+    assert "バカ" in token_texts
+    assert "スライム" in token_texts
+    assert any(t["type"] == "katakana" for t in tokens)
+
+
+def test_get_sentence_word_breakdown(memory_db):
+    j_text = "剣士と魔導士の連携攻撃が炸裂した。"
+    k_text = "검사와 마도사의 연계 공격이 작렬했다."
+    breakdown = get_sentence_word_breakdown(j_text=j_text, k_text=k_text, folder="이세계B", db=memory_db)
+    
+    assert len(breakdown) > 0
+    madoshi_token = next((b for b in breakdown if b["token"] == "魔導士"), None)
+    assert madoshi_token is not None
+    assert madoshi_token["is_word"] is True
+    # In Korean, it might be extracted as "마도사의" or "마도사였고" due to particles.
+    assert any("마도사" in cand for cand in madoshi_token["candidate_terms"]) or "마도사" in madoshi_token["matched_term"]
+    assert "naver" in madoshi_token["dict_links"]
+
+
+def test_generate_duo_study_quiz(memory_db):
+    quiz_res = generate_duo_study_quiz(folder="이세계B", count=3, db=memory_db)
+    assert "items" in quiz_res
+    assert quiz_res["total_count"] >= 1
+    assert quiz_res["xp_reward"] > 0
+    
+    for item in quiz_res["items"]:
+        assert "id" in item
+        assert "type" in item
+        assert item["type"] in ("tile_reorder", "cloze", "meaning_choice", "pair_match")
+

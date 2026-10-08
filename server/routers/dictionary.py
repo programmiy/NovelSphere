@@ -12,7 +12,9 @@ from sqlalchemy.orm import Session
 from server.database import get_db
 from server.services.dictionary_service import (
     get_dictionary_links,
-    search_dictionary_corpus
+    search_dictionary_corpus,
+    get_sentence_word_breakdown,
+    generate_duo_study_quiz
 )
 
 router = APIRouter(prefix="/api/dictionary", tags=["Dictionary & Study"])
@@ -56,3 +58,46 @@ def get_dictionary_direct_links(
         "keyword": keyword,
         "links": links
     }
+
+
+@router.get(
+    "/sentence/breakdown",
+    summary="원문 문장 어휘 분해 및 번역어 블록 매핑",
+    description="일본어 문장을 토큰화하고 각 단어별 코퍼스 내 빈출 번역어 및 사전 링크를 반환합니다. (수동 교정 스마트 단어 바 및 학습용)"
+)
+def get_sentence_breakdown_endpoint(
+    j_text: str = Query(..., description="분해할 일본어 원문 문장"),
+    k_text: Optional[str] = Query(None, description="현재 한국어 번역문 (선택)"),
+    folder: Optional[str] = Query(None, description="현재 소설명 (선택)"),
+    db: Session = Depends(get_db)
+) -> Dict[str, Any]:
+    breakdown = get_sentence_word_breakdown(
+        j_text=j_text,
+        k_text=k_text,
+        folder=folder,
+        db=db
+    )
+    return {
+        "j_text": j_text,
+        "tokens": breakdown
+    }
+
+
+@router.get(
+    "/study/quiz",
+    summary="듀오링고 스타일의 인터랙티브 일본어 학습 퀴즈 생성",
+    description="34만 실제 누적 번역 코퍼스를 기반으로 단어 타일 조립, 빈칸 채우기, 단어 짝맞추기 퀴즈 세트를 생성합니다."
+)
+def get_duo_study_quiz_endpoint(
+    folder: Optional[str] = Query(None, description="특정 소설 우선 출제 (선택)"),
+    keyword: Optional[str] = Query(None, description="특정 키워드 포함 문장 우선 출제 (선택)"),
+    count: int = Query(5, ge=1, le=20, description="생성할 퀴즈 문제 수"),
+    db: Session = Depends(get_db)
+) -> Dict[str, Any]:
+    return generate_duo_study_quiz(
+        folder=folder,
+        keyword=keyword,
+        count=count,
+        db=db
+    )
+

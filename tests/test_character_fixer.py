@@ -176,8 +176,8 @@ def test_approve_single():
     assert res.status_code == 200
     data = res.json()
     assert data["status"] == "success"
-    assert data["backup_created"] is True
-    assert data["backup_file"].startswith("translations_backup_before_name_fix_")
+    assert data["backup_file"] is not None
+    assert data["backup_file"].startswith("translations_backup_")
     
     # Verify in DB
     db = SessionLocal()

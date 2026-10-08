@@ -5,6 +5,7 @@ import '../../services/local_db_service.dart';
 import '../../services/preferences_service.dart';
 import '../themes/reader_themes.dart';
 import 'character_fixer_screen.dart';
+import '../ai_review/ai_review_screen.dart';
 
 class GlossaryScreen extends StatefulWidget {
   const GlossaryScreen({super.key});
@@ -128,6 +129,94 @@ class _GlossaryScreenState extends State<GlossaryScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // AI 번역 검수 스튜디오 (Tinder 슬라이드 검수 & 2차 재재번역)
+            InkWell(
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const AiReviewScreen()),
+                );
+              },
+              borderRadius: BorderRadius.circular(14),
+              child: Container(
+                margin: const EdgeInsets.only(bottom: 16),
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      Colors.amber.withOpacity(0.22),
+                      Colors.amber.withOpacity(0.08),
+                    ],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: Colors.amber.withOpacity(0.5), width: 1.2),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.04),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(colors: [Colors.amber, Colors.orange]),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(Icons.swipe_rounded, color: Colors.white, size: 24),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Text(
+                                'AI 번역 검수 스튜디오',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  color: theme.textColor,
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: Colors.amber.withOpacity(0.2),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: const Text(
+                                  '슬라이드 검수',
+                                  style: TextStyle(color: Colors.amber, fontSize: 10, fontWeight: FontWeight.bold),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            '슬라이드로 승인/거절, 되돌리기 슬라이드, Reroll, 다중 모델 재재번역',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: theme.subTextColor,
+                              height: 1.3,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Icon(Icons.arrow_forward_ios_rounded, size: 16, color: theme.subTextColor),
+                  ],
+                ),
+              ),
+            ),
             // 인명/고유명사 스마트 교정기 (PC 서버 연동) 진입 배너 카드
             InkWell(
               onTap: () {
