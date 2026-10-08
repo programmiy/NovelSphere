@@ -136,10 +136,28 @@ function cacheDOMElements() {
     ntfyTestResult = document.getElementById('ntfyTestResult');
 }
 
+function showCyberLoader() {
+    if (window.CyberLoader && typeof window.CyberLoader.start === 'function') {
+        window.CyberLoader.start();
+    } else {
+        const el = document.getElementById('loading-skeleton');
+        if (el) el.style.display = 'flex';
+    }
+}
+
+async function hideCyberLoader() {
+    if (window.CyberLoader && typeof window.CyberLoader.finish === 'function') {
+        await window.CyberLoader.finish();
+    } else {
+        const el = document.getElementById('loading-skeleton');
+        if (el) el.style.display = 'none';
+    }
+}
+
 async function loadAndRenderGrouped() {
     if (isLoading) return;
     isLoading = true;
-    document.getElementById('loading-skeleton').style.display = 'block';
+    showCyberLoader();
     historyContainer.innerHTML = '';
     selectedIds.clear();
     updateBulkActionPanel();
@@ -194,7 +212,7 @@ async function loadAndRenderGrouped() {
         showToast("데이터 로딩 실패. 서버가 실행중인지 확인하세요.", "error");
     } finally {
         isLoading = false;
-        document.getElementById('loading-skeleton').style.display = 'none';
+        await hideCyberLoader();
         emptyState.style.display = Object.keys(groupedTranslations).length === 0 ? 'block' : 'none';
         updateBulkActionPanel();
     }
@@ -315,6 +333,14 @@ function updateStatistics(groupedData) {
                 apiQuotaStatItem.style.borderColor = 'rgba(245, 158, 11, 0.7)';
             }
         }
+
+        const apiQuotaMiniFill = document.getElementById('apiQuotaMiniFill');
+        if (apiQuotaMiniFill) {
+            apiQuotaMiniFill.style.width = `${Math.min(100, Math.max(0, pct))}%`;
+            if (pct >= 90) apiQuotaMiniFill.style.background = 'linear-gradient(90deg, #ef4444, #f87171)';
+            else if (pct >= 70) apiQuotaMiniFill.style.background = 'linear-gradient(90deg, #f59e0b, #fbbf24)';
+            else apiQuotaMiniFill.style.background = 'linear-gradient(90deg, #0284c7, #38bdf8)';
+        }
     }
 }
 
@@ -388,7 +414,7 @@ function renderGroupedHistory(dataToRender, selectedFolder = '') {
             const title = filteredTranslations[0]?.title || url;
             const isApplied = appliedUrlsSet.has(url.split('#')[0].replace(/\/$/, ''));
 
-            const shouldRenderImmediately = Boolean(currentSearch || isFindingEmpty || isCleanupQueue);
+            const shouldRenderImmediately = Boolean(currentSearch);
             const isUrlGroupCollapsed = shouldRenderImmediately ? false : true;
             const groupItemsHtml = shouldRenderImmediately ? filteredTranslations.map(t => renderItem(t)).join('') : '';
 
@@ -436,7 +462,7 @@ function renderGroupedHistory(dataToRender, selectedFolder = '') {
         }
 
         // 특정 폴더 선택 시 자동 펼침, 그 외 기본 접힘
-        const isFolderCollapsed = (selectedFolder && selectedFolder !== '__all__') ? false : ((isFindingEmpty || isCleanupQueue) ? (totalTranslationsInFolder === 0) : true);
+        const isFolderCollapsed = (selectedFolder && selectedFolder !== '__all__') ? false : (Boolean(currentSearch) ? false : true);
 
         folderContainer.innerHTML = `
             <div class="folder-group-header">
@@ -872,7 +898,7 @@ async function loadAndRenderAbnormal() {
     if (isLoading) return;
     isLoading = true;
     showToast('이상 번역 기록을 불러오는 중...', 'info');
-    document.getElementById('loading-skeleton').style.display = 'block';
+    showCyberLoader();
     historyContainer.innerHTML = '';
     selectedIds.clear();
     updateBulkActionPanel();
@@ -908,7 +934,7 @@ async function loadAndRenderAbnormal() {
         showToast("이상 번역 기록 로딩 실패.", "error");
     } finally {
         isLoading = false;
-        document.getElementById('loading-skeleton').style.display = 'none';
+        await hideCyberLoader();
         updateBulkActionPanel();
     }
 }
@@ -970,7 +996,7 @@ async function loadAndRenderCleanupQueue() {
     if (isLoading) return;
     isLoading = true;
     showToast('원문 복제·변형 정리 대기열을 불러오는 중...', 'info');
-    document.getElementById('loading-skeleton').style.display = 'block';
+    showCyberLoader();
     historyContainer.innerHTML = '';
     selectedIds.clear();
     updateBulkActionPanel();
@@ -1001,7 +1027,7 @@ async function loadAndRenderCleanupQueue() {
         showToast("원문 정리 대기열 로딩 실패.", "error");
     } finally {
         isLoading = false;
-        document.getElementById('loading-skeleton').style.display = 'none';
+        await hideCyberLoader();
         updateBulkActionPanel();
     }
 }
@@ -3512,6 +3538,7 @@ function renderQualityTab(quality, summary) {
     // 종합 건강도 점수 원형 링
     const scoreVal = document.getElementById('healthScoreValue');
     const ringFill = document.getElementById('scoreRingFill');
+    const scoreGradePill = document.getElementById('scoreGradePill');
     const score = quality.health_score || 0;
 
     if (scoreVal) scoreVal.innerHTML = `${score}<span class="score-unit">점</span>`;
@@ -3523,6 +3550,22 @@ function renderQualityTab(quality, summary) {
         else if (score >= 75) ringFill.style.stroke = '#3b82f6';
         else if (score >= 60) ringFill.style.stroke = '#f59e0b';
         else ringFill.style.stroke = '#ef4444';
+    }
+
+    if (scoreGradePill) {
+        if (score >= 95) {
+            scoreGradePill.textContent = 'GRADE S+';
+            scoreGradePill.className = 'score-grade-pill grade-s';
+        } else if (score >= 88) {
+            scoreGradePill.textContent = 'GRADE A';
+            scoreGradePill.className = 'score-grade-pill grade-a';
+        } else if (score >= 75) {
+            scoreGradePill.textContent = 'GRADE B';
+            scoreGradePill.className = 'score-grade-pill grade-b';
+        } else {
+            scoreGradePill.textContent = 'ATTENTION';
+            scoreGradePill.className = 'score-grade-pill grade-c';
+        }
     }
 
     // 메트릭 리스트
@@ -3559,14 +3602,15 @@ function renderQualityTab(quality, summary) {
     // 문단 길이 5구간 분포 리스트
     const lenList = document.getElementById('lengthDistributionList');
     if (lenList && Array.isArray(quality.length_distribution)) {
-        lenList.innerHTML = quality.length_distribution.map(d => `
-            <div class="length-dist-item">
+        lenList.innerHTML = quality.length_distribution.map((d, idx) => `
+            <div class="length-dist-item phase-${idx + 1}">
                 <div class="length-dist-header">
-                    <div>
+                    <div class="length-dist-title-group">
+                        <span class="length-dist-badge">SEC 0${idx + 1}</span>
                         <span class="length-dist-label">${escapeHtml(d.label)}</span>
                         <span class="length-dist-desc">(${escapeHtml(d.desc)})</span>
                     </div>
-                    <span class="length-dist-count">${d.count.toLocaleString()}건 (${d.pct}%)</span>
+                    <span class="length-dist-count">${d.count.toLocaleString()}건 <span class="dist-pct-tag">${d.pct}%</span></span>
                 </div>
                 <div class="length-dist-track">
                     <div class="length-dist-fill" style="width: ${d.pct}%;"></div>
