@@ -37,7 +37,8 @@ def run_migrations_offline() -> None:
     script output.
 
     """
-    url = config.get_main_option("sqlalchemy.url")
+    from server.settings import settings
+    url = settings.database_url
     context.configure(
         url=url,
         target_metadata=target_metadata,
@@ -56,15 +57,26 @@ def run_migrations_online() -> None:
     and associate a connection with the context.
 
     """
+    from server.settings import settings
+    ini_section = config.get_section(config.config_ini_section, {})
+    ini_section["sqlalchemy.url"] = settings.database_url
+
     connectable = engine_from_config(
-        config.get_section(config.config_ini_section, {}),
+        ini_section,
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )
 
+    def include_object(object, name, type_, reflected, compare_to):
+        if type_ == "table" and name.startswith("translations_fts"):
+            return False
+        return True
+
     with connectable.connect() as connection:
         context.configure(
-            connection=connection, target_metadata=target_metadata
+            connection=connection, 
+            target_metadata=target_metadata,
+            include_object=include_object
         )
 
         with context.begin_transaction():

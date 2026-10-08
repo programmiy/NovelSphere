@@ -157,3 +157,19 @@ class ApiCallLog(Base):
 
 
 
+
+class AiReviewQueue(Base):
+    __tablename__ = 'ai_review_queue'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    translation_id = Column(Integer, ForeignKey('translations.id', ondelete='CASCADE'), nullable=False, unique=True)
+    original_text = Column(Text, nullable=False)
+    old_translated_text = Column(Text)
+    ai_translated_text = Column(Text)
+    status = Column(Text, nullable=False, default='pending_review') # pending_review, pending_reretranslate, approved, rejected
+    model_used = Column(Text)
+    created_at = Column(BigInteger, nullable=False)
+    updated_at = Column(BigInteger, nullable=False)
+
+    __table_args__ = (
+        Index('ix_ai_review_status', 'status'),
+    )

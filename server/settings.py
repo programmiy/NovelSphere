@@ -35,6 +35,7 @@ class Settings(BaseSettings):
 
     # --- Database Settings ---
     database_url: str = f"sqlite:///{os.path.join(APP_ROOT, 'server', 'translations.db')}"
+    corpus_db_url: str = f"sqlite:///{os.path.join(APP_ROOT, 'server', 'corpus_ai.db')}"
 
     # --- CORS Settings ---
     allowed_origins: List[str] = [
