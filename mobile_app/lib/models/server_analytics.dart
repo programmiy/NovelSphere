@@ -11,6 +11,10 @@ class AnalyticsSummary {
   final double avgParagraphsPerEpisode;
   final double avgCharsPerEpisode;
   final double expansionRatio;
+  final int quotaResetHour;
+  final bool isUsDst;
+  final String resetNote;
+  final int quotaWindowStartTs;
 
   AnalyticsSummary({
     required this.totalBooks,
@@ -25,6 +29,10 @@ class AnalyticsSummary {
     required this.avgParagraphsPerEpisode,
     required this.avgCharsPerEpisode,
     required this.expansionRatio,
+    this.quotaResetHour = 16,
+    this.isUsDst = true,
+    this.resetNote = 'API 초기화 주기 (오후 4시 KST) 기준',
+    this.quotaWindowStartTs = 0,
   });
 
   factory AnalyticsSummary.fromJson(Map<String, dynamic> json) {
@@ -41,6 +49,10 @@ class AnalyticsSummary {
       avgParagraphsPerEpisode: (json['avg_paragraphs_per_episode'] as num?)?.toDouble() ?? 0.0,
       avgCharsPerEpisode: (json['avg_chars_per_episode'] as num?)?.toDouble() ?? 0.0,
       expansionRatio: (json['expansion_ratio'] as num?)?.toDouble() ?? 1.16,
+      quotaResetHour: (json['quota_reset_hour'] as num?)?.toInt() ?? 16,
+      isUsDst: json['is_us_dst'] as bool? ?? true,
+      resetNote: json['reset_note'] as String? ?? 'API 초기화 주기 (오후 4시 KST) 기준',
+      quotaWindowStartTs: (json['quota_window_start_ts'] as num?)?.toInt() ?? 0,
     );
   }
 }
@@ -149,6 +161,9 @@ class AnalyticsActivity {
   final List<DailyTrendItem> dailyTrends;
   final List<DowDistributionItem> dowDistribution;
   final List<HourlyDistributionItem> hourlyDistribution;
+  final int quotaResetHour;
+  final bool isUsDst;
+  final String resetNote;
 
   AnalyticsActivity({
     this.todayEpisodes = 0,
@@ -170,6 +185,9 @@ class AnalyticsActivity {
     required this.dailyTrends,
     required this.dowDistribution,
     required this.hourlyDistribution,
+    this.quotaResetHour = 16,
+    this.isUsDst = true,
+    this.resetNote = 'API 초기화 주기 (오후 4시 KST) 기준',
   });
 
   factory AnalyticsActivity.fromJson(Map<String, dynamic> json) {
@@ -190,6 +208,9 @@ class AnalyticsActivity {
       peakDowCount: (json['peak_dow_count'] as num?)?.toInt() ?? 0,
       weekdayPct: (json['weekday_pct'] as num?)?.toDouble() ?? 0.0,
       weekendPct: (json['weekend_pct'] as num?)?.toDouble() ?? 0.0,
+      quotaResetHour: (json['quota_reset_hour'] as num?)?.toInt() ?? 16,
+      isUsDst: json['is_us_dst'] as bool? ?? true,
+      resetNote: json['reset_note'] as String? ?? 'API 초기화 주기 (오후 4시 KST) 기준',
       dailyTrends: (json['daily_trends'] as List<dynamic>?)
               ?.map((e) => DailyTrendItem.fromJson(e as Map<String, dynamic>))
               .toList() ??

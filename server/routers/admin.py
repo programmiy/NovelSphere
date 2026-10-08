@@ -150,9 +150,12 @@ def get_admin_analytics(folder_name: Optional[str] = None):
         avg_chars_per_ep = round(total_kr_chars / total_episodes, 1) if total_episodes else 0.0
         expansion_ratio = round(total_kr_chars / total_jp_chars, 2) if total_jp_chars else 1.16
 
-        # 오늘 번역 실적 (Today's Translation Stats) - 로컬 자정 기준
-        today_start_dt = datetime.datetime.combine(datetime.date.today(), datetime.time.min)
-        today_start_ts = int(today_start_dt.timestamp())
+        # 오늘 번역 실적 (Today's Translation Stats) - API 쿼터 초기화(오후 4시/5시 KST) 주기 기준
+        from server.quota import get_current_quota_window_start_ts, get_quota_reset_hour, is_us_dst
+        today_start_ts = get_current_quota_window_start_ts()
+        quota_reset_hour = get_quota_reset_hour()
+        is_dst = is_us_dst()
+        reset_hour_str = f"오후 {quota_reset_hour - 12}시" if quota_reset_hour > 12 else f"{quota_reset_hour}시"
         
         today_where = f"WHERE timestamp >= ? {'AND folderName = ?' if target_folder else ''}"
         today_params = [today_start_ts] + ([target_folder] if target_folder else [])
@@ -170,11 +173,11 @@ def get_admin_analytics(folder_name: Optional[str] = None):
         today_paragraphs = today_row[1] or 0
         today_kr_chars = today_row[2] or 0
 
-        # 2. 일별 활동 추이 (Daily Trends)
+        # 2. 일별 활동 추이 (Daily Trends) - API 쿼터 주기(미국 태평양 기준 일자)
         daily_where = f"WHERE timestamp > 0 {'AND folderName = ?' if target_folder else ''}"
         daily_query = f"""
         SELECT 
-            DATE(timestamp, 'unixepoch', 'localtime') as date_str,
+            TO_QUOTA_DATE(timestamp) as date_str,
             COUNT(*) as count,
             COALESCE(SUM(LENGTH(translated)), 0) as kr_chars,
             COALESCE(SUM(LENGTH(original)), 0) as jp_chars
@@ -221,22 +224,24 @@ def get_admin_analytics(folder_name: Optional[str] = None):
         last_7d_count = sum(d["count"] for d in last_7_trends)
         last_7d_chars = sum(d["kr_chars"] for d in last_7_trends)
 
-        # 연속 번역일수 (Streak)
+        # 연속 번역일수 (Streak) - 미국 태평양(API 쿼터 날짜) 기준
+        import zoneinfo
+        tz_la = zoneinfo.ZoneInfo("America/Los_Angeles")
         streak_days = 0
         if daily_trends:
             dates_set = {d["date"] for d in daily_trends}
-            check_date = datetime.date.today()
-            # 오늘 번역이 없으면 어제부터 역산
+            check_date = datetime.datetime.now(tz=tz_la).date()
+            # 현재 쿼터 주기에 아직 번역이 없으면 직전 쿼터 주기(어제)부터 역산
             if check_date.isoformat() not in dates_set:
                 check_date = check_date - datetime.timedelta(days=1)
             while check_date.isoformat() in dates_set:
                 streak_days += 1
                 check_date = check_date - datetime.timedelta(days=1)
 
-        # 3. 24시간 시간대별 활동 프로필 (Hourly Distribution)
+        # 3. 24시간 시간대별 활동 프로필 (Hourly Distribution) - API 쿼터 주기(미국 시간 0시~23시)
         hourly_query = f"""
         SELECT 
-            CAST(STRFTIME('%H', timestamp, 'unixepoch', 'localtime') AS INTEGER) as hour_num,
+            TO_QUOTA_HOUR(timestamp) as hour_num,
             COUNT(*) as count
         FROM translations
         {daily_where}
@@ -258,10 +263,10 @@ def get_admin_analytics(folder_name: Optional[str] = None):
             peak_hour = peak_item["hour"]
             peak_hour_count = peak_item["count"]
 
-        # 요일별 활동 분포 (Day of Week Distribution: 월~일)
+        # 요일별 활동 분포 (Day of Week Distribution: 월~일) - API 쿼터 주기(미국 시간 요일)
         dow_query = f"""
         SELECT 
-            CAST(STRFTIME('%w', timestamp, 'unixepoch', 'localtime') AS INTEGER) as dow_num,
+            TO_QUOTA_DOW(timestamp) as dow_num,
             COUNT(*) as count,
             COALESCE(SUM(LENGTH(translated)), 0) as kr_chars
         FROM translations
@@ -422,12 +427,20 @@ def get_admin_analytics(folder_name: Optional[str] = None):
                 "avg_chars_per_paragraph": avg_chars_per_para,
                 "avg_paragraphs_per_episode": avg_paras_per_ep,
                 "avg_chars_per_episode": avg_chars_per_ep,
-                "expansion_ratio": expansion_ratio
+                "expansion_ratio": expansion_ratio,
+                "quota_reset_hour": quota_reset_hour,
+                "is_us_dst": is_dst,
+                "reset_note": f"API 초기화 주기 ({reset_hour_str} KST) 기준",
+                "quota_window_start_ts": today_start_ts
             },
             "activity": {
                 "today_episodes": today_episodes,
                 "today_paragraphs": today_paragraphs,
                 "today_kr_chars": today_kr_chars,
+                "quota_reset_hour": quota_reset_hour,
+                "is_us_dst": is_dst,
+                "reset_note": f"API 초기화 주기 ({reset_hour_str} KST) 기준",
+                "quota_window_start_ts": today_start_ts,
                 "daily_avg_count": daily_avg_count,
                 "daily_avg_chars": daily_avg_chars,
                 "peak_count": peak_count,

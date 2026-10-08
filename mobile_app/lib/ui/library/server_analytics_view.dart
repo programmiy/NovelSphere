@@ -239,6 +239,24 @@ class _ServerAnalyticsViewState extends State<ServerAnalyticsView> {
                         fontWeight: FontWeight.bold,
                       ),
                     ),
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                      decoration: BoxDecoration(
+                        color: (hasToday ? Colors.deepOrange : theme.subTextColor).withOpacity(0.12),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        summary.quotaResetHour > 12
+                            ? '오후 ${summary.quotaResetHour - 12}시 리셋'
+                            : '${summary.quotaResetHour}시 리셋',
+                        style: TextStyle(
+                          color: hasToday ? Colors.deepOrange : theme.subTextColor,
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
                     const Spacer(),
                     if (hasToday)
                       Container(
@@ -281,7 +299,7 @@ class _ServerAnalyticsViewState extends State<ServerAnalyticsView> {
                 Text(
                   hasToday
                       ? '${_fmt.format(summary.todayParagraphs)}개 문단 · ${_fmt.format(summary.todayKrChars)}자 번역'
-                      : '오늘 아직 번역된 회차가 없습니다.',
+                      : '현재 주기(오후 ${summary.quotaResetHour > 12 ? summary.quotaResetHour - 12 : summary.quotaResetHour}시 리셋 기준)에 번역된 회차가 없습니다.',
                   style: TextStyle(
                     color: theme.subTextColor.withOpacity(0.85),
                     fontSize: 11,
@@ -684,7 +702,7 @@ class _ServerAnalyticsViewState extends State<ServerAnalyticsView> {
           _buildActivityMetric(
             theme,
             '가장 활발한 요일 & 시간대',
-            '${activity.peakDow} (${_fmt.format(activity.peakDowCount)}문단) / ${activity.peakHour}시 (${_fmt.format(activity.peakHourCount)}문단)',
+            '${activity.peakDow} (${_fmt.format(activity.peakDowCount)}문단) / ${activity.peakHour}시 (${_fmt.format(activity.peakHourCount)}문단) (API 주기 기준)',
           ),
           const SizedBox(height: 12),
           // 평일 vs 주말 비중 막대
@@ -840,7 +858,7 @@ class _ServerAnalyticsViewState extends State<ServerAnalyticsView> {
               ),
               const Spacer(),
               Text(
-                '최근 ${recentTrends.length}일',
+                '최근 ${recentTrends.length}일 (API 리셋 기준)',
                 style: TextStyle(color: theme.subTextColor, fontSize: 11),
               ),
             ],

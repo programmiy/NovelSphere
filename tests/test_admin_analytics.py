@@ -21,9 +21,17 @@ def test_admin_analytics_endpoint():
     assert "total_jp_chars" in summary
     assert "expansion_ratio" in summary
     assert summary["expansion_ratio"] >= 0
+    assert summary["quota_reset_hour"] in (16, 17)
+    assert "is_us_dst" in summary
+    assert "reset_note" in summary
+    assert "quota_window_start_ts" in summary
 
     # 2. activity 검증
     activity = data["activity"]
+    assert activity["quota_reset_hour"] in (16, 17)
+    assert "is_us_dst" in activity
+    assert "reset_note" in activity
+    assert "quota_window_start_ts" in activity
     assert "daily_avg_count" in activity
     assert "daily_avg_chars" in activity
     assert "peak_count" in activity

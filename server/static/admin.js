@@ -280,6 +280,17 @@ function updateStatistics(groupedData) {
     const avgLengthEl = document.getElementById('avgLength');
     if (avgLengthEl) avgLengthEl.textContent = avgLength.toLocaleString();
 
+    const currentResetHour = latestQuotaSummary ? (latestQuotaSummary.quota_reset_hour || 16) : 16;
+    const currentResetHourStr = currentResetHour > 12 ? `오후 ${currentResetHour - 12}시` : `${currentResetHour}시`;
+    const todayStatItem = document.getElementById('todayStatItem');
+    if (todayStatItem) {
+        todayStatItem.title = `오늘 번역된 회차(페이지) 및 문단 수 (API 리셋 기준: 매일 ${currentResetHourStr} 초기화)`;
+    }
+    const todayCountLabel = document.getElementById('todayCountLabel');
+    if (todayCountLabel) {
+        todayCountLabel.innerHTML = `오늘 번역 (<span id="todayCount">${todayCount.toLocaleString()}</span>문단) <span style="font-size: 11px; opacity: 0.85; font-weight: normal;">(${currentResetHourStr} 리셋)</span>`;
+    }
+
     // API 쿼터 통계 갱신
     if (latestQuotaSummary) {
         const apiQuotaCountEl = document.getElementById('apiQuotaCount');
@@ -2101,7 +2112,12 @@ function handleCheckboxChange(e) {
     updateBulkActionPanel();
 }
 
+const unclassifiedParagraphsMap = new Map();
+
 function findTranslationById(id) {
+    if (unclassifiedParagraphsMap.has(id)) {
+        return unclassifiedParagraphsMap.get(id);
+    }
     const sources = [groupedTranslations, rawAbnormalData, rawCleanupData];
     for (const data of sources) {
         if (!data) continue;
@@ -2179,6 +2195,11 @@ async function handleHistoryClick(e) {
 
         if (target.closest('.group-select-all-checkbox') || target.closest('.checkbox-container')) {
             return; // Handled by change listener
+        }
+
+        // 미분류 소설 보관함(드로어) 내부의 회차 토글은 renderUnclassifiedEpisodes 자체 핸들러가 처리
+        if (urlHeader.closest('#unclassifiedEpisodeListContainer')) {
+            return;
         }
 
         // Clicking anywhere else in the episode header (title, chevron, or row background) toggles the episode
@@ -3091,10 +3112,17 @@ function renderActivityTab(activity) {
     if (!activity) return;
 
     // KPI 카드 업데이트
+    const resetH = activity.quota_reset_hour || 16;
+    const resetHStr = resetH > 12 ? `오후 ${resetH - 12}시` : `${resetH}시`;
+
     const todayEpisodes = document.getElementById('kpiTodayEpisodes');
     if (todayEpisodes) {
         const eps = activity.today_episodes || 0;
         todayEpisodes.innerHTML = `${eps.toLocaleString()}<span class="kpi-unit">화</span>`;
+        const todayLabelEl = todayEpisodes.parentElement ? todayEpisodes.parentElement.querySelector('.kpi-label') : null;
+        if (todayLabelEl) {
+            todayLabelEl.innerHTML = `⚡ 오늘 번역 회차 <span style="font-size: 11px; font-weight: normal; opacity: 0.85;">(${resetHStr} 초기화)</span>`;
+        }
     }
 
     const todaySub = document.getElementById('kpiTodaySub');
@@ -3128,7 +3156,7 @@ function renderActivityTab(activity) {
     // 피크 시간대 배지
     const peakBadge = document.getElementById('peakHourBadge');
     if (peakBadge) {
-        peakBadge.textContent = `🔥 피크 시간대: ${activity.peak_hour}시 (${activity.peak_hour_count.toLocaleString()}건)`;
+        peakBadge.textContent = `🔥 피크 시간대: ${activity.peak_hour}시 (${activity.peak_hour_count.toLocaleString()}건, API 주기 기준)`;
     }
 
     // SVG 차트 렌더링
@@ -4462,11 +4490,14 @@ function renderUnclassifiedEpisodes(novel) {
                 return;
             }
 
+            e.stopPropagation(); // 상위 이벤트 위임 핸들러로의 버블링 방지
+
             const isOpen = content.classList.contains('open');
             if (isOpen) {
                 content.classList.remove('open');
                 icon.textContent = 'expand_more';
             } else {
+                content.classList.remove('collapsed');
                 content.classList.add('open');
                 icon.textContent = 'expand_less';
 
@@ -4486,6 +4517,7 @@ function renderUnclassifiedEpisodes(novel) {
                     }
 
                     if (items && items.length > 0) {
+                        items.forEach(t => unclassifiedParagraphsMap.set(t.id, t));
                         content.innerHTML = `
                             <table class="history-table">
                                 <thead>
@@ -4534,3 +4566,28 @@ async function executeAssignFolder(work_id, target_folder, work_url) {
         showToast(`오류 발생: ${e.message}`, 'error');
     }
 }
+
+// --- URL Deep Linking (Auto-search & Novel Filter from Context Viewer) ---
+window.addEventListener('DOMContentLoaded', () => {
+    const params = new URLSearchParams(window.location.search);
+    const searchVal = params.get('search');
+    const folderVal = params.get('folder');
+    if (searchVal || folderVal) {
+        const tryApplyParams = () => {
+            const folderDropdown = document.getElementById('folderFilterDropdown');
+            const searchInput = document.getElementById('searchBox');
+            if (folderVal && folderDropdown) {
+                folderDropdown.value = folderVal;
+                folderDropdown.dispatchEvent(new Event('change'));
+            }
+            if (searchVal && searchInput) {
+                searchInput.value = searchVal;
+                searchInput.dispatchEvent(new Event('input'));
+                searchInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                searchInput.focus();
+            }
+        };
+        setTimeout(tryApplyParams, 600);
+        setTimeout(tryApplyParams, 1200);
+    }
+});

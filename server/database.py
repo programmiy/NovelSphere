@@ -60,12 +60,50 @@ def _sqlite_regexp_replace_plain(pattern, repl, text):
     except Exception:
         return text
 
+import zoneinfo
+import datetime
+
+_LA_TZ = zoneinfo.ZoneInfo("America/Los_Angeles")
+
+def _sqlite_to_quota_date(ts):
+    """Unix timestamp(초)를 미국 태평양(America/Los_Angeles, Gemini API 리셋 기준) 날짜 문자열(YYYY-MM-DD)로 변환."""
+    if ts is None:
+        return None
+    try:
+        dt = datetime.datetime.fromtimestamp(int(ts), tz=_LA_TZ)
+        return dt.strftime("%Y-%m-%d")
+    except Exception:
+        return None
+
+def _sqlite_to_quota_hour(ts):
+    """Unix timestamp(초)를 미국 태평양 기준 0~23 시(Hour)로 변환."""
+    if ts is None:
+        return 0
+    try:
+        dt = datetime.datetime.fromtimestamp(int(ts), tz=_LA_TZ)
+        return dt.hour
+    except Exception:
+        return 0
+
+def _sqlite_to_quota_dow(ts):
+    """Unix timestamp(초)를 미국 태평양 기준 요일(0:일, 1:월, ..., 6:토)로 변환."""
+    if ts is None:
+        return 0
+    try:
+        dt = datetime.datetime.fromtimestamp(int(ts), tz=_LA_TZ)
+        return int(dt.strftime("%w"))
+    except Exception:
+        return 0
+
 def register_sqlite_functions(conn):
     conn.create_function("REGEXP", 2, _sqlite_regexp)
     conn.create_function("REGEXP", 3, _sqlite_regexp)
     conn.create_function("REGEXP_REPLACE", 3, lambda p, r, t: _sqlite_regexp_replace(p, r, t, 0))
     conn.create_function("REGEXP_REPLACE", 4, _sqlite_regexp_replace)
     conn.create_function("REGEXP_REPLACE_PLAIN", 3, _sqlite_regexp_replace_plain)
+    conn.create_function("TO_QUOTA_DATE", 1, _sqlite_to_quota_date)
+    conn.create_function("TO_QUOTA_HOUR", 1, _sqlite_to_quota_hour)
+    conn.create_function("TO_QUOTA_DOW", 1, _sqlite_to_quota_dow)
 
 def get_sqlite_conn(as_dict: bool = False, timeout: float = 15.0) -> sqlite3.Connection:
     """
