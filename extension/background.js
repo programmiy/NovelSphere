@@ -73,11 +73,6 @@ chrome.runtime.onInstalled.addListener((details) => {
             title: '일본어 번역하기',
             contexts: ['selection']
         });
-        chrome.contextMenus.create({
-            id: 'openTranslationHistory',
-            title: '번역 기록 보기',
-            contexts: ['page']
-        });
     } else {
         console.warn("Context Menus API is not available.");
     }
@@ -89,17 +84,9 @@ if (chrome.contextMenus) {
         switch (info.menuItemId) {
             case 'translateJapanese':
                 break;
-            case 'openTranslationHistory':
-                chrome.tabs.create({ url: chrome.runtime.getURL('history.html') });
-                break;
         }
     });
 }
-
-// 확장 프로그램 아이콘 클릭 시 번역 기록 페이지 열기
-chrome.action.onClicked.addListener((tab) => {
-    chrome.tabs.create({ url: chrome.runtime.getURL('history.html') });
-});
 
 // 메시지 처리 (콘텐츠 스크립트에서 오는 요청들)
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
