@@ -41,11 +41,15 @@ from server.settings import settings
 # --- Modularized Services Re-exports for Backward Compatibility ---
 from server.services.rpm_manager import (
     _CALL_TIMESTAMPS,
+    _EPISODE_RECORDS,
     _RPM_LOCK,
     _record_call_timestamp,
+    calculate_episode_adaptive_delay,
     get_current_rpm,
     get_gemini_session,
+    get_recent_episode_count,
     proactive_rpm_rest,
+    record_episode_translation,
     recycle_gemini_session,
 )
 from server.services.translation_engine import (
@@ -188,6 +192,10 @@ def translate_texts(req: TranslateRequest, db: Session = Depends(get_db)):
     # URL에서 #lanovel_review 등 해시를 완벽히 제거하여 정규화
     clean_url = (req.url or "").split('#')[0].strip()
     req.url = clean_url
+
+    # 최근 회차 번역 슬라이딩 윈도우에 회차 기록 (과열 방지용 속도 추적)
+    if clean_url:
+        record_episode_translation(clean_url)
 
     translatable_items = [item for item in req.items if item.id != 'tagCount']
 
@@ -721,4 +729,33 @@ def get_translation_session_count(
         "total_today_count": total_today_count,
         "window_start_ts": window_start_ts,
         "cutoff_hour": cutoff_hour
+    }
+
+
+@router.get(
+    "/api/rpm_status",
+    tags=["Translation"],
+    summary="현재 RPM 및 최근 회차 번역 속도 상태 조회",
+    description="최근 60초간의 API 호출 수(RPM)와 최근 5분간의 번역 회차 수를 조회하고 권장 지연 시간을 반환합니다."
+)
+def get_rpm_status():
+    rpm = get_current_rpm(60.0)
+    recent_episodes = get_recent_episode_count(300.0)
+
+    turbo_delay_s = calculate_episode_adaptive_delay(recent_episodes, is_turbo=True)
+    normal_delay_s = calculate_episode_adaptive_delay(recent_episodes, is_turbo=False)
+
+    if rpm >= 12 or (recent_episodes >= 7 and rpm >= 9) or (recent_episodes >= 4 and rpm >= 11):
+        zone = "red"
+    elif rpm >= 9 or (recent_episodes >= 4 and rpm >= 7):
+        zone = "yellow"
+    else:
+        zone = "green"
+
+    return {
+        "current_rpm": rpm,
+        "recent_episodes_5m": recent_episodes,
+        "zone": zone,
+        "recommended_turbo_delay_seconds": turbo_delay_s,
+        "recommended_normal_delay_seconds": normal_delay_s,
     }

@@ -8,9 +8,14 @@ import server.routers.translation as trans_module
 from server.routers.translation import (
     get_current_rpm,
     _record_call_timestamp,
+    record_episode_translation,
+    get_recent_episode_count,
+    calculate_episode_adaptive_delay,
+    get_rpm_status,
     recycle_gemini_session,
     proactive_rpm_rest,
     _CALL_TIMESTAMPS,
+    _EPISODE_RECORDS,
     _RPM_LOCK
 )
 from server.notifications import update_translation_status, get_translation_status
@@ -21,9 +26,11 @@ def clean_rpm_sliding_window():
     """각 테스트 전후로 슬라이딩 윈도우 덱을 깨끗이 초기화."""
     with _RPM_LOCK:
         _CALL_TIMESTAMPS.clear()
+        _EPISODE_RECORDS.clear()
     yield
     with _RPM_LOCK:
         _CALL_TIMESTAMPS.clear()
+        _EPISODE_RECORDS.clear()
 
 
 def test_rpm_sliding_window_tracking():
@@ -126,3 +133,107 @@ def test_status_preservation_and_current_rpm():
     assert status["current_rpm"] == 3
     assert status["book_title"] == "테스트북"
     assert status["current_episode_title"] == "10화"
+
+
+def test_episode_sliding_window_tracking():
+    """회차 단위 슬라이딩 윈도우 기록, 만료 정리 및 30초 내 중복 방지 검증."""
+    assert get_recent_episode_count(300.0) == 0
+
+    # 서로 다른 3개 회차 기록
+    record_episode_translation("https://kakuyomu.jp/works/1/episodes/101")
+    record_episode_translation("https://kakuyomu.jp/works/1/episodes/102")
+    record_episode_translation("https://kakuyomu.jp/works/1/episodes/103")
+
+    assert get_recent_episode_count(300.0) == 3
+
+    # 동일 회차 즉시 재진입 시 중복 카운트 방지
+    record_episode_translation("https://kakuyomu.jp/works/1/episodes/103")
+    assert get_recent_episode_count(300.0) == 3
+
+    # 350초 전(5분 만료 초과) 기록은 자동 제거 확인
+    now = time.time()
+    with _RPM_LOCK:
+        _EPISODE_RECORDS.appendleft((now - 350, "https://kakuyomu.jp/works/1/episodes/100"))
+
+    assert get_recent_episode_count(300.0) == 3
+
+
+def test_adaptive_delay_calculation():
+    """최근 번역 회차 수에 따른 적응형 지연시간 계산 검증."""
+    # 쾌속모드: 회차 수 증가에 따른 지연시간 가중 부여
+    assert calculate_episode_adaptive_delay(0, is_turbo=True) == 8.0
+    assert calculate_episode_adaptive_delay(2, is_turbo=True) == 8.0
+    assert calculate_episode_adaptive_delay(3, is_turbo=True) == 15.0
+    assert calculate_episode_adaptive_delay(4, is_turbo=True) == 22.0
+    assert calculate_episode_adaptive_delay(5, is_turbo=True) == 30.0
+    assert calculate_episode_adaptive_delay(6, is_turbo=True) == 40.0
+    assert calculate_episode_adaptive_delay(8, is_turbo=True) == 55.0
+
+    # 일반모드
+    assert calculate_episode_adaptive_delay(3, is_turbo=False) == 60.0
+    assert calculate_episode_adaptive_delay(5, is_turbo=False) == 75.0
+    assert calculate_episode_adaptive_delay(8, is_turbo=False) == 90.0
+
+
+def test_high_episode_velocity_triggers_yellow_zone():
+    """최근 5분 번역 회차가 4화 이상일 때, 7 RPM에서도 선제적 Yellow Zone(2.5~4.5초)으로 완충 휴식하는지 검증."""
+    now = time.time()
+    # 4개 회차 기록
+    with _RPM_LOCK:
+        for i in range(4):
+            _EPISODE_RECORDS.append((now - i * 10, f"https://syosetu.com/n1234/{i+1}"))
+        # 7회 API 호출 (평소에는 Green Zone인 7 RPM)
+        _CALL_TIMESTAMPS.extend([now - i for i in range(7)])
+
+    assert get_recent_episode_count(300.0) == 4
+    assert get_current_rpm(60.0) == 7
+
+    with patch("time.sleep") as mock_sleep:
+        proactive_rpm_rest()
+        assert mock_sleep.called
+        sleep_arg = mock_sleep.call_args[0][0]
+        # 회차 급증 가중치로 2.5 ~ 4.5초 미세 휴식 부여
+        assert 2.5 <= sleep_arg <= 4.5
+
+
+def test_extreme_episode_velocity_triggers_red_zone():
+    """최근 5분 번역 회차가 7화 이상일 때, 9 RPM에서도 선제적 Red Zone(8.5~16.5초)으로 진입 및 세션 재생성 검증."""
+    now = time.time()
+    # 7개 회차 기록
+    with _RPM_LOCK:
+        for i in range(7):
+            _EPISODE_RECORDS.append((now - i * 10, f"https://syosetu.com/n1234/{i+1}"))
+        # 9회 API 호출 (평소에는 Yellow Zone인 9 RPM)
+        _CALL_TIMESTAMPS.extend([now - i for i in range(9)])
+
+    assert get_recent_episode_count(300.0) == 7
+    assert get_current_rpm(60.0) == 9
+
+    from server.services.rpm_manager import get_gemini_session
+    old_session = get_gemini_session()
+
+    with patch("time.sleep") as mock_sleep:
+        proactive_rpm_rest(novel_title="과열소설", episode_title="8화")
+        assert mock_sleep.called
+        sleep_arg = mock_sleep.call_args[0][0]
+        assert 8.5 <= sleep_arg <= 16.5
+
+    # 세션 소켓 재생성 확인
+    new_session = get_gemini_session()
+    assert new_session is not old_session
+
+
+def test_rpm_status_endpoint():
+    """GET /api/rpm_status 핸들러 응답 및 속성 검증."""
+    now = time.time()
+    with _RPM_LOCK:
+        for i in range(5):
+            _EPISODE_RECORDS.append((now - i * 10, f"https://novelup.plus/story/{i+1}"))
+        _CALL_TIMESTAMPS.extend([now - i for i in range(8)])
+
+    status = get_rpm_status()
+    assert status["current_rpm"] == 8
+    assert status["recent_episodes_5m"] == 5
+    assert status["zone"] == "yellow"
+    assert status["recommended_turbo_delay_seconds"] == 30.0
+    assert status["recommended_normal_delay_seconds"] == 75.0

@@ -2221,6 +2221,91 @@ function getCurrentQuotaWindow(now = new Date()) {
     return `${year}-${month}-${day}_${cutoffHour}`;
 }
 
+// =================================================================================
+// ⚡ 최근 번역 회차 기반 적응형 RPM 방어 시스템 (Episode-Aware Adaptive Throttling)
+// =================================================================================
+const RECENT_EPISODES_STORAGE_KEY = 'lanovel_recent_episodes';
+let recentEpisodesMemoryCache = [];
+
+async function recordRecentEpisode(currentCleanUrl) {
+    if (!currentCleanUrl) return;
+    const now = Date.now();
+    const pruneCutoff = now - 10 * 60 * 1000; // 10분 이상 지난 기록 정리
+
+    let list = [];
+    try {
+        const stored = await chrome.storage.local.get(RECENT_EPISODES_STORAGE_KEY);
+        if (Array.isArray(stored[RECENT_EPISODES_STORAGE_KEY])) {
+            list = stored[RECENT_EPISODES_STORAGE_KEY].filter(it => it && it.timestamp >= pruneCutoff);
+        }
+    } catch (_) {
+        list = recentEpisodesMemoryCache.filter(it => it && it.timestamp >= pruneCutoff);
+    }
+
+    // 동일 회차가 30초 내에 이미 들어있으면 타임스탬프만 갱신
+    const existingIndex = list.findIndex(it => it.url === currentCleanUrl);
+    if (existingIndex >= 0) {
+        list[existingIndex].timestamp = now;
+    } else {
+        list.push({ url: currentCleanUrl, timestamp: now });
+    }
+
+    recentEpisodesMemoryCache = list;
+    try {
+        await chrome.storage.local.set({ [RECENT_EPISODES_STORAGE_KEY]: list });
+    } catch (_) {}
+}
+
+async function getRecentEpisodeCount(windowMinutes = 5) {
+    const now = Date.now();
+    const cutoff = now - windowMinutes * 60 * 1000;
+    let list = [];
+
+    try {
+        const stored = await chrome.storage.local.get(RECENT_EPISODES_STORAGE_KEY);
+        if (Array.isArray(stored[RECENT_EPISODES_STORAGE_KEY])) {
+            list = stored[RECENT_EPISODES_STORAGE_KEY];
+        } else {
+            list = recentEpisodesMemoryCache;
+        }
+    } catch (_) {
+        list = recentEpisodesMemoryCache;
+    }
+
+    const distinctUrls = new Set(
+        list.filter(it => it && it.timestamp >= cutoff && it.url).map(it => it.url)
+    );
+    return distinctUrls.size;
+}
+
+function calculateAdaptiveEpisodeDelay(recentCount, isTurbo) {
+    if (isTurbo) {
+        // 쾌속모드: 최근 번역한 회차가 많을수록 분당 요청 폭증(RPM 초과)을 막기 위해 점진적/대폭 지연 부여
+        if (recentCount <= 2) return 8000;      // 0~2화: 기본 8초 (안전 구간)
+        if (recentCount === 3) return 15000;    // 3화: 15초 (주의 구간)
+        if (recentCount === 4) return 22000;    // 4화: 22초 (경고 구간)
+        if (recentCount === 5) return 30000;    // 5화: 30초 (과열 주의)
+        if (recentCount === 6) return 40000;    // 6화: 40초 (과열 위험)
+        return 55000;                           // 7화 이상: 55초 (완전 쿨다운)
+    } else {
+        // 일반 모드: 기본 60초, 회차 급증 시 안전하게 추가 연장
+        if (recentCount <= 4) return 60000;
+        if (recentCount <= 6) return 75000;
+        return 90000;
+    }
+}
+
+function calculateAdaptiveChunkDelay(recentCount, isTurbo) {
+    if (isTurbo) {
+        if (recentCount <= 3) return 2000;      // 기본 2초
+        if (recentCount <= 5) return 3000;      // 3초 미세 완충
+        return 4500;                            // 4.5초 과열 완충
+    } else {
+        if (recentCount <= 4) return 5000;
+        return 6500;
+    }
+}
+
 async function updateAndGetBatchCount(currentCleanUrl) {
     const workKey = getNovelWorkKey();
     const stateKey = `lanovel_batch_state_${workKey}`;
@@ -2805,10 +2890,14 @@ async function translateAllPTags(isRetranslation = false) {
     // ⚡ 글자 수 / 토큰 예산 기반 가변 묶음 순차 번역
     if (!isTranslationCancelled && chunks.length > 0) {
         let progress = 0;
+        const initialRecentEpCount = await getRecentEpisodeCount(5);
+        const initialChunkDelay = calculateAdaptiveChunkDelay(initialRecentEpCount, isTurboMode);
 
         logToSidebar(isTurboMode 
-            ? `⚡ [쾌속모드] 번역 묶음 간 대기 시간을 2초로 단축하여 번역을 진행합니다.` 
-            : `RPM 제한을 피하기 위해 묶음 간 대기 시간을 5초로 설정합니다.`);
+            ? (initialRecentEpCount >= 4
+                ? `⚡ [쾌속모드] 최근 번역 회차(${initialRecentEpCount}화) 과열 방지: 묶음 간 대기 시간을 ${(initialChunkDelay / 1000).toFixed(1)}초로 완충합니다.` 
+                : `⚡ [쾌속모드] 번역 묶음 간 대기 시간을 ${(initialChunkDelay / 1000).toFixed(1)}초로 설정합니다.`) 
+            : `RPM 제한을 피하기 위해 묶음 간 대기 시간을 ${(initialChunkDelay / 1000).toFixed(1)}초로 설정합니다.`);
 
         for (const [index, chunk] of chunks.entries()) {
             if (isTranslationCancelled) break;
@@ -2843,9 +2932,9 @@ async function translateAllPTags(isRetranslation = false) {
             checkAndReportMilestone(progress, textsToTranslate.length);
 
             if (index < chunks.length - 1) {
-                const currentDelay = isTurboMode ? 2000 : 5000;
-                logToSidebar(`${currentDelay / 1000}초 후 다음 묶음을 번역합니다.`);
-                await sleepResponsive(() => isTurboMode ? 2000 : 5000);
+                const currentDelay = calculateAdaptiveChunkDelay(initialRecentEpCount, isTurboMode);
+                logToSidebar(`${(currentDelay / 1000).toFixed(1)}초 후 다음 묶음을 번역합니다.`);
+                await sleepResponsive(() => calculateAdaptiveChunkDelay(initialRecentEpCount, isTurboMode));
                 if (isTurboMode && checkCutoffTimeReached()) {
                     await abortTurboMode("초기화 시간 도달");
                     break;
@@ -2911,16 +3000,35 @@ async function translateAllPTags(isRetranslation = false) {
 
         const currentUrl = getCleanUrl(); // Get the current clean URL
 
+        // 최근 번역 완료 회차 슬라이딩 윈도우에 등록 및 최근 5분 회차 빈도 조회
+        await recordRecentEpisode(currentUrl);
+        const completedRecentCount = await getRecentEpisodeCount(5);
+
         const startAutoScroll = async () => {
             if (isReviewMode()) {
                 logToSidebar("🔔 [알림 센터 검수 모드] 재번역 검수 회차이므로 다음 페이지 자동 넘기기가 비활성화되었습니다.");
                 return;
             }
-            logToSidebar(isTurboMode 
-                ? `⚡ [쾌속모드] 번역 완료. 8초 후 다음 페이지로 이동합니다.` 
-                : `번역 완료. 60초 후 페이지 끝으로 자동 스크롤합니다.`);
 
-            await sleepResponsive(() => isTurboMode ? 8000 : 60000);
+            const targetDelay = calculateAdaptiveEpisodeDelay(completedRecentCount, isTurboMode);
+            const delaySec = Math.round(targetDelay / 1000);
+
+            if (isTurboMode) {
+                if (completedRecentCount >= 3) {
+                    logToSidebar(`⚡ [RPM 적응형 보호] 최근 5분간 번역 회차: ${completedRecentCount}화 감지 (과열 방지 구간) → 다음 회차 대기 시간을 ${delaySec}초로 자동 연장합니다.`);
+                    showLanovelHud(`RPM 보호 지연 중... (${delaySec}초)`, '🛡️', 4000);
+                } else {
+                    logToSidebar(`⚡ [쾌속모드] 번역 완료 (최근 5분: ${completedRecentCount}화, 안전 구간). ${delaySec}초 후 다음 페이지로 이동합니다.`);
+                }
+            } else {
+                if (completedRecentCount >= 5) {
+                    logToSidebar(`[RPM 적응형 보호] 최근 5분간 번역 회차: ${completedRecentCount}화 감지 → 다음 회차 대기 시간을 ${delaySec}초로 연장합니다.`);
+                } else {
+                    logToSidebar(`번역 완료. ${delaySec}초 후 페이지 끝으로 자동 스크롤합니다.`);
+                }
+            }
+
+            await sleepResponsive(() => calculateAdaptiveEpisodeDelay(completedRecentCount, isTurboMode));
             if (isTranslationCancelled) return;
 
             if (isTurboMode && checkCutoffTimeReached()) {
