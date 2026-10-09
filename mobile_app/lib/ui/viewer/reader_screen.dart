@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
@@ -8,6 +9,7 @@ import '../../models/sentence.dart';
 import '../../services/local_db_service.dart';
 import '../../services/preferences_service.dart';
 import '../themes/reader_themes.dart';
+import '../themes/hyper_aesthetic_theme.dart';
 import 'novel_ruby_text.dart';
 import 'quick_edit_dialog.dart';
 import 'reader_settings_sheet.dart';
@@ -518,7 +520,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
             child: isPaging ? _buildPagingView(theme) : _buildScrollView(theme),
           ),
 
-          // 2. 상단 헤더 컨트롤 바
+          // 2. 상단 헤더 플로팅 에어-글래스 컨트롤 바
           if (_showControls)
             Positioned(
               top: 0,
@@ -527,7 +529,16 @@ class _ReaderScreenState extends State<ReaderScreen> {
               child: _buildTopBar(theme, currentChap),
             ),
 
-          // 3. 하단 네비게이션 & 현재 회차 진행도 컨트롤 바
+          // 2.5 평소 독서 중 하단 미니멀 앰비언트 프로그레스 레이
+          if (!_showControls && !_showTtsPanel && _similarSearchKeyword == null)
+            Positioned(
+              bottom: 0,
+              left: 0,
+              right: 0,
+              child: _buildAmbientMicroProgressRay(theme),
+            ),
+
+          // 3. 하단 네비게이션 & 현재 회차 진행도 플로팅 독
           if (_showControls)
             Positioned(
               bottom: 0,
@@ -570,244 +581,395 @@ class _ReaderScreenState extends State<ReaderScreen> {
     );
   }
 
-  // 상단 앱바
+  // ============================================================================
+  // 상단 플로팅 에어-글래스 다이내믹 아일랜드 헤더 (Floating Air-Glass Header)
+  // ============================================================================
   Widget _buildTopBar(ReaderThemeData theme, Chapter currentChap) {
-    return Container(
-      decoration: BoxDecoration(
-        color: theme.surfaceColor,
-        border: Border(bottom: BorderSide(color: theme.borderColor)),
-        boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 4, offset: const Offset(0, 2)),
-        ],
-      ),
-      child: SafeArea(
-        bottom: false,
-        child: Row(
-          children: [
-            IconButton(
-              icon: Icon(Icons.arrow_back, color: theme.textColor),
-              onPressed: () => Navigator.pop(context),
-            ),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+    final primary = HyperAestheticTheme.getAmbientPrimary(theme);
+    final secondary = HyperAestheticTheme.getAmbientSecondary(theme);
+
+    return SafeArea(
+      bottom: false,
+      child: Container(
+        margin: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+        child: HyperGlassCard(
+          theme: theme,
+          borderRadius: 24,
+          blur: 24.0,
+          opacity: 0.82,
+          glow: true,
+          glowColor: primary.withOpacity(0.25),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          child: Row(
+            children: [
+              // 뒤로가기 햅틱 원형 버튼
+              GestureDetector(
+                onTap: () {
+                  HapticFeedback.lightImpact();
+                  Navigator.pop(context);
+                },
+                child: Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: primary.withOpacity(0.14),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(Icons.arrow_back_rounded, color: theme.textColor, size: 20),
+                ),
+              ),
+              const SizedBox(width: 10),
+              // 중앙 소설명 및 챕터명
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            widget.bookName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: theme.subTextColor,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(colors: [primary, secondary]),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            '제 ${_currentChapterIndex + 1}화',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 9,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 1),
+                    Text(
+                      currentChap.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: theme.textColor,
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: -0.3,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // 우측 컨트롤 글래스 클러스터
+              Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(
-                    widget.bookName,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(color: theme.subTextColor, fontSize: 11),
+                  IconButton(
+                    icon: Icon(Icons.list_rounded, color: theme.textColor, size: 22),
+                    tooltip: '목차',
+                    onPressed: () {
+                      HapticFeedback.lightImpact();
+                      _scaffoldKey.currentState?.openDrawer();
+                    },
                   ),
-                  Text(
-                    currentChap.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(color: theme.textColor, fontSize: 14, fontWeight: FontWeight.bold),
+                  IconButton(
+                    icon: Icon(
+                      Icons.manage_search_rounded,
+                      color: _similarSearchKeyword != null ? Colors.amber : theme.textColor,
+                      size: 22,
+                    ),
+                    tooltip: '사전 & 유사 용례 검색',
+                    onPressed: () {
+                      HapticFeedback.lightImpact();
+                      _promptSimilarSearch(theme);
+                    },
+                  ),
+                  IconButton(
+                    icon: Icon(
+                      Icons.headphones_rounded,
+                      color: _showTtsPanel ? primary : theme.textColor,
+                      size: 20,
+                    ),
+                    tooltip: 'TTS 오디오',
+                    onPressed: () {
+                      HapticFeedback.selectionClick();
+                      setState(() => _showTtsPanel = !_showTtsPanel);
+                    },
+                  ),
+                  IconButton(
+                    icon: Icon(Icons.text_format_rounded, color: theme.textColor, size: 22),
+                    tooltip: '독서 설정',
+                    onPressed: () {
+                      HapticFeedback.lightImpact();
+                      showModalBottomSheet(
+                        context: context,
+                        backgroundColor: Colors.transparent,
+                        builder: (_) => ReaderSettingsSheet(
+                          currentTheme: theme,
+                          onSettingsChanged: () => setState(() {}),
+                        ),
+                      );
+                    },
                   ),
                 ],
               ),
-            ),
-            // 목차 버튼
-            IconButton(
-              icon: Icon(Icons.list_rounded, color: theme.textColor),
-              onPressed: () => _scaffoldKey.currentState?.openDrawer(),
-            ),
-            // 유사 번역 검색 버튼
-            IconButton(
-              icon: Icon(
-                Icons.manage_search_rounded,
-                color: _similarSearchKeyword != null ? Colors.amber : theme.textColor,
-              ),
-              tooltip: '유사 번역 용례 검색',
-              onPressed: () => _promptSimilarSearch(theme),
-            ),
-            // TTS 버튼
-            IconButton(
-              icon: Icon(Icons.headphones_rounded, color: _showTtsPanel ? theme.accentColor : theme.textColor),
-              onPressed: () => setState(() => _showTtsPanel = !_showTtsPanel),
-            ),
-            // 설정 버튼 (12테마, 한/일 폰트 등)
-            IconButton(
-              icon: Icon(Icons.text_format_rounded, color: theme.textColor),
-              onPressed: () {
-                showModalBottomSheet(
-                  context: context,
-                  backgroundColor: Colors.transparent,
-                  builder: (_) => ReaderSettingsSheet(
-                    currentTheme: theme,
-                    onSettingsChanged: () => setState(() {}),
-                  ),
-                );
-              },
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
   }
 
-  // 하단 슬라이더 바 (현재 보고 있는 회차의 진행도 표기 및 제어)
+  // ============================================================================
+  // 하단 플로팅 에어로-글래스 컨트롤 독 (Floating Aero-Glass Control Deck)
+  // ============================================================================
   Widget _buildBottomBar(ReaderThemeData theme) {
     final isPaging = PreferencesService.viewMode == 'paging';
     final contentPages = _contentPageCount;
+    final primary = HyperAestheticTheme.getAmbientPrimary(theme);
+    final secondary = HyperAestheticTheme.getAmbientSecondary(theme);
 
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      decoration: BoxDecoration(
-        color: theme.surfaceColor,
-        border: Border(top: BorderSide(color: theme.borderColor)),
-        boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.12), blurRadius: 6, offset: const Offset(0, -2)),
-        ],
-      ),
-      child: SafeArea(
-        top: false,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // 1. 회차 전환 및 회차 위치 표시줄
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                // 이전 화 버튼
-                TextButton.icon(
-                  style: TextButton.styleFrom(
-                    foregroundColor: _currentChapterIndex > 0 ? theme.textColor : theme.borderColor,
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    minimumSize: Size.zero,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                  icon: const Icon(Icons.arrow_back_ios_rounded, size: 13),
-                  label: const Text('이전 화', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
-                  onPressed: _currentChapterIndex > 0 ? () => _loadChapter(_currentChapterIndex - 1) : null,
+    final double currentProgress = isPaging
+        ? (_currentPage / (contentPages > 1 ? contentPages - 1 : 1)).clamp(0.0, 1.0)
+        : _currentScrollProgress.clamp(0.0, 1.0);
+
+    return SafeArea(
+      child: Container(
+        margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+        child: HyperGlassCard(
+          theme: theme,
+          borderRadius: 28,
+          blur: 24.0,
+          opacity: 0.85,
+          glow: true,
+          glowColor: primary.withOpacity(0.25),
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // 상단 듀얼 그라디언트 네온 프로그레스 레이
+              Container(
+                height: 3,
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  color: theme.isDark ? Colors.white10 : Colors.black12,
+                  borderRadius: BorderRadius.circular(1.5),
                 ),
-
-                // 현재 회차 정보 (탭 시 목차 오픈)
-                InkWell(
-                  onTap: () => _scaffoldKey.currentState?.openDrawer(),
-                  borderRadius: BorderRadius.circular(6),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          '제 ${_currentChapterIndex + 1}화',
-                          style: TextStyle(
-                            color: theme.accentColor,
-                            fontSize: 13,
-                            fontWeight: FontWeight.bold,
-                          ),
+                child: FractionallySizedBox(
+                  alignment: Alignment.centerLeft,
+                  widthFactor: currentProgress.clamp(0.01, 1.0),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(colors: [primary, secondary]),
+                      borderRadius: BorderRadius.circular(1.5),
+                      boxShadow: [
+                        BoxShadow(
+                          color: primary.withOpacity(0.6),
+                          blurRadius: 6,
+                          spreadRadius: 1,
                         ),
-                        Text(
-                          ' / ${_chapters.length}화',
-                          style: TextStyle(
-                            color: theme.subTextColor,
-                            fontSize: 12,
-                          ),
-                        ),
-                        const SizedBox(width: 4),
-                        Icon(Icons.unfold_more_rounded, size: 14, color: theme.subTextColor),
                       ],
                     ),
                   ),
                 ),
+              ),
+              const SizedBox(height: 10),
 
-                // 다음 화 버튼
-                TextButton.icon(
-                  style: TextButton.styleFrom(
-                    foregroundColor: _currentChapterIndex < _chapters.length - 1 ? theme.accentColor : theme.borderColor,
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    minimumSize: Size.zero,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              // 1. 회차 전환 및 회차 위치 표시줄 (햅틱 캡슐)
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  // 이전 화 캡슐
+                  HyperHapticPill(
+                    theme: theme,
+                    icon: const Icon(Icons.arrow_back_ios_rounded, size: 12),
+                    label: '이전 화',
+                    height: 36,
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    onTap: _currentChapterIndex > 0
+                        ? () => _loadChapter(_currentChapterIndex - 1)
+                        : () {},
                   ),
-                  icon: const Text('다음 화', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
-                  label: const Icon(Icons.arrow_forward_ios_rounded, size: 13),
-                  onPressed: _currentChapterIndex < _chapters.length - 1 ? () => _loadChapter(_currentChapterIndex + 1) : null,
+
+                  // 현재 회차 정보 캡슐 (탭 시 목차 오픈)
+                  GestureDetector(
+                    onTap: () {
+                      HapticFeedback.lightImpact();
+                      _scaffoldKey.currentState?.openDrawer();
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: primary.withOpacity(0.14),
+                        borderRadius: BorderRadius.circular(18),
+                        border: Border.all(color: primary.withOpacity(0.35)),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            '제 ${_currentChapterIndex + 1}화',
+                            style: TextStyle(
+                              color: primary,
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          Text(
+                            ' / ${_chapters.length}화',
+                            style: TextStyle(
+                              color: theme.subTextColor,
+                              fontSize: 11,
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          Icon(Icons.unfold_more_rounded, size: 13, color: primary),
+                        ],
+                      ),
+                    ),
+                  ),
+
+                  // 다음 화 캡슐 (주요 액션, 네온 글로우)
+                  HyperHapticPill(
+                    theme: theme,
+                    icon: const Icon(Icons.arrow_forward_ios_rounded, size: 12, color: Colors.white),
+                    label: '다음 화',
+                    isPrimary: true,
+                    height: 36,
+                    padding: const EdgeInsets.symmetric(horizontal: 14),
+                    onTap: _currentChapterIndex < _chapters.length - 1
+                        ? () => _loadChapter(_currentChapterIndex + 1)
+                        : () {},
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 6),
+
+              // 2. 현재 회차 진행도 정밀 슬라이더 바
+              if (isPaging) ...[
+                Row(
+                  children: [
+                    Text(
+                      '${_currentPage + 1}p',
+                      style: TextStyle(color: theme.subTextColor, fontSize: 11, fontWeight: FontWeight.bold),
+                    ),
+                    Expanded(
+                      child: Slider(
+                        value: _currentPage.clamp(0, contentPages - 1).toDouble(),
+                        min: 0,
+                        max: (contentPages - 1 > 0 ? contentPages - 1 : 1).toDouble(),
+                        divisions: contentPages > 1 ? contentPages - 1 : 1,
+                        activeColor: primary,
+                        inactiveColor: theme.isDark ? Colors.white12 : Colors.black12,
+                        onChanged: contentPages > 1
+                            ? (val) {
+                                HapticFeedback.selectionClick();
+                                final p = val.toInt();
+                                setState(() => _currentPage = p);
+                                final hasPrev = _currentChapterIndex > 0;
+                                final prevOffset = hasPrev ? 1 : 0;
+                                if (_pageController.hasClients) {
+                                  _pageController.jumpToPage(p + prevOffset);
+                                }
+                              }
+                            : null,
+                      ),
+                    ),
+                    Text(
+                      '${contentPages}p',
+                      style: TextStyle(color: theme.subTextColor, fontSize: 11, fontWeight: FontWeight.bold),
+                    ),
+                  ],
+                ),
+                Text(
+                  '${_currentPage + 1} / $contentPages 페이지 (${((_currentPage + 1) / contentPages * 100).toStringAsFixed(1)}%)',
+                  style: TextStyle(color: theme.subTextColor, fontSize: 10, fontWeight: FontWeight.w500),
+                ),
+              ] else ...[
+                Row(
+                  children: [
+                    Text(
+                      '${(_currentScrollProgress * 100).toInt()}%',
+                      style: TextStyle(color: theme.subTextColor, fontSize: 11, fontWeight: FontWeight.bold),
+                    ),
+                    Expanded(
+                      child: Slider(
+                        value: _currentScrollProgress.clamp(0.0, 1.0),
+                        min: 0.0,
+                        max: 1.0,
+                        activeColor: primary,
+                        inactiveColor: theme.isDark ? Colors.white12 : Colors.black12,
+                        onChanged: (val) {
+                          HapticFeedback.selectionClick();
+                          setState(() => _currentScrollProgress = val);
+                          if (_scrollController.hasClients && _scrollController.position.maxScrollExtent > 0) {
+                            _scrollController.jumpTo(val * _scrollController.position.maxScrollExtent);
+                          }
+                        },
+                      ),
+                    ),
+                    Text(
+                      '100%',
+                      style: TextStyle(color: theme.subTextColor, fontSize: 11, fontWeight: FontWeight.bold),
+                    ),
+                  ],
+                ),
+                Text(
+                  '스크롤 진행도: ${(_currentScrollProgress * 100).toStringAsFixed(1)}%',
+                  style: TextStyle(color: theme.subTextColor, fontSize: 10, fontWeight: FontWeight.w500),
                 ),
               ],
-            ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
-            const SizedBox(height: 2),
+  // ============================================================================
+  // 평소 독서 중 하단 미니멀 앰비언트 프로그레스 레이 (Ambient Micro Progress Ray)
+  // ============================================================================
+  Widget _buildAmbientMicroProgressRay(ReaderThemeData theme) {
+    final isPaging = PreferencesService.viewMode == 'paging';
+    final contentPages = _contentPageCount;
+    final primary = HyperAestheticTheme.getAmbientPrimary(theme);
+    final secondary = HyperAestheticTheme.getAmbientSecondary(theme);
 
-            // 2. 현재 회차 진행도 슬라이더 바
-            if (isPaging) ...[
-              // 페이징 모드: 현재 회차의 페이지 슬라이더
-              Row(
-                children: [
-                  Text(
-                    '${_currentPage + 1}p',
-                    style: TextStyle(color: theme.subTextColor, fontSize: 11, fontWeight: FontWeight.w500),
-                  ),
-                  Expanded(
-                    child: Slider(
-                      value: _currentPage.clamp(0, contentPages - 1).toDouble(),
-                      min: 0,
-                      max: (contentPages - 1 > 0 ? contentPages - 1 : 1).toDouble(),
-                      divisions: contentPages > 1 ? contentPages - 1 : 1,
-                      activeColor: theme.accentColor,
-                      inactiveColor: theme.borderColor,
-                      onChanged: contentPages > 1
-                          ? (val) {
-                              final p = val.toInt();
-                              setState(() => _currentPage = p);
-                              final hasPrev = _currentChapterIndex > 0;
-                              final prevOffset = hasPrev ? 1 : 0;
-                              if (_pageController.hasClients) {
-                                _pageController.jumpToPage(p + prevOffset);
-                              }
-                            }
-                          : null,
-                    ),
-                  ),
-                  Text(
-                    '${contentPages}p',
-                    style: TextStyle(color: theme.subTextColor, fontSize: 11, fontWeight: FontWeight.w500),
-                  ),
-                ],
-              ),
-              // 진행도 표기
-              Text(
-                '현재 회차: ${_currentPage + 1} / $contentPages 페이지 (${((_currentPage + 1) / contentPages * 100).toStringAsFixed(1)}%)',
-                style: TextStyle(color: theme.subTextColor, fontSize: 11),
-              ),
-            ] else ...[
-              // 스크롤 모드: 현재 회차의 스크롤 퍼센트 슬라이더
-              Row(
-                children: [
-                  Text(
-                    '${(_currentScrollProgress * 100).toInt()}%',
-                    style: TextStyle(color: theme.subTextColor, fontSize: 11, fontWeight: FontWeight.w500),
-                  ),
-                  Expanded(
-                    child: Slider(
-                      value: _currentScrollProgress.clamp(0.0, 1.0),
-                      min: 0.0,
-                      max: 1.0,
-                      activeColor: theme.accentColor,
-                      inactiveColor: theme.borderColor,
-                      onChanged: (val) {
-                        setState(() => _currentScrollProgress = val);
-                        if (_scrollController.hasClients && _scrollController.position.maxScrollExtent > 0) {
-                          _scrollController.jumpTo(val * _scrollController.position.maxScrollExtent);
-                        }
-                      },
-                    ),
-                  ),
-                  Text(
-                    '100%',
-                    style: TextStyle(color: theme.subTextColor, fontSize: 11, fontWeight: FontWeight.w500),
-                  ),
-                ],
-              ),
-              // 진행도 표기
-              Text(
-                '현재 회차 진행도: ${(_currentScrollProgress * 100).toStringAsFixed(1)}%',
-                style: TextStyle(color: theme.subTextColor, fontSize: 11),
+    final double progress = isPaging
+        ? ((_currentPage + 1) / (contentPages > 0 ? contentPages : 1)).clamp(0.0, 1.0)
+        : _currentScrollProgress.clamp(0.0, 1.0);
+
+    return Container(
+      height: 2.2,
+      width: double.infinity,
+      color: Colors.transparent,
+      child: FractionallySizedBox(
+        alignment: Alignment.centerLeft,
+        widthFactor: progress.clamp(0.005, 1.0),
+        child: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(colors: [primary, secondary]),
+            boxShadow: [
+              BoxShadow(
+                color: primary.withOpacity(0.55),
+                blurRadius: 4,
+                spreadRadius: 1,
               ),
             ],
-          ],
+          ),
         ),
       ),
     );

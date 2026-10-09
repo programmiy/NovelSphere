@@ -760,6 +760,7 @@ class _ContextSheetState extends State<_ContextSheet> {
 
     setState(() => _isSaving = true);
     final ok = await AiReviewService.quickEditContext(transId, text);
+    if (!mounted) return;
     setState(() => _isSaving = false);
 
     if (ok) {

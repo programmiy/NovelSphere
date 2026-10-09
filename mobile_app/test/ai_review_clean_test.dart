@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:mobile_app/models/ai_review_models.dart';
+import 'package:lanovel_reader/models/ai_review_models.dart';
 
 void main() {
   group('cleanAiTranslation tests', () {
