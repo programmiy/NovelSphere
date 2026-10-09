@@ -274,7 +274,7 @@ async def serve_service_worker():
         
         git_hash = get_git_commit_hash()
         try:
-            mtime = int(max(os.path.getmtime(os.path.join(settings.static_dir, f)) for f in ["admin.js", "admin.css", "service-worker.js"] if os.path.exists(os.path.join(settings.static_dir, f))))
+            mtime = int(max(os.path.getmtime(os.path.join(settings.static_dir, f)) for f in ["admin.js", "admin.css", "service-worker.js", "library.css", "viewer.css", "steampunk-sound.js"] if os.path.exists(os.path.join(settings.static_dir, f))))
             cache_version = f"{git_hash}-{mtime}"
         except Exception:
             cache_version = git_hash

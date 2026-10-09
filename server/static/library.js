@@ -467,6 +467,7 @@ document.addEventListener('DOMContentLoaded', () => {
         <div class="book-card" data-book-name="${escapeHtml(name)}">
             <!-- Top Cover Spine Accent -->
             <div class="card-cover-spine ${progress.isCompleted ? 'completed' : ''}"></div>
+            <div class="punch-card-strip" title="차분기관 펀치 카드 테이프"></div>
 
             <!-- Card Top Bar: Badges & Pin -->
             <div class="card-top-bar">

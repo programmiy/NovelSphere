@@ -1,94 +1,131 @@
 /* ==========================================================================
-   LANOVEL Library Dashboard Stylesheet (v2.0)
-   Modern, Clean & Premium E-Reader Workspace Theme
+   LANOVEL Library Dashboard Stylesheet (v3.0 Steam Difference Engine Edition)
+   Steam-Powered Mechanical Computer & Difference Engine Vintage Archive Theme
    ========================================================================== */
 
 :root {
-    /* Fonts */
+    /* Fonts: Antique Display, Classical Serif, Typewriter Mono, Pretendard */
     --font-primary: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Noto Sans KR', sans-serif;
-    --font-serif: 'Gowun Batang', serif;
-    --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    --font-serif: 'Gowun Batang', 'Noto Serif KR', serif;
+    --font-display: 'Cinzel', 'Gowun Batang', serif;
+    --font-typewriter: 'Special Elite', 'Courier Prime', monospace;
+    --font-mono: 'Courier Prime', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 
-    /* Light Theme Palette */
-    --bg-color: #f8fafc;
-    --header-bg: #ffffff;
-    --card-bg: #ffffff;
+    /* 1. Victorian Academy / Parchment & Polished Brass (Light Mode) */
+    --bg-color: #f4ede1;
+    --bg-secondary: #e9decb;
+    --header-bg: #fdfaf3;
+    --card-bg: #fcf8f0;
     --card-hover-bg: #ffffff;
-    --text-color: #0f172a;
-    --text-secondary: #475569;
-    --text-muted: #94a3b8;
-    --border-color: #e2e8f0;
-    --border-light: #f1f5f9;
+    --card-leather: #543721;
+    --text-color: #271d15;
+    --text-secondary: #574636;
+    --text-muted: #857260;
+    --border-color: #dcd0bc;
+    --border-light: #ece3d4;
 
-    /* Brand & Accent Colors */
-    --primary-color: #3b82f6;
-    --primary-hover: #2563eb;
-    --primary-light: #eff6ff;
-    --primary-border: #bfdbfe;
+    /* Steampunk Metals & Accents */
+    --brass-gold: #c8963e;
+    --brass-dark: #8c6227;
+    --brass-light: #f5d48e;
+    --brass-border: #b3802e;
+    --brass-gradient: linear-gradient(135deg, #dfad52 0%, #9e6c27 50%, #f7dc99 100%);
+    --copper: #a85834;
+    --copper-gradient: linear-gradient(135deg, #c76f44 0%, #873d1f 50%, #e08b61 100%);
+    --cast-iron: #332d2c;
+    --amber-glow: #e67e22;
+    --amber-glow-soft: rgba(230, 126, 34, 0.15);
+    --seal-red: #9e2323;
+    --seal-red-border: #731515;
 
-    --success-color: #10b981;
-    --success-hover: #059669;
-    --success-light: #ecfdf5;
+    /* Brand/Primary Mapped to Antique Brass */
+    --primary-color: #b5802e;
+    --primary-hover: #966720;
+    --primary-light: rgba(181, 128, 46, 0.14);
+    --primary-border: rgba(181, 128, 46, 0.35);
 
-    --warning-color: #f59e0b;
-    --warning-hover: #d97706;
-    --warning-light: #fffbeb;
+    --success-color: #2e7d32;
+    --success-hover: #1b5e20;
+    --success-light: rgba(46, 125, 50, 0.12);
 
-    --danger-color: #ef4444;
-    --danger-hover: #dc2626;
-    --danger-light: #fef2f2;
+    --warning-color: #d97706;
+    --warning-hover: #b45309;
+    --warning-light: rgba(217, 119, 6, 0.12);
 
-    --info-color: #06b6d4;
-    --info-light: #ecfeff;
+    --danger-color: #b91c1c;
+    --danger-hover: #991b1b;
+    --danger-light: rgba(185, 28, 28, 0.12);
 
-    /* Shadows & Radii */
-    --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.07), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
-    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.08), 0 4px 6px -4px rgba(0, 0, 0, 0.04);
-    --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.04);
+    /* Rivets, Depth & Shadows */
+    --rivet-shadow: inset 1px 1px 1px rgba(255, 255, 255, 0.5), inset -1px -1px 2px rgba(0, 0, 0, 0.5);
+    --shadow-sm: 0 2px 4px rgba(60, 40, 20, 0.08);
+    --shadow-md: 0 4px 12px rgba(60, 40, 20, 0.12), 0 1px 3px rgba(60, 40, 20, 0.06);
+    --shadow-lg: 0 10px 24px -3px rgba(60, 40, 20, 0.18), 0 4px 8px rgba(60, 40, 20, 0.08);
+    --shadow-emboss: inset 0 1px 2px rgba(255, 255, 255, 0.8), 0 2px 4px rgba(0, 0, 0, 0.1);
 
     --border-radius-sm: 6px;
     --border-radius: 10px;
-    --border-radius-lg: 14px;
-    --border-radius-xl: 18px;
+    --border-radius-lg: 16px;
 
     /* Modals */
-    --modal-bg: #ffffff;
-    --modal-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
-    --overlay-bg: rgba(15, 23, 42, 0.5);
+    --modal-bg: #f9f4ea;
+    --modal-shadow: 0 25px 50px -12px rgba(45, 30, 15, 0.45);
+    --overlay-bg: rgba(28, 20, 14, 0.65);
 }
 
+/* ==========================================================================
+   2. Cast Iron Midnight Lab & Antique Brass (Dark Mode)
+   ========================================================================== */
+
 body.dark-mode {
-    --bg-color: #090d16;
-    --header-bg: #111827;
-    --card-bg: #111827;
-    --card-hover-bg: #162032;
-    --text-color: #f8fafc;
-    --text-secondary: #94a3b8;
-    --text-muted: #64748b;
-    --border-color: #1f2937;
-    --border-light: #182234;
+    --bg-color: #141315;
+    --bg-secondary: #1a191d;
+    --header-bg: #1d1b20;
+    --card-bg: #201e23;
+    --card-hover-bg: #27242b;
+    --card-leather: #281d16;
+    --text-color: #ede2cf;
+    --text-secondary: #c0b29c;
+    --text-muted: #857867;
+    --border-color: #37323b;
+    --border-light: #2c2830;
 
-    --primary-color: #3b82f6;
-    --primary-hover: #60a5fa;
-    --primary-light: rgba(59, 130, 246, 0.15);
-    --primary-border: rgba(59, 130, 246, 0.3);
+    --brass-gold: #d8a858;
+    --brass-dark: #9e702e;
+    --brass-light: #fbe09e;
+    --brass-border: #8d6428;
+    --brass-gradient: linear-gradient(135deg, #e4b868 0%, #9e702e 50%, #f0cb82 100%);
+    --copper: #c8683c;
+    --copper-gradient: linear-gradient(135deg, #db7d50 0%, #9c4c28 50%, #f09f78 100%);
+    --cast-iron: #100f11;
+    --amber-glow: #ff9d3b;
+    --amber-glow-soft: rgba(255, 157, 59, 0.2);
+    --seal-red: #b82828;
+    --seal-red-border: #8a1515;
 
-    --success-color: #10b981;
-    --success-light: rgba(16, 185, 129, 0.15);
+    --primary-color: #d8a858;
+    --primary-hover: #ebb868;
+    --primary-light: rgba(216, 168, 88, 0.16);
+    --primary-border: rgba(216, 168, 88, 0.35);
 
-    --warning-color: #f59e0b;
-    --warning-light: rgba(245, 158, 11, 0.15);
+    --success-color: #34d399;
+    --success-light: rgba(52, 211, 153, 0.15);
 
-    --danger-color: #ef4444;
-    --danger-light: rgba(239, 68, 68, 0.15);
+    --warning-color: #fbbf24;
+    --warning-light: rgba(251, 191, 36, 0.15);
 
-    --info-color: #38bdf8;
-    --info-light: rgba(56, 189, 248, 0.15);
+    --danger-color: #f87171;
+    --danger-light: rgba(248, 113, 113, 0.15);
 
-    --modal-bg: #111827;
-    --modal-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.6);
-    --overlay-bg: rgba(0, 0, 0, 0.7);
+    --rivet-shadow: inset 1px 1px 1px rgba(255, 255, 255, 0.15), inset -1px -1px 2px rgba(0, 0, 0, 0.8);
+    --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 4px 14px rgba(0, 0, 0, 0.45), 0 0 10px rgba(216, 168, 88, 0.08);
+    --shadow-lg: 0 12px 28px rgba(0, 0, 0, 0.6), 0 0 18px rgba(216, 168, 88, 0.15);
+    --shadow-emboss: inset 0 1px 2px rgba(255, 255, 255, 0.1), 0 2px 5px rgba(0, 0, 0, 0.5);
+
+    --modal-bg: #1e1c22;
+    --modal-shadow: 0 25px 60px -10px rgba(0, 0, 0, 0.8), 0 0 25px rgba(216, 168, 88, 0.18);
+    --overlay-bg: rgba(8, 7, 10, 0.8);
 }
 
 /* ==========================================================================
@@ -110,6 +147,9 @@ body {
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     transition: background-color 0.25s ease, color 0.25s ease;
+    /* Subtle parchment/industrial texture background */
+    background-image: radial-gradient(var(--border-light) 1px, transparent 1px);
+    background-size: 24px 24px;
 }
 
 button, input, select, textarea {
@@ -123,25 +163,32 @@ button, input, select, textarea {
 }
 
 /* ==========================================================================
-   Buttons & Form Controls
+   Buttons & Mechanical Controls
    ========================================================================== */
 
 .btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 6px;
-    padding: 8px 14px;
+    gap: 7px;
+    padding: 8px 15px;
     border-radius: var(--border-radius-sm);
     font-size: 13px;
-    font-weight: 500;
+    font-weight: 600;
     cursor: pointer;
-    transition: all 0.18s ease;
+    transition: all 0.15s ease;
     border: 1px solid transparent;
     text-decoration: none;
     line-height: 1.3;
     white-space: nowrap;
     user-select: none;
+    position: relative;
+    box-shadow: 0 2px 0 var(--border-color), 0 3px 5px rgba(0, 0, 0, 0.1);
+}
+
+.btn:active {
+    transform: translateY(2px);
+    box-shadow: 0 0 0 transparent, inset 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
 .btn .material-icons {
@@ -149,80 +196,309 @@ button, input, select, textarea {
 }
 
 .btn-primary {
-    background-color: var(--primary-color);
-    color: #ffffff;
-    border-color: var(--primary-color);
+    background: var(--brass-gradient);
+    color: #1a1208;
+    border: 1px solid var(--brass-border);
+    font-weight: 700;
+    text-shadow: 0 1px 0 rgba(255, 255, 255, 0.4);
+    box-shadow: 0 3px 0 var(--brass-dark), 0 4px 8px rgba(0, 0, 0, 0.2);
 }
 
 .btn-primary:hover {
-    background-color: var(--primary-hover);
-    border-color: var(--primary-hover);
-    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.35);
+    filter: brightness(1.08);
+}
+
+.btn-primary:active {
+    box-shadow: 0 0 0 transparent, inset 0 2px 4px rgba(0, 0, 0, 0.35);
 }
 
 .btn-outline {
     background-color: var(--card-bg);
     color: var(--text-secondary);
-    border-color: var(--border-color);
+    border: 1px solid var(--border-color);
+    box-shadow: 0 2px 0 var(--border-color), 0 2px 4px rgba(0, 0, 0, 0.05);
 }
 
 .btn-outline:hover {
     background-color: var(--border-light);
     color: var(--text-color);
-    border-color: var(--text-muted);
+    border-color: var(--brass-border);
 }
 
 .btn-sm {
-    padding: 5px 10px;
+    padding: 5px 11px;
     font-size: 12px;
 }
 
 .btn-icon {
-    width: 36px;
-    height: 36px;
+    width: 38px;
+    height: 38px;
     padding: 0;
     border-radius: 50%;
-    background-color: var(--card-bg);
+    background: var(--card-bg);
     border: 1px solid var(--border-color);
     color: var(--text-secondary);
     cursor: pointer;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    transition: all 0.18s ease;
+    box-shadow: 0 2px 0 var(--border-color), 0 2px 5px rgba(0, 0, 0, 0.1);
+    transition: all 0.15s ease;
 }
 
 .btn-icon:hover {
-    background-color: var(--border-light);
-    color: var(--text-color);
-    border-color: var(--primary-color);
+    color: var(--brass-gold);
+    border-color: var(--brass-border);
+    transform: translateY(-1px);
+}
+
+.btn-icon:active {
+    transform: translateY(2px);
+    box-shadow: none;
+}
+
+/* Brass Sound Toggle Button */
+.steampunk-sound-toggle-btn.active {
+    color: var(--amber-glow);
+    border-color: var(--brass-border);
+    box-shadow: 0 0 10px var(--amber-glow-soft), 0 2px 0 var(--brass-border);
 }
 
 .form-input, .form-select, .form-textarea {
     width: 100%;
-    padding: 9px 12px;
+    padding: 9px 13px;
     border-radius: var(--border-radius-sm);
     border: 1px solid var(--border-color);
     background-color: var(--card-bg);
     color: var(--text-color);
     font-size: 13px;
-    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    transition: all 0.15s ease;
     outline: none;
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.08);
 }
 
 .form-input:focus, .form-select:focus, .form-textarea:focus {
-    border-color: var(--primary-color);
-    box-shadow: 0 0 0 3px var(--primary-light);
-}
-
-.form-textarea {
-    resize: vertical;
-    line-height: 1.5;
+    border-color: var(--brass-border);
+    box-shadow: 0 0 0 3px var(--primary-light), inset 0 1px 2px rgba(0, 0, 0, 0.1);
 }
 
 /* ==========================================================================
-   Header Section
+   Header Section (Brass Nameplate & Rivets)
    ========================================================================== */
+
+/* ==========================================================================
+   Steam Difference Engine Top Rig (증기 배관 및 회전 톱니바퀴 메커니즘)
+   ========================================================================== */
+
+.steam-engine-top-rig {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    height: 48px;
+    margin-bottom: 12px;
+    padding: 0 10px;
+    position: relative;
+    user-select: none;
+    overflow: visible;
+}
+
+/* 메인 구리 증기 파이프 */
+.steam-main-pipe {
+    flex-grow: 1;
+    height: 16px;
+    margin-right: 20px;
+    position: relative;
+    display: flex;
+    align-items: center;
+    background: linear-gradient(180deg, #d8894f 0%, #b35f29 25%, #59290e 70%, #9e4b1a 100%);
+    border-radius: 8px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.4), inset 0 2px 2px rgba(255, 255, 255, 0.35);
+}
+
+.pipe-segment {
+    flex: 1;
+    height: 100%;
+}
+
+.pipe-joint {
+    width: 14px;
+    height: 24px;
+    background: linear-gradient(180deg, #875127, #c58c54 50%, #4a2810);
+    border: 1.5px solid #2e1707;
+    border-radius: 4px;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.4);
+    flex-shrink: 0;
+}
+
+.pipe-joint.left { margin-left: -4px; }
+.pipe-joint.right { margin-right: -4px; }
+
+.pipe-flange {
+    width: 8px;
+    height: 24px;
+    background: linear-gradient(180deg, #94602f, #e5b375 50%, #522e11);
+    border: 1px solid #3d2008;
+    border-radius: 2px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+    flex-shrink: 0;
+}
+
+.left-flange { margin-left: 20px; }
+.right-flange { margin-right: 20px; }
+
+.pipe-valve-cluster {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 16px;
+    flex-shrink: 0;
+}
+
+/* 붉은 황동 압력 밸브 휠 */
+.pipe-valve-wheel {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: radial-gradient(circle, #8a2010 35%, #b83018 70%, #591306 100%);
+    border: 3px solid #df9e57;
+    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.6), inset 0 0 4px rgba(0, 0, 0, 0.6);
+    cursor: pointer;
+    position: relative;
+    transition: transform 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.pipe-valve-wheel::before, .pipe-valve-wheel::after {
+    content: '';
+    position: absolute;
+    background: #df9e57;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+
+.pipe-valve-wheel::before {
+    top: 50%;
+    left: 2px;
+    right: 2px;
+    height: 3px;
+    transform: translateY(-50%);
+}
+
+.pipe-valve-wheel::after {
+    left: 50%;
+    top: 2px;
+    bottom: 2px;
+    width: 3px;
+    transform: translateX(-50%);
+}
+
+.pipe-valve-wheel:hover {
+    transform: rotate(90deg) scale(1.05);
+}
+
+/* 배관 위 작은 미니 게이지 */
+.pipe-gauge-mini {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 50% 40%, #2b1f15 0%, #110c08 100%);
+    border: 2px solid #c5a059;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.5), inset 0 1px 2px rgba(255, 255, 255, 0.3);
+    margin-left: 8px;
+    position: relative;
+    flex-shrink: 0;
+}
+
+.pipe-gauge-mini::after {
+    content: '';
+    position: absolute;
+    top: 3px;
+    left: 9px;
+    width: 2px;
+    height: 8px;
+    background: #e63946;
+    transform-origin: 50% 100%;
+    transform: rotate(35deg);
+    border-radius: 1px;
+}
+
+/* 우측 맞물려 돌아가는 차분기관 기어 클러스터 */
+.steam-gear-cluster {
+    position: relative;
+    width: 140px;
+    height: 48px;
+    flex-shrink: 0;
+}
+
+.gear-cog {
+    position: absolute;
+    border-radius: 50%;
+    background: radial-gradient(circle, #382412 26%, #b58941 28%, #e0be77 55%, #7a541c 85%);
+    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.55), inset 0 2px 3px rgba(255, 255, 255, 0.4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* 톱니바퀴 톱니 이빨 */
+.gear-cog::before {
+    content: '';
+    position: absolute;
+    inset: -4px;
+    border-radius: 50%;
+    background: repeating-conic-gradient(#d4af37 0deg 15deg, transparent 15deg 30deg);
+    z-index: -1;
+    box-shadow: 0 0 3px rgba(0, 0, 0, 0.5);
+}
+
+/* 기어 중심 황동 볼트 축 */
+.gear-cog::after {
+    content: '';
+    position: absolute;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: radial-gradient(circle, #241407 20%, #fcd34d 60%, #523512 100%);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
+}
+
+.gear-large {
+    width: 44px;
+    height: 44px;
+    right: 0;
+    top: 2px;
+    animation: gearSpinCW 20s linear infinite;
+}
+
+.gear-medium {
+    width: 32px;
+    height: 32px;
+    right: 38px;
+    top: 10px;
+    animation: gearSpinCCW 14s linear infinite;
+}
+
+.gear-small {
+    width: 24px;
+    height: 24px;
+    right: 66px;
+    top: 6px;
+    animation: gearSpinCW 9s linear infinite;
+}
+
+.steam-gear-cluster:hover .gear-large { animation-duration: 6s; }
+.steam-gear-cluster:hover .gear-medium { animation-duration: 4.2s; }
+.steam-gear-cluster:hover .gear-small { animation-duration: 2.7s; }
+
+@keyframes gearSpinCW {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+@keyframes gearSpinCCW {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(-360deg); }
+}
 
 .library-header {
     margin-bottom: 24px;
@@ -233,48 +509,59 @@ button, input, select, textarea {
     align-items: center;
     justify-content: space-between;
     gap: 16px;
-    padding: 16px 22px;
+    padding: 18px 24px;
     background: var(--header-bg);
-    border: 1px solid var(--border-color);
+    border: 2px solid var(--border-color);
     border-radius: var(--border-radius-lg);
-    box-shadow: var(--shadow-sm);
+    box-shadow: var(--shadow-md);
     flex-wrap: wrap;
+    position: relative;
+    /* Rivet corners */
+    background-image: 
+        radial-gradient(circle 3px at 8px 8px, var(--brass-dark) 100%, transparent 100%),
+        radial-gradient(circle 3px at calc(100% - 8px) 8px, var(--brass-dark) 100%, transparent 100%),
+        radial-gradient(circle 3px at 8px calc(100% - 8px), var(--brass-dark) 100%, transparent 100%),
+        radial-gradient(circle 3px at calc(100% - 8px) calc(100% - 8px), var(--brass-dark) 100%, transparent 100%);
 }
 
 .brand-group {
     display: flex;
     align-items: center;
-    gap: 14px;
+    gap: 15px;
 }
 
 .brand-logo {
-    width: 44px;
-    height: 44px;
+    width: 48px;
+    height: 48px;
     border-radius: 12px;
-    background: linear-gradient(135deg, var(--primary-color), #6366f1);
-    color: #ffffff;
+    background: var(--brass-gradient);
+    color: #1a1208;
     display: flex;
     align-items: center;
     justify-content: center;
-    box-shadow: 0 4px 10px rgba(59, 130, 246, 0.3);
+    border: 2px solid var(--brass-border);
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.25), inset 0 1px 2px rgba(255, 255, 255, 0.6);
 }
 
 .brand-logo .material-icons {
-    font-size: 26px;
+    font-size: 28px;
 }
 
 .brand-text h1 {
-    font-size: 20px;
+    font-family: var(--font-display);
+    font-size: 22px;
     font-weight: 700;
-    letter-spacing: -0.02em;
+    letter-spacing: 0.04em;
     color: var(--text-color);
     line-height: 1.2;
 }
 
 .brand-text .subtitle {
+    font-family: var(--font-typewriter);
     font-size: 12px;
     color: var(--text-muted);
-    margin-top: 2px;
+    margin-top: 3px;
+    letter-spacing: -0.01em;
 }
 
 .header-actions {
@@ -284,21 +571,23 @@ button, input, select, textarea {
     flex-wrap: wrap;
 }
 
+/* Progress bar inside header */
 .progress-container {
     margin-top: 14px;
     background-color: var(--border-light);
-    border-radius: var(--border-radius-sm);
+    border-radius: 8px;
     overflow: hidden;
-    height: 12px;
+    height: 14px;
     display: flex;
     align-items: center;
     position: relative;
-    border: 1px solid var(--border-color);
+    border: 1px solid var(--brass-border);
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
 .progress-bar {
     height: 100%;
-    background: linear-gradient(90deg, var(--primary-color), #6366f1);
+    background: linear-gradient(90deg, var(--brass-gold), var(--amber-glow));
     width: 0%;
     transition: width 0.3s ease;
 }
@@ -307,98 +596,293 @@ button, input, select, textarea {
     position: absolute;
     width: 100%;
     text-align: center;
-    font-size: 10px;
-    font-weight: 600;
+    font-family: var(--font-typewriter);
+    font-size: 11px;
+    font-weight: 700;
     color: var(--text-secondary);
 }
 
 /* ==========================================================================
-   Stats Overview Bar
+   5-Way Steam Manometer Rack (5구 원형 황동 증기 압력계 대시보드)
    ========================================================================== */
 
-.stats-overview-bar {
+.steam-manometer-rack {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    grid-template-columns: repeat(5, 1fr);
     gap: 16px;
-    margin-bottom: 24px;
+    margin-bottom: 28px;
 }
 
-.stat-card {
+@media (max-width: 1200px) {
+    .steam-manometer-rack {
+        grid-template-columns: repeat(3, 1fr);
+    }
+}
+
+@media (max-width: 768px) {
+    .steam-manometer-rack {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (max-width: 480px) {
+    .steam-manometer-rack {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* 개별 압력계 마운트 카드 */
+.manometer-gauge-card {
     display: flex;
+    flex-direction: column;
     align-items: center;
-    gap: 14px;
-    padding: 16px 20px;
-    background: var(--card-bg);
-    border: 1px solid var(--border-color);
-    border-radius: var(--border-radius);
-    box-shadow: var(--shadow-sm);
-    transition: transform 0.18s ease, box-shadow 0.18s ease;
+    background: linear-gradient(180deg, #241a13 0%, #140e09 100%);
+    border: 2px solid #5d3f1e;
+    border-radius: 14px;
+    padding: 16px 12px 14px 12px;
+    box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.8), 0 6px 16px rgba(0, 0, 0, 0.45);
+    position: relative;
+    overflow: hidden;
+    transition: transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1), border-color 0.25s ease, box-shadow 0.25s ease;
+    user-select: none;
 }
 
-.stat-card:hover {
-    transform: translateY(-2px);
-    box-shadow: var(--shadow-md);
+.manometer-gauge-card:hover {
+    transform: translateY(-3px);
+    border-color: #c5a059;
+    box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.8), 0 10px 24px rgba(197, 160, 89, 0.22);
 }
 
-.stat-icon-wrap {
-    width: 44px;
-    height: 44px;
-    border-radius: 10px;
+.manometer-gauge-card:hover .manometer-needle {
+    animation: needleTremble 0.8s ease-in-out infinite alternate;
+}
+
+/* 황동 원형 베젤 림 (Circular Brass Bezel) */
+.manometer-brass-bezel {
+    position: relative;
+    width: 124px;
+    height: 124px;
+    border-radius: 50%;
+    padding: 8px;
+    background: conic-gradient(#8c622d, #e0be77 25%, #754f21 50%, #f4d392 75%, #8c622d 100%);
+    box-shadow: 
+        0 6px 14px rgba(0, 0, 0, 0.75),
+        inset 0 2px 3px rgba(255, 255, 255, 0.5),
+        inset 0 -2px 3px rgba(0, 0, 0, 0.6);
     display: flex;
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
 }
 
-.stat-icon-wrap .material-icons {
-    font-size: 22px;
+/* 베젤 테마별 악센트 림 */
+.primary-bezel {
+    background: conic-gradient(#8c622d, #f2d18f 25%, #6a461b 50%, #ffd700 75%, #8c622d 100%);
 }
 
-.stat-icon-wrap.primary {
-    background-color: var(--primary-light);
-    color: var(--primary-color);
+.warning-bezel {
+    background: conic-gradient(#8c451d, #f59e42 25%, #61270b 50%, #ff8c00 75%, #8c451d 100%);
 }
 
-.stat-icon-wrap.warning {
-    background-color: var(--warning-light);
-    color: var(--warning-color);
+.info-bezel {
+    background: conic-gradient(#734f2d, #d49563 25%, #543115 50%, #e6a778 75%, #734f2d 100%);
 }
 
-.stat-icon-wrap.info {
-    background-color: var(--info-light);
-    color: var(--info-color);
+.neutral-bezel {
+    background: conic-gradient(#5a5045, #b8ab9a 25%, #3d352c 50%, #c9beae 75%, #5a5045 100%);
 }
 
-.stat-icon-wrap.neutral {
-    background-color: var(--border-light);
-    color: var(--text-muted);
+.success-bezel {
+    background: conic-gradient(#3a5e3e, #8ec294 25%, #244227 50%, #a2d6a8 75%, #3a5e3e 100%);
 }
 
-.stat-icon-wrap.success {
-    background-color: var(--success-light);
-    color: var(--success-color);
+/* 베젤 고정 리벳 나사못 6개 (Rivet Screws) */
+.bezel-screw {
+    position: absolute;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: radial-gradient(circle, #f0cf85 30%, #684518 90%);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+    z-index: 10;
 }
 
-.stat-info .stat-number {
-    font-size: 22px;
+.bezel-screw::after {
+    content: '';
+    position: absolute;
+    top: 2.5px;
+    left: 1px;
+    width: 4px;
+    height: 1px;
+    background: #2b1706;
+}
+
+.bezel-screw.s1 { top: 2px; left: 50%; transform: translateX(-50%); }
+.bezel-screw.s2 { top: 24%; right: 4px; }
+.bezel-screw.s3 { bottom: 24%; right: 4px; }
+.bezel-screw.s4 { bottom: 2px; left: 50%; transform: translateX(-50%); }
+.bezel-screw.s5 { bottom: 24%; left: 4px; }
+.bezel-screw.s6 { top: 24%; left: 4px; }
+
+/* 다이얼 눈금판 (Dial Face) */
+.manometer-dial-face {
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    background: radial-gradient(circle at 50% 45%, #2a2018 0%, #150f0b 80%, #0a0705 100%);
+    position: relative;
+    border: 2px solid #3c2612;
+    box-shadow: inset 0 4px 10px rgba(0, 0, 0, 0.95);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+}
+
+/* 방사형 눈금 틱 링 (Scale Ring) */
+.dial-scale-ring {
+    position: absolute;
+    inset: 5px;
+    border-radius: 50%;
+    border: 1.5px dashed rgba(212, 175, 55, 0.45);
+    pointer-events: none;
+    z-index: 1;
+}
+
+/* 압력 단위 라벨 */
+.dial-unit-label {
+    position: absolute;
+    top: 18px;
+    font-family: 'Cinzel', serif;
+    font-size: 7px;
     font-weight: 700;
-    color: var(--text-color);
-    line-height: 1.1;
+    color: rgba(212, 175, 55, 0.85);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
+    z-index: 2;
 }
 
-.stat-info .stat-label {
+/* 날카로운 압력계 바늘 (Needle) */
+.manometer-needle {
+    position: absolute;
+    bottom: 50%;
+    left: calc(50% - 1.5px);
+    width: 3px;
+    height: 40px;
+    transform-origin: 50% 100%;
+    border-radius: 2px 2px 0 0;
+    background: linear-gradient(180deg, #ff3344 0%, #c1121f 70%, #d4af37 100%);
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.8);
+    z-index: 3;
+    transition: transform 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.needle-p1 { transform: rotate(32deg); --rot: 32deg; }
+.needle-p2 { transform: rotate(-38deg); --rot: -38deg; }
+.needle-p3 { transform: rotate(48deg); --rot: 48deg; }
+.needle-p4 { transform: rotate(-18deg); --rot: -18deg; }
+.needle-p5 { transform: rotate(52deg); --rot: 52deg; }
+
+@keyframes needleTremble {
+    0% { transform: rotate(var(--rot, 30deg)); }
+    50% { transform: rotate(calc(var(--rot, 30deg) + 3deg)); }
+    100% { transform: rotate(calc(var(--rot, 30deg) - 2deg)); }
+}
+
+/* 중심 황동 축 캡 (Brass Hub) */
+.needle-brass-hub {
+    position: absolute;
+    top: calc(50% - 6px);
+    left: calc(50% - 6px);
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: radial-gradient(circle, #ffdf85 30%, #875c1c 90%);
+    border: 1px solid #3d2508;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.9);
+    z-index: 4;
+}
+
+/* 볼록 유리 렌즈 반사광 (Glass Glare) */
+.manometer-glass-glare {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 50%;
+    border-radius: 100px 100px 0 0;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.25) 0%, rgba(255, 255, 255, 0.04) 75%, transparent 100%);
+    pointer-events: none;
+    z-index: 5;
+}
+
+/* 기계식 오도미터 롤러 슬롯 (Odometer Counter Slot) */
+.odometer-counter-slot {
+    position: absolute;
+    bottom: 11px;
+    background: #090604;
+    border: 1.5px solid #6b4c23;
+    border-radius: 4px;
+    padding: 1px 7px;
+    box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.95), 0 1px 3px rgba(0, 0, 0, 0.6);
+    z-index: 6;
+    min-width: 44px;
+    text-align: center;
+}
+
+.odometer-counter-slot .stat-number {
+    font-family: 'Special Elite', 'Courier Prime', monospace;
+    font-size: 15px;
+    font-weight: 700;
+    color: #ff9933;
+    text-shadow: 0 0 6px rgba(255, 140, 0, 0.85);
+    letter-spacing: 0.04em;
+    line-height: 1.2;
+}
+
+/* 하단 황동 금속 명판 (Metal Plaque) */
+.manometer-metal-plaque {
+    margin-top: 10px;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 100%;
+    padding: 4px 6px;
+    background: linear-gradient(180deg, #2c1f15 0%, #17110c 100%);
+    border: 1px solid #735025;
+    border-radius: 4px;
+    box-shadow: inset 0 1px 2px rgba(255, 255, 255, 0.1), 0 2px 5px rgba(0, 0, 0, 0.5);
+}
+
+.manometer-metal-plaque .plaque-ko {
+    font-family: var(--font-batang);
     font-size: 12px;
-    color: var(--text-muted);
-    margin-top: 3px;
-    font-weight: 500;
+    font-weight: 700;
+    color: #e8d5b5;
+    letter-spacing: 0.02em;
+    line-height: 1.2;
+}
+
+.manometer-metal-plaque .plaque-en {
+    font-family: 'Cinzel', serif;
+    font-size: 8px;
+    font-weight: 700;
+    color: #b5924b;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-top: 2px;
+    line-height: 1;
 }
 
 /* ==========================================================================
-   Hero Continue Reading Section (1번 기능)
+   Hero Continue Reading Section (Central Computing Desk)
    ========================================================================== */
 
 .hero-continue-section {
-    margin-bottom: 24px;
+    margin-bottom: 26px;
 }
 
 .hero-card {
@@ -407,85 +891,77 @@ button, input, select, textarea {
     align-items: center;
     justify-content: space-between;
     gap: 24px;
-    padding: 22px 28px;
-    background: linear-gradient(135deg, var(--card-bg) 0%, rgba(59, 130, 246, 0.05) 50%, rgba(99, 102, 241, 0.07) 100%);
-    border: 1px solid var(--primary-border);
+    padding: 22px 30px;
+    background: linear-gradient(135deg, var(--card-bg) 0%, var(--border-light) 100%);
+    border: 2px solid var(--brass-border);
     border-radius: var(--border-radius-lg);
-    box-shadow: 0 4px 20px -2px rgba(59, 130, 246, 0.12), var(--shadow-sm);
+    box-shadow: var(--shadow-md), inset 0 1px 2px rgba(255, 255, 255, 0.4);
     overflow: hidden;
     transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
 .hero-card:hover {
     transform: translateY(-2px);
-    box-shadow: 0 6px 24px -2px rgba(59, 130, 246, 0.18), var(--shadow-md);
-}
-
-.hero-card::before {
-    content: '';
-    position: absolute;
-    top: -50px;
-    right: -50px;
-    width: 150px;
-    height: 150px;
-    border-radius: 50%;
-    background: radial-gradient(circle, rgba(99, 102, 241, 0.15) 0%, transparent 70%);
-    pointer-events: none;
+    box-shadow: var(--shadow-lg);
 }
 
 .hero-left {
     display: flex;
     align-items: center;
-    gap: 18px;
+    gap: 20px;
     flex-shrink: 0;
 }
 
 .hero-book-cover {
-    width: 68px;
-    height: 94px;
-    background: linear-gradient(145deg, #1e293b, #0f172a);
+    width: 72px;
+    height: 100px;
+    background: var(--card-leather);
     border-radius: 6px;
-    box-shadow: 2px 4px 12px rgba(0, 0, 0, 0.25);
+    box-shadow: 3px 5px 14px rgba(0, 0, 0, 0.4), inset 0 0 10px rgba(0, 0, 0, 0.6);
     display: flex;
     flex-direction: column;
     justify-content: space-between;
-    padding: 8px;
+    padding: 8px 6px;
+    border: 1px solid var(--brass-border);
     position: relative;
-    overflow: hidden;
-    border-left: 3px solid #3b82f6;
-    flex-shrink: 0;
 }
 
-.hero-book-cover.completed {
-    border-left-color: #10b981;
-}
-
-.hero-book-cover-title {
-    font-size: 10px;
-    font-weight: 700;
-    color: #f8fafc;
-    line-height: 1.2;
-    display: -webkit-box;
-    -webkit-line-clamp: 3;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
+/* Brass corner clip simulation */
+.hero-book-cover::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 14px;
+    height: 14px;
+    background: var(--brass-gradient);
+    clip-path: polygon(100% 0, 0 0, 100% 100%);
+    border-top-right-radius: 6px;
 }
 
 .hero-book-cover-badge {
     align-self: flex-start;
-    font-size: 8px;
+    font-family: var(--font-typewriter);
+    font-size: 10px;
     font-weight: 700;
-    padding: 1px 4px;
+    background: var(--seal-red);
+    color: #ffffff;
+    padding: 2px 6px;
     border-radius: 4px;
-    background: rgba(59, 130, 246, 0.3);
-    color: #60a5fa;
-    border: 1px solid rgba(96, 165, 250, 0.4);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
 }
 
-.hero-book-cover.completed .hero-book-cover-badge {
-    background: rgba(16, 185, 129, 0.3);
-    color: #34d399;
-    border-color: rgba(52, 211, 153, 0.4);
+.hero-book-cover-title {
+    font-family: var(--font-serif);
+    font-size: 11px;
+    font-weight: 700;
+    color: #f7ede2;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    line-height: 1.3;
 }
 
 .hero-center {
@@ -504,82 +980,74 @@ button, input, select, textarea {
     display: inline-flex;
     align-items: center;
     gap: 4px;
+    font-family: var(--font-typewriter);
     font-size: 11px;
     font-weight: 700;
-    color: var(--primary-color);
+    color: var(--brass-gold);
     background: var(--primary-light);
+    border: 1px solid var(--brass-border);
     padding: 2px 8px;
-    border-radius: 12px;
-    border: 1px solid var(--primary-border);
+    border-radius: 4px;
+    letter-spacing: 0.02em;
 }
 
-.hero-relative-time {
-    font-size: 11px;
-    color: var(--text-muted);
-}
-
-.hero-book-title {
+.hero-title {
+    font-family: var(--font-serif);
     font-size: 19px;
     font-weight: 700;
     color: var(--text-color);
-    margin-bottom: 4px;
-    line-height: 1.3;
-    cursor: pointer;
+    margin-bottom: 6px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    transition: color 0.15s ease;
-}
-
-.hero-book-title:hover {
-    color: var(--primary-color);
 }
 
 .hero-chapter-info {
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--text-secondary);
     display: flex;
     align-items: center;
-    gap: 6px;
-    margin-bottom: 8px;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin-bottom: 10px;
 }
 
-.hero-chapter-info .material-icons {
-    font-size: 16px;
-    color: var(--primary-color);
+.hero-chapter-name {
+    font-weight: 600;
+    color: var(--brass-gold);
 }
 
 .hero-progress-track {
     width: 100%;
-    max-width: 460px;
-    height: 7px;
+    max-width: 480px;
+    height: 8px;
     background: var(--border-light);
     border-radius: 4px;
     overflow: hidden;
     border: 1px solid var(--border-color);
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.2);
 }
 
 .hero-progress-fill {
     height: 100%;
-    background: linear-gradient(90deg, var(--primary-color), #8b5cf6);
+    background: linear-gradient(90deg, var(--brass-gold), var(--amber-glow));
     border-radius: 4px;
-    transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    transition: width 0.4s ease;
 }
 
 .hero-progress-meta {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 12px;
+    font-family: var(--font-typewriter);
     font-size: 11px;
     color: var(--text-muted);
-    margin-top: 4px;
-    max-width: 460px;
+    margin-top: 5px;
+    max-width: 480px;
 }
 
 .hero-progress-pct {
     font-weight: 700;
-    color: var(--primary-color);
+    color: var(--amber-glow);
 }
 
 .hero-right {
@@ -593,48 +1061,58 @@ button, input, select, textarea {
     display: inline-flex;
     align-items: center;
     gap: 8px;
-    padding: 12px 22px;
-    background: linear-gradient(135deg, var(--primary-color) 0%, #4f46e5 100%);
-    color: #ffffff;
-    border-radius: 10px;
+    padding: 12px 24px;
+    background: var(--brass-gradient);
+    color: #1a1208;
+    border-radius: 8px;
     font-size: 14px;
     font-weight: 700;
-    border: none;
+    border: 1px solid var(--brass-border);
     cursor: pointer;
-    box-shadow: 0 4px 14px rgba(59, 130, 246, 0.35);
-    transition: all 0.2s ease;
+    box-shadow: 0 4px 0 var(--brass-dark), 0 5px 12px rgba(0, 0, 0, 0.25);
+    transition: all 0.15s ease;
     text-decoration: none;
+    text-shadow: 0 1px 0 rgba(255, 255, 255, 0.35);
 }
 
 .hero-continue-btn:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 6px 18px rgba(59, 130, 246, 0.45);
-    background: linear-gradient(135deg, var(--primary-hover) 0%, #4338ca 100%);
+    filter: brightness(1.08);
+    transform: translateY(-1px);
+}
+
+.hero-continue-btn:active {
+    transform: translateY(3px);
+    box-shadow: 0 1px 0 var(--brass-dark);
 }
 
 .hero-continue-btn .material-icons {
-    font-size: 18px;
+    font-size: 20px;
 }
 
 .hero-toc-btn {
-    padding: 10px 14px;
+    padding: 11px 16px;
     font-size: 13px;
     font-weight: 600;
-    border-radius: 10px;
+    border-radius: 8px;
     background-color: var(--card-bg);
     border: 1px solid var(--border-color);
     color: var(--text-secondary);
     cursor: pointer;
-    transition: all 0.18s ease;
+    transition: all 0.15s ease;
     display: inline-flex;
     align-items: center;
-    gap: 5px;
+    gap: 6px;
+    box-shadow: 0 2px 0 var(--border-color);
 }
 
 .hero-toc-btn:hover {
-    background-color: var(--border-light);
+    border-color: var(--brass-border);
     color: var(--text-color);
-    border-color: var(--text-muted);
+}
+
+.hero-toc-btn:active {
+    transform: translateY(2px);
+    box-shadow: none;
 }
 
 @media (max-width: 768px) {
@@ -645,7 +1123,7 @@ button, input, select, textarea {
     }
     .hero-right {
         width: 100%;
-        margin-top: 8px;
+        margin-top: 10px;
     }
     .hero-continue-btn {
         flex: 1;
@@ -654,14 +1132,14 @@ button, input, select, textarea {
 }
 
 /* ==========================================================================
-   Toolbar (Search, Sort, Status Tabs, Tags)
+   Master Toolbar (Telegraph Search & Console Push Buttons)
    ========================================================================== */
 
 .library-toolbar {
     background: var(--card-bg);
-    border: 1px solid var(--border-color);
+    border: 2px solid var(--border-color);
     border-radius: var(--border-radius-lg);
-    padding: 18px 20px;
+    padding: 18px 22px;
     box-shadow: var(--shadow-sm);
     margin-bottom: 28px;
     display: flex;
@@ -676,6 +1154,7 @@ button, input, select, textarea {
     flex-wrap: wrap;
 }
 
+/* Telegraph Input Slot */
 .search-input-wrapper {
     position: relative;
     flex: 1;
@@ -688,15 +1167,24 @@ button, input, select, textarea {
     position: absolute;
     left: 12px;
     font-size: 20px;
-    color: var(--text-muted);
+    color: var(--brass-gold);
     pointer-events: none;
 }
 
 .search-input-wrapper .search-box {
-    padding-left: 40px;
+    padding-left: 42px;
     padding-right: 36px;
-    height: 40px;
+    height: 42px;
     font-size: 14px;
+    border: 2px solid var(--border-color);
+    background: var(--bg-color);
+    border-radius: 8px;
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.12);
+}
+
+.search-input-wrapper .search-box:focus {
+    border-color: var(--brass-border);
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.15), 0 0 0 3px var(--primary-light);
 }
 
 .search-clear-btn {
@@ -729,31 +1217,34 @@ button, input, select, textarea {
 
 .sort-icon {
     font-size: 20px;
-    color: var(--text-muted);
+    color: var(--brass-gold);
 }
 
 .sort-wrapper .form-select {
-    height: 40px;
+    height: 42px;
     padding-right: 28px;
     cursor: pointer;
+    border: 2px solid var(--border-color);
+    background: var(--bg-color);
+    border-radius: 8px;
 }
 
-/* View Mode Toggle (4번 기능) */
+/* View Mode Toggle Switch */
 .view-mode-toggle {
     display: inline-flex;
     align-items: center;
     background-color: var(--border-light);
     padding: 3px;
-    border-radius: var(--border-radius-sm);
+    border-radius: 8px;
     border: 1px solid var(--border-color);
 }
 
 .view-mode-btn {
     background: none;
     border: none;
-    width: 34px;
-    height: 34px;
-    border-radius: 4px;
+    width: 36px;
+    height: 36px;
+    border-radius: 6px;
     cursor: pointer;
     color: var(--text-muted);
     display: inline-flex;
@@ -768,47 +1259,55 @@ button, input, select, textarea {
 }
 
 .view-mode-btn.active {
-    background-color: var(--card-bg);
-    color: var(--primary-color);
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+    background: var(--card-bg);
+    color: var(--brass-gold);
+    border: 1px solid var(--brass-border);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
 }
 
 .view-mode-btn .material-icons {
     font-size: 20px;
 }
 
-/* Status Tabs */
+/* Mechanical Push Buttons (Status Tabs) */
 .status-tab-group {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 10px;
     flex-wrap: wrap;
-    padding-top: 4px;
-    border-top: 1px solid var(--border-light);
+    padding-top: 6px;
+    border-top: 1px dashed var(--border-color);
 }
 
 .status-tab-btn {
-    padding: 7px 16px;
-    border-radius: 20px;
+    padding: 8px 16px;
+    border-radius: 8px;
     border: 1px solid var(--border-color);
-    background-color: transparent;
+    background: var(--bg-color);
     color: var(--text-secondary);
     font-size: 13px;
-    font-weight: 500;
+    font-weight: 600;
     cursor: pointer;
-    transition: all 0.15s ease;
+    transition: all 0.12s ease;
+    box-shadow: 0 3px 0 var(--border-color), 0 3px 6px rgba(0, 0, 0, 0.08);
+    position: relative;
+    user-select: none;
 }
 
 .status-tab-btn:hover {
-    background-color: var(--border-light);
     color: var(--text-color);
+    border-color: var(--brass-border);
+    transform: translateY(-1px);
 }
 
 .status-tab-btn.active {
-    background-color: var(--primary-color);
-    color: #ffffff;
-    border-color: var(--primary-color);
-    box-shadow: 0 2px 6px rgba(59, 130, 246, 0.3);
+    background: var(--brass-gradient);
+    color: #1a1208;
+    border-color: var(--brass-border);
+    font-weight: 700;
+    text-shadow: 0 1px 0 rgba(255, 255, 255, 0.3);
+    transform: translateY(3px);
+    box-shadow: 0 0 0 transparent, inset 0 2px 5px rgba(0, 0, 0, 0.35);
 }
 
 /* Tag Filter Bar */
@@ -833,19 +1332,19 @@ button, input, select, textarea {
 }
 
 .tag-filter:hover {
-    border-color: var(--text-muted);
+    border-color: var(--brass-border);
     color: var(--text-color);
 }
 
 .tag-filter.active {
     background-color: var(--primary-light);
-    color: var(--primary-color);
-    border-color: var(--primary-border);
-    font-weight: 600;
+    color: var(--brass-gold);
+    border-color: var(--brass-border);
+    font-weight: 700;
 }
 
 /* ==========================================================================
-   Book Shelf Grid & Cards
+   Book Shelf Grid & Vintage Leather Binder Cards
    ========================================================================== */
 
 .book-shelf {
@@ -854,7 +1353,292 @@ button, input, select, textarea {
     gap: 22px;
 }
 
-/* Compact List View (4번 기능) */
+/* 1. Vintage Leather Binder Card */
+.book-card {
+    position: relative;
+    background-color: var(--card-bg);
+    border: 2px solid var(--border-color);
+    border-radius: var(--border-radius);
+    box-shadow: var(--shadow-sm);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+/* Brass Corner Clips */
+.book-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 16px;
+    height: 16px;
+    background: var(--brass-gradient);
+    clip-path: polygon(0 0, 100% 0, 0 100%);
+    border-top-left-radius: var(--border-radius);
+    z-index: 2;
+    pointer-events: none;
+}
+
+.book-card::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 16px;
+    height: 16px;
+    background: var(--brass-gradient);
+    clip-path: polygon(0 0, 100% 0, 100% 100%);
+    border-top-right-radius: var(--border-radius);
+    z-index: 2;
+    pointer-events: none;
+}
+
+.book-card:hover {
+    transform: translateY(-4px);
+    box-shadow: var(--shadow-lg);
+    border-color: var(--brass-border);
+}
+
+/* Card Cover Top Spine */
+.card-cover-spine {
+    height: 8px;
+    width: 100%;
+    background: var(--brass-gradient);
+}
+
+.card-cover-spine.completed {
+    background: linear-gradient(90deg, #10b981, #059669);
+}
+
+/* Difference Engine Punch-card Strip (차분기관 천공 테이프 스트립) */
+.punch-card-strip {
+    height: 7px;
+    width: 100%;
+    background-color: #2b1d12;
+    background-image: radial-gradient(circle, #0e0905 1.5px, transparent 1.5px);
+    background-size: 8px 6px;
+    border-bottom: 1px solid rgba(212, 175, 55, 0.25);
+    opacity: 0.85;
+}
+
+.card-top-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 14px 4px;
+}
+
+.badge-group {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+/* Wax Seal Style Status Badge */
+.status-badge {
+    font-family: var(--font-serif);
+    font-size: 11px;
+    font-weight: 700;
+    padding: 3px 9px;
+    border-radius: 12px;
+    line-height: 1.3;
+}
+
+.status-badge.completed {
+    background: var(--seal-red);
+    color: #ffffff;
+    border: 1px solid var(--seal-red-border);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.status-badge.serializing {
+    background: var(--primary-light);
+    color: var(--brass-gold);
+    border: 1px solid var(--brass-border);
+}
+
+.status-badge.unread {
+    background-color: var(--border-light);
+    color: var(--text-muted);
+    border: 1px solid var(--border-color);
+}
+
+.chapter-count-badge {
+    font-family: var(--font-typewriter);
+    font-size: 11px;
+    color: var(--text-muted);
+    font-weight: 600;
+    background: var(--border-light);
+    padding: 2px 7px;
+    border-radius: 4px;
+    border: 1px solid var(--border-color);
+}
+
+/* Card Reading Progress Bar (Oil Gauge Tube) */
+.card-progress-wrap {
+    margin-top: 8px;
+    margin-bottom: 8px;
+}
+
+.card-progress-track {
+    width: 100%;
+    height: 6px;
+    background-color: var(--border-color);
+    border-radius: 3px;
+    overflow: hidden;
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+.card-progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--brass-gold) 0%, var(--amber-glow) 100%);
+    border-radius: 3px;
+    transition: width 0.3s ease;
+}
+
+.card-progress-labels {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-family: var(--font-typewriter);
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 4px;
+    font-weight: 600;
+}
+
+.card-progress-pct {
+    color: var(--amber-glow);
+    font-weight: 700;
+}
+
+.pin-btn {
+    background: none;
+    border: none;
+    font-size: 20px;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: transform 0.18s ease, color 0.18s ease;
+    padding: 2px 4px;
+    line-height: 1;
+}
+
+.pin-btn:hover {
+    transform: scale(1.15);
+    color: var(--amber-glow);
+}
+
+.pin-btn.pinned {
+    color: var(--amber-glow);
+}
+
+.card-main {
+    padding: 10px 16px 14px;
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+.book-card-title {
+    font-family: var(--font-serif);
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text-color);
+    line-height: 1.35;
+    margin-bottom: 6px;
+    cursor: pointer;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.book-card-title:hover {
+    color: var(--brass-gold);
+}
+
+.book-card-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-bottom: 8px;
+}
+
+.book-tag {
+    font-size: 11px;
+    padding: 1px 6px;
+    background-color: var(--border-light);
+    border: 1px solid var(--border-color);
+    color: var(--text-muted);
+    border-radius: 4px;
+}
+
+.book-card-last-read {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-top: auto;
+    padding-top: 6px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.card-actions-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 16px;
+    border-top: 1px solid var(--border-color);
+    background: var(--bg-color);
+}
+
+.card-read-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 16px;
+    background: var(--brass-gradient);
+    color: #1a1208;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 700;
+    border: 1px solid var(--brass-border);
+    cursor: pointer;
+    box-shadow: 0 2px 0 var(--brass-dark);
+    text-decoration: none;
+    transition: all 0.12s ease;
+}
+
+.card-read-btn:hover {
+    filter: brightness(1.08);
+}
+
+.card-read-btn:active {
+    transform: translateY(2px);
+    box-shadow: none;
+}
+
+.card-menu-btn {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+}
+
+.card-menu-btn:hover {
+    color: var(--text-color);
+}
+
+/* ==========================================================================
+   Compact List View
+   ========================================================================== */
+
 .book-shelf.list-view {
     display: flex;
     flex-direction: column;
@@ -875,7 +1659,7 @@ button, input, select, textarea {
 }
 
 .book-list-row:hover {
-    border-color: var(--primary-border);
+    border-color: var(--brass-border);
     background-color: var(--border-light);
     transform: translateX(3px);
     box-shadow: var(--shadow-md);
@@ -897,6 +1681,7 @@ button, input, select, textarea {
 }
 
 .book-list-title {
+    font-family: var(--font-serif);
     font-size: 15px;
     font-weight: 700;
     color: var(--text-color);
@@ -908,7 +1693,7 @@ button, input, select, textarea {
 }
 
 .book-list-title:hover {
-    color: var(--primary-color);
+    color: var(--brass-gold);
 }
 
 .book-list-tags {
@@ -935,16 +1720,16 @@ button, input, select, textarea {
 
 .book-list-progress-bar {
     width: 100%;
-    height: 4px;
+    height: 5px;
     background: var(--border-color);
-    border-radius: 2px;
+    border-radius: 3px;
     overflow: hidden;
 }
 
 .book-list-progress-bar-fill {
     height: 100%;
-    background: linear-gradient(90deg, var(--primary-color), #10b981);
-    border-radius: 2px;
+    background: linear-gradient(90deg, var(--brass-gold), var(--amber-glow));
+    border-radius: 3px;
 }
 
 .book-list-status {
@@ -952,16 +1737,11 @@ button, input, select, textarea {
     align-items: center;
 }
 
-.book-list-chapters {
+.book-list-chapters, .book-list-time {
+    font-family: var(--font-typewriter);
     font-size: 12px;
     color: var(--text-muted);
-    font-weight: 500;
-    white-space: nowrap;
-}
-
-.book-list-time {
-    font-size: 12px;
-    color: var(--text-muted);
+    font-weight: 600;
     white-space: nowrap;
 }
 
@@ -996,339 +1776,66 @@ button, input, select, textarea {
     text-align: center;
     padding: 60px 20px;
     background: var(--card-bg);
-    border: 1px dashed var(--border-color);
+    border: 2px dashed var(--border-color);
     border-radius: var(--border-radius-lg);
     color: var(--text-muted);
 }
 
 .empty-shelf-notice .material-icons {
-    font-size: 48px;
+    font-size: 50px;
     margin-bottom: 12px;
-    color: var(--text-muted);
-}
-
-.book-card {
-    position: relative;
-    background-color: var(--card-bg);
-    border: 1px solid var(--border-color);
-    border-radius: var(--border-radius-lg);
-    box-shadow: var(--shadow-sm);
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
-}
-
-.book-card:hover {
-    transform: translateY(-4px);
-    box-shadow: var(--shadow-lg);
-    border-color: var(--primary-border);
-}
-
-/* Book Cover Top Accent Banner */
-.card-cover-spine {
-    height: 8px;
-    width: 100%;
-    background: linear-gradient(90deg, #3b82f6, #6366f1, #8b5cf6);
-}
-
-.card-cover-spine.completed {
-    background: linear-gradient(90deg, #10b981, #059669);
-}
-
-.card-top-bar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 12px 14px 4px;
-}
-
-.badge-group {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-}
-
-.status-badge {
-    font-size: 11px;
-    font-weight: 600;
-    padding: 2px 8px;
-    border-radius: 10px;
-    line-height: 1.3;
-}
-
-.status-badge.completed {
-    background-color: var(--success-light);
-    color: var(--success-color);
-    border: 1px solid rgba(16, 185, 129, 0.3);
-}
-
-.status-badge.serializing {
-    background-color: var(--primary-light);
-    color: var(--primary-color);
-    border: 1px solid var(--primary-border);
-}
-
-.status-badge.unread {
-    background-color: var(--border-light);
-    color: var(--text-muted);
-    border: 1px solid var(--border-color);
-}
-
-.chapter-count-badge {
-    font-size: 11px;
-    color: var(--text-muted);
-    font-weight: 500;
-    background: var(--border-light);
-    padding: 2px 6px;
-    border-radius: 6px;
-}
-
-/* Card Reading Progress Bar (5번 기능) */
-.card-progress-wrap {
-    margin-top: 6px;
-    margin-bottom: 8px;
-}
-
-.card-progress-track {
-    width: 100%;
-    height: 5px;
-    background-color: var(--border-color);
-    border-radius: 3px;
-    overflow: hidden;
-}
-
-.card-progress-fill {
-    height: 100%;
-    background: linear-gradient(90deg, #3b82f6 0%, #10b981 100%);
-    border-radius: 3px;
-    transition: width 0.3s ease;
-}
-
-.card-progress-labels {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    font-size: 11px;
-    color: var(--text-muted);
-    margin-top: 3px;
-    font-weight: 500;
-}
-
-.card-progress-pct {
-    color: var(--primary-color);
-    font-weight: 700;
-}
-
-.pin-btn {
-    background: none;
-    border: none;
-    font-size: 20px;
-    color: var(--text-muted);
-    cursor: pointer;
-    transition: transform 0.18s ease, color 0.18s ease;
-    padding: 2px 4px;
-    line-height: 1;
-}
-
-.pin-btn:hover {
-    transform: scale(1.15);
-    color: var(--warning-color);
-}
-
-.pin-btn.pinned {
-    color: var(--warning-color);
-}
-
-.card-main {
-    padding: 10px 16px 14px;
-    flex-grow: 1;
-    display: flex;
-    flex-direction: column;
-}
-
-.book-card-title {
-    font-size: 16px;
-    font-weight: 700;
-    color: var(--text-color);
-    line-height: 1.35;
-    margin-bottom: 10px;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    min-height: 42px;
-}
-
-/* Last Read Info Box */
-.last-read-box {
-    display: flex;
-    align-items: flex-start;
-    gap: 6px;
-    background-color: var(--border-light);
-    padding: 8px 10px;
-    border-radius: var(--border-radius-sm);
-    margin-bottom: 10px;
-    font-size: 12px;
-}
-
-.last-read-icon {
-    font-size: 16px;
-    color: var(--primary-color);
-    flex-shrink: 0;
-    margin-top: 1px;
-}
-
-.last-read-content {
-    flex-grow: 1;
-    overflow: hidden;
-}
-
-.last-read-title {
-    font-weight: 600;
-    color: var(--text-color);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.last-read-time {
-    font-size: 11px;
-    color: var(--text-muted);
-    margin-top: 2px;
-}
-
-.tags-container {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 4px;
-    margin-top: auto;
-    padding-top: 6px;
-}
-
-.tag-mini {
-    background-color: var(--border-light);
-    color: var(--text-secondary);
-    font-size: 11px;
-    padding: 2px 7px;
-    border-radius: 8px;
-    font-weight: 500;
-}
-
-/* Card Actions */
-.card-actions {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 12px 16px;
-    border-top: 1px solid var(--border-light);
-    background-color: var(--card-bg);
-}
-
-.card-actions .btn-read {
-    flex: 2;
-    font-weight: 600;
-}
-
-.card-actions .btn-toc {
-    flex: 1;
-}
-
-.card-actions .btn-info {
-    width: 34px;
-    height: 34px;
-    padding: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: var(--border-radius-sm);
-    color: var(--text-muted);
-}
-
-.card-actions .btn-info:hover {
-    color: var(--text-color);
-    border-color: var(--border-color);
-    background-color: var(--border-light);
+    color: var(--brass-gold);
 }
 
 /* ==========================================================================
-   Modals
+   Modals (Antique Brass & Iron Chassis Cabinet)
    ========================================================================== */
 
 .modal-overlay {
     position: fixed;
     top: 0;
     left: 0;
-    width: 100vw;
-    height: 100vh;
+    right: 0;
+    bottom: 0;
     background-color: var(--overlay-bg);
-    backdrop-filter: blur(6px);
     display: flex;
-    justify-content: center;
     align-items: center;
+    justify-content: center;
     z-index: 1000;
-    padding: 20px;
+    backdrop-filter: blur(4px);
+    animation: fadeIn 0.2s ease;
 }
 
 .modal-content {
     background: var(--modal-bg);
-    border: 1px solid var(--border-color);
+    border: 2px solid var(--brass-border);
     border-radius: var(--border-radius-lg);
     box-shadow: var(--modal-shadow);
-    width: 100%;
-    max-width: 560px;
-    max-height: 90vh;
+    width: 90%;
+    max-width: 580px;
+    max-height: 85vh;
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    animation: modalFadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.url-modal-content {
-    max-width: 720px;
-}
-
-@keyframes modalFadeIn {
-    from {
-        opacity: 0;
-        transform: scale(0.96) translateY(8px);
-    }
-    to {
-        opacity: 1;
-        transform: scale(1) translateY(0);
-    }
+    position: relative;
+    animation: scaleUp 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .modal-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 16px 22px;
-    border-bottom: 1px solid var(--border-color);
+    padding: 18px 24px;
+    border-bottom: 2px solid var(--border-color);
+    background: var(--bg-color);
 }
 
-.modal-title-wrap {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-}
-
-.title-icon {
-    font-size: 22px;
-    color: var(--primary-color);
-}
-
-.modal-header h2 {
-    font-size: 17px;
+.modal-title {
+    font-family: var(--font-display);
+    font-size: 18px;
     font-weight: 700;
     color: var(--text-color);
-}
-
-.modal-header-actions {
-    display: flex;
-    align-items: center;
-    gap: 10px;
+    letter-spacing: 0.02em;
 }
 
 .modal-close-btn {
@@ -1338,7 +1845,6 @@ button, input, select, textarea {
     color: var(--text-muted);
     cursor: pointer;
     line-height: 1;
-    padding: 4px;
 }
 
 .modal-close-btn:hover {
@@ -1346,175 +1852,9 @@ button, input, select, textarea {
 }
 
 .modal-body {
-    padding: 20px 22px;
+    padding: 22px 24px;
     overflow-y: auto;
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-}
-
-.meta-preview-box {
-    background-color: var(--border-light);
-    padding: 10px 14px;
-    border-radius: var(--border-radius-sm);
-    display: flex;
-    gap: 8px;
-    font-size: 13px;
-}
-
-.meta-label {
-    color: var(--text-muted);
-    font-weight: 600;
-}
-
-.meta-book-name {
-    color: var(--text-color);
-    font-weight: 700;
-}
-
-.setting-toggle-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 12px 14px;
-    background-color: var(--border-light);
-    border-radius: var(--border-radius-sm);
-    border: 1px solid var(--border-color);
-}
-
-.toggle-info {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    padding-right: 14px;
-}
-
-.toggle-title {
-    font-weight: 600;
-    color: var(--text-color);
-    font-size: 13px;
-    cursor: pointer;
-}
-
-.toggle-desc {
-    font-size: 11px;
-    color: var(--text-muted);
-    line-height: 1.4;
-}
-
-.toggle-switch {
-    position: relative;
-    display: inline-block;
-    width: 44px;
-    height: 24px;
-    flex-shrink: 0;
-}
-
-.toggle-switch input {
-    opacity: 0;
-    width: 0;
-    height: 0;
-}
-
-.slider {
-    position: absolute;
-    cursor: pointer;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background-color: #cbd5e1;
-    transition: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-    border-radius: 24px;
-}
-
-.slider:before {
-    position: absolute;
-    content: "";
-    height: 18px;
-    width: 18px;
-    left: 3px;
-    bottom: 3px;
-    background-color: white;
-    transition: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-    border-radius: 50%;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
-}
-
-input:checked + .slider {
-    background-color: var(--success-color);
-}
-
-input:checked + .slider:before {
-    transform: translateX(20px);
-}
-
-.form-section {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-}
-
-.section-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-}
-
-.section-title {
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--text-color);
-}
-
-.section-hint {
-    font-size: 11px;
-    color: var(--text-muted);
-}
-
-.tag-chips-picker {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    max-height: 160px;
-    overflow-y: auto;
-    padding: 8px;
-    background-color: var(--border-light);
-    border: 1px solid var(--border-color);
-    border-radius: var(--border-radius-sm);
-}
-
-.tag-chip-label {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    background-color: var(--card-bg);
-    border: 1px solid var(--border-color);
-    padding: 4px 10px;
-    border-radius: 14px;
-    font-size: 12px;
-    cursor: pointer;
-    transition: all 0.15s ease;
-    user-select: none;
-}
-
-.tag-chip-label input[type="checkbox"] {
-    accent-color: var(--primary-color);
-}
-
-.tag-chip-label:hover {
-    border-color: var(--primary-color);
-}
-
-.new-tag-form {
-    display: flex;
-    gap: 8px;
-    margin-top: 6px;
-}
-
-.input-with-button {
-    display: flex;
-    gap: 8px;
+    flex-grow: 1;
 }
 
 .modal-footer {
@@ -1522,150 +1862,41 @@ input:checked + .slider:before {
     align-items: center;
     justify-content: flex-end;
     gap: 10px;
-    padding: 14px 22px;
+    padding: 16px 24px;
     border-top: 1px solid var(--border-color);
-    background-color: var(--border-light);
+    background: var(--bg-color);
 }
 
-/* ==========================================================================
-   URL Modal Specific
-   ========================================================================== */
-
-.url-modal-toolbar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 14px;
-    padding: 12px 22px;
-    border-bottom: 1px solid var(--border-light);
-    background-color: var(--border-light);
-}
-
-.search-input-wrapper.small .form-input {
-    height: 34px;
-    font-size: 12px;
-}
-
-.url-list-stats {
-    font-size: 12px;
-    color: var(--text-muted);
-    font-weight: 500;
-    white-space: nowrap;
-}
-
-.url-list-body {
-    max-height: 480px;
-    overflow-y: auto;
-    padding: 12px 22px;
-}
-
-.url-list-items {
-    list-style: none;
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-}
-
-.url-item {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 10px 14px;
-    background-color: var(--card-bg);
-    border: 1px solid var(--border-color);
-    border-radius: var(--border-radius-sm);
-    transition: background-color 0.15s ease, border-color 0.15s ease;
-    text-decoration: none;
-    color: var(--text-color);
-}
-
-.url-item:hover {
-    background-color: var(--border-light);
-    border-color: var(--primary-border);
-}
-
-.url-item-title {
-    font-size: 13px;
-    font-weight: 500;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    padding-right: 12px;
-}
-
-.url-item-badge {
-    font-size: 11px;
-    color: var(--text-muted);
-    background-color: var(--border-light);
-    padding: 2px 8px;
-    border-radius: 10px;
-    white-space: nowrap;
-}
-
-/* ==========================================================================
-   Toast Notification
-   ========================================================================== */
-
+/* Toast Notifications */
 .toast {
     position: fixed;
-    bottom: 24px;
+    bottom: 30px;
     left: 50%;
     transform: translateX(-50%);
+    background: var(--header-bg);
+    color: var(--text-color);
+    border: 2px solid var(--brass-border);
     padding: 12px 24px;
-    border-radius: var(--border-radius);
-    background-color: #1e293b;
-    color: #ffffff;
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+    font-family: var(--font-typewriter);
     font-size: 13px;
-    font-weight: 500;
-    box-shadow: var(--shadow-xl);
+    font-weight: 700;
     z-index: 2000;
-    animation: toastPop 0.25s ease;
-    display: flex;
-    align-items: center;
-    gap: 8px;
+    animation: slideUp 0.25s ease;
 }
 
-@keyframes toastPop {
-    from {
-        opacity: 0;
-        transform: translate(-50%, 15px);
-    }
-    to {
-        opacity: 1;
-        transform: translate(-50%, 0);
-    }
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
 }
 
-/* ==========================================================================
-   Responsive Breakpoints
-   ========================================================================== */
-
-@media (max-width: 960px) {
-    .stats-overview-bar {
-        grid-template-columns: repeat(2, 1fr);
-    }
-    .header-nav {
-        flex-direction: column;
-        align-items: flex-start;
-    }
-    .header-actions {
-        width: 100%;
-        justify-content: flex-start;
-    }
+@keyframes scaleUp {
+    from { transform: scale(0.95); opacity: 0; }
+    to { transform: scale(1); opacity: 1; }
 }
 
-@media (max-width: 600px) {
-    .library-container {
-        padding: 16px 14px 60px;
-    }
-    .stats-overview-bar {
-        grid-template-columns: 1fr;
-    }
-    .book-shelf {
-        grid-template-columns: 1fr;
-    }
-    .toolbar-primary-row {
-        flex-direction: column;
-        align-items: stretch;
-    }
+@keyframes slideUp {
+    from { transform: translate(-50%, 20px); opacity: 0; }
+    to { transform: translate(-50%, 0); opacity: 1; }
 }

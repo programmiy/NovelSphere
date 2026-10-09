@@ -1,6 +1,6 @@
 /* ==========================================================================
-   LANOVEL Local Reader & Viewer Stylesheet (v2.0)
-   Premium Typography & Custom Reader Preferences System
+   LANOVEL Local Reader & Viewer Stylesheet (v3.0 Steam-Cyber Hybrid Edition)
+   Premium Typography, Nixie Tube Vacuum HUD & Steampunk Reading Console
    ========================================================================== */
 
 :root {
@@ -9,12 +9,24 @@
     --font-myeongjo: 'Nanum Myeongjo', serif;
     --font-pretendard: 'Pretendard', sans-serif;
     --font-sans: 'Noto Sans KR', sans-serif;
+    --font-display: 'Cinzel', 'Gowun Batang', serif;
+    --font-typewriter: 'Special Elite', 'Courier Prime', monospace;
+    --font-nixie: 'Special Elite', 'Courier Prime', monospace;
 
     /* Current Typography Settings (Dynamic) */
     --reader-font: var(--font-batang);
     --reader-font-size: 18px;
     --reader-line-height: 1.8;
     --viewer-max-width: 840px;
+
+    /* Steampunk Metals & Nixie Accents */
+    --brass-gold: #d4a359;
+    --brass-dark: #8c6227;
+    --brass-border: #b3802e;
+    --brass-gradient: linear-gradient(135deg, #e4b868 0%, #9e702e 50%, #f0cb82 100%);
+    --copper: #c8683c;
+    --nixie-orange: #ff7700;
+    --nixie-glow: 0 0 8px rgba(255, 119, 0, 0.9), 0 0 16px rgba(255, 140, 0, 0.4);
 
     /* 1. Paper Theme (Default) */
     --bg-color: #e9e7e2;
@@ -84,6 +96,34 @@ body.theme-oled {
     --accent-quote: #60a5fa;
 }
 
+/* 6. Antique Amber Glow Theme (Steampunk Vacuum Tube Dark) */
+body.theme-amber {
+    --bg-color: #12100e;
+    --card-bg: #1a1613;
+    --header-bg: #181411;
+    --text-color: #f7b368;
+    --text-muted: #9c7348;
+    --border-color: #3b2e21;
+    --hover-bg-color: #261f18;
+    --primary-color: #ff9d3b;
+    --primary-hover: #ffa753;
+    --accent-quote: #e67e22;
+}
+
+/* 7. Steam Parchment Theme (Victorian Manuscript Day) */
+body.theme-steam {
+    --bg-color: #ede2cf;
+    --card-bg: #f7efe1;
+    --header-bg: #f4ecd9;
+    --text-color: #2b2015;
+    --text-muted: #73624e;
+    --border-color: #d8c8af;
+    --hover-bg-color: #e5d7c0;
+    --primary-color: #b5802e;
+    --primary-hover: #966720;
+    --accent-quote: #8c5627;
+}
+
 /* ==========================================================================
    Base & Reset
    ========================================================================== */
@@ -111,7 +151,7 @@ button, input, select {
 }
 
 /* ==========================================================================
-   Reading Progress Bar
+   Reading Progress Bar (Steam Tube Amber Mercury Glow)
    ========================================================================== */
 
 .reading-progress-container {
@@ -119,21 +159,23 @@ button, input, select {
     top: 0;
     left: 0;
     width: 100%;
-    height: 3px;
-    background-color: transparent;
+    height: 4px;
+    background-color: rgba(20, 12, 6, 0.5);
     z-index: 1200;
     pointer-events: none;
+    border-bottom: 1px solid rgba(179, 128, 46, 0.3);
 }
 
 .reading-progress-bar {
     height: 100%;
-    background: linear-gradient(90deg, var(--primary-color), #6366f1);
+    background: linear-gradient(90deg, var(--brass-gold) 0%, var(--nixie-orange) 100%);
+    box-shadow: 0 0 10px rgba(255, 119, 0, 0.7);
     width: 0%;
     transition: width 0.25s ease;
 }
 
 /* ==========================================================================
-   Viewer Container
+   Viewer Container (Steam Console Frame)
    ========================================================================== */
 
 .viewer-container {
@@ -143,24 +185,24 @@ button, input, select {
     display: flex;
     flex-direction: column;
     background: var(--card-bg);
-    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
-    border: 1px solid var(--border-color);
-    border-radius: 12px;
+    box-shadow: 0 10px 35px rgba(0, 0, 0, 0.18);
+    border: 2px solid var(--border-color);
+    border-radius: 14px;
     min-height: 88vh;
     transition: max-width 0.25s ease, var(--theme-transition);
     position: relative;
 }
 
 /* ==========================================================================
-   Header Section
+   Header Section (Brass Plate Header & Rivet Finish)
    ========================================================================== */
 
 .viewer-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 12px 24px;
-    border-bottom: 1px solid var(--border-color);
+    padding: 14px 24px;
+    border-bottom: 2px solid var(--border-color);
     background-color: var(--header-bg);
     border-top-left-radius: 12px;
     border-top-right-radius: 12px;
@@ -186,12 +228,14 @@ button, input, select {
     font-family: var(--font-pretendard);
     padding: 6px 12px;
     border-radius: 6px;
+    border: 1px solid transparent;
     transition: all 0.18s ease;
 }
 
 .back-link:hover {
     background-color: var(--hover-bg-color);
-    color: var(--text-color);
+    color: var(--brass-gold);
+    border-color: var(--border-color);
 }
 
 .back-link .material-icons {
@@ -200,29 +244,40 @@ button, input, select {
 
 .header-center {
     flex-grow: 1;
-    text-align: center;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
     overflow: hidden;
-    padding: 0 8px;
+    padding: 0 10px;
+}
+
+.header-title-rack {
+    min-width: 0;
+    flex-shrink: 1;
+    text-align: center;
 }
 
 .book-title {
-    font-size: 15px;
+    font-family: var(--font-display);
+    font-size: 16px;
     font-weight: 700;
     color: var(--text-color);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
     line-height: 1.3;
+    letter-spacing: 0.03em;
 }
 
 .chapter-title {
+    font-family: var(--font-typewriter);
     font-size: 12px;
     color: var(--text-muted);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
     margin-top: 2px;
-    font-family: var(--font-pretendard);
 }
 
 .viewer-settings {
@@ -417,18 +472,35 @@ body.scroll-mode .nav-arrow {
     }
 }
 
+/* Antique Manuscript & Fountain Pen Ink Correction */
 .translation-item.editing {
-    background-color: var(--hover-bg-color);
-    box-shadow: 0 0 0 2px var(--primary-color);
+    background: rgba(246, 238, 222, 0.92);
+    border: 1px solid var(--brass-border);
+    border-left: 4px solid var(--brass-gold);
+    border-radius: 8px;
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.06), 0 4px 14px rgba(60, 40, 20, 0.15);
+    background-image: repeating-linear-gradient(transparent, transparent 27px, rgba(179, 128, 46, 0.15) 28px);
+    padding: 10px 14px;
     user-select: text !important;
     -webkit-user-select: text !important;
     -webkit-touch-callout: default !important;
 }
 
+body.dark-mode .translation-item.editing,
+body.theme-dark .translation-item.editing,
+body.theme-oled .translation-item.editing,
+body.theme-amber .translation-item.editing {
+    background: rgba(28, 22, 17, 0.95);
+    background-image: repeating-linear-gradient(transparent, transparent 27px, rgba(216, 168, 88, 0.12) 28px);
+    border-color: #8d6428;
+    border-left-color: #d8a858;
+    box-shadow: inset 0 1px 4px rgba(0, 0, 0, 0.4), 0 4px 16px rgba(0, 0, 0, 0.6);
+}
+
 .translated-text[contenteditable="true"] {
-    outline: 2px solid var(--primary-color);
+    outline: 2px dashed var(--brass-border);
     padding: 8px 12px;
-    background-color: var(--card-bg);
+    background-color: transparent;
     border-radius: 4px;
     margin-top: 4px;
     user-select: text !important;
@@ -440,68 +512,82 @@ body.scroll-mode .nav-arrow {
     align-items: center;
     justify-content: flex-end;
     gap: 8px;
-    margin-top: 8px;
+    margin-top: 10px;
+    padding: 6px 10px;
+    background: var(--header-bg);
+    border: 1px solid var(--brass-border);
+    border-radius: 6px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
     flex-wrap: wrap;
 }
 
-/* Corpus AI Features in Inline Edit */
+.inline-edit-actions .btn {
+    border-color: var(--brass-border);
+    font-size: 11px;
+    font-weight: 700;
+}
+
+/* Corpus AI Features in Inline Edit (Nixie & Brass Lights) */
 .corpus-tone-indicator {
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    padding: 3px 8px;
+    padding: 3px 9px;
     border-radius: 12px;
+    font-family: var(--font-typewriter);
     font-size: 11px;
-    font-weight: 600;
+    font-weight: 700;
     cursor: default;
     user-select: none;
     transition: all 0.2s ease;
 }
 .corpus-tone-indicator.tone-green {
-    background-color: rgba(34, 197, 94, 0.12);
+    background-color: rgba(34, 197, 94, 0.15);
     color: #16a34a;
-    border: 1px solid rgba(34, 197, 94, 0.3);
+    border: 1px solid rgba(34, 197, 94, 0.4);
 }
 .corpus-tone-indicator.tone-yellow {
-    background-color: rgba(234, 179, 8, 0.12);
+    background-color: rgba(234, 179, 8, 0.15);
     color: #ca8a04;
-    border: 1px solid rgba(234, 179, 8, 0.3);
+    border: 1px solid rgba(234, 179, 8, 0.4);
 }
 .corpus-tone-indicator.tone-red {
-    background-color: rgba(239, 68, 68, 0.12);
+    background-color: rgba(239, 68, 68, 0.15);
     color: #dc2626;
-    border: 1px solid rgba(239, 68, 68, 0.3);
+    border: 1px solid rgba(239, 68, 68, 0.4);
     cursor: pointer;
 }
 .corpus-tone-indicator.tone-red:hover {
-    background-color: rgba(239, 68, 68, 0.22);
+    background-color: rgba(239, 68, 68, 0.25);
 }
 
+/* Punch Tape Ribbon Ghost Bar */
 .corpus-ghost-bar {
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    margin-top: 6px;
-    padding: 4px 10px;
-    background: rgba(59, 130, 246, 0.08);
-    border: 1px dashed rgba(59, 130, 246, 0.35);
-    border-radius: 6px;
+    margin-top: 8px;
+    padding: 4px 12px;
+    background: rgba(216, 168, 88, 0.12);
+    border: 1px dashed var(--brass-border);
+    border-radius: 4px;
+    font-family: var(--font-typewriter);
     font-size: 12px;
     color: var(--text-color);
     animation: fadeIn 0.15s ease;
 }
 .corpus-ghost-bar .ghost-badge {
     display: inline-block;
-    padding: 1px 5px;
-    background: var(--primary-color);
-    color: #fff;
+    padding: 1px 6px;
+    background: var(--brass-gradient);
+    color: #1a1208;
     border-radius: 3px;
     font-size: 10px;
     font-weight: bold;
     letter-spacing: 0.5px;
 }
 .corpus-ghost-bar .ghost-text {
-    opacity: 0.75;
+    opacity: 0.85;
     font-style: italic;
 }
 
@@ -548,8 +634,8 @@ body.scroll-mode .nav-arrow {
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 10px 24px;
-    border-top: 1px solid var(--border-color);
+    padding: 12px 24px;
+    border-top: 2px solid var(--border-color);
     background-color: var(--header-bg);
     border-bottom-left-radius: 12px;
     border-bottom-right-radius: 12px;
@@ -563,10 +649,210 @@ body.scroll-mode .nav-arrow {
 }
 
 .page-indicator {
-    font-size: 12px;
-    color: var(--text-muted);
-    font-family: var(--font-pretendard);
-    font-weight: 500;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 44px;
+}
+
+/* ==========================================================================
+   Steampunk Nixie Tube Vacuum Display (진공관 닉시 튜브 디스플레이)
+   ========================================================================== */
+
+/* 상단 헤더 닉시관 모듈 섀시 */
+.header-nixie-module {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    background: linear-gradient(180deg, #241c16 0%, #110d0a 100%);
+    border: 1.5px solid #8e6834;
+    border-radius: 6px;
+    padding: 3px 8px 4px 8px;
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.8), 0 2px 6px rgba(0, 0, 0, 0.4), 0 0 12px rgba(255, 119, 0, 0.2);
+    flex-shrink: 0;
+    user-select: none;
+}
+
+.header-nixie-module .nixie-sub-label {
+    font-family: 'Cinzel', serif;
+    font-size: 8px;
+    font-weight: 700;
+    color: #c5a059;
+    letter-spacing: 0.14em;
+    margin-bottom: 2px;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
+}
+
+/* 닉시 튜브 베이스 랙 */
+.nixie-tube-bank {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    background: #0d0806;
+    padding: 5px 9px;
+    border-radius: 7px;
+    border: 1px solid #5a3818;
+    box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.95), 0 0 14px rgba(255, 102, 0, 0.25);
+    user-select: none;
+}
+
+.nixie-tube-bank.header-bank {
+    padding: 1px 2px;
+    gap: 3px;
+    background: transparent;
+    border: none;
+    box-shadow: none;
+}
+
+.nixie-tube-group {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+}
+
+/* 개별 진공관 유리 실린더 (Vacuum Tube Bulb) */
+.nixie-tube {
+    position: relative;
+    width: 26px;
+    height: 42px;
+    background: radial-gradient(circle at 50% 25%, rgba(255, 160, 60, 0.22), #120904 70%);
+    border: 1.5px solid rgba(220, 175, 80, 0.55);
+    border-radius: 13px 13px 5px 5px;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 0 14px rgba(255, 110, 0, 0.4), inset 0 0 8px rgba(0, 0, 0, 0.9);
+}
+
+.header-bank .nixie-tube {
+    width: 20px;
+    height: 32px;
+    border-radius: 10px 10px 4px 4px;
+    border-color: rgba(200, 160, 75, 0.5);
+    box-shadow: 0 0 10px rgba(255, 110, 0, 0.35), inset 0 0 6px rgba(0, 0, 0, 0.9);
+}
+
+/* 진공관 곡면 유리 반사광 */
+.nixie-glass-reflection {
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 3px;
+    height: 80%;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.75) 0%, rgba(255, 255, 255, 0.15) 60%, transparent 100%);
+    border-radius: 2px;
+    pointer-events: none;
+    z-index: 5;
+}
+
+.header-bank .nixie-glass-reflection {
+    top: 2px;
+    left: 2px;
+    width: 2px;
+}
+
+/* 내부 와이어 메쉬 양극 그리드망 */
+.nixie-mesh-grid {
+    position: absolute;
+    inset: 2px;
+    background-image: radial-gradient(rgba(180, 115, 50, 0.35) 1px, transparent 1px);
+    background-size: 3px 3px;
+    pointer-events: none;
+    z-index: 1;
+    border-radius: 11px 11px 3px 3px;
+}
+
+/* 미점등 필라멘트 실루엣 (철사 전극 그림자) */
+.nixie-digit-ghost {
+    position: absolute;
+    font-family: 'Special Elite', 'Courier Prime', monospace;
+    font-size: 22px;
+    font-weight: 700;
+    color: rgba(140, 85, 40, 0.22);
+    z-index: 2;
+    pointer-events: none;
+    line-height: 1;
+}
+
+.header-bank .nixie-digit-ghost {
+    font-size: 16px;
+}
+
+/* 점등된 오렌지/앰버 네온 가스 발광 숫자 */
+.nixie-digit-glow {
+    position: relative;
+    font-family: 'Special Elite', 'Courier Prime', monospace;
+    font-size: 22px;
+    font-weight: 700;
+    color: #fff6e5;
+    z-index: 3;
+    line-height: 1;
+    text-shadow: 
+        0 0 2px #ffffff,
+        0 0 5px #ff9400,
+        0 0 12px #ff5500,
+        0 0 22px #e62e00,
+        0 0 32px rgba(255, 60, 0, 0.7);
+    animation: nixieFlicker 5s infinite alternate ease-in-out;
+}
+
+.header-bank .nixie-digit-glow {
+    font-size: 16px;
+    text-shadow: 
+        0 0 2px #ffffff,
+        0 0 4px #ff9400,
+        0 0 10px #ff5500,
+        0 0 18px #e62e00;
+}
+
+/* 진공관 하단 황동 소켓 칼라 */
+.nixie-socket-collar {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 5px;
+    background: linear-gradient(90deg, #463118 0%, #c5a059 50%, #3e2a14 100%);
+    border-top: 1px solid #ffd980;
+    z-index: 6;
+}
+
+.header-bank .nixie-socket-collar {
+    height: 4px;
+}
+
+/* 구분 슬래시 기호 */
+.nixie-slash {
+    font-family: 'Special Elite', monospace;
+    font-size: 20px;
+    font-weight: 700;
+    color: #ff9933;
+    text-shadow: 0 0 8px #ff6600;
+    margin: 0 4px;
+    line-height: 1;
+}
+
+/* 닉시관 모드 뱃지 (스크롤/페이지 모드) */
+.nixie-mode-badge {
+    font-family: 'Cinzel', serif;
+    font-size: 9px;
+    font-weight: 700;
+    background: #24160d;
+    border: 1px solid #7c5025;
+    color: #d4af37;
+    padding: 2px 5px;
+    border-radius: 3px;
+    letter-spacing: 0.08em;
+}
+
+@keyframes nixieFlicker {
+    0%, 100% { opacity: 1; filter: drop-shadow(0 0 8px rgba(255, 120, 0, 0.8)); }
+    92% { opacity: 1; }
+    93% { opacity: 0.95; }
+    94% { opacity: 1; }
+    96% { opacity: 0.96; }
+    98% { opacity: 1; }
 }
 
 /* ==========================================================================
@@ -853,7 +1139,7 @@ body.scroll-mode .nav-arrow {
 /* Theme Swatch Grid */
 .theme-palette-grid {
     display: grid;
-    grid-template-columns: repeat(5, 1fr);
+    grid-template-columns: repeat(auto-fill, minmax(68px, 1fr));
     gap: 8px;
 }
 
@@ -875,7 +1161,8 @@ body.scroll-mode .nav-arrow {
 }
 
 .theme-chip.active {
-    border-color: var(--primary-color);
+    border-color: var(--brass-gold);
+    box-shadow: 0 0 10px var(--amber-glow-soft);
 }
 
 .theme-chip.theme-paper { background: #fdfaf2; color: #2c2825; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
@@ -883,6 +1170,8 @@ body.scroll-mode .nav-arrow {
 .theme-chip.theme-sepia { background: #f4ecd8; color: #3d2f24; }
 .theme-chip.theme-dark  { background: #131a28; color: #e2e8f0; }
 .theme-chip.theme-oled  { background: #000000; color: #d1d5db; border: 1px solid #333; }
+.theme-chip.theme-amber { background: #1a1613; color: #f7b368; border: 1px solid #3b2e21; box-shadow: 0 0 6px rgba(255, 119, 0, 0.2); }
+.theme-chip.theme-steam { background: #f7efe1; color: #2b2015; border: 1px solid #d8c8af; }
 
 .theme-preview {
     font-size: 16px;
@@ -1249,12 +1538,14 @@ kbd {
 }
 
 /* ==========================================================================
-   사전 연동 & 누적 용례 학습 패널 (Dictionary & Corpus Study Drawer)
+   사전 연동 & 누적 용례 학습 패널 (Leather-bound Encyclopedia & Archive)
    ========================================================================== */
 
 .dict-drawer {
     width: 440px;
     max-width: 100vw;
+    border-left: 2px solid var(--brass-border);
+    box-shadow: -6px 0 30px rgba(0, 0, 0, 0.4);
 }
 
 @media (max-width: 768px) {
@@ -1268,7 +1559,7 @@ kbd {
     align-items: center;
     gap: 8px;
     padding: 12px 16px;
-    border-bottom: 1px solid var(--border-color);
+    border-bottom: 2px solid var(--border-color);
     background-color: var(--hover-bg-color);
     flex-shrink: 0;
 }
@@ -1284,23 +1575,25 @@ kbd {
     position: absolute;
     left: 9px;
     font-size: 18px;
-    color: var(--text-muted);
+    color: var(--brass-gold);
 }
 
 .dict-input-wrap input {
     width: 100%;
-    padding: 7px 30px 7px 32px;
+    padding: 8px 30px 8px 34px;
     border-radius: 8px;
-    border: 1px solid var(--border-color);
+    border: 1px solid var(--brass-border);
     background: var(--card-bg);
     color: var(--text-color);
     font-size: 13px;
     outline: none;
-    transition: border-color 0.15s ease;
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.1);
+    transition: all 0.15s ease;
 }
 
 .dict-input-wrap input:focus {
-    border-color: var(--primary-color);
+    border-color: var(--brass-gold);
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.15), 0 0 0 2px var(--amber-glow-soft);
 }
 
 .dict-input-wrap .btn-xs {
@@ -1315,7 +1608,7 @@ kbd {
     cursor: pointer;
 }
 
-/* 사전 포털 연동 바 */
+/* 사전 포털 연동 바 (Enamel Pin Metal Badges) */
 .dict-portal-links-bar {
     display: flex;
     align-items: center;
@@ -1328,6 +1621,7 @@ kbd {
 }
 
 .dict-portal-label {
+    font-family: var(--font-typewriter);
     font-size: 11px;
     font-weight: 700;
     color: var(--text-muted);

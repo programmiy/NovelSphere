@@ -9,14 +9,35 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&family=Gowun+Batang:wght@400;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;900&family=Special+Elite&family=Courier+Prime:ital,wght@0,400;0,700;1,400&family=Gowun+Batang:wght@400;700&family=Noto+Serif+KR:wght@400;600;700&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
-    <link rel="stylesheet" href="/static/library.css?v=2.0">
+    <link rel="stylesheet" href="/static/library.css?v=3.2">
 </head>
 <body>
     <div class="library-container">
         <!-- 메인 헤더 -->
         <header class="library-header">
+            <!-- 증기 배관 및 톱니바퀴 기계 장치 리그 -->
+            <div class="steam-engine-top-rig">
+                <div class="steam-main-pipe">
+                    <div class="pipe-joint left"></div>
+                    <div class="pipe-flange left-flange"></div>
+                    <div class="pipe-segment"></div>
+                    <div class="pipe-valve-cluster">
+                        <div class="pipe-valve-wheel" title="증기 기관 메인 압력 밸브"></div>
+                        <div class="pipe-gauge-mini"></div>
+                    </div>
+                    <div class="pipe-segment"></div>
+                    <div class="pipe-flange right-flange"></div>
+                    <div class="pipe-joint right"></div>
+                </div>
+                <div class="steam-gear-cluster">
+                    <div class="gear-cog gear-large" title="차분기관 메인 기어"></div>
+                    <div class="gear-cog gear-medium" title="트레인 기어"></div>
+                    <div class="gear-cog gear-small" title="에스케이프먼트 기어"></div>
+                </div>
+            </div>
+
             <div class="header-nav">
                 <div class="brand-group">
                     <div class="brand-logo">
@@ -24,11 +45,14 @@
                     </div>
                     <div class="brand-text">
                         <h1>나의 서재</h1>
-                        <p class="subtitle">개인 맞춤형 로컬 웹소설 번역 라이브러리</p>
+                        <p class="subtitle">증기 차분기관 로컬 웹소설 서가 & 아카이브</p>
                     </div>
                 </div>
 
                 <div class="header-actions">
+                    <button class="btn btn-icon steampunk-sound-toggle-btn" id="steampunkSoundToggle" title="타자기 사운드 토글">
+                        <span class="material-icons">volume_up</span>
+                    </button>
                     <button id="fetch-missing-titles-btn" class="btn btn-outline" title="소설 원본 사이트에서 누락된 회차 제목들을 자동으로 수집합니다.">
                         <span class="material-icons">sync</span> 누락된 제목 가져오기
                     </button>
@@ -56,51 +80,120 @@
             </div>
         </header>
 
-        <!-- 통계 요약 바 -->
-        <section class="stats-overview-bar">
-            <div class="stat-card">
-                <div class="stat-icon-wrap primary">
-                    <span class="material-icons">auto_stories</span>
+        <!-- 5구 원형 증기 압력계(Manometer) 대시보드 -->
+        <section class="stats-overview-bar steam-manometer-rack">
+            <!-- 1. 전체 도서 게이지 -->
+            <div class="manometer-gauge-card">
+                <div class="manometer-brass-bezel primary-bezel">
+                    <div class="bezel-screw s1"></div><div class="bezel-screw s2"></div>
+                    <div class="bezel-screw s3"></div><div class="bezel-screw s4"></div>
+                    <div class="bezel-screw s5"></div><div class="bezel-screw s6"></div>
+                    <div class="manometer-dial-face">
+                        <div class="dial-scale-ring"></div>
+                        <div class="dial-unit-label">PRESSURE &times; 10</div>
+                        <div class="manometer-needle needle-p1"></div>
+                        <div class="needle-brass-hub"></div>
+                        <div class="manometer-glass-glare"></div>
+                        <div class="odometer-counter-slot">
+                            <span class="stat-number" id="statTotalBooks">0</span>
+                        </div>
+                    </div>
                 </div>
-                <div class="stat-info">
-                    <div class="stat-number" id="statTotalBooks">0</div>
-                    <div class="stat-label">전체 도서</div>
-                </div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-icon-wrap warning">
-                    <span class="material-icons">star</span>
-                </div>
-                <div class="stat-info">
-                    <div class="stat-number" id="statPinnedBooks">0</div>
-                    <div class="stat-label">즐겨찾기</div>
-                </div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-icon-wrap info">
-                    <span class="material-icons">menu_book</span>
-                </div>
-                <div class="stat-info">
-                    <div class="stat-number" id="statReadingBooks">0</div>
-                    <div class="stat-label">읽는 중</div>
+                <div class="manometer-metal-plaque">
+                    <span class="plaque-ko">전체 도서</span>
+                    <span class="plaque-en">TOTAL TOMES</span>
                 </div>
             </div>
-            <div class="stat-card">
-                <div class="stat-icon-wrap neutral">
-                    <span class="material-icons">auto_stories</span>
+
+            <!-- 2. 즐겨찾기 게이지 -->
+            <div class="manometer-gauge-card">
+                <div class="manometer-brass-bezel warning-bezel">
+                    <div class="bezel-screw s1"></div><div class="bezel-screw s2"></div>
+                    <div class="bezel-screw s3"></div><div class="bezel-screw s4"></div>
+                    <div class="bezel-screw s5"></div><div class="bezel-screw s6"></div>
+                    <div class="manometer-dial-face">
+                        <div class="dial-scale-ring"></div>
+                        <div class="dial-unit-label">BAR RATIO</div>
+                        <div class="manometer-needle needle-p2"></div>
+                        <div class="needle-brass-hub"></div>
+                        <div class="manometer-glass-glare"></div>
+                        <div class="odometer-counter-slot">
+                            <span class="stat-number" id="statPinnedBooks">0</span>
+                        </div>
+                    </div>
                 </div>
-                <div class="stat-info">
-                    <div class="stat-number" id="statUnreadBooks">0</div>
-                    <div class="stat-label">미열람</div>
+                <div class="manometer-metal-plaque">
+                    <span class="plaque-ko">즐겨찾기</span>
+                    <span class="plaque-en">PINNED ARCHIVE</span>
                 </div>
             </div>
-            <div class="stat-card">
-                <div class="stat-icon-wrap success">
-                    <span class="material-icons">task_alt</span>
+
+            <!-- 3. 읽는 중 게이지 -->
+            <div class="manometer-gauge-card">
+                <div class="manometer-brass-bezel info-bezel">
+                    <div class="bezel-screw s1"></div><div class="bezel-screw s2"></div>
+                    <div class="bezel-screw s3"></div><div class="bezel-screw s4"></div>
+                    <div class="bezel-screw s5"></div><div class="bezel-screw s6"></div>
+                    <div class="manometer-dial-face">
+                        <div class="dial-scale-ring"></div>
+                        <div class="dial-unit-label">ACTIVE PSI</div>
+                        <div class="manometer-needle needle-p3"></div>
+                        <div class="needle-brass-hub"></div>
+                        <div class="manometer-glass-glare"></div>
+                        <div class="odometer-counter-slot">
+                            <span class="stat-number" id="statReadingBooks">0</span>
+                        </div>
+                    </div>
                 </div>
-                <div class="stat-info">
-                    <div class="stat-number" id="statCompletedBooks">0</div>
-                    <div class="stat-label">완결 작품</div>
+                <div class="manometer-metal-plaque">
+                    <span class="plaque-ko">읽는 중</span>
+                    <span class="plaque-en">IN COMPUTATION</span>
+                </div>
+            </div>
+
+            <!-- 4. 미열람 게이지 -->
+            <div class="manometer-gauge-card">
+                <div class="manometer-brass-bezel neutral-bezel">
+                    <div class="bezel-screw s1"></div><div class="bezel-screw s2"></div>
+                    <div class="bezel-screw s3"></div><div class="bezel-screw s4"></div>
+                    <div class="bezel-screw s5"></div><div class="bezel-screw s6"></div>
+                    <div class="manometer-dial-face">
+                        <div class="dial-scale-ring"></div>
+                        <div class="dial-unit-label">IDLE VACUUM</div>
+                        <div class="manometer-needle needle-p4"></div>
+                        <div class="needle-brass-hub"></div>
+                        <div class="manometer-glass-glare"></div>
+                        <div class="odometer-counter-slot">
+                            <span class="stat-number" id="statUnreadBooks">0</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="manometer-metal-plaque">
+                    <span class="plaque-ko">미열람</span>
+                    <span class="plaque-en">STANDBY REPOSIT</span>
+                </div>
+            </div>
+
+            <!-- 5. 완결 작품 게이지 -->
+            <div class="manometer-gauge-card">
+                <div class="manometer-brass-bezel success-bezel">
+                    <div class="bezel-screw s1"></div><div class="bezel-screw s2"></div>
+                    <div class="bezel-screw s3"></div><div class="bezel-screw s4"></div>
+                    <div class="bezel-screw s5"></div><div class="bezel-screw s6"></div>
+                    <div class="manometer-dial-face">
+                        <div class="dial-scale-ring"></div>
+                        <div class="dial-unit-label">SEALED 100%</div>
+                        <div class="manometer-needle needle-p5"></div>
+                        <div class="needle-brass-hub"></div>
+                        <div class="manometer-glass-glare"></div>
+                        <div class="odometer-counter-slot">
+                            <span class="stat-number" id="statCompletedBooks">0</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="manometer-metal-plaque">
+                    <span class="plaque-ko">완결 작품</span>
+                    <span class="plaque-en">CHRONICLES DONE</span>
                 </div>
             </div>
         </section>
@@ -306,7 +399,8 @@
     <!-- 전역 토스트 메시지 컨테이너 -->
     <div id="global-toast" class="toast" style="display: none;"></div>
 
-    <script type="module" src="/static/library.js?v=2.0"></script>
+    <script src="/static/steampunk-sound.js"></script>
+    <script type="module" src="/static/library.js?v=3.0"></script>
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {

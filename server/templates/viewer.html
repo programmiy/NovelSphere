@@ -6,13 +6,13 @@
     <title>로컬 뷰어 | LANOVEL</title>
     <link rel="manifest" href="/static/manifest.json">
     <link rel="icon" href="data:,">
-    <!-- Fonts: Pretendard, Noto Sans KR, Gowun Batang, Nanum Myeongjo -->
+    <!-- Fonts: Pretendard, Noto Sans KR, Gowun Batang, Nanum Myeongjo, Cinzel, Special Elite, Courier Prime -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&family=Nanum+Myeongjo:wght@400;700&family=Noto+Sans+KR:wght@400;500;700&family=Noto+Serif+KR:wght@400;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;900&family=Special+Elite&family=Courier+Prime:ital,wght@0,400;0,700;1,400&family=Gowun+Batang:wght@400;700&family=Nanum+Myeongjo:wght@400;700&family=Noto+Sans+KR:wght@400;500;700&family=Noto+Serif+KR:wght@400;600&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
-    <link rel="stylesheet" href="/static/viewer.css?v=2.3">
+    <link rel="stylesheet" href="/static/viewer.css?v=3.2">
 </head>
 <body class="theme-paper">
     <!-- 독서 진행률 표시줄 -->
@@ -31,11 +31,25 @@
             </div>
 
             <div class="header-center">
-                <h1 id="book-title" class="book-title">로딩 중...</h1>
-                <div id="chapter-title" class="chapter-title"></div>
+                <div class="header-title-rack">
+                    <h1 id="book-title" class="book-title">로딩 중...</h1>
+                    <div id="chapter-title" class="chapter-title"></div>
+                </div>
+                <!-- 진공관 닉시관 헤더 인디케이터 (Nixie Module) -->
+                <div id="header-nixie-module" class="header-nixie-module" title="진공관 닉시 튜브 회차 표시기">
+                    <div class="nixie-sub-label">VALVE TUBE CH.</div>
+                    <div class="nixie-tube-bank header-bank" id="header-nixie-tubes">
+                        <div class="nixie-tube"><div class="nixie-glass-reflection"></div><div class="nixie-mesh-grid"></div><span class="nixie-digit-ghost">8</span><span class="nixie-digit-glow" id="nixie-ch-d1">0</span><div class="nixie-socket-collar"></div></div>
+                        <div class="nixie-tube"><div class="nixie-glass-reflection"></div><div class="nixie-mesh-grid"></div><span class="nixie-digit-ghost">8</span><span class="nixie-digit-glow" id="nixie-ch-d2">0</span><div class="nixie-socket-collar"></div></div>
+                        <div class="nixie-tube"><div class="nixie-glass-reflection"></div><div class="nixie-mesh-grid"></div><span class="nixie-digit-ghost">8</span><span class="nixie-digit-glow" id="nixie-ch-d3">1</span><div class="nixie-socket-collar"></div></div>
+                    </div>
+                </div>
             </div>
 
             <div class="viewer-settings">
+                <button id="viewerSoundToggle" class="btn btn-icon steampunk-sound-toggle-btn" title="타자기 사운드 토글">
+                    <span class="material-icons">volume_up</span>
+                </button>
                 <button id="toc-btn" class="btn btn-icon" title="목차 열기 (T 또는 O)">
                     <span class="material-icons">format_list_bulleted</span>
                 </button>
@@ -68,7 +82,7 @@
         <footer class="viewer-footer">
             <div id="book-navigation">
                 <button id="prev-page-btn" class="btn btn-sm">&lt; 이전</button>
-                <span id="page-indicator" class="page-indicator">0 / 0</span>
+                <div id="page-indicator" class="page-indicator nixie-display"></div>
                 <button id="next-page-btn" class="btn btn-sm">다음 &gt;</button>
             </div>
         </footer>
@@ -158,6 +172,14 @@
                     <button class="theme-chip theme-oled" data-theme="oled" title="미드나잇 OLED">
                         <span class="theme-preview">가</span>
                         <span class="theme-name">블랙</span>
+                    </button>
+                    <button class="theme-chip theme-amber" data-theme="amber" title="앤틱 앰버 (진공관 발광)">
+                        <span class="theme-preview">가</span>
+                        <span class="theme-name">앰버</span>
+                    </button>
+                    <button class="theme-chip theme-steam" data-theme="steam" title="증기 양피지 (스팀펑크)">
+                        <span class="theme-preview">가</span>
+                        <span class="theme-name">양피지</span>
                     </button>
                 </div>
             </div>
@@ -378,7 +400,8 @@
     <!-- 뷰어 토스트 메시지 -->
     <div id="viewer-toast" class="toast" style="display: none;"></div>
 
-    <script type="module" src="/static/viewer.js?v=2.3"></script>
+    <script src="/static/steampunk-sound.js"></script>
+    <script type="module" src="/static/viewer.js?v=3.0"></script>
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {

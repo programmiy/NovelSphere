@@ -208,9 +208,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     function applyPreferences() {
         // 1. Theme Class
-        document.body.classList.remove('theme-paper', 'theme-white', 'theme-sepia', 'theme-dark', 'theme-oled', 'dark-mode');
+        document.body.classList.remove('theme-paper', 'theme-white', 'theme-sepia', 'theme-dark', 'theme-oled', 'theme-amber', 'theme-steam', 'dark-mode');
         document.body.classList.add(`theme-${prefs.theme}`);
-        if (prefs.theme === 'dark' || prefs.theme === 'oled') {
+        if (prefs.theme === 'dark' || prefs.theme === 'oled' || prefs.theme === 'amber') {
             document.body.classList.add('dark-mode');
         }
 
@@ -261,7 +261,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     function updateHeaderIcons() {
-        const isDark = prefs.theme === 'dark' || prefs.theme === 'oled';
+        const isDark = prefs.theme === 'dark' || prefs.theme === 'oled' || prefs.theme === 'amber';
         if (nightModeBtn) {
             nightModeBtn.innerHTML = `<span class="material-icons">${isDark ? 'light_mode' : 'dark_mode'}</span>`;
             nightModeBtn.classList.toggle('active', isDark);
@@ -335,6 +335,55 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
+    // --- Nixie Tube Vacuum Display Renderer ---
+    function createNixieTubeHtml(digit) {
+        return `
+            <div class="nixie-tube">
+                <div class="nixie-glass-reflection"></div>
+                <div class="nixie-mesh-grid"></div>
+                <span class="nixie-digit-ghost">8</span>
+                <span class="nixie-digit-glow">${escapeHtml(String(digit))}</span>
+                <div class="nixie-socket-collar"></div>
+            </div>
+        `;
+    }
+
+    function renderNixiePageIndicator(current, total) {
+        if (!total || total === 0) {
+            return `
+                <div class="nixie-tube-bank">
+                    <div class="nixie-tube-group">${createNixieTubeHtml('0')}${createNixieTubeHtml('0')}</div>
+                    <span class="nixie-colon-slash">/</span>
+                    <div class="nixie-tube-group">${createNixieTubeHtml('0')}${createNixieTubeHtml('0')}</div>
+                </div>
+            `;
+        }
+        const curDigits = String(current).padStart(2, '0').split('');
+        const totDigits = String(total).padStart(2, '0').split('');
+
+        return `
+            <div class="nixie-tube-bank">
+                <div class="nixie-tube-group">
+                    ${curDigits.map(d => createNixieTubeHtml(d)).join('')}
+                </div>
+                <span class="nixie-colon-slash">/</span>
+                <div class="nixie-tube-group">
+                    ${totDigits.map(d => createNixieTubeHtml(d)).join('')}
+                </div>
+            </div>
+        `;
+    }
+
+    function updateHeaderNixie(chapterNum) {
+        const dStr = String(chapterNum).padStart(3, '0');
+        const el1 = document.getElementById('nixie-ch-d1');
+        const el2 = document.getElementById('nixie-ch-d2');
+        const el3 = document.getElementById('nixie-ch-d3');
+        if (el1) el1.textContent = dStr[0];
+        if (el2) el2.textContent = dStr[1];
+        if (el3) el3.textContent = dStr[2];
+    }
+
     async function loadChapter(chapterIndex, pagePosition = 'first', startPid = null) {
         if (chapterIndex < 0 || chapterIndex >= chapterTitles.length) return;
 
@@ -342,6 +391,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const chapterTitle = chapterTitles[currentChapterIndex];
 
         chapterTitleElement.textContent = chapterTitle || `제 ${currentChapterIndex + 1}화`;
+        updateHeaderNixie(currentChapterIndex + 1);
         if (tocCurrentIndexLabel) {
             tocCurrentIndexLabel.textContent = `${currentChapterIndex + 1} / ${chapterTitles.length} 화`;
         }
@@ -392,7 +442,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     // --- Continuous Scroll Mode Rendering ---
     function renderScrollMode(targetPid = null) {
         contentArea.innerHTML = currentChapterItems.map(createItemHtml).join('');
-        pageIndicator.textContent = `연속 스크롤 (총 ${currentChapterItems.length} 단락)`;
+        const lenDigits = String(currentChapterItems.length).padStart(3, '0').split('');
+        pageIndicator.innerHTML = `
+            <div class="nixie-tube-bank scroll-indicator">
+                <span class="nixie-mode-badge">SCRL</span>
+                <div class="nixie-tube-group">
+                    ${lenDigits.map(d => createNixieTubeHtml(d)).join('')}
+                </div>
+                <span class="nixie-mode-badge">PARAS</span>
+            </div>
+        `;
         contentArea.style.opacity = '1';
         
         if (targetPid) {
@@ -474,7 +533,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (!pageItems) return;
 
             contentArea.innerHTML = pageItems.map(createItemHtml).join('');
-            pageIndicator.textContent = `${currentPageInChapter + 1} / ${pages.length}`;
+            pageIndicator.innerHTML = renderNixiePageIndicator(currentPageInChapter + 1, pages.length);
             contentArea.style.opacity = '1';
 
             updateProgress();
@@ -527,6 +586,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // --- Navigation ---
     function showPrevPage() {
+        if (window.SteampunkSound) window.SteampunkSound.playLever();
         if (prefs.mode === 'scroll') {
             if (currentChapterIndex > 0) {
                 loadChapter(currentChapterIndex - 1, 'first');
@@ -546,6 +606,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     function showNextPage() {
+        if (window.SteampunkSound) window.SteampunkSound.playLever();
         if (prefs.mode === 'scroll') {
             if (currentChapterIndex < chapterTitles.length - 1) {
                 loadChapter(currentChapterIndex + 1, 'first');
@@ -1553,7 +1614,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (dictStudyBtn) dictStudyBtn.addEventListener('click', toggleDictDrawer);
     focusModeBtn.addEventListener('click', toggleFocusMode);
     nightModeBtn.addEventListener('click', () => {
-        prefs.theme = (prefs.theme === 'dark' || prefs.theme === 'oled') ? 'paper' : 'dark';
+        if (prefs.theme === 'amber') {
+            prefs.theme = 'steam';
+        } else if (prefs.theme === 'steam') {
+            prefs.theme = 'amber';
+        } else {
+            prefs.theme = (prefs.theme === 'dark' || prefs.theme === 'oled') ? 'paper' : 'dark';
+        }
         applyPreferences();
         savePreferences();
     });

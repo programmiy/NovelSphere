@@ -18,7 +18,8 @@ const APP_SHELL_URLS = [
     '/static/library_mobile.css',
     '/static/library_mobile.js',
     '/static/viewer.css',
-    '/static/viewer.js'
+    '/static/viewer.js',
+    '/static/steampunk-sound.js'
 ];
 
 // Install event: cache the app shell
