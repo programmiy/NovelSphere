@@ -26,6 +26,7 @@ from server.quota import (
     is_us_dst,
     get_quota_reset_hour,
     get_current_quota_window_start_ts,
+    get_today_start_ts,
     get_quota_summary,
     record_api_call,
 )
@@ -655,8 +656,8 @@ def update_title_for_url(req: UpdateTitleRequest, db: Session = Depends(get_db))
 @router.get(
     "/api/translation_session_count",
     tags=["Translation"],
-    summary="현재 쿼터 주기 내 소설 번역 회차 수 조회",
-    description="현재 쿼터 윈도우(오후 4시/16시 기준) 내에 해당 소설에서 번역 완료된 고유 회차(distinct URL) 수를 조회합니다."
+    summary="오늘 소설 번역 회차 수 조회",
+    description="오늘(00:00 KST 기준) 해당 소설에서 번역 완료된 고유 회차(distinct URL) 수 및 전체 소설 번역 회차 수를 조회합니다."
 )
 def get_translation_session_count(
     url: Optional[str] = None,
@@ -664,6 +665,7 @@ def get_translation_session_count(
     novel_title: Optional[str] = None,
     db: Session = Depends(get_db)
 ):
+    today_start_ts = get_today_start_ts()
     window_start_ts = get_current_quota_window_start_ts()
     cutoff_hour = get_quota_reset_hour()
 
@@ -689,12 +691,33 @@ def get_translation_session_count(
         elif a_match:
             prefix = a_match.group(1) + "%"
 
-    # folderName이 있다면 folderName을 우선 활용
+    # work_key를 통한 프리픽스 보완
+    if not prefix and work_key:
+        if work_key.startswith("kakuyomu_"):
+            prefix = f"https://kakuyomu.jp/works/{work_key.split('_')[1]}%"
+        elif work_key.startswith("syosetu_"):
+            prefix = f"%syosetu.com/{work_key.split('_')[1]}%"
+        elif work_key.startswith("novelup_"):
+            prefix = f"https://novelup.plus/story/{work_key.split('_')[1]}%"
+        elif work_key.startswith("hameln_"):
+            prefix = f"https://syosetu.org/novel/{work_key.split('_')[1]}%"
+        elif work_key.startswith("alphapolis_"):
+            prefix = f"%alphapolis.co.jp/novel/{work_key.split('_')[1]}%"
+
+    # folderName 조회 (clean_url 또는 prefix로 등록된 folderName 탐색)
     folder_name = None
     if clean_url:
         row = db.execute(
-            text("SELECT folderName FROM translations WHERE url = :u AND folderName IS NOT NULL LIMIT 1"),
+            text("SELECT folderName FROM translations WHERE url = :u AND folderName IS NOT NULL AND folderName != '' LIMIT 1"),
             {"u": clean_url}
+        ).fetchone()
+        if row and row[0]:
+            folder_name = row[0]
+
+    if not folder_name and prefix:
+        row = db.execute(
+            text("SELECT folderName FROM translations WHERE url LIKE :prefix AND folderName IS NOT NULL AND folderName != '' LIMIT 1"),
+            {"prefix": prefix}
         ).fetchone()
         if row and row[0]:
             folder_name = row[0]
@@ -702,32 +725,41 @@ def get_translation_session_count(
     if not folder_name and novel_title and novel_title != "기본 소설":
         folder_name = novel_title
 
-    if folder_name:
-        count = db.execute(
-            text("SELECT COUNT(DISTINCT url) FROM translations WHERE timestamp >= :ts AND folderName = :folder"),
-            {"ts": window_start_ts, "folder": folder_name}
-        ).scalar() or 0
-    elif prefix:
-        count = db.execute(
-            text("SELECT COUNT(DISTINCT url) FROM translations WHERE timestamp >= :ts AND url LIKE :prefix"),
-            {"ts": window_start_ts, "prefix": prefix}
-        ).scalar() or 0
-    elif clean_url:
-        count = db.execute(
-            text("SELECT COUNT(DISTINCT url) FROM translations WHERE timestamp >= :ts AND url = :u"),
-            {"ts": window_start_ts, "u": clean_url}
-        ).scalar() or 0
+    # 해당 소설의 오늘 번역 회차 수 조회 (URL 프리픽스 OR folderName OR clean_url 모두 포괄)
+    conditions = []
+    params = {"ts": today_start_ts}
 
-    # 소설 불문 전체 고유 URL 번역 회차 수 (오늘/현재 쿼터 윈도우 내)
+    if prefix:
+        conditions.append("url LIKE :prefix")
+        params["prefix"] = prefix
+    if folder_name:
+        conditions.append("folderName = :folder")
+        params["folder"] = folder_name
+    if clean_url and not prefix:
+        conditions.append("url = :u")
+        params["u"] = clean_url
+
+    if conditions:
+        where_clause = " OR ".join(conditions)
+        count = db.execute(
+            text(f"SELECT COUNT(DISTINCT url) FROM translations WHERE timestamp >= :ts AND ({where_clause})"),
+            params
+        ).scalar() or 0
+    else:
+        count = 0
+
+    # 소설 불문 전체 고유 URL 오늘(00:00 KST 기준) 번역 회차 수
     total_today_count = db.execute(
         text("SELECT COUNT(DISTINCT url) FROM translations WHERE timestamp >= :ts"),
-        {"ts": window_start_ts}
+        {"ts": today_start_ts}
     ).scalar() or 0
 
     return {
         "count": count,
+        "novel_today_count": count,
         "total_today_count": total_today_count,
         "window_start_ts": window_start_ts,
+        "today_start_ts": today_start_ts,
         "cutoff_hour": cutoff_hour
     }
 

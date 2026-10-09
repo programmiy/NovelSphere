@@ -2036,7 +2036,7 @@ async function saveSingleTranslation(pid, original, translated) {
         original: original,
         translated: translated,
         timestamp: Math.floor(Date.now() / 1000),
-        folderName: null,
+        folderName: (currentNovelTitle && currentNovelTitle !== '기본 소설') ? currentNovelTitle : null,
         title: title
     };
 
@@ -2087,7 +2087,7 @@ async function saveAllTranslations(itemsToSave) {
         original: item.original,
         translated: item.translated,
         timestamp: Math.floor(Date.now() / 1000),
-        folderName: null,
+        folderName: (currentNovelTitle && currentNovelTitle !== '기본 소설') ? currentNovelTitle : null,
         title: title
     }));
 
@@ -2319,65 +2319,61 @@ async function updateAndGetBatchCount(currentCleanUrl) {
         }
     } catch (_) {}
 
-    const currentWindow = getCurrentQuotaWindow();
+    const todayDateStr = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD
     const now = Date.now();
+    const SESSION_TIMEOUT_MS = 30 * 60 * 1000; // 30분 미활동 시 세션 만료 (새 세션은 1화부터 시작)
 
     let state = {
-        count: 0,
+        consecutiveCount: 0,
         lastUpdated: 0,
         lastUrl: '',
-        window: currentWindow
+        date: todayDateStr
     };
 
     try {
         const stored = await chrome.storage.local.get(stateKey);
-        if (stored && stored[stateKey] && typeof stored[stateKey].count === 'number') {
-            state = stored[stateKey];
+        if (stored && stored[stateKey]) {
+            const s = stored[stateKey];
+            // 오염된 기존 누적 count(2, 38 등)를 이번 연속 카운터로 잘못 승계하지 않도록 안전 초기화
+            state.consecutiveCount = (typeof s.consecutiveCount === 'number') ? s.consecutiveCount : 0;
+            state.lastUpdated = s.lastUpdated || 0;
+            state.lastUrl = s.lastUrl || '';
+            state.date = s.date || todayDateStr;
         }
     } catch (e) {
         console.warn('[ntfy] Failed to read batch state from storage:', e);
     }
 
-    // API 쿼터 초기화 시각(오후 4시 / 써머타임 해제 시 오후 5시) 도달 시 카운터 0으로 갱신
-    if (state.window !== currentWindow) {
-        const cutoffHour = typeof detectCutoffInfo === 'function' ? detectCutoffInfo().hour : 16;
-        logToSidebar(`🔄 [쿼터 갱신] Gemini API 일일 쿼터 초기화 시간(${cutoffHour}:00)에 도달하여 번역 회차 카운터를 0부터 새로 시작합니다.`);
-        state.count = 0;
+    // 1. 자정(날짜 변경) 도달 시 카운터 0으로 갱신
+    if (state.date !== todayDateStr) {
+        logToSidebar(`🔄 [일일 갱신] 새 날짜(${todayDateStr})가 시작되어 이번 세션 연속 번역 카운터를 새로 시작합니다.`);
+        state.consecutiveCount = 0;
         state.lastUrl = '';
-        state.window = currentWindow;
+        state.date = todayDateStr;
     }
 
-    // [서버 DB 동기화 및 복원] 서버 재시작 후에도 오늘 번역된 DB 기록을 바탕으로 카운터 안전하게 복원
-    try {
-        const syncUrl = `http://127.0.0.1:8001/api/translation_session_count?url=${encodeURIComponent(currentCleanUrl)}&work_key=${encodeURIComponent(workKey)}&novel_title=${encodeURIComponent(currentNovelTitle || '')}`;
-        const serverResp = await fetch(syncUrl);
-        if (serverResp.ok) {
-            const serverData = await serverResp.json();
-            if (typeof serverData.total_today_count === 'number') {
-                window.lanovelTodayTotalEpisodes = serverData.total_today_count;
-            }
-            if (typeof serverData.count === 'number' && serverData.count > state.count) {
-                logToSidebar(`🔄 [서버 동기화] 오늘 DB 번역 기록(${serverData.count}화)을 바탕으로 회차 카운터를 안전하게 복원했습니다.`);
-                state.count = serverData.count;
-            }
+    // 2. 세션 타임아웃 검사 (이전 번역 완료 후 30분 이상 지났으면 새 세션으로 0으로 초기화)
+    const isSessionExpired = !state.lastUpdated || (now - state.lastUpdated > SESSION_TIMEOUT_MS);
+    if (isSessionExpired) {
+        state.consecutiveCount = 0;
+        state.lastUrl = '';
+    }
+
+    // 3. 동일 URL(회차) 중복 카운트 방지
+    const isSameEpisode = (state.lastUrl && state.lastUrl === currentCleanUrl);
+    if (isSameEpisode) {
+        if (!state.consecutiveCount || state.consecutiveCount < 1) {
+            state.consecutiveCount = 1;
         }
-    } catch (_) {}
-
-    // 동일 URL(회차) 중복 카운트 방지
-    if (state.lastUrl && state.lastUrl === currentCleanUrl) {
-        logToSidebar(`[번역 진행 카운터] 동일 회차 재번역 감지: 카운터를 유지합니다. (${state.count}화)`);
-        state.lastUpdated = now;
-        try {
-            await chrome.storage.local.set({ [stateKey]: state });
-        } catch (_) {}
-        return state.count;
+        logToSidebar(`[번역 진행 카운터] 동일 회차 재번역 감지: 이번 연속 번역 카운터를 유지합니다. (${state.consecutiveCount}화)`);
+    } else {
+        // 새 회차 번역: 연속 카운터 + 1 (새 세션 첫 번역이면 0 + 1 = 1)
+        state.consecutiveCount = (state.consecutiveCount || 0) + 1;
     }
 
-    // 정상적인 새 회차 번역 완료: +1 증가
-    state.count = (state.count || 0) + 1;
     state.lastUpdated = now;
     state.lastUrl = currentCleanUrl;
-    state.window = currentWindow;
+    state.date = todayDateStr;
 
     try {
         await chrome.storage.local.set({ [stateKey]: state });
@@ -2385,7 +2381,33 @@ async function updateAndGetBatchCount(currentCleanUrl) {
         console.warn('[ntfy] Failed to save batch state:', e);
     }
 
-    return state.count;
+    // 4. [서버 DB 동기화] 오늘 번역된 DB 기록을 바탕으로 오늘 소설 누적 및 전체 누적 회차 동기화
+    let novelTodayCount = state.consecutiveCount;
+    let totalTodayCount = window.lanovelTodayTotalEpisodes || 0;
+
+    try {
+        const syncUrl = `http://127.0.0.1:8001/api/translation_session_count?url=${encodeURIComponent(currentCleanUrl)}&work_key=${encodeURIComponent(workKey)}&novel_title=${encodeURIComponent(currentNovelTitle || '')}`;
+        const serverResp = await fetch(syncUrl);
+        if (serverResp.ok) {
+            const serverData = await serverResp.json();
+            if (typeof serverData.total_today_count === 'number') {
+                totalTodayCount = serverData.total_today_count;
+                window.lanovelTodayTotalEpisodes = totalTodayCount;
+            }
+            if (typeof serverData.count === 'number' && serverData.count > 0) {
+                novelTodayCount = serverData.count;
+            }
+        }
+    } catch (_) {}
+
+    return {
+        consecutiveCount: state.consecutiveCount,
+        novelTodayCount: novelTodayCount,
+        totalTodayCount: totalTodayCount,
+        count: state.consecutiveCount,
+        valueOf() { return this.consecutiveCount; },
+        toString() { return String(this.consecutiveCount); }
+    };
 }
 
 async function resetBatchCount() {
@@ -2976,15 +2998,19 @@ async function translateAllPTags(isRetranslation = false) {
         }
 
         // [10화 단위 번역 진행 알림 (100% 완료 시에만)]
-        // 4시(새벽 4시 및 쿼터 초기화 오후 4시) 자동 갱신, 세션 타임아웃, 중복 방지가 반영된 카운터 조회
-        const currentBatchCount = await updateAndGetBatchCount(getCleanUrl());
-        const totalTodayMsg = window.lanovelTodayTotalEpisodes ? ` (오늘 전체 누적: ${window.lanovelTodayTotalEpisodes}화)` : '';
+        // 30분 세션 타임아웃, 중복 방지, 이번 연속 번역 및 일일 누적 통계 조회
+        const batchStats = await updateAndGetBatchCount(getCleanUrl());
+        const consecutiveCount = batchStats.consecutiveCount;
+        const novelTodayCount = batchStats.novelTodayCount;
+        const totalTodayCount = batchStats.totalTodayCount;
+        const currentBatchCount = consecutiveCount; // ntfy 완료 핸들러 등 호환성 유지
 
-        logToSidebar(`[번역 진행 카운터] 현재 소설 연속 번역: ${currentBatchCount}화 완료${totalTodayMsg}`);
+        const totalTodayMsg = totalTodayCount ? ` / 전체: ${totalTodayCount}화` : '';
+        logToSidebar(`[번역 진행 카운터] 현재 소설 이번 연속: ${consecutiveCount}화 완료 (오늘 이 소설: ${novelTodayCount}화${totalTodayMsg})`);
 
         // 10의 배수(10, 20, 30, ...) 화가 100% 완료되었을 때만 진행 알림 발송!
-        if (currentBatchCount > 0 && currentBatchCount % 10 === 0) {
-            logToSidebar(`🔔 [ntfy] ${currentBatchCount}화 달성! 10화 단위 번역 진행 알림을 발송합니다.`);
+        if (consecutiveCount > 0 && consecutiveCount % 10 === 0) {
+            logToSidebar(`🔔 [ntfy] 이번 연속 ${consecutiveCount}화 달성! 10화 단위 번역 진행 알림을 발송합니다.`);
             sendNtfyProgress(
                 currentNovelTitle,
                 extractEpisodeTitle() || document.title || '',
@@ -2992,10 +3018,10 @@ async function translateAllPTags(isRetranslation = false) {
                 textsToTranslate.length,
                 100,
                 getCleanUrl(),
-                currentBatchCount
+                consecutiveCount
             );
         } else {
-            logToSidebar(`[ntfy] 10화 단위 알림 정책 적용 중 (현재: ${currentBatchCount}화, 다음 알림: ${Math.ceil(currentBatchCount / 10) * 10}화)`);
+            logToSidebar(`[ntfy] 10화 단위 알림 정책 적용 중 (현재 이번 연속: ${consecutiveCount}화, 다음 알림: ${Math.ceil(consecutiveCount / 10) * 10}화)`);
         }
 
         const currentUrl = getCleanUrl(); // Get the current clean URL

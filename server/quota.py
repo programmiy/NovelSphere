@@ -48,6 +48,18 @@ def get_quota_reset_hour(dt: Optional[datetime.datetime] = None) -> int:
     return 16 if is_us_dst(dt) else 17
 
 
+def get_today_start(now: Optional[datetime.datetime] = None) -> datetime.datetime:
+    """오늘 한국 시간(KST) 자정(00:00:00)을 반환합니다."""
+    if now is None:
+        now = datetime.datetime.now()
+    return now.replace(hour=0, minute=0, second=0, microsecond=0)
+
+
+def get_today_start_ts(now: Optional[datetime.datetime] = None) -> int:
+    """오늘 한국 시간(KST) 자정(00:00:00)의 Unix timestamp(초)를 반환합니다."""
+    return int(get_today_start(now).timestamp())
+
+
 def get_current_quota_window_start(now: Optional[datetime.datetime] = None) -> datetime.datetime:
     """
     현재 유효한 쿼터 주기의 시작 시각(KST)을 반환합니다.
@@ -119,17 +131,32 @@ def get_today_api_call_count() -> int:
 
 
 def get_today_translations_count() -> int:
-    """현재 쿼터 주기(오후 4시/5시 기준) 내에 번역된 문단 수를 반환합니다."""
-    window_start_ts = get_current_quota_window_start_ts()
+    """오늘(자정 00:00:00 KST 기준) 번역된 총 문단 수를 반환합니다."""
+    today_ts = get_today_start_ts()
     try:
         with SessionLocal() as db:
             count = db.execute(
                 text("SELECT count(*) FROM translations WHERE timestamp >= :ts"),
-                {"ts": window_start_ts}
+                {"ts": today_ts}
             ).scalar()
             return count or 0
     except Exception as e:
         logger.warning(f"[QuotaTracker] 오늘 번역 문단 수 조회 실패: {e}")
+        return 0
+
+
+def get_today_episodes_count() -> int:
+    """오늘(자정 00:00:00 KST 기준) 번역된 총 고유 회차(distinct URL) 수를 반환합니다."""
+    today_ts = get_today_start_ts()
+    try:
+        with SessionLocal() as db:
+            count = db.execute(
+                text("SELECT count(DISTINCT url) FROM translations WHERE timestamp >= :ts"),
+                {"ts": today_ts}
+            ).scalar()
+            return count or 0
+    except Exception as e:
+        logger.warning(f"[QuotaTracker] 오늘 번역 회차 수 조회 실패: {e}")
         return 0
 
 
@@ -142,7 +169,9 @@ def get_quota_summary(quota_limit: int = DEFAULT_QUOTA_LIMIT) -> Dict[str, Any]:
     - raw_percentage: 초과분 포함 순수 백분율
     - quota_reset_hour: 초기화 시각 (16 또는 17)
     - window_start_ts: 현재 주기 시작 timestamp
-    - today_translations_count: 오늘 번역된 문단 수
+    - today_start_ts: 오늘 자정 timestamp
+    - today_translations_count: 오늘 번역된 문단 수 (00:00 KST 기준)
+    - today_episodes_count: 오늘 번역된 회차(URL) 수 (00:00 KST 기준)
     - is_us_dst: 서머타임 적용 여부
     """
     calls = get_today_api_call_count()
@@ -151,7 +180,9 @@ def get_quota_summary(quota_limit: int = DEFAULT_QUOTA_LIMIT) -> Dict[str, Any]:
     pct = min(raw_pct, 100.0)
     reset_hour = get_quota_reset_hour()
     window_start_ts = get_current_quota_window_start_ts()
+    today_start_ts = get_today_start_ts()
     trans_count = get_today_translations_count()
+    episodes_count = get_today_episodes_count()
 
     return {
         "api_calls_today": calls,
@@ -160,6 +191,8 @@ def get_quota_summary(quota_limit: int = DEFAULT_QUOTA_LIMIT) -> Dict[str, Any]:
         "raw_percentage": raw_pct,
         "quota_reset_hour": reset_hour,
         "window_start_ts": window_start_ts,
+        "today_start_ts": today_start_ts,
         "today_translations_count": trans_count,
+        "today_episodes_count": episodes_count,
         "is_us_dst": is_us_dst()
     }

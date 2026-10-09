@@ -140,6 +140,8 @@ def get_translation_status() -> Dict[str, Any]:
             data["quota_reset_hour"] = q["quota_reset_hour"]
             data["quota_window_start_ts"] = q["window_start_ts"]
             data["today_translations_count"] = q["today_translations_count"]
+            data["today_episodes_count"] = q.get("today_episodes_count", 0)
+            data["today_start_ts"] = q.get("today_start_ts", 0)
 
             # 4시(오후 4시/16시 또는 17시) 쿼터 초기화 시각이 지났다면 이전 회차 카운터 및 진행 상태 0으로 초기화
             if q["window_start_ts"] > _CURRENT_TRANSLATION_STATUS.get("updated_at", 0):

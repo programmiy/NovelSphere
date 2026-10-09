@@ -150,9 +150,10 @@ def get_admin_analytics(folder_name: Optional[str] = None):
         avg_chars_per_ep = round(total_kr_chars / total_episodes, 1) if total_episodes else 0.0
         expansion_ratio = round(total_kr_chars / total_jp_chars, 2) if total_jp_chars else 1.16
 
-        # 오늘 번역 실적 (Today's Translation Stats) - API 쿼터 초기화(오후 4시/5시 KST) 주기 기준
-        from server.quota import get_current_quota_window_start_ts, get_quota_reset_hour, is_us_dst
-        today_start_ts = get_current_quota_window_start_ts()
+        # 오늘 번역 실적 (Today's Translation Stats) - 오늘(00:00 KST) 기준
+        from server.quota import get_today_start_ts, get_current_quota_window_start_ts, get_quota_reset_hour, is_us_dst
+        today_start_ts = get_today_start_ts()
+        quota_window_start_ts = get_current_quota_window_start_ts()
         quota_reset_hour = get_quota_reset_hour()
         is_dst = is_us_dst()
         reset_hour_str = f"오후 {quota_reset_hour - 12}시" if quota_reset_hour > 12 else f"{quota_reset_hour}시"
@@ -430,8 +431,9 @@ def get_admin_analytics(folder_name: Optional[str] = None):
                 "expansion_ratio": expansion_ratio,
                 "quota_reset_hour": quota_reset_hour,
                 "is_us_dst": is_dst,
-                "reset_note": f"API 초기화 주기 ({reset_hour_str} KST) 기준",
-                "quota_window_start_ts": today_start_ts
+                "reset_note": "오늘(자정 00:00 KST) 기준",
+                "quota_window_start_ts": quota_window_start_ts,
+                "today_start_ts": today_start_ts
             },
             "activity": {
                 "today_episodes": today_episodes,
@@ -439,8 +441,9 @@ def get_admin_analytics(folder_name: Optional[str] = None):
                 "today_kr_chars": today_kr_chars,
                 "quota_reset_hour": quota_reset_hour,
                 "is_us_dst": is_dst,
-                "reset_note": f"API 초기화 주기 ({reset_hour_str} KST) 기준",
-                "quota_window_start_ts": today_start_ts,
+                "reset_note": "오늘(자정 00:00 KST) 기준",
+                "quota_window_start_ts": quota_window_start_ts,
+                "today_start_ts": today_start_ts,
                 "daily_avg_count": daily_avg_count,
                 "daily_avg_chars": daily_avg_chars,
                 "peak_count": peak_count,
