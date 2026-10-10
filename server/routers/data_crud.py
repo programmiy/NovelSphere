@@ -266,19 +266,20 @@ def upsert_translations(items: List[TranslationItem], db: Session = Depends(get_
         if existing_translation:
             existing_translation.translated = target_trans
             existing_translation.timestamp = item.timestamp
-            if item.folderName is not None:
-                existing_translation.folderName = item.folderName
+            if item.folderName is not None and item.folderName.strip():
+                existing_translation.folderName = item.folderName.strip()
             if target_title:
                 existing_translation.title = target_title
             updated_count += 1
         else:
+            new_folder = item.folderName.strip() if (item.folderName and item.folderName.strip()) else None
             new_translation = Translation(
                 url=item.url,
                 pid=item.pid,
                 original=item.original,
                 translated=target_trans,
                 timestamp=item.timestamp,
-                folderName=item.folderName,
+                folderName=new_folder,
                 title=target_title or item.title
             )
             db.add(new_translation)

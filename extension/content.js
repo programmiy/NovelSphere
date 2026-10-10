@@ -2036,7 +2036,7 @@ async function saveSingleTranslation(pid, original, translated) {
         original: original,
         translated: translated,
         timestamp: Math.floor(Date.now() / 1000),
-        folderName: (currentNovelTitle && currentNovelTitle !== '기본 소설') ? currentNovelTitle : null,
+        folderName: null,
         title: title
     };
 
@@ -2087,7 +2087,7 @@ async function saveAllTranslations(itemsToSave) {
         original: item.original,
         translated: item.translated,
         timestamp: Math.floor(Date.now() / 1000),
-        folderName: (currentNovelTitle && currentNovelTitle !== '기본 소설') ? currentNovelTitle : null,
+        folderName: null,
         title: title
     }));
 
