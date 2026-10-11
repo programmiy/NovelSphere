@@ -319,11 +319,10 @@
         let activeFolder = "";
 
         const MODEL_META = {
-            'gemini-3.0-flash': { color: '#60a5fa', desc: '초단문/감탄사 (하위 20%)', icon: 'bolt' },
-            'gemini-3.5-flash': { color: '#34d399', desc: '단문 대화체 (20~40%)', icon: 'chat' },
-            'gemini-3.6-flash': { color: '#a78bfa', desc: '중문 일반 서술 (40~60%)', icon: 'auto_stories' },
-            'gemini-3.7-flash': { color: '#f472b6', desc: '장문 복합 문장 (60~80%)', icon: 'psychology' },
-            'gemini-3.8-flash': { color: '#fbbf24', desc: '초장문/고난도 묘사 (상위 20%)', icon: 'diamond' }
+            'gemini-3.0-flash': { color: '#60a5fa', desc: '단문/감탄사 (하위 25%)', icon: 'bolt' },
+            'gemini-3.6-flash': { color: '#a78bfa', desc: '단·중문 일반 서술 (25~50%)', icon: 'auto_stories' },
+            'gemini-3.7-flash': { color: '#f472b6', desc: '중·장문 복합 문장 (50~75%)', icon: 'psychology' },
+            'gemini-3.8-flash': { color: '#fbbf24', desc: '초장문/고난도 묘사 (상위 25%)', icon: 'diamond' }
         };
 
         function initTheme() {
@@ -398,23 +397,19 @@
             pGrid.innerHTML = `
                 <div class="p-cell">
                     <div class="p-model">3.0 Flash</div>
-                    <div class="p-range">≤ ${p.p20 || 0}자</div>
-                </div>
-                <div class="p-cell">
-                    <div class="p-model">3.5 Flash</div>
-                    <div class="p-range">${(p.p20||0)+1} ~ ${p.p40 || 0}자</div>
+                    <div class="p-range">≤ ${p.p25 || 0}자</div>
                 </div>
                 <div class="p-cell">
                     <div class="p-model">3.6 Flash</div>
-                    <div class="p-range">${(p.p40||0)+1} ~ ${p.p60 || 0}자</div>
+                    <div class="p-range">${(p.p25||0)+1} ~ ${p.p50 || 0}자</div>
                 </div>
                 <div class="p-cell">
                     <div class="p-model">3.7 Flash</div>
-                    <div class="p-range">${(p.p60||0)+1} ~ ${p.p80 || 0}자</div>
+                    <div class="p-range">${(p.p50||0)+1} ~ ${p.p75 || 0}자</div>
                 </div>
                 <div class="p-cell">
                     <div class="p-model">3.8 Flash</div>
-                    <div class="p-range">> ${p.p80 || 0}자</div>
+                    <div class="p-range">> ${p.p75 || 0}자</div>
                 </div>
             `;
         }
@@ -444,7 +439,6 @@
                         <div>
                             <select class="s-model-select" onchange="changeItemModel(${item.queue_id}, '${modelName}', this.value)">
                                 <option value="gemini-3.0-flash" ${modelName === 'gemini-3.0-flash' ? 'selected' : ''}>3.0 Flash</option>
-                                <option value="gemini-3.5-flash" ${modelName === 'gemini-3.5-flash' ? 'selected' : ''}>3.5 Flash</option>
                                 <option value="gemini-3.6-flash" ${modelName === 'gemini-3.6-flash' ? 'selected' : ''}>3.6 Flash</option>
                                 <option value="gemini-3.7-flash" ${modelName === 'gemini-3.7-flash' ? 'selected' : ''}>3.7 Flash</option>
                                 <option value="gemini-3.8-flash" ${modelName === 'gemini-3.8-flash' ? 'selected' : ''}>3.8 Flash</option>

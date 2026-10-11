@@ -133,7 +133,7 @@ async def get_ai_review_stats(folderName: Optional[str] = None, db: Session = De
         "avg": round(avg, 1),
         "min": min(lengths),
         "max": max(lengths),
-        "percentiles": get_percentiles(lengths, [20, 40, 60, 80]),
+        "percentiles": get_percentiles(lengths, [25, 50, 75]),
         "rejected_count": rejected_count
     }
 
@@ -256,11 +256,10 @@ async def get_reretranslate_queue(folderName: Optional[str] = None, db: Session 
         return {"models": {}, "total": 0, "percentiles": {}, "folders": folders}
         
     lengths = [len(item.original_text) for item, _ in results if item.original_text]
-    p = get_percentiles(lengths, [20, 40, 60, 80])
+    p = get_percentiles(lengths, [25, 50, 75])
     
     model_batches = {
         'gemini-3.0-flash': [],
-        'gemini-3.5-flash': [],
         'gemini-3.6-flash': [],
         'gemini-3.7-flash': [],
         'gemini-3.8-flash': []
@@ -268,10 +267,9 @@ async def get_reretranslate_queue(folderName: Optional[str] = None, db: Session 
     
     for item, base_trans in results:
         length = len(item.original_text) if item.original_text else 0
-        if length <= p['p20']: model = 'gemini-3.0-flash'
-        elif length <= p['p40']: model = 'gemini-3.5-flash'
-        elif length <= p['p60']: model = 'gemini-3.6-flash'
-        elif length <= p['p80']: model = 'gemini-3.7-flash'
+        if length <= p['p25']: model = 'gemini-3.0-flash'
+        elif length <= p['p50']: model = 'gemini-3.6-flash'
+        elif length <= p['p75']: model = 'gemini-3.7-flash'
         else: model = 'gemini-3.8-flash'
         
         folder = base_trans.folderName if base_trans else ""
@@ -376,12 +374,11 @@ async def process_batch_reretranslation_bg():
         # Group items by length category to send them to specific models in batches
         lengths = [len(item.original_text) for item in items if item.original_text]
         if not lengths: return
-        p = get_percentiles(lengths, [20, 40, 60, 80])
+        p = get_percentiles(lengths, [25, 50, 75])
         
         # Group by model
         model_batches = {
             'gemini-3.0-flash': [],
-            'gemini-3.5-flash': [],
             'gemini-3.6-flash': [],
             'gemini-3.7-flash': [],
             'gemini-3.8-flash': []
@@ -389,10 +386,9 @@ async def process_batch_reretranslation_bg():
         
         for item in items:
             length = len(item.original_text)
-            if length <= p['p20']: model = 'gemini-3.0-flash'
-            elif length <= p['p40']: model = 'gemini-3.5-flash'
-            elif length <= p['p60']: model = 'gemini-3.6-flash'
-            elif length <= p['p80']: model = 'gemini-3.7-flash'
+            if length <= p['p25']: model = 'gemini-3.0-flash'
+            elif length <= p['p50']: model = 'gemini-3.6-flash'
+            elif length <= p['p75']: model = 'gemini-3.7-flash'
             else: model = 'gemini-3.8-flash'
             model_batches[model].append(item)
             
