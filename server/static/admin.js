@@ -20,7 +20,8 @@ let latestQuotaSummary = null;
 
 // DOM element cache
 let historyContainer, emptyState, searchBox, darkModeToggle, bulkActionsPanel, selectionCount, deleteSelectedBtn, moveSelectedToFolderDropdown, findReplaceModal, closeFindReplaceModalBtn, cancelFindReplaceBtn, executeFindReplaceBtn, openGlobalFindReplaceBtn, createFolderButton, newFolderNameInput, findEmptyBtn, findText, replaceText, findCount, conditionText, folderScope, useRegex, caseSensitive, autoStartCheckbox, enableDragDropCheckbox;
-let cleanupQueueBtn, openRestoreCenterBtn, notifBadge, abnormalFilterBar, filterAbnormalAll, filterAbnormalPartial, filterAbnormalOther, moveToCleanupBtn, whitelistSelectedAbnormalBtn, cleanupSectionBar, cleanupSummaryText, deleteSelectedCleanupBtn, deleteAllCleanupBtn, cleanupRestoreModal, closeRestoreCenterModalBtn, closeRestoreCenterBottomBtn, tabBtnNotifications, tabBtnTrash, tabBtnAbnormalWhitelist, modalNotifBadge, modalTrashBadge, modalWhitelistBadge, tabContentNotifications, tabContentTrash, tabContentAbnormalWhitelist, notificationsTableBody, trashTableBody, whitelistTableBody, clearAllWhitelistBtn, dismissAllNotifsBtn, refreshNotifsBtn, restoreAllTrashBtn, toggleDismissedHistory, dismissedHistoryContainer, dismissedTableBody, dismissedNotifsCount, similarRecommendPanel, recommendKeyword, recommendCardsContainer, closeRecommendPanelBtn;
+let cleanupQueueBtn, openRestoreCenterBtn, notifBadge, abnormalFilterBar, filterAbnormalAll, filterAbnormalPartial, filterAbnormalOther, moveToCleanupBtn, whitelistSelectedAbnormalBtn, cleanupSectionBar, cleanupSummaryText, deleteSelectedCleanupBtn, deleteAllCleanupBtn, cleanupRestoreModal, closeRestoreCenterModalBtn, closeRestoreCenterBottomBtn, tabBtnNotifications, tabBtnTrash, tabBtnAbnormalWhitelist, modalNotifBadge, modalTrashBadge, modalWhitelistBadge, tabContentNotifications, tabContentTrash, tabContentAbnormalWhitelist, notificationsTableBody, trashTableBody, whitelistTableBody, clearAllWhitelistBtn, dismissAllNotifsBtn, refreshNotifsBtn, restoreAllTrashBtn, toggleDismissedHistory, dismissedHistoryContainer, dismissedTableBody, dismissedNotifsCount, similarRecommendPanel, recommendKeyword, recommendCardsContainer, closeRecommendPanelBtn, toggleRecommendPanelBtn, recommendToggleIcon, recommendToggleText, recommendHeader, recommendBodyWrapper;
+let isRecommendCollapsed = false;
 let modalAutoRefreshTimer = null;
 let currentRestoreTab = 'notifications';
 let deselectAllBtn, retranslateSelectedBtn, copySelectedOriginalBtn, bulkFindReplaceBtn, bulkWhitelistAbnormalBtn, bulkMoveToCleanupBtn, excludeSelectedBtn;
@@ -111,6 +112,11 @@ function cacheDOMElements() {
     recommendKeyword = document.getElementById('recommendKeyword');
     recommendCardsContainer = document.getElementById('recommendCardsContainer');
     closeRecommendPanelBtn = document.getElementById('closeRecommendPanel');
+    toggleRecommendPanelBtn = document.getElementById('toggleRecommendPanel');
+    recommendToggleIcon = document.getElementById('recommendToggleIcon');
+    recommendToggleText = document.getElementById('recommendToggleText');
+    recommendHeader = document.getElementById('recommendHeader');
+    recommendBodyWrapper = document.getElementById('recommendBodyWrapper');
 
     // Bulk actions floating dock elements
     deselectAllBtn = document.getElementById('deselectAllBtn');
@@ -754,6 +760,20 @@ function setupEventListeners() {
 
     // Recommendation panel actions
     if (closeRecommendPanelBtn) closeRecommendPanelBtn.addEventListener('click', closeRecommendPanel);
+    if (toggleRecommendPanelBtn) {
+        toggleRecommendPanelBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            toggleRecommendCollapse();
+        });
+    }
+    if (recommendHeader) {
+        recommendHeader.addEventListener('click', (e) => {
+            if (e.target.closest('#closeRecommendPanel') || e.target.closest('#toggleRecommendPanel') || e.target.closest('a') || e.target.closest('.kw-chip')) {
+                return;
+            }
+            toggleRecommendCollapse();
+        });
+    }
     if (recommendCardsContainer) {
         recommendCardsContainer.addEventListener('click', handleRecommendCardClick);
     }
@@ -1577,6 +1597,18 @@ function closeRecommendPanel() {
     similarRecommendPanel.style.display = 'none';
 }
 
+function toggleRecommendCollapse() {
+    if (!similarRecommendPanel) return;
+    isRecommendCollapsed = !isRecommendCollapsed;
+    similarRecommendPanel.classList.toggle('is-collapsed', isRecommendCollapsed);
+    if (recommendToggleIcon) {
+        recommendToggleIcon.textContent = isRecommendCollapsed ? '▲' : '▼';
+    }
+    if (recommendToggleText) {
+        recommendToggleText.textContent = isRecommendCollapsed ? '펼치기' : '접기';
+    }
+}
+
 function handleTranslatedFocus(el) {
     activeTargetInput = el;
     if (!isFindingEmpty && !el.dataset.keywords) {
@@ -1603,6 +1635,13 @@ function handleTranslatedFocus(el) {
 async function loadSimilarRecommendations(keyword, folder = '', allKeywords = []) {
     if (!similarRecommendPanel) return;
     similarRecommendPanel.style.display = 'flex';
+    similarRecommendPanel.classList.toggle('is-collapsed', isRecommendCollapsed);
+    if (recommendToggleIcon) {
+        recommendToggleIcon.textContent = isRecommendCollapsed ? '▲' : '▼';
+    }
+    if (recommendToggleText) {
+        recommendToggleText.textContent = isRecommendCollapsed ? '펼치기' : '접기';
+    }
 
     recommendKeyword.textContent = `"${keyword}" 검색 중...`;
     recommendCardsContainer.innerHTML = '<div style="padding: 16px; text-align: center; color: var(--text-muted);">유사 단락 검색 중...</div>';
@@ -1624,7 +1663,7 @@ async function loadSimilarRecommendations(keyword, folder = '', allKeywords = []
 function renderSimilarRecommendations(keyword, examples, allKeywords = []) {
     if (!similarRecommendPanel) return;
 
-    let kwHeaderHtml = `"${escapeHtml(keyword)}" <span style="font-size: 12px; font-weight: normal; color: var(--text-muted);">(${examples.length}건)</span>`;
+    let kwHeaderHtml = `<strong>"${escapeHtml(keyword)}"</strong> <span style="font-size: 12px; font-weight: normal; color: var(--text-muted);">(${examples.length}건)</span>`;
     if (allKeywords && allKeywords.length > 1) {
         kwHeaderHtml = allKeywords.map(k => `
             <span class="kw-chip ${k === keyword ? 'active' : ''}" style="cursor: pointer; text-decoration: underline; margin-right: 4px;" data-kw="${escapeHtml(k)}">${escapeHtml(k)}</span>
@@ -1633,12 +1672,11 @@ function renderSimilarRecommendations(keyword, examples, allKeywords = []) {
 
     const encKw = encodeURIComponent(keyword);
     const dictLinksHtml = `
-        <div class="recommend-dict-links" style="display: flex; gap: 6px; margin-top: 6px; margin-bottom: 8px; flex-wrap: wrap;">
-            <span style="font-size: 11px; color: var(--text-muted); align-self: center;">사전 연동:</span>
-            <a href="https://ja.dict.naver.com/#/search?range=all&q=${encKw}" target="_blank" rel="noopener noreferrer" class="btn btn-xs btn-outline" style="font-size: 11px; padding: 2px 7px; color: #03c75a; border-color: #03c75a; text-decoration: none;">네이버 사전 ↗</a>
-            <a href="https://www.weblio.jp/content/${encKw}" target="_blank" rel="noopener noreferrer" class="btn btn-xs btn-outline" style="font-size: 11px; padding: 2px 7px; color: #0f6fec; border-color: #0f6fec; text-decoration: none;">Weblio ↗</a>
-            <a href="https://jisho.org/search/${encKw}" target="_blank" rel="noopener noreferrer" class="btn btn-xs btn-outline" style="font-size: 11px; padding: 2px 7px; color: #7952b3; border-color: #7952b3; text-decoration: none;">Jisho ↗</a>
-        </div>
+        <span class="recommend-dict-links" style="display: inline-flex; gap: 6px; margin-left: 8px; align-items: center; flex-wrap: wrap;">
+            <a href="https://ja.dict.naver.com/#/search?range=all&q=${encKw}" target="_blank" rel="noopener noreferrer" class="btn btn-xs btn-outline" style="font-size: 11px; padding: 1px 6px; color: #03c75a; border-color: #03c75a; text-decoration: none;">네이버 사전 ↗</a>
+            <a href="https://www.weblio.jp/content/${encKw}" target="_blank" rel="noopener noreferrer" class="btn btn-xs btn-outline" style="font-size: 11px; padding: 1px 6px; color: #0f6fec; border-color: #0f6fec; text-decoration: none;">Weblio ↗</a>
+            <a href="https://jisho.org/search/${encKw}" target="_blank" rel="noopener noreferrer" class="btn btn-xs btn-outline" style="font-size: 11px; padding: 1px 6px; color: #7952b3; border-color: #7952b3; text-decoration: none;">Jisho ↗</a>
+        </span>
     `;
 
     recommendKeyword.innerHTML = kwHeaderHtml + dictLinksHtml;
@@ -1764,6 +1802,9 @@ async function handleDragTranslationSearch(keyword, excludeId, folder) {
             renderSimilarRecommendations(keyword, examples, [keyword]);
             if (similarRecommendPanel) {
                 similarRecommendPanel.style.display = 'flex';
+                similarRecommendPanel.classList.toggle('is-collapsed', isRecommendCollapsed);
+                if (recommendToggleIcon) recommendToggleIcon.textContent = isRecommendCollapsed ? '▲' : '▼';
+                if (recommendToggleText) recommendToggleText.textContent = isRecommendCollapsed ? '펼치기' : '접기';
             }
         } else {
             // If panel is ALREADY open, show message; if closed, do not disturb the user

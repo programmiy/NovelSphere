@@ -9,7 +9,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&family=Orbitron:wght@500;700;900&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
-    <link rel="stylesheet" href="/static/admin.css?v=3.0">
+    <link rel="stylesheet" href="/static/admin.css?v=3.1">
     <link rel="manifest" href="/static/manifest.json">
 </head>
 <body>
@@ -343,15 +343,25 @@
         </div>
     </div>
 
-    <!-- 유사 번역 단락 추천 사이드 패널 -->
+    <!-- 유사 번역 단락 추천 하단 도크 패널 -->
     <div id="similarRecommendPanel" class="recommend-panel" style="display: none;">
-        <div class="recommend-header">
-            <div class="recommend-title">💡 유사 번역 단락 추천 (<span id="recommendKeyword"></span>)</div>
-            <button class="close-btn" id="closeRecommendPanel">×</button>
+        <div class="recommend-header" id="recommendHeader" title="클릭하여 추천 패널 접기/펼치기">
+            <div class="recommend-header-left">
+                <span class="recommend-header-badge">💡 유사번역 추천</span>
+                <span id="recommendKeyword"></span>
+            </div>
+            <div class="recommend-header-actions">
+                <button type="button" class="btn btn-xs btn-outline recommend-toggle-btn" id="toggleRecommendPanel" title="패널 접기/펼치기">
+                    <span id="recommendToggleIcon">▼</span> <span id="recommendToggleText">접기</span>
+                </button>
+                <button type="button" class="close-btn" id="closeRecommendPanel" title="추천 패널 닫기">×</button>
+            </div>
         </div>
-        <div class="recommend-subtitle">검색된 단어·문장이 포함된 다른 번역 단락입니다. 클릭 시 새 창으로 해당 단락을 열거나 번역을 복사할 수 있습니다.</div>
-        <div class="recommend-body" id="recommendCardsContainer">
-            <!-- dynamic cards -->
+        <div class="recommend-body-wrapper" id="recommendBodyWrapper">
+            <div class="recommend-subtitle">검색된 단어·문장이 포함된 다른 번역 단락입니다. [번역 복사] 클릭 시 현재 수정 단락에 즉시 적용됩니다.</div>
+            <div class="recommend-body" id="recommendCardsContainer">
+                <!-- dynamic cards -->
+            </div>
         </div>
     </div>
 
@@ -1137,7 +1147,7 @@
 
     <!-- <script type="module" src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.esm.js"></script> -->
     <script src="/static/admin-fx.js?v=3.0"></script>
-    <script type="module" src="/static/admin.js?v=2.7"></script>
+    <script type="module" src="/static/admin.js?v=2.8"></script>
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
