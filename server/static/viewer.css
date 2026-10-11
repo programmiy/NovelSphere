@@ -1875,3 +1875,151 @@ kbd {
 .dict-selection-pill .material-icons {
     color: #f59e0b;
 }
+
+/* ==========================================================================
+   Dialogue Styling & Dialogue Focus Mode (v1.0)
+   ========================================================================== */
+
+/* 1. Base Dialogue Styling */
+.translation-item.is-dialogue {
+    position: relative;
+    border-left: 3px solid rgba(245, 158, 11, 0.45);
+    padding-left: 14px;
+    margin-top: 14px;
+    margin-bottom: 14px;
+    border-radius: 0 8px 8px 0;
+    transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.translation-item.is-dialogue:hover {
+    border-left-color: rgba(245, 158, 11, 0.85);
+    background: rgba(245, 158, 11, 0.04);
+}
+
+/* Theme-specific dialogue left border accents */
+body.theme-paper .translation-item.is-dialogue {
+    border-left-color: #b45309;
+}
+body.theme-sepia .translation-item.is-dialogue {
+    border-left-color: #d97706;
+}
+body.theme-dark .translation-item.is-dialogue {
+    border-left-color: #38bdf8;
+    background: rgba(56, 189, 248, 0.03);
+}
+body.theme-dark .translation-item.is-dialogue:hover {
+    border-left-color: #38bdf8;
+    background: rgba(56, 189, 248, 0.07);
+}
+body.theme-oled .translation-item.is-dialogue {
+    border-left-color: #06b6d4;
+    background: rgba(6, 182, 212, 0.03);
+}
+body.theme-amber .translation-item.is-dialogue {
+    border-left-color: #fbbf24;
+    box-shadow: -2px 0 10px rgba(251, 191, 36, 0.15);
+}
+body.theme-steam .translation-item.is-dialogue {
+    border-left-color: #d97706;
+    border-left-width: 4px;
+    background: rgba(217, 119, 6, 0.04);
+}
+
+/* Quote Marks Accent */
+.dialogue-quote-mark {
+    font-weight: 700;
+    color: var(--primary-color, #eab308);
+    display: inline-block;
+    padding: 0 1px;
+    filter: drop-shadow(0 0 2px rgba(245, 158, 11, 0.35));
+}
+
+body.theme-dark .dialogue-quote-mark,
+body.theme-oled .dialogue-quote-mark {
+    color: #38bdf8;
+    filter: drop-shadow(0 0 4px rgba(56, 189, 248, 0.5));
+}
+
+/* 2. Dialogue Focus Mode */
+.dialogue-focus-mode .translation-item:not(.is-dialogue) {
+    opacity: 0.38;
+    filter: grayscale(35%) blur(0.2px);
+    transition: opacity 0.25s ease, filter 0.25s ease;
+}
+
+.dialogue-focus-mode .translation-item:not(.is-dialogue):hover {
+    opacity: 0.95;
+    filter: none;
+}
+
+.dialogue-focus-mode .translation-item.is-dialogue {
+    opacity: 1;
+    transform: translateX(4px);
+    background: rgba(245, 158, 11, 0.06);
+    box-shadow: 0 2px 14px rgba(0, 0, 0, 0.08);
+}
+
+body.theme-dark .dialogue-focus-mode .translation-item.is-dialogue {
+    background: rgba(56, 189, 248, 0.08);
+    box-shadow: 0 2px 18px rgba(0, 0, 0, 0.4), 0 0 12px rgba(56, 189, 248, 0.15);
+}
+
+body.theme-oled .dialogue-focus-mode .translation-item.is-dialogue {
+    background: rgba(6, 182, 212, 0.08);
+    box-shadow: 0 2px 18px rgba(0, 0, 0, 0.6), 0 0 12px rgba(6, 182, 212, 0.2);
+}
+
+/* Header & Toggle Buttons Active State */
+#dialogue-focus-btn.active {
+    background: rgba(245, 158, 11, 0.2);
+    color: #f59e0b;
+    border-color: rgba(245, 158, 11, 0.6);
+    box-shadow: 0 0 10px rgba(245, 158, 11, 0.3);
+}
+
+#ambient-sound-btn.active {
+    background: rgba(56, 189, 248, 0.2);
+    color: #38bdf8;
+    border-color: rgba(56, 189, 248, 0.6);
+    box-shadow: 0 0 10px rgba(56, 189, 248, 0.3);
+}
+
+/* Ambient Palette Chips */
+.ambient-palette-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.ambient-chip {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 10px 4px;
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+    background: var(--card-bg);
+    color: var(--text-color);
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.ambient-chip:hover {
+    border-color: var(--primary-color);
+    transform: translateY(-2px);
+}
+
+.ambient-chip.active {
+    border-color: #38bdf8;
+    background: rgba(56, 189, 248, 0.15);
+    color: #38bdf8;
+    font-weight: 700;
+    box-shadow: 0 0 10px rgba(56, 189, 248, 0.25);
+}
+
+.ambient-chip .theme-name {
+    font-size: 11.5px;
+}

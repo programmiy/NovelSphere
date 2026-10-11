@@ -8,150 +8,358 @@
     'use strict';
 
     // =========================================================================
-    // 1. Audio Synthesizer (Web Audio API - Pure Sci-Fi Sound Generator)
+    // 1. Cyber High-Fidelity Audio & Ambient Engine (Studio Sample Based)
     // =========================================================================
+    const CYBER_AUDIO_ASSETS = {
+        click: '/static/audio/cyber_click.mp3',
+        hover: '/static/audio/cyber_hover.mp3',
+        powerup: '/static/audio/cyber_powerup.mp3',
+        success: '/static/audio/cyber_success.mp3',
+        warning: '/static/audio/cyber_warning.mp3',
+        toggle: '/static/audio/cyber_toggle.mp3',
+        pulse: '/static/audio/cyber_notify.mp3',
+        drone: '/static/audio/cyber_drone.mp3',
+        rain: '/static/audio/rain.wav',
+        library: '/static/audio/library_ambient.wav',
+        fireplace: '/static/audio/fireplace.wav'
+    };
+
+    const AMBIENT_TRACK_LIST = [
+        { id: 'none', label: '배경음: 끄기', icon: 'headphones' },
+        { id: 'drone', label: '퀀텀 드론 (Lo-Fi)', icon: 'graphic_eq' },
+        { id: 'rain', label: '사이버 빗소리', icon: 'water_drop' },
+        { id: 'library', label: '나이트 룸 (서재)', icon: 'nights_stay' },
+        { id: 'fireplace', label: '따스한 불꽃', icon: 'local_fire_department' }
+    ];
+
     class SoundEngine {
         constructor() {
-            this.ctx = null;
-            const saved = localStorage.getItem('lanovel_cyber_sound');
-            // Enabled by default unless explicitly disabled by user
-            this.enabled = saved !== 'false';
-            this.unlockAudio = this.unlockAudio.bind(this);
-            window.addEventListener('click', this.unlockAudio, { capture: true, passive: true });
-            window.addEventListener('keydown', this.unlockAudio, { capture: true, passive: true });
+            this.storageKey = 'lanovel_cyber_sound';
+            this.storageAmbientKey = 'lanovel_cyber_ambient_track';
+            this.storageAmbientVolKey = 'lanovel_cyber_ambient_vol';
+            this.storageSfxVolKey = 'lanovel_cyber_sfx_vol';
+
+            const savedSfx = localStorage.getItem(this.storageKey);
+            this.enabled = savedSfx !== 'false';
+
+            this.sfxVolume = parseFloat(localStorage.getItem(this.storageSfxVolKey) || '0.5');
+            this.ambientVolume = parseFloat(localStorage.getItem(this.storageAmbientVolKey) || '0.45');
+            this.currentAmbientTrack = localStorage.getItem(this.storageAmbientKey) || 'none';
+
+            // Polyphonic pool for click/hover to allow fast, non-clipping feedback
+            this.clickPool = [];
+            this.clickIndex = 0;
+            this.clickPoolSize = 6;
+
+            this.hoverPool = [];
+            this.hoverIndex = 0;
+            this.hoverPoolSize = 4;
+            this.lastHoverTime = 0;
+
+            // Ambient audio elements
+            this.ambientAudio = null;
+            this.ambientFadeInterval = null;
+
+            this._initPools();
+
+            // Auto-unlock audio playback on first user gesture
+            this._unlocked = false;
+            this._unlockHandler = () => {
+                if (this._unlocked) return;
+                this._unlocked = true;
+                if (this.currentAmbientTrack && this.currentAmbientTrack !== 'none') {
+                    this.startAmbient(this.currentAmbientTrack, false);
+                }
+                window.removeEventListener('click', this._unlockHandler, { capture: true });
+                window.removeEventListener('keydown', this._unlockHandler, { capture: true });
+            };
+            window.addEventListener('click', this._unlockHandler, { capture: true, passive: true });
+            window.addEventListener('keydown', this._unlockHandler, { capture: true, passive: true });
+        }
+
+        _initPools() {
+            try {
+                for (let i = 0; i < this.clickPoolSize; i++) {
+                    const a = new Audio(CYBER_AUDIO_ASSETS.click);
+                    a.preload = 'auto';
+                    this.clickPool.push(a);
+                }
+                for (let i = 0; i < this.hoverPoolSize; i++) {
+                    const a = new Audio(CYBER_AUDIO_ASSETS.hover);
+                    a.preload = 'auto';
+                    this.hoverPool.push(a);
+                }
+                this.powerupAudio = new Audio(CYBER_AUDIO_ASSETS.powerup);
+                this.successAudio = new Audio(CYBER_AUDIO_ASSETS.success);
+                this.warningAudio = new Audio(CYBER_AUDIO_ASSETS.warning);
+                this.toggleAudio = new Audio(CYBER_AUDIO_ASSETS.toggle);
+                this.pulseAudio = new Audio(CYBER_AUDIO_ASSETS.pulse);
+
+                this.powerupAudio.preload = 'auto';
+                this.successAudio.preload = 'auto';
+                this.warningAudio.preload = 'auto';
+                this.toggleAudio.preload = 'auto';
+                this.pulseAudio.preload = 'auto';
+            } catch (e) {
+                console.warn('[CyberSound] Audio pool init warning:', e);
+            }
         }
 
         ensureContext() {
-            if (!this.ctx && typeof AudioContext !== 'undefined') {
-                try {
-                    this.ctx = new (window.AudioContext || window.webkitAudioContext)();
-                } catch (e) {
-                    console.warn('[CyberFX] AudioContext not supported', e);
+            // Backward compatibility stub for legacy calls
+            if (!this._unlocked) {
+                this._unlocked = true;
+                if (this.currentAmbientTrack && this.currentAmbientTrack !== 'none') {
+                    this.startAmbient(this.currentAmbientTrack, false);
                 }
             }
-            if (this.ctx && this.ctx.state === 'suspended') {
-                this.ctx.resume().catch(() => {});
-            }
-            return this.ctx;
-        }
-
-        unlockAudio() {
-            this.ensureContext();
         }
 
         toggle() {
-            this.ensureContext();
             this.enabled = !this.enabled;
-            localStorage.setItem('lanovel_cyber_sound', this.enabled ? 'true' : 'false');
+            localStorage.setItem(this.storageKey, this.enabled ? 'true' : 'false');
             if (this.enabled) {
                 this.playPowerUp();
             }
+            this.updateSoundBtn();
             return this.enabled;
         }
 
-        playPowerUp() {
-            if (!this.enabled) return;
-            const ctx = this.ensureContext();
-            if (!ctx) return;
-            try {
-                const now = ctx.currentTime;
-                // Futuristic 3-tone rising arpeggio
-                [440, 660, 880, 1320].forEach((freq, idx) => {
-                    const osc = ctx.createOscillator();
-                    const gain = ctx.createGain();
-                    const startT = now + idx * 0.045;
-                    osc.type = 'sine';
-                    osc.frequency.setValueAtTime(freq, startT);
-                    gain.gain.setValueAtTime(0.14, startT);
-                    gain.gain.exponentialRampToValueAtTime(0.001, startT + 0.12);
-                    osc.connect(gain);
-                    gain.connect(ctx.destination);
-                    osc.start(startT);
-                    osc.stop(startT + 0.12);
-                });
-            } catch (e) {}
-        }
-
-        playHover() {
-            if (!this.enabled) return;
-            const ctx = this.ensureContext();
-            if (!ctx) return;
-            try {
-                const now = ctx.currentTime;
-                const osc = ctx.createOscillator();
-                const gain = ctx.createGain();
-                osc.type = 'sine';
-                osc.frequency.setValueAtTime(1200, now);
-                osc.frequency.exponentialRampToValueAtTime(1800, now + 0.03);
-                gain.gain.setValueAtTime(0.054, now);
-                gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.035);
-                osc.connect(gain);
-                gain.connect(ctx.destination);
-                osc.start(now);
-                osc.stop(now + 0.035);
-            } catch (e) {}
+        updateSoundBtn() {
+            const btn = document.getElementById('cyberSoundToggleBtn');
+            if (!btn) return;
+            if (this.enabled) {
+                btn.classList.add('sound-active');
+                btn.innerHTML = '<span class="material-icons">volume_up</span> <span class="sound-label">FX 켜짐</span>';
+                btn.setAttribute('title', '사이버 네온 사운드 FX 켜짐 (클릭 또는 단축키 M)');
+            } else {
+                btn.classList.remove('sound-active');
+                btn.innerHTML = '<span class="material-icons">volume_off</span> <span class="sound-label">FX 꺼짐</span>';
+                btn.setAttribute('title', '사이버 네온 사운드 FX 꺼짐 (클릭 또는 단축키 M)');
+            }
         }
 
         playClick() {
-            if (!this.enabled) return;
-            const ctx = this.ensureContext();
-            if (!ctx) return;
+            if (!this.enabled || !this.clickPool.length) return;
             try {
-                const now = ctx.currentTime;
-                const osc = ctx.createOscillator();
-                const gain = ctx.createGain();
-                osc.type = 'triangle';
-                osc.frequency.setValueAtTime(620, now);
-                osc.frequency.exponentialRampToValueAtTime(240, now + 0.07);
-                gain.gain.setValueAtTime(0.175, now);
-                gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.075);
-                osc.connect(gain);
-                gain.connect(ctx.destination);
-                osc.start(now);
-                osc.stop(now + 0.075);
-            } catch (e) {}
+                const audio = this.clickPool[this.clickIndex];
+                this.clickIndex = (this.clickIndex + 1) % this.clickPoolSize;
+                audio.currentTime = 0;
+                audio.volume = Math.max(0, Math.min(1, this.sfxVolume * 0.7));
+                audio.playbackRate = 0.97 + Math.random() * 0.06;
+                audio.play().catch(() => {});
+            } catch (_) {}
         }
 
-        playGlitch() {
-            if (!this.enabled) return;
-            const ctx = this.ensureContext();
-            if (!ctx) return;
+        playHover() {
+            if (!this.enabled || !this.hoverPool.length) return;
+            const now = performance.now();
+            if (now - this.lastHoverTime < 32) return; // Prevent audio swarm
+            this.lastHoverTime = now;
+
             try {
-                const now = ctx.currentTime;
-                const osc = ctx.createOscillator();
-                const gain = ctx.createGain();
-                osc.type = 'sawtooth';
-                osc.frequency.setValueAtTime(800 + Math.random() * 400, now);
-                osc.frequency.exponentialRampToValueAtTime(100, now + 0.04);
-                gain.gain.setValueAtTime(0.07, now);
-                gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.045);
-                osc.connect(gain);
-                gain.connect(ctx.destination);
-                osc.start(now);
-                osc.stop(now + 0.045);
-            } catch (e) {}
+                const audio = this.hoverPool[this.hoverIndex];
+                this.hoverIndex = (this.hoverIndex + 1) % this.hoverPoolSize;
+                audio.currentTime = 0;
+                audio.volume = Math.max(0, Math.min(1, this.sfxVolume * 0.28));
+                audio.playbackRate = 0.98 + Math.random() * 0.05;
+                audio.play().catch(() => {});
+            } catch (_) {}
+        }
+
+        playPowerUp() {
+            if (!this.enabled || !this.powerupAudio) return;
+            try {
+                this.powerupAudio.currentTime = 0;
+                this.powerupAudio.volume = Math.max(0, Math.min(1, this.sfxVolume * 0.8));
+                this.powerupAudio.play().catch(() => {});
+            } catch (_) {}
+        }
+
+        playSuccess() {
+            if (!this.enabled || !this.successAudio) return;
+            try {
+                this.successAudio.currentTime = 0;
+                this.successAudio.volume = Math.max(0, Math.min(1, this.sfxVolume * 0.75));
+                this.successAudio.play().catch(() => {});
+            } catch (_) {}
+        }
+
+        playWarning() {
+            if (!this.enabled || !this.warningAudio) return;
+            try {
+                this.warningAudio.currentTime = 0;
+                this.warningAudio.volume = Math.max(0, Math.min(1, this.sfxVolume * 0.7));
+                this.warningAudio.play().catch(() => {});
+            } catch (_) {}
+        }
+
+        playToggle() {
+            if (!this.enabled || !this.toggleAudio) return;
+            try {
+                this.toggleAudio.currentTime = 0;
+                this.toggleAudio.volume = Math.max(0, Math.min(1, this.sfxVolume * 0.65));
+                this.toggleAudio.play().catch(() => {});
+            } catch (_) {}
         }
 
         playActionPulse() {
-            if (!this.enabled) return;
-            const ctx = this.ensureContext();
-            if (!ctx) return;
+            if (!this.enabled || !this.pulseAudio) return;
             try {
-                const now = ctx.currentTime;
-                [523.25, 659.25, 1046.5].forEach((freq) => {
-                    const osc = ctx.createOscillator();
-                    const gain = ctx.createGain();
-                    osc.type = 'sine';
-                    osc.frequency.setValueAtTime(freq, now);
-                    osc.frequency.exponentialRampToValueAtTime(freq * 1.25, now + 0.15);
-                    gain.gain.setValueAtTime(0.118, now);
-                    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.2);
-                    osc.connect(gain);
-                    gain.connect(ctx.destination);
-                    osc.start(now);
-                    osc.stop(now + 0.2);
+                this.pulseAudio.currentTime = 0;
+                this.pulseAudio.volume = Math.max(0, Math.min(1, this.sfxVolume * 0.8));
+                this.pulseAudio.play().catch(() => {});
+            } catch (_) {}
+        }
+
+        playGlitch() {
+            if (!this.enabled || !this.warningAudio) return;
+            try {
+                this.warningAudio.currentTime = 0;
+                this.warningAudio.volume = Math.max(0, Math.min(1, this.sfxVolume * 0.5));
+                this.warningAudio.playbackRate = 1.25;
+                this.warningAudio.play().catch(() => {});
+            } catch (_) {}
+        }
+
+        // ==========================================
+        // AMBIENT BACKGROUND ASMR ENGINE
+        // ==========================================
+
+        getAmbientTrack() {
+            return this.currentAmbientTrack;
+        }
+
+        cycleAmbient() {
+            const currentIndex = AMBIENT_TRACK_LIST.findIndex(t => t.id === this.currentAmbientTrack);
+            const nextIndex = (currentIndex + 1) % AMBIENT_TRACK_LIST.length;
+            const nextTrack = AMBIENT_TRACK_LIST[nextIndex];
+            this.startAmbient(nextTrack.id, true);
+            this.playToggle();
+            return nextTrack;
+        }
+
+        startAmbient(trackId, savePreference = true) {
+            if (!trackId || trackId === 'none') {
+                this.stopAmbient(savePreference);
+                return;
+            }
+
+            const assetUrl = CYBER_AUDIO_ASSETS[trackId];
+            if (!assetUrl) return;
+
+            if (savePreference) {
+                this.currentAmbientTrack = trackId;
+                localStorage.setItem(this.storageAmbientKey, trackId);
+            }
+
+            if (this.ambientAudio) {
+                if (this.ambientAudio.dataset.track === trackId && !this.ambientAudio.paused) {
+                    this.updateAmbientUI();
+                    return;
+                }
+                this._fadeOutAudio(this.ambientAudio, () => {
+                    this._playNewAmbient(assetUrl, trackId);
                 });
-            } catch (e) {}
+            } else {
+                this._playNewAmbient(assetUrl, trackId);
+            }
+
+            this.updateAmbientUI();
+        }
+
+        _playNewAmbient(assetUrl, trackId) {
+            try {
+                const audio = new Audio(assetUrl);
+                audio.loop = true;
+                audio.dataset.track = trackId;
+                audio.volume = 0;
+                this.ambientAudio = audio;
+
+                const promise = audio.play();
+                if (promise !== undefined) {
+                    promise.then(() => {
+                        this._fadeInAudio(audio, this.ambientVolume);
+                    }).catch(err => {
+                        console.log('[CyberSound] Ambient waiting for user interaction:', err.message);
+                    });
+                }
+            } catch (e) {
+                console.warn('[CyberSound] Ambient play error:', e);
+            }
+        }
+
+        _fadeInAudio(audio, targetVolume, durationMs = 600) {
+            clearInterval(this.ambientFadeInterval);
+            const stepMs = 50;
+            const steps = durationMs / stepMs;
+            let currentStep = 0;
+
+            this.ambientFadeInterval = setInterval(() => {
+                currentStep++;
+                const vol = Math.min(targetVolume, (currentStep / steps) * targetVolume);
+                if (audio) audio.volume = vol;
+                if (currentStep >= steps) {
+                    clearInterval(this.ambientFadeInterval);
+                    this.ambientFadeInterval = null;
+                }
+            }, stepMs);
+        }
+
+        _fadeOutAudio(audio, onComplete, durationMs = 400) {
+            clearInterval(this.ambientFadeInterval);
+            const startVol = audio ? audio.volume : 0;
+            const stepMs = 40;
+            const steps = durationMs / stepMs;
+            let currentStep = 0;
+
+            this.ambientFadeInterval = setInterval(() => {
+                currentStep++;
+                const vol = Math.max(0, startVol * (1 - currentStep / steps));
+                if (audio) audio.volume = vol;
+                if (currentStep >= steps) {
+                    clearInterval(this.ambientFadeInterval);
+                    this.ambientFadeInterval = null;
+                    if (audio) {
+                        audio.pause();
+                        audio.src = '';
+                    }
+                    if (onComplete) onComplete();
+                }
+            }, stepMs);
+        }
+
+        stopAmbient(savePreference = true) {
+            if (savePreference) {
+                this.currentAmbientTrack = 'none';
+                localStorage.setItem(this.storageAmbientKey, 'none');
+            }
+            if (this.ambientAudio) {
+                this._fadeOutAudio(this.ambientAudio, () => {
+                    this.ambientAudio = null;
+                });
+            }
+            this.updateAmbientUI();
+        }
+
+        updateAmbientUI() {
+            const btn = document.getElementById('cyberAmbientToggleBtn');
+            const labelEl = document.getElementById('cyberAmbientLabel');
+            const track = AMBIENT_TRACK_LIST.find(t => t.id === this.currentAmbientTrack) || AMBIENT_TRACK_LIST[0];
+
+            if (labelEl) {
+                labelEl.textContent = track.label;
+            }
+
+            if (btn) {
+                const iconEl = btn.querySelector('.material-icons');
+                if (iconEl) {
+                    iconEl.textContent = track.icon;
+                }
+                const isActive = this.currentAmbientTrack && this.currentAmbientTrack !== 'none';
+                btn.classList.toggle('ambient-active', isActive);
+                btn.setAttribute('title', `사이버 앰비언트: ${track.label} (클릭하여 전환, 단축키 B)`);
+            }
         }
     }
 
@@ -429,25 +637,42 @@
         // Sound toggle button in header
         const soundBtn = document.getElementById('cyberSoundToggleBtn');
         if (soundBtn) {
-            updateSoundBtnState(soundBtn, soundEngine.enabled);
+            soundEngine.updateSoundBtn();
             soundBtn.addEventListener('click', () => {
                 soundEngine.ensureContext();
-                const enabled = soundEngine.toggle();
-                updateSoundBtnState(soundBtn, enabled);
+                soundEngine.toggle();
             });
         }
 
-        function updateSoundBtnState(btn, enabled) {
-            if (enabled) {
-                btn.classList.add('sound-active');
-                btn.innerHTML = '<span class="material-icons">volume_up</span> <span class="sound-label">FX 켜짐</span>';
-                btn.setAttribute('title', '사이버 네온 사운드 FX 켜짐 (클릭하여 음소거)');
-            } else {
-                btn.classList.remove('sound-active');
-                btn.innerHTML = '<span class="material-icons">volume_off</span> <span class="sound-label">FX 꺼짐</span>';
-                btn.setAttribute('title', '사이버 네온 사운드 FX 꺼짐 (클릭하여 활성화)');
-            }
+        // Ambient background audio toggle button in header
+        const ambientBtn = document.getElementById('cyberAmbientToggleBtn');
+        if (ambientBtn) {
+            soundEngine.updateAmbientUI();
+            ambientBtn.addEventListener('click', () => {
+                soundEngine.ensureContext();
+                soundEngine.cycleAmbient();
+            });
         }
+
+        // Global hotkeys (B for ambient background, M for FX mute)
+        window.addEventListener('keydown', (e) => {
+            const active = document.activeElement;
+            const isTyping = active && (
+                active.tagName === 'INPUT' ||
+                active.tagName === 'TEXTAREA' ||
+                active.tagName === 'SELECT' ||
+                active.isContentEditable
+            );
+            if (isTyping) return;
+
+            if (e.key === 'b' || e.key === 'B') {
+                soundEngine.ensureContext();
+                soundEngine.cycleAmbient();
+            } else if (e.key === 'm' || e.key === 'M') {
+                soundEngine.ensureContext();
+                soundEngine.toggle();
+            }
+        });
 
         // Delegate hover & click sounds
         document.addEventListener('mouseover', (e) => {

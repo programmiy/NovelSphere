@@ -12,7 +12,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;900&family=Special+Elite&family=Courier+Prime:ital,wght@0,400;0,700;1,400&family=Gowun+Batang:wght@400;700&family=Nanum+Myeongjo:wght@400;700&family=Noto+Sans+KR:wght@400;500;700&family=Noto+Serif+KR:wght@400;600&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
-    <link rel="stylesheet" href="/static/viewer.css?v=3.2">
+    <link rel="stylesheet" href="/static/viewer.css?v=3.3">
 </head>
 <body class="theme-paper">
     <!-- 독서 진행률 표시줄 -->
@@ -47,7 +47,13 @@
             </div>
 
             <div class="viewer-settings">
-                <button id="viewerSoundToggle" class="btn btn-icon steampunk-sound-toggle-btn" title="타자기 사운드 토글">
+                <button id="dialogue-focus-btn" class="btn btn-icon" title="대사 집중 모드 (C)">
+                    <span class="material-icons">chat</span>
+                </button>
+                <button id="ambient-sound-btn" class="btn btn-icon" title="앰비언트 ASMR 사운드 랙 (B)">
+                    <span class="material-icons">headphones</span>
+                </button>
+                <button id="viewerSoundToggle" class="btn btn-icon steampunk-sound-toggle-btn" title="타자기 사운드 토글 (M)">
                     <span class="material-icons">volume_up</span>
                 </button>
                 <button id="toc-btn" class="btn btn-icon" title="목차 열기 (T 또는 O)">
@@ -254,6 +260,62 @@
                     <span class="slider"></span>
                 </label>
             </div>
+
+            <!-- 8. 대사 집중 독서 모드 -->
+            <div class="pref-section toggle-section">
+                <div class="toggle-text">
+                    <div class="pref-label">대사 집중 독서 모드 (단축키 C)</div>
+                    <div class="pref-desc">지문을 차분하게 낮추고 캐릭터 대사(「...」)만 또렷하게 부각합니다.</div>
+                </div>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="toggle-dialogue-focus-switch">
+                    <span class="slider"></span>
+                </label>
+            </div>
+
+            <!-- 9. 앰비언트 ASMR 사운드 랙 -->
+            <div class="pref-section">
+                <div class="pref-header-row">
+                    <label class="pref-label">앰비언트 ASMR 배경음 (단축키 B)</label>
+                    <span id="ambient-track-status" class="pref-val-badge">꺼짐</span>
+                </div>
+                <div class="theme-palette-grid ambient-palette-grid">
+                    <button class="theme-chip ambient-chip active" data-ambient="none">
+                        <span class="material-icons" style="font-size: 20px;">volume_off</span>
+                        <span class="theme-name">꺼짐</span>
+                    </button>
+                    <button class="theme-chip ambient-chip" data-ambient="rain">
+                        <span class="material-icons" style="font-size: 20px;">water_drop</span>
+                        <span class="theme-name">심야 빗소리</span>
+                    </button>
+                    <button class="theme-chip ambient-chip" data-ambient="fireplace">
+                        <span class="material-icons" style="font-size: 20px;">local_fire_department</span>
+                        <span class="theme-name">벽난로 장작</span>
+                    </button>
+                    <button class="theme-chip ambient-chip" data-ambient="library">
+                        <span class="material-icons" style="font-size: 20px;">menu_book</span>
+                        <span class="theme-name">서재 앰비언트</span>
+                    </button>
+                </div>
+                <div class="stepper-control" style="margin-top: 10px;">
+                    <span class="material-icons" style="font-size: 16px; color: var(--text-muted);">volume_down</span>
+                    <input type="range" id="ambient-volume-slider" min="0" max="1" step="0.05" value="0.45" class="pref-slider" title="배경음 볼륨">
+                    <span class="material-icons" style="font-size: 16px; color: var(--text-muted);">volume_up</span>
+                </div>
+            </div>
+
+            <!-- 10. 타자기 & 효과음 볼륨 -->
+            <div class="pref-section">
+                <div class="pref-header-row">
+                    <label class="pref-label">타자기 &amp; 조작 효과음 (단축키 M)</label>
+                    <span id="sfx-volume-val" class="pref-val-badge">65%</span>
+                </div>
+                <div class="stepper-control">
+                    <span class="material-icons" style="font-size: 16px; color: var(--text-muted);">music_note</span>
+                    <input type="range" id="sfx-volume-slider" min="0" max="1" step="0.05" value="0.65" class="pref-slider" title="효과음 볼륨">
+                    <span class="material-icons" style="font-size: 16px; color: var(--text-muted);">music_note</span>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -361,6 +423,18 @@
                         <span>사전 연동 &amp; 용례 학습 패널 토글</span>
                     </div>
                     <div class="shortcut-item">
+                        <kbd>C</kbd>
+                        <span>대사 집중 모드 토글 (캐릭터 대사 부각)</span>
+                    </div>
+                    <div class="shortcut-item">
+                        <kbd>B</kbd>
+                        <span>배경 앰비언트 ASMR 순환 전환 (빗소리/장작/서재)</span>
+                    </div>
+                    <div class="shortcut-item">
+                        <kbd>M</kbd>
+                        <span>타자기 &amp; 조작 효과음 음소거 토글</span>
+                    </div>
+                    <div class="shortcut-item">
                         <kbd>+</kbd> / <kbd>-</kbd>
                         <span>본문 글자 크기 확대 / 축소</span>
                     </div>
@@ -400,8 +474,8 @@
     <!-- 뷰어 토스트 메시지 -->
     <div id="viewer-toast" class="toast" style="display: none;"></div>
 
-    <script src="/static/steampunk-sound.js"></script>
-    <script type="module" src="/static/viewer.js?v=3.0"></script>
+    <script src="/static/steampunk-sound.js?v=2.0"></script>
+    <script type="module" src="/static/viewer.js?v=3.1"></script>
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {

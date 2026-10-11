@@ -39,6 +39,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     const fontDecreaseBtn = document.getElementById('font-decrease-btn');
     const fontIncreaseBtn = document.getElementById('font-increase-btn');
     const toggleOriginalSwitch = document.getElementById('toggle-original-switch');
+    const dialogueFocusBtn = document.getElementById('dialogue-focus-btn');
+    const toggleDialogueFocusSwitch = document.getElementById('toggle-dialogue-focus-switch');
+    const ambientSoundBtn = document.getElementById('ambient-sound-btn');
+    const ambientTrackStatus = document.getElementById('ambient-track-status');
+    const ambientVolumeSlider = document.getElementById('ambient-volume-slider');
+    const sfxVolumeSlider = document.getElementById('sfx-volume-slider');
+    const sfxVolumeVal = document.getElementById('sfx-volume-val');
 
     // Shortcut Help Modal
     const shortcutModal = document.getElementById('shortcut-help-modal');
@@ -89,7 +96,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         lineHeight: 1.8,
         width: 840,
         mode: 'paging',  // 'paging', 'scroll'
-        showOriginal: false
+        showOriginal: false,
+        dialogueFocus: false
     };
 
     // Touch State
@@ -184,6 +192,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (localStorage.getItem('showOriginalText') === 'true') {
                 prefs.showOriginal = true;
             }
+            if (localStorage.getItem('lanovel_dialogue_focus') === 'true') {
+                prefs.dialogueFocus = true;
+            }
             const savedMobileNav = localStorage.getItem('mobileNavMode');
             if (savedMobileNav) {
                 mobileNavMode = savedMobileNav;
@@ -201,6 +212,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             localStorage.setItem('lanovel_reader_prefs', JSON.stringify(prefs));
             localStorage.setItem('showOriginalText', prefs.showOriginal);
             localStorage.setItem('nightMode', prefs.theme === 'dark' || prefs.theme === 'oled');
+            localStorage.setItem('lanovel_dialogue_focus', prefs.dialogueFocus ? 'true' : 'false');
         } catch (e) {
             console.warn('Failed to save reader preferences:', e);
         }
@@ -257,7 +269,22 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (toggleOriginalSwitch) toggleOriginalSwitch.checked = prefs.showOriginal;
         if (viewOriginalBtn) viewOriginalBtn.classList.toggle('active', prefs.showOriginal);
 
+        // 8. Dialogue Focus Mode
+        if (contentArea) contentArea.classList.toggle('dialogue-focus-mode', Boolean(prefs.dialogueFocus));
+        if (dialogueFocusBtn) dialogueFocusBtn.classList.toggle('active', Boolean(prefs.dialogueFocus));
+        if (toggleDialogueFocusSwitch) toggleDialogueFocusSwitch.checked = Boolean(prefs.dialogueFocus);
+
         updateHeaderIcons();
+    }
+
+    function toggleDialogueFocus() {
+        prefs.dialogueFocus = !prefs.dialogueFocus;
+        if (contentArea) contentArea.classList.toggle('dialogue-focus-mode', Boolean(prefs.dialogueFocus));
+        if (dialogueFocusBtn) dialogueFocusBtn.classList.toggle('active', Boolean(prefs.dialogueFocus));
+        if (toggleDialogueFocusSwitch) toggleDialogueFocusSwitch.checked = Boolean(prefs.dialogueFocus);
+        savePreferences();
+        showToast(prefs.dialogueFocus ? '대사 집중 모드 활성화 (캐릭터 대사 부각)' : '일반 독서 모드 복원');
+        if (window.SteampunkSound) window.SteampunkSound.playSwitch();
     }
 
     function updateHeaderIcons() {
@@ -548,9 +575,30 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
+    function isDialogueText(text, original) {
+        if (!text) return false;
+        const t = text.trim();
+        if (/^[「『"']/.test(t)) return true;
+        if (original && /^[「『]/.test(original.trim())) return true;
+        if ((t.includes('「') && t.includes('」')) || (t.includes('『') && t.includes('』'))) return true;
+        return false;
+    }
+
+    function formatDialogueText(text) {
+        let html = renderNovelRubyHtml(text);
+        html = html.replace(/([「『])|([」』])/g, (m, openQ, closeQ) => {
+            if (openQ) return `<span class="dialogue-quote-mark">${openQ}</span>`;
+            if (closeQ) return `<span class="dialogue-quote-mark">${closeQ}</span>`;
+            return m;
+        });
+        return html;
+    }
+
     function createItemHtml(item) {
         const hasOriginal = Boolean(item.original);
-        let itemHtml = `<div class="translation-item" data-id="${item.id}" data-pid="${item.pid}" data-original="${escapeHtml(item.original)}" data-raw-translated="${escapeHtml(item.translated)}">`;
+        const isDialogue = isDialogueText(item.translated, item.original);
+        const dialogueClass = isDialogue ? ' is-dialogue' : '';
+        let itemHtml = `<div class="translation-item${dialogueClass}" data-id="${item.id}" data-pid="${item.pid}" data-original="${escapeHtml(item.original)}" data-raw-translated="${escapeHtml(item.translated)}">`;
 
         // Edit trigger button (PC hover)
         itemHtml += `<button class="paragraph-edit-btn" title="단락 번역문 수정 (PC: 더블클릭 / 모바일: 길게 누르기)"><span class="material-icons" style="font-size: 16px;">edit</span></button>`;
@@ -558,7 +606,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (prefs.showOriginal && hasOriginal) {
             itemHtml += `<p class="original-text">${escapeHtml(item.original)}</p>`;
         }
-        itemHtml += `<p class="translated-text">${renderNovelRubyHtml(item.translated)}</p></div>`;
+        itemHtml += `<p class="translated-text">${formatDialogueText(item.translated)}</p></div>`;
         return itemHtml;
     }
 
@@ -1318,7 +1366,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             translatedTextElement.onkeydown = null;
             translatedTextElement.oninput = null;
             if (revert && translationItem._originalRawText !== undefined) {
-                translatedTextElement.innerHTML = renderNovelRubyHtml(translationItem._originalRawText);
+                translatedTextElement.innerHTML = formatDialogueText(translationItem._originalRawText);
+                const isDiag = isDialogueText(translationItem._originalRawText, translationItem.dataset.original);
+                translationItem.classList.toggle('is-dialogue', isDiag);
             }
         }
         const actionBox = translationItem.querySelector('.inline-edit-actions');
@@ -1357,7 +1407,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             translationItem.dataset.rawTranslated = newTranslatedText;
 
             disableEditing(translationItem);
-            translatedTextElement.innerHTML = renderNovelRubyHtml(newTranslatedText);
+            translatedTextElement.innerHTML = formatDialogueText(newTranslatedText);
+            const isDiag = isDialogueText(newTranslatedText, itemData.original);
+            translationItem.classList.toggle('is-dialogue', isDiag);
             showToast('번역문이 수정되었습니다.');
 
             // Background incremental sync with corpus_ai.db
@@ -1419,7 +1471,27 @@ document.addEventListener('DOMContentLoaded', async () => {
             prefs.theme = (prefs.theme === 'dark' || prefs.theme === 'oled') ? 'paper' : 'dark';
             applyPreferences();
             savePreferences();
-            showToast(prefs.theme === 'dark' ? '다크 테마 적용' : '페이퍼 테마 적용');
+        } else if (key === 'c' || key === 'C') {
+            e.preventDefault();
+            toggleDialogueFocus();
+        } else if (key === 'b' || key === 'B') {
+            e.preventDefault();
+            if (window.SteampunkSound) {
+                const nextTrack = window.SteampunkSound.cycleAmbient();
+                const labels = {
+                    none: '배경음 꺼짐',
+                    rain: '🌧️ 심야 빗소리 재생 중',
+                    fireplace: '🪵 벽난로 장작 재생 중',
+                    library: '📚 서재 앰비언트 재생 중'
+                };
+                showToast(labels[nextTrack] || '배경음 전환');
+            }
+        } else if (key === 'm' || key === 'M') {
+            e.preventDefault();
+            if (window.SteampunkSound) {
+                const on = window.SteampunkSound.toggle();
+                showToast(on ? '타자기 & 효과음 ON' : '타자기 & 효과음 OFF');
+            }
         } else if (key === '+' || key === '=') {
             e.preventDefault();
             if (prefs.fontSize < 28) {
@@ -1851,6 +1923,90 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
+    // 8. Dialogue Focus Mode & Ambient Sound Controls
+    if (dialogueFocusBtn) {
+        dialogueFocusBtn.addEventListener('click', toggleDialogueFocus);
+    }
+    if (toggleDialogueFocusSwitch) {
+        toggleDialogueFocusSwitch.addEventListener('change', toggleDialogueFocus);
+    }
+
+    function initAmbientSoundUI() {
+        if (!window.SteampunkSound) return;
+
+        // Ambient quick cycle button in header
+        if (ambientSoundBtn) {
+            ambientSoundBtn.addEventListener('click', () => {
+                const nextTrack = window.SteampunkSound.cycleAmbient();
+                const labels = {
+                    none: '배경음 꺼짐',
+                    rain: '🌧️ 심야 빗소리 재생 중',
+                    fireplace: '🪵 벽난로 장작 재생 중',
+                    library: '📚 서재 앰비언트 재생 중'
+                };
+                showToast(labels[nextTrack] || '배경음 전환');
+                updateAmbientDrawerUI();
+            });
+        }
+
+        // Ambient chips in drawer
+        document.querySelectorAll('.ambient-chip').forEach(chip => {
+            chip.addEventListener('click', () => {
+                const track = chip.dataset.ambient;
+                window.SteampunkSound.startAmbient(track, true);
+                updateAmbientDrawerUI();
+                const labels = {
+                    none: '배경음 꺼짐',
+                    rain: '🌧️ 심야 빗소리 재생 중',
+                    fireplace: '🪵 벽난로 장작 재생 중',
+                    library: '📚 서재 앰비언트 재생 중'
+                };
+                showToast(labels[track] || '배경음 설정');
+            });
+        });
+
+        // Ambient volume slider
+        if (ambientVolumeSlider) {
+            ambientVolumeSlider.value = window.SteampunkSound.ambientVolume;
+            ambientVolumeSlider.addEventListener('input', (e) => {
+                window.SteampunkSound.setAmbientVolume(e.target.value);
+            });
+        }
+
+        // SFX volume slider
+        if (sfxVolumeSlider) {
+            sfxVolumeSlider.value = window.SteampunkSound.sfxVolume;
+            if (sfxVolumeVal) sfxVolumeVal.textContent = `${Math.round(window.SteampunkSound.sfxVolume * 100)}%`;
+            sfxVolumeSlider.addEventListener('input', (e) => {
+                window.SteampunkSound.setSfxVolume(e.target.value);
+                if (sfxVolumeVal) sfxVolumeVal.textContent = `${Math.round(e.target.value * 100)}%`;
+            });
+        }
+
+        window.addEventListener('lanovel:ambient-changed', updateAmbientDrawerUI);
+        updateAmbientDrawerUI();
+    }
+
+    function updateAmbientDrawerUI() {
+        if (!window.SteampunkSound) return;
+        const currentTrack = window.SteampunkSound.getAmbientTrack();
+        const labels = {
+            none: '꺼짐',
+            rain: '심야 빗소리',
+            fireplace: '벽난로 장작',
+            library: '서재 앰비언트'
+        };
+        if (ambientTrackStatus) {
+            ambientTrackStatus.textContent = labels[currentTrack] || '꺼짐';
+        }
+        document.querySelectorAll('.ambient-chip').forEach(chip => {
+            chip.classList.toggle('active', chip.dataset.ambient === currentTrack);
+        });
+        if (ambientSoundBtn) {
+            ambientSoundBtn.classList.toggle('active', currentTrack !== 'none');
+        }
+    }
+
     // Window Resize Handling
     let resizeTimer;
     let lastWindowWidth = window.innerWidth;
@@ -1874,6 +2030,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     // --- Start ---
+    initAmbientSoundUI();
     loadPreferences();
     await loadBook();
 });

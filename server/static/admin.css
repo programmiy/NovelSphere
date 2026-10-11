@@ -503,6 +503,35 @@ button, input, select, textarea {
     box-shadow: 0 0 16px rgba(236, 72, 153, 0.35);
 }
 
+.cyber-ambient-btn {
+    font-size: 12px;
+    font-weight: 600;
+    border-color: rgba(56, 189, 248, 0.35) !important;
+    color: #38bdf8 !important;
+    background: rgba(56, 189, 248, 0.08) !important;
+    box-shadow: 0 0 10px rgba(56, 189, 248, 0.15);
+    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.cyber-ambient-btn:hover {
+    background: rgba(56, 189, 248, 0.22) !important;
+    border-color: #38bdf8 !important;
+    box-shadow: 0 0 18px rgba(56, 189, 248, 0.45);
+}
+
+.cyber-ambient-btn.ambient-active {
+    background: linear-gradient(135deg, rgba(14, 165, 233, 0.3), rgba(168, 85, 247, 0.25)) !important;
+    border-color: #38bdf8 !important;
+    color: #e0f2fe !important;
+    box-shadow: 0 0 18px rgba(14, 165, 233, 0.45), inset 0 0 12px rgba(56, 189, 248, 0.2);
+    animation: cyberPulseGlow 3s infinite alternate;
+}
+
+@keyframes cyberPulseGlow {
+    0% { box-shadow: 0 0 14px rgba(14, 165, 233, 0.35); }
+    100% { box-shadow: 0 0 22px rgba(168, 85, 247, 0.6); }
+}
+
 /* ==========================================================================
    Master Controls HUD Decks
    ========================================================================== */
