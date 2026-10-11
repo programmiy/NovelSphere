@@ -21,11 +21,22 @@
         drone: '/static/audio/cyber_drone.mp3',
         rain: '/static/audio/rain.wav',
         library: '/static/audio/library_ambient.wav',
-        fireplace: '/static/audio/fireplace.wav'
+        fireplace: '/static/audio/fireplace.wav',
+        // 8-Bit Chiptune Cyberpunk Dot Game Audio
+        arcade: '/static/audio/cyber_arcade_bgm.mp3',
+        dotLoading: '/static/audio/cyber_dot_loading.mp3',
+        dotBlip1: '/static/audio/dot_blip1.ogg',
+        dotBlip2: '/static/audio/dot_blip2.ogg',
+        dotBlip3: '/static/audio/dot_blip3.ogg',
+        dotPulse: '/static/audio/dot_pulse.ogg',
+        dotCharge: '/static/audio/dot_charge.ogg',
+        dotSuccess: '/static/audio/dot_success.ogg',
+        dotGlitch: '/static/audio/dot_glitch.ogg'
     };
 
     const AMBIENT_TRACK_LIST = [
         { id: 'none', label: '배경음: 끄기', icon: 'headphones' },
+        { id: 'arcade', label: '사이버 아케이드 (8-Bit)', icon: 'videogame_asset' },
         { id: 'drone', label: '퀀텀 드론 (Lo-Fi)', icon: 'graphic_eq' },
         { id: 'rain', label: '사이버 빗소리', icon: 'water_drop' },
         { id: 'library', label: '나이트 룸 (서재)', icon: 'nights_stay' },
@@ -56,9 +67,19 @@
             this.hoverPoolSize = 4;
             this.lastHoverTime = 0;
 
+            // Chiptune dot blip pool for high-frequency dot animation ticks
+            this.dotBlipPool = [];
+            this.dotBlipIndex = 0;
+            this.dotBlipPoolSize = 6;
+            this.lastDotBlipTime = 0;
+
             // Ambient audio elements
             this.ambientAudio = null;
             this.ambientFadeInterval = null;
+
+            // Loader background chiptune audio
+            this.loadingAudio = null;
+            this.loadingFadeInterval = null;
 
             this._initPools();
 
@@ -89,17 +110,35 @@
                     a.preload = 'auto';
                     this.hoverPool.push(a);
                 }
+
+                // 8-bit chiptune dot blips
+                const blipSources = [CYBER_AUDIO_ASSETS.dotBlip1, CYBER_AUDIO_ASSETS.dotBlip2, CYBER_AUDIO_ASSETS.dotBlip3];
+                for (let i = 0; i < this.dotBlipPoolSize; i++) {
+                    const a = new Audio(blipSources[i % blipSources.length]);
+                    a.preload = 'auto';
+                    this.dotBlipPool.push(a);
+                }
+
                 this.powerupAudio = new Audio(CYBER_AUDIO_ASSETS.powerup);
                 this.successAudio = new Audio(CYBER_AUDIO_ASSETS.success);
                 this.warningAudio = new Audio(CYBER_AUDIO_ASSETS.warning);
                 this.toggleAudio = new Audio(CYBER_AUDIO_ASSETS.toggle);
                 this.pulseAudio = new Audio(CYBER_AUDIO_ASSETS.pulse);
 
+                this.dotChargeAudio = new Audio(CYBER_AUDIO_ASSETS.dotCharge);
+                this.dotPulseAudio = new Audio(CYBER_AUDIO_ASSETS.dotPulse);
+                this.dotSuccessAudio = new Audio(CYBER_AUDIO_ASSETS.dotSuccess);
+                this.dotGlitchAudio = new Audio(CYBER_AUDIO_ASSETS.dotGlitch);
+
                 this.powerupAudio.preload = 'auto';
                 this.successAudio.preload = 'auto';
                 this.warningAudio.preload = 'auto';
                 this.toggleAudio.preload = 'auto';
                 this.pulseAudio.preload = 'auto';
+                this.dotChargeAudio.preload = 'auto';
+                this.dotPulseAudio.preload = 'auto';
+                this.dotSuccessAudio.preload = 'auto';
+                this.dotGlitchAudio.preload = 'auto';
             } catch (e) {
                 console.warn('[CyberSound] Audio pool init warning:', e);
             }
@@ -219,6 +258,124 @@
                 this.warningAudio.volume = Math.max(0, Math.min(1, this.sfxVolume * 0.5));
                 this.warningAudio.playbackRate = 1.25;
                 this.warningAudio.play().catch(() => {});
+            } catch (_) {}
+        }
+
+        // ==========================================
+        // 8-BIT CHIPTUNE DOT GAME LOADER FX & BGM
+        // ==========================================
+
+        startLoadingAudio() {
+            if (!this.enabled) return;
+            try {
+                this.playDotCharge();
+
+                if (this.loadingAudio) {
+                    this.loadingAudio.pause();
+                    this.loadingAudio = null;
+                }
+
+                const audio = new Audio(CYBER_AUDIO_ASSETS.dotLoading);
+                audio.loop = true;
+                audio.volume = 0;
+                this.loadingAudio = audio;
+
+                const promise = audio.play();
+                if (promise !== undefined) {
+                    promise.then(() => {
+                        // Smoothly fade-in retro chiptune loading soundtrack
+                        clearInterval(this.loadingFadeInterval);
+                        let vol = 0;
+                        const targetVol = Math.max(0.05, Math.min(0.8, this.sfxVolume * 0.45));
+                        this.loadingFadeInterval = setInterval(() => {
+                            vol = Math.min(targetVol, vol + 0.05);
+                            if (this.loadingAudio) this.loadingAudio.volume = vol;
+                            if (vol >= targetVol) {
+                                clearInterval(this.loadingFadeInterval);
+                                this.loadingFadeInterval = null;
+                            }
+                        }, 40);
+                    }).catch(() => {});
+                }
+            } catch (_) {}
+        }
+
+        stopLoadingAudio(isSuccess = true) {
+            clearInterval(this.loadingFadeInterval);
+            if (this.loadingAudio) {
+                const audio = this.loadingAudio;
+                this.loadingAudio = null;
+                let vol = audio.volume;
+                const fadeOut = setInterval(() => {
+                    vol = Math.max(0, vol - 0.08);
+                    audio.volume = vol;
+                    if (vol <= 0) {
+                        clearInterval(fadeOut);
+                        audio.pause();
+                        audio.src = '';
+                    }
+                }, 30);
+            }
+
+            if (this.enabled) {
+                if (isSuccess) {
+                    this.playDotSuccess();
+                } else {
+                    this.playDotGlitch();
+                }
+            }
+        }
+
+        playDotBlip() {
+            if (!this.enabled || !this.dotBlipPool.length) return;
+            const now = performance.now();
+            if (now - this.lastDotBlipTime < 65) return; // Prevent sound cluttering
+            this.lastDotBlipTime = now;
+
+            try {
+                const audio = this.dotBlipPool[this.dotBlipIndex];
+                this.dotBlipIndex = (this.dotBlipIndex + 1) % this.dotBlipPoolSize;
+                audio.currentTime = 0;
+                audio.volume = Math.max(0, Math.min(1, this.sfxVolume * 0.35));
+                audio.playbackRate = 0.95 + Math.random() * 0.1;
+                audio.play().catch(() => {});
+            } catch (_) {}
+        }
+
+        playDotCharge() {
+            if (!this.enabled || !this.dotChargeAudio) return;
+            try {
+                this.dotChargeAudio.currentTime = 0;
+                this.dotChargeAudio.volume = Math.max(0, Math.min(1, this.sfxVolume * 0.5));
+                this.dotChargeAudio.play().catch(() => {});
+            } catch (_) {}
+        }
+
+        playDotPulse() {
+            if (!this.enabled || !this.dotPulseAudio) return;
+            try {
+                this.dotPulseAudio.currentTime = 0;
+                this.dotPulseAudio.volume = Math.max(0, Math.min(1, this.sfxVolume * 0.45));
+                this.dotPulseAudio.playbackRate = 0.98 + Math.random() * 0.06;
+                this.dotPulseAudio.play().catch(() => {});
+            } catch (_) {}
+        }
+
+        playDotSuccess() {
+            if (!this.enabled || !this.dotSuccessAudio) return;
+            try {
+                this.dotSuccessAudio.currentTime = 0;
+                this.dotSuccessAudio.volume = Math.max(0, Math.min(1, this.sfxVolume * 0.8));
+                this.dotSuccessAudio.play().catch(() => {});
+            } catch (_) {}
+        }
+
+        playDotGlitch() {
+            if (!this.enabled || !this.dotGlitchAudio) return;
+            try {
+                this.dotGlitchAudio.currentTime = 0;
+                this.dotGlitchAudio.volume = Math.max(0, Math.min(1, this.sfxVolume * 0.6));
+                this.dotGlitchAudio.play().catch(() => {});
             } catch (_) {}
         }
 
@@ -774,9 +931,8 @@
             this.currentIndex = (this.currentIndex + 1) % this.playlist.length;
             this.frameInAnim = 0;
             this.updateHudTag();
-            if (manual && window.CyberSound) {
-                window.CyberSound.playClick();
-                window.CyberSound.playGlitch();
+            if (manual && soundEngine) {
+                soundEngine.playDotPulse();
             }
         }
 
@@ -1430,6 +1586,7 @@
 
             this.progress = 0;
             this.targetProgress = 0;
+            this.lastBlipProgress = 0;
             this.animTimer = null;
             this.stepTimer = null;
             this.isFinishing = false;
@@ -1462,6 +1619,7 @@
                         } else if (disp === 'none' && this.isActive && !this.isFinishing) {
                             this.stopTimers();
                             this.isActive = false;
+                            soundEngine.stopLoadingAudio(false);
                             if (this.screen) this.screen.stop();
                         }
                     }
@@ -1476,7 +1634,11 @@
             this.isActive = true;
             this.isFinishing = false;
             this.progress = 0;
+            this.lastBlipProgress = 0;
             this.targetProgress = 18;
+
+            // Trigger chiptune dot loading background soundtrack & start charge sound
+            soundEngine.startLoadingAudio();
 
             // Reset visual states
             this.container.classList.remove('fade-out');
@@ -1534,6 +1696,12 @@
                 this.barEl.style.width = `${Math.min(100, this.progress)}%`;
             }
 
+            // Play retro chiptune blip as dot progress increments
+            if (p >= this.lastBlipProgress + 4) {
+                this.lastBlipProgress = p;
+                soundEngine.playDotBlip();
+            }
+
             // Update status text
             let currentText = this.statusStages[0].text;
             for (const stage of this.statusStages) {
@@ -1568,7 +1736,8 @@
                         if (this.card) this.card.classList.add('loader-complete');
                         if (this.statusEl) this.statusEl.textContent = '동기화 완료! 단락 패널 준비됨';
 
-                        // Sci-fi audio chime
+                        // Stop loading soundtrack and play retro chiptune level-up fanfare + sci-fi notify
+                        soundEngine.stopLoadingAudio(true);
                         soundEngine.playActionPulse();
 
                         // Short pause to appreciate 100% completion then fade out
