@@ -1,107 +1,129 @@
-# LANOVEL
+# 📖 LANOVEL
 
-## 프로젝트 개요
+> **대규모 일본어 웹소설 AI 번역, 뷰어, 품질 검수 및 로컬 코퍼스 인텔리전스 플랫폼**
 
-LANOVEL은 웹 기반의 라노벨 번역 지원 도구입니다. FastAPI 백엔드와 웹 UI를 통해 번역 작업을 효율적으로 관리하고, Celery를 활용한 비동기 작업 처리로 대규모 번역 및 크롤링 작업을 안정적으로 수행합니다. Pydantic 기반의 설정 관리, SQLAlchemy를 통한 데이터베이스 관리, 그리고 Pytest를 활용한 테스트 자동화로 프로젝트의 안정성과 유지보수성을 높였습니다.
+LANOVEL은 소설가가 되자, 카쿠요무, 노벨업, 하멜른 등의 일본어 웹소설을 Google Gemini 모델군을 활용하여 고품질 한국어로 번역하고, 수십만 건의 누적 코퍼스를 체계적으로 관리·감상·교정할 수 있는 종합 번역 관리 시스템입니다.
 
-## 주요 기능
+---
 
--   **웹 기반 번역 UI**: 사용자 친화적인 웹 인터페이스를 통해 번역 작업을 수행합니다.
--   **비동기 작업 처리**: Celery와 Redis를 사용하여 번역, 크롤링 등 시간이 오래 걸리는 작업을 백그라운드에서 안정적으로 처리합니다.
--   **데이터베이스 관리**: SQLAlchemy를 통해 번역 데이터 및 관련 정보를 체계적으로 관리합니다.
--   **API 문서 자동화**: FastAPI의 자동 문서 생성 기능(Swagger UI)을 통해 API 명세를 쉽게 확인하고 활용할 수 있습니다.
--   **컨테이너 기반 개발/배포**: Docker 및 Docker Compose를 활용하여 개발 환경 설정을 간소화하고 배포를 표준화합니다.
+## 🌟 주요 핵심 기능
 
-## 시작하기
+### 1. 🤖 다중 모델 AI 번역 & 쿼터 제어
+- **Gemini 3.x Flash 다중 모델 파이프라인**: 문장의 길이와 난이도에 따라 `gemini-3.0-flash`, `3.6-flash`, `3.7-flash`, `3.8-flash`로 자동 분배 처리.
+- **RPM Breather & 쿼터 동기화**: API 분당 호출 한도(RPM) 초과 방지 지연 제어 및 쿼터 초기화 시각(16시/17시) 기준 일일 집계 관리.
+- **제외 번역 백업/복원**: 불필요한 광고, 배너, 공지사항 문장을 번역에서 원천 차단하고 안전하게 동기화.
+- **ntfy 실시간 푸시 알림**: 번역 진행률(25%, 50%, 75%, 100%) 및 챕터 완료 시 스마트폰/데스크톱 실시간 알림.
 
-### 필수 조건
+### 2. ⚡ 34만+ 로컬 코퍼스 AI 엔진 (Corpus AI)
+- **외부 API 의존 없는 초고속 로컬 엔진**: 34만 문장의 누적 데이터를 증류한 전용 색인 DB(`corpus_ai.db`)로 0.05초 내 룩업.
+- **2-Tier EBMT 번역 초안 합성**: 템플릿 치환(Tier 1)과 N-gram 구문 스티칭(Tier 2) 기반의 고속 초안 생성.
+- **어투 일관성 신호등 & 고스트 텍스트**: 문체(존댓말/반말, 종결어미) 일치도 분석 및 실시간 자동완성 제안.
+- **어휘 분해 & 인터랙티브 퀴즈**: 형태소 분석 기반 단어 분해 및 듀오링고 스타일의 단어/문장 퀴즈 지원.
 
--   Python 3.9+
--   Docker 및 Docker Compose (컨테이너 환경에서 실행 시)
+### 3. 🔍 AI 번역 품질 검수 & 재재번역 (AI Review)
+- **4대 악성 결함 탐지**: 다국어 오염(일본어/간체자/외국어 누출), 번역문 밀림(Off-by-One), AI Slop(헛소리/무한루프), 비문 탐지.
+- **4분위수(P25, P50, P75) 재재번역 큐**: 문장 길이에 맞춘 최적 모델 매칭 및 재번역 대기열 운영.
+- **Human-in-the-Loop 검수 UI**: 3D 맥락 패널, 틴더형 카드 스와이프, 즉시 편집 가능한 인풋 필드 제공.
 
-### 1. Docker를 이용한 빠른 시작 (권장)
+### 4. 🎨 에스테틱 UI & 리더 경험
+- **서재 (`/library`)**: 3D 기어 회전, 스팀 배관 증기 파티클, 5구 압력계 아날로그 게이지가 작동하는 **증기 차분기관(Steam Difference Engine)** 테마.
+- **뷰어 (`/viewer`)**: 빛나는 닉시관 카운터와 레트로 진공관 앰비언트 글로우가 적용된 **3D 진공관 닉시관(Nixie Tube)** 테마.
+- **관리자 (`/admin`)**: 하단 슬라이딩 도크(Dock)형 유사 번역 추천 패널, 사전(네이버/Weblio/Jisho) 즉시 연동.
+- **DB 에디터 (`/db_editor`)**: 인명·용어 불일치 린터 교정기 및 정규식 일괄 치환 지원.
 
-Docker Compose를 사용하면 모든 서비스(웹 서버, Celery 워커, Redis)를 한 번에 쉽게 실행할 수 있습니다.
+### 5. 📱 멀티 플랫폼 지원
+- **크롬 확장 프로그램 (`extension`)**: 소설 연재 사이트에서 실시간 자동 번역 및 다음화 자동 이동.
+- **Flutter 모바일 앱 (`mobile_app`)**: Hyper-Aesthetic Luminary UI, 고속 양방향 데이터 동기화, OTA 업데이트.
+- **모바일 원격 제어 (`/remote`)**: 모바일 앱에서 PC 번역 확장을 새로고침/일시정지/다음화 예약할 수 있는 리모컨 허브.
 
-1.  **`docker-compose.yml` 설정**:
-    프로젝트 루트에 있는 `docker-compose.yml` 파일을 열고 `GEMINI_API_KEY` 환경 변수 값을 실제 Gemini API 키로 교체합니다.
+---
 
-    ```yaml
-    # ...
-    environment:
-      - GEMINI_API_KEY=YOUR_GEMINI_API_KEY_HERE # <-- 여기에 실제 API 키 입력
-    # ...
-    ```
+## 🛠️ 시스템 아키텍처
 
-2.  **애플리케이션 실행**:
-    프로젝트 루트 디렉토리에서 다음 명령어를 실행합니다.
+```
+LANOVEL/
+├── server/                 # FastAPI 백엔드
+│   ├── routers/            # 21개 모듈형 라우터 (ui, translation, admin, corpus_ai 등)
+│   ├── services/           # 11개 비즈니스 서비스 (translation_engine, corpus_ai_service 등)
+│   ├── templates/          # Jinja2 동적 템플릿 (library, viewer, admin 등)
+│   ├── static/             # CSS/JS 정적 에셋 및 FX 애니메이션
+│   ├── models.py           # SQLAlchemy ORM 스키마
+│   ├── server.py           # FastAPI 앱 진입점 및 백그라운드 태스크
+│   └── settings.py         # Pydantic 기반 환경설정 (.env 연동)
+├── extension/              # Chrome 번역 수집 및 자동 네비게이션 확장 프로그램
+├── mobile_app/             # Flutter 기반 모바일 뷰어 및 리모트 앱
+├── scripts/                # 데이터 추출, 코퍼스 색인 빌드 및 진단 유틸리티
+├── tests/                  # Pytest 기반 단위/통합 테스트 스위트 (170+ 테스트)
+└── main.py                 # 데스크톱 Pywebview 런처 & 트레이 아이콘
+```
 
-    ```bash
-    docker-compose up --build
-    ```
+---
 
-    `--build` 옵션은 첫 실행 시 이미지를 빌드하며, 이후 변경 사항이 있을 때만 다시 빌드합니다.
+## 🚀 빠른 시작
 
-3.  **접속**:
-    웹 브라우저에서 `http://localhost:8000`으로 접속하여 애플리케이션을 확인할 수 있습니다.
+### 1. 필수 조건
+- Python 3.11+
+- Google Gemini API Key
 
-### 2. 로컬 환경에서 실행 (Docker 없이)
+### 2. 환경 설정
+1. 가상환경 생성 및 활성화:
+   ```bash
+   python -m venv venv
+   # Windows PowerShell
+   .\venv\Scripts\Activate.ps1
+   # macOS / Linux
+   source venv/bin/activate
+   ```
 
-Docker를 사용하지 않고 로컬 환경에서 직접 실행하려면 다음 단계를 따릅니다.
+2. 의존성 패키지 설치:
+   ```bash
+   pip install -r requirements.txt
+   ```
 
-1.  **가상 환경 설정**:
-    ```bash
-    python -m venv venv
-    .\venv\Scripts\activate # Windows
-    source venv/bin/activate # macOS/Linux
-    ```
+3. 환경 변수 파일(`.env`) 생성:
+   ```ini
+   GEMINI_API_KEY="your-gemini-api-key-here"
+   DEBUG=False
+   SERVER_HOST=0.0.0.0
+   SERVER_PORT=8000
+   ```
 
-2.  **의존성 설치**:
-    ```bash
-    pip install -r requirements.txt
-    ```
-    **주의**: `requirements.txt`에 로컬 경로 의존성(`-e d:\...`)이 포함되어 있을 경우, 해당 라인을 제거하거나 적절히 수정해야 합니다.
+### 3. 애플리케이션 실행
 
-3.  **환경 변수 설정**:
-    프로젝트 루트에 `.env` 파일을 생성하고 필요한 환경 변수를 설정합니다. 최소한 `GEMINI_API_KEY`는 설정해야 합니다.
+#### 옵션 A. 데스크톱 앱 모드 (Pywebview 런처)
+```bash
+python main.py
+```
+* 시스템 트레이 아이콘 및 독립 웹뷰 창으로 LANOVEL 서재가 실행됩니다.
 
-    ```ini
-    GEMINI_API_KEY="YOUR_GEMINI_API_KEY_HERE"
-    REDIS_URL="redis://localhost:6379/0" # Redis를 로컬에 설치하여 실행해야 합니다.
-    ```
+#### 옵션 B. 순수 FastAPI 웹 서버 모드
+```bash
+uvicorn server.server:app --host 0.0.0.0 --port 8000 --reload
+```
+* 브라우저에서 `http://localhost:8000/library` 로 접속합니다.
 
-4.  **Redis 서버 실행**:
-    Celery를 사용하려면 로컬에 Redis 서버가 실행 중이어야 합니다. Redis 설치 및 실행 방법은 Redis 공식 문서를 참조하세요.
+---
 
-5.  **애플리케이션 실행**:
-    ```bash
-    python main.py
-    ```
-    이 명령은 FastAPI 서버, Celery 워커, 그리고 웹뷰 데스크톱 애플리케이션을 함께 실행합니다.
+## 🧪 테스트 실행
 
-## 설정
+프로젝트의 전체 테스트 스위트를 검증합니다:
 
-애플리케이션 설정은 `server/settings.py` 파일에서 관리됩니다. `Pydantic BaseSettings`를 사용하여 환경 변수 또는 `.env` 파일로부터 설정을 로드합니다. 민감한 정보는 `.env` 파일을 통해 관리하는 것을 권장합니다.
+```bash
+pytest
+```
+* 170개 이상의 단위 및 통합 테스트가 모든 라우터, 서비스, 쿼터 및 변환 무결성을 검증합니다.
 
-## 개발 워크플로우
+---
 
-이 프로젝트는 Git-Flow를 단순화한 브랜치 전략을 따릅니다.
+## 📑 API 문서
 
-### 브랜치 종류
+서버 실행 후 다음 주소에서 Swagger 및 ReDoc 대화형 API 명세를 확인할 수 있습니다:
+- **Swagger UI**: `http://localhost:8000/docs`
+- **ReDoc**: `http://localhost:8000/redoc`
 
--   **`main`**: 실제 배포 가능한 안정적인 버전의 코드를 관리하는 브랜치입니다.
--   **`extra`**: 새로운 기능 개발, 버그 수정 등 모든 코드 변경 작업을 진행하는 브랜치입니다.
--   **`backup`**: `main` 브랜치에서 발생할 수 있는 오류에 대비하여 이전 버전의 코드를 임시 저장하는 브랜치입니다.
+---
 
-### 개발 및 병합 절차
+## 🌿 브랜치 전략
 
-1.  **작업 시작**: 모든 개발 작업은 `extra` 브랜치에서 직접 진행합니다.
-2.  **개발 및 테스트**: `extra` 브랜치에서 코드를 작성하고 수정한 후, 로컬 환경에서 충분히 테스트하여 오류가 없는지 확인합니다.
-3.  **`main`으로 병합**: `extra` 브랜치의 기능이 안정적으로 동작하고 배포할 준비가 되면, `main` 브랜치로 병합(merge)합니다.
-
-## API 문서
-
-FastAPI는 자동으로 API 문서를 생성합니다. 애플리케이션이 실행 중일 때 다음 URL에서 API 명세를 확인할 수 있습니다:
-
--   **Swagger UI**: `http://localhost:8000/docs`
--   **ReDoc**: `http://localhost:8000/redoc`
+- `main`: 안정화된 배포 브랜치
+- `extra`: 활성 개발, 신규 기능 구현 및 리팩토링 브랜치
