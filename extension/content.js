@@ -981,20 +981,24 @@ function renderSeparatorExcludePanel(items) {
         <div class="separator-exclude-header">
             <span class="separator-exclude-title">
                 <span>🛡️</span>
-                <span>구분선 및 후기 단락 자동 제외 (<strong id="sep-exclude-count">${items.length}</strong>건)</span>
+                <span>구분선 및 제외 단락 (<strong id="sep-exclude-count">${items.length}</strong>건)</span>
             </span>
             <div class="separator-exclude-actions">
+                <button id="restore-all-sep-exclude-btn" class="sep-exclude-restore-all-btn" title="제외된 단락들을 모두 번역본으로 복원합니다">🔄 전체 복원</button>
                 <button id="close-sep-exclude-btn" class="sep-exclude-close-btn" title="알림 닫기">&times;</button>
             </div>
         </div>
         <div class="separator-exclude-desc">
-            소설 구분선 설정과 일치하여 해당 단락 및 후속 단락이 번역에서 영구 제외·삭제되었습니다.
+            구분선 설정 등으로 제외된 단락입니다. 잘못 제외된 경우 <strong>[복원]</strong>을 누르면 번역본이 즉시 원상복구됩니다.
         </div>
         <div class="separator-exclude-body" id="separator-exclude-cards">
             ${items.map(item => {
                 const matchBadge = item.isSubsequent 
                     ? `(구분선 '${escapeHtml(item.matchedSep || '')}' 이후 단락)` 
-                    : `(일치 구분선: "${escapeHtml(item.matchedSep || '')}")`;
+                    : `(구분선: "${escapeHtml(item.matchedSep || '')}")`;
+                const transPreview = item.translated && item.translated.trim() 
+                    ? escapeHtml(item.translated) 
+                    : '(보관된 번역 없음)';
                 return `
                     <div class="separator-exclude-card" data-pid="${escapeHtml(item.pid || '')}">
                         <div class="sep-card-pid">
@@ -1002,13 +1006,18 @@ function renderSeparatorExcludePanel(items) {
                             <span class="sep-card-match">${matchBadge}</span>
                         </div>
                         <div class="sep-card-ori" title="${escapeHtml(item.original || '')}">원문: ${escapeHtml(item.original || '')}</div>
-                        <div class="sep-card-tra" title="${escapeHtml(item.translated || '')}">제외된 번역: <del>${escapeHtml(item.translated || '')}</del></div>
+                        <div class="sep-card-tra" title="${transPreview}">제외된 번역: <del>${transPreview}</del></div>
+                        <div class="sep-card-footer">
+                            <span class="sep-card-hint">클릭 시 본문 이동</span>
+                            <button class="sep-card-restore-btn" data-pid="${escapeHtml(item.pid || '')}" title="이 단락만 복원">🔄 복원</button>
+                        </div>
                     </div>
                 `;
             }).join('')}
         </div>
     `;
 
+    // 닫기 버튼
     const closeBtn = document.getElementById('close-sep-exclude-btn');
     if (closeBtn) {
         closeBtn.addEventListener('click', () => {
@@ -1016,14 +1025,160 @@ function renderSeparatorExcludePanel(items) {
         });
     }
 
+    // 전체 복원 버튼
+    const restoreAllBtn = document.getElementById('restore-all-sep-exclude-btn');
+    if (restoreAllBtn) {
+        restoreAllBtn.addEventListener('click', async () => {
+            if (!confirm(`제외된 ${items.length}개의 단락을 모두 복원하시겠습니까?`)) return;
+            restoreAllBtn.disabled = true;
+            restoreAllBtn.textContent = '⏳ 복원 중...';
+            await restoreExcludedItems([...items]);
+        });
+    }
+
+    // 카드 내부 클릭 (개별 복원 버튼 및 카드 이동)
     const cardContainer = document.getElementById('separator-exclude-cards');
     if (cardContainer) {
-        cardContainer.addEventListener('click', (e) => {
+        cardContainer.addEventListener('click', async (e) => {
+            const restoreBtn = e.target.closest('.sep-card-restore-btn');
+            if (restoreBtn) {
+                e.stopPropagation();
+                const card = restoreBtn.closest('.separator-exclude-card');
+                const pid = card ? card.dataset.pid : null;
+                const targetItem = items.find(it => String(it.pid) === String(pid));
+                if (targetItem) {
+                    restoreBtn.disabled = true;
+                    restoreBtn.textContent = '⏳...';
+                    await restoreExcludedItems([targetItem]);
+                }
+                return;
+            }
+
             const card = e.target.closest('.separator-exclude-card');
-            if (card && card.dataset.pid) {
+            if (card && card.dataset.pid && card.dataset.pid !== '알 수 없음') {
                 focusAndScrollToPid(card.dataset.pid);
             }
         });
+    }
+}
+
+async function restoreExcludedItems(itemsToRestore) {
+    if (!itemsToRestore || itemsToRestore.length === 0) return;
+
+    try {
+        const payload = {
+            url: getCleanUrl(),
+            originals: itemsToRestore.map(it => it.original),
+            items: itemsToRestore.map(it => ({
+                pid: it.pid && it.pid !== '알 수 없음' ? it.pid : null,
+                original: it.original,
+                translated: it.translated || null,
+                title: currentNovelTitle || ""
+            }))
+        };
+
+        const response = await fetch('http://127.0.0.1:8001/translations/restore_excluded', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        if (!response.ok) {
+            console.error(`[RestoreExcluded] 서버 복원 처리 실패 (상태 코드: ${response.status})`);
+            alert('번역 복원 처리 중 서버 오류가 발생했습니다.');
+            return;
+        }
+
+        const resData = await response.json();
+        console.log('[RestoreExcluded] 서버 복원 성공:', resData);
+
+        // 1. 제외 목록(exclusionSet) 및 클라이언트 상태 복원
+        itemsToRestore.forEach(item => {
+            if (item.pid && item.pid !== '알 수 없음') {
+                userDeletedTranslationPids.delete(String(item.pid));
+                if (item.translated) {
+                    translationCache.set(item.pid, item.translated);
+                }
+            }
+            if (item.original) {
+                exclusionSet.delete(item.original);
+                const cleaned = item.original.replace(/([あアいイうウえエおオ])\1{2,}/g, '$1ー');
+                exclusionSet.delete(cleaned);
+            }
+        });
+
+        // 2. 사이드바 테이블에 행 복원
+        itemsToRestore.forEach(item => {
+            if (item.translated && item.pid && item.pid !== '알 수 없음') {
+                addEntryToSidebar({
+                    id: item.id || Date.now(),
+                    pid: item.pid,
+                    original: item.original,
+                    translated: item.translated
+                });
+            }
+        });
+        updateEmptyState();
+
+        // 3. 페이지에 번역이 적용되어 있는 상태라면 본문 DOM에도 즉시 번역문 적용
+        const isApplied = document.getElementById('sidebar-apply-toggle-btn')?.classList.contains('applied');
+        if (isApplied) {
+            const validItems = itemsToRestore.filter(it => it.translated && it.pid && it.pid !== '알 수 없음');
+            if (validItems.length > 0) {
+                applyTranslationsToPage(validItems, false);
+            }
+        }
+
+        // 4. separatorExcludedItems 배열에서 복원된 항목 제거
+        const restoredOriginals = new Set(itemsToRestore.map(it => it.original));
+        separatorExcludedItems = separatorExcludedItems.filter(it => !restoredOriginals.has(it.original));
+
+        // 5. 패널 다시 렌더링 (남은 항목 없으면 자동 닫힘)
+        renderSeparatorExcludePanel(separatorExcludedItems);
+
+        // 6. 안내 메시지
+        logToSidebar(`[복원 완료] ${itemsToRestore.length}개 단락이 정상 복원되었습니다.`, 'log-success');
+
+    } catch (err) {
+        console.error('[RestoreExcluded] 복원 실행 중 에러 발생:', err);
+        alert('번역 복원 중 오류가 발생했습니다.');
+    }
+}
+
+async function openExcludedManager() {
+    try {
+        const url = getCleanUrl();
+        const res = await fetch(`http://127.0.0.1:8001/translations/excluded_details?url=${encodeURIComponent(url)}`);
+        if (!res.ok) {
+            alert('제외 목록을 가져오지 못했습니다.');
+            return;
+        }
+        const data = await res.json();
+        const excludedList = (data.excluded_items || []).map(item => ({
+            id: item.id,
+            pid: item.pid || '알 수 없음',
+            original: item.original,
+            translated: item.translated || '',
+            matchedSep: '제외 목록',
+            isSubsequent: false
+        }));
+
+        if (excludedList.length === 0) {
+            alert('현재 페이지에 제외된 단락이 없습니다.');
+            return;
+        }
+
+        separatorExcludedItems = excludedList;
+        renderSeparatorExcludePanel(excludedList);
+        
+        // 구분선 패널이 열려있다면 닫기
+        const sepPanel = document.getElementById('separator-settings-panel');
+        if (sepPanel) sepPanel.style.display = 'none';
+
+        showSidebar();
+    } catch (e) {
+        console.error('Failed to load excluded manager', e);
+        alert('제외 목록을 불러오는 중 오류가 발생했습니다.');
     }
 }
 
@@ -1485,6 +1640,7 @@ function injectSidebar() {
         <div class="sidebar-header">
             <h3>🗾 번역 워크스페이스</h3>
             <div class="sidebar-controls">
+                <button id="sidebar-excluded-list-btn" title="제외된 단락 확인 및 복원">🛡️</button>
                 <button id="separator-settings-btn" title="소설별 구분선 설정">⚙️</button>
                 <button id="stop-translation-btn" title="번역 중지" style="display:none;">⏹️</button>
                 <button id="resume-translation-btn" title="번역 재개" style="display:none;">▶️</button>
@@ -1530,6 +1686,7 @@ function injectSidebar() {
                 <div class="sep-panel-footer">
                     <button id="save-separators-btn" class="sep-save-btn">💾 설정 저장</button>
                     <button id="reset-separators-btn" class="sep-reset-btn">기본값 복원</button>
+                    <button id="open-excluded-manager-btn" class="sep-manage-excluded-btn" title="현재 페이지에서 제외된 모든 단락을 조회하고 복원합니다">🛡️ 제외 단락 확인/복원</button>
                 </div>
             </div>
         </div>
@@ -1905,6 +2062,16 @@ function setupEventListeners() {
             resetSeparatorsBtn.textContent = '기본값 복원';
             logToSidebar(`[${currentNovelTitle}] 구분선 설정이 기본값으로 복원되었습니다.`);
         });
+    }
+
+    const openExcludedManagerBtn = document.getElementById('open-excluded-manager-btn');
+    if (openExcludedManagerBtn) {
+        openExcludedManagerBtn.addEventListener('click', openExcludedManager);
+    }
+
+    const sidebarExcludedListBtn = document.getElementById('sidebar-excluded-list-btn');
+    if (sidebarExcludedListBtn) {
+        sidebarExcludedListBtn.addEventListener('click', openExcludedManager);
     }
 
     // 소설 제목 변경 버튼 및 타이틀 클릭 이벤트

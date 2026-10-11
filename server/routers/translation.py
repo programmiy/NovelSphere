@@ -20,7 +20,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from server.database import get_db
-from server.models import ExcludedSentence, Translation
+from server.models import ExcludedSentence, Translation, TranslationTrash
 from server.notifications import notify_api_error
 from server.quota import (
     is_us_dst,
@@ -118,6 +118,22 @@ class TranslateRequest(BaseModel):
 
 class ExcludeRequest(BaseModel):
     ids: List[int]
+
+
+class RestoreExcludedItem(BaseModel):
+    pid: Optional[str] = None
+    original: str
+    translated: Optional[str] = None
+    timestamp: Optional[int] = None
+    folderName: Optional[str] = None
+    title: Optional[str] = None
+    toc_sort_order: Optional[int] = None
+
+
+class RestoreExcludedRequest(BaseModel):
+    url: str
+    originals: Optional[List[str]] = None
+    items: Optional[List[RestoreExcludedItem]] = None
 
 
 class FindReplaceRequest(BaseModel):
@@ -521,14 +537,16 @@ def get_excluded_sentences(url: str, db: Session = Depends(get_db)):
     "/translations/exclude",
     tags=["Translation"],
     summary="번역 기록 제외",
-    description="지정된 ID의 번역 기록을 제외 목록에 추가하고 원본을 삭제합니다."
+    description="지정된 ID의 번역 기록을 제외 목록에 추가하고 휴지통에 보관 후 삭제합니다."
 )
 def exclude_translations(req: ExcludeRequest, db: Session = Depends(get_db)):
     excluded_count = 0
+    now = int(time.time())
+    batch_id = f"exclude_{int(now * 1000)}"
     for translation_id in req.ids:
         translation_to_exclude = db.query(Translation).filter(Translation.id == translation_id).first()
         if translation_to_exclude:
-            # Add to excluded_sentences if not already there
+            # 1. Add to excluded_sentences if not already there
             existing_excluded = db.query(ExcludedSentence).filter(
                 ExcludedSentence.url == translation_to_exclude.url,
                 ExcludedSentence.original == translation_to_exclude.original
@@ -540,10 +558,182 @@ def exclude_translations(req: ExcludeRequest, db: Session = Depends(get_db)):
                 )
                 db.add(new_excluded)
 
+            # 2. Archive to TranslationTrash so translation text is never lost
+            trash_item = TranslationTrash(
+                original_translation_id=translation_to_exclude.id,
+                url=translation_to_exclude.url,
+                pid=translation_to_exclude.pid,
+                original=translation_to_exclude.original,
+                translated=translation_to_exclude.translated,
+                timestamp=translation_to_exclude.timestamp,
+                folderName=translation_to_exclude.folderName,
+                title=translation_to_exclude.title,
+                toc_sort_order=translation_to_exclude.toc_sort_order,
+                reason_category="excluded",
+                deleted_at=now,
+                cleanup_batch_id=batch_id
+            )
+            db.add(trash_item)
+
+            # 3. Delete from active translations
             db.delete(translation_to_exclude)
             excluded_count += 1
     db.commit()
-    return {"message": f"{excluded_count}개의 항목이 제외 목록에 추가되었습니다."}
+    return {"message": f"{excluded_count}개의 항목이 제외 목록 및 휴지통에 안전하게 보관되었습니다."}
+
+
+@router.post(
+    "/translations/restore_excluded",
+    tags=["Translation"],
+    summary="제외된 번역 복원 (제외 해제)",
+    description="제외 목록에서 원문을 제거하고, 휴지통 또는 전달된 번역 데이터를 바탕으로 translations 테이블로 복원합니다."
+)
+def restore_excluded(req: RestoreExcludedRequest, db: Session = Depends(get_db)):
+    # 1. 대상 original 목록 확인
+    target_originals = set(req.originals) if req.originals else set()
+    if not target_originals and req.items:
+        target_originals = {item.original for item in req.items}
+
+    # 대상이 없으면 해당 URL의 모든 제외 항목 대상
+    if not target_originals:
+        excluded_rows = db.query(ExcludedSentence).filter(ExcludedSentence.url == req.url).all()
+        target_originals = {row.original for row in excluded_rows}
+
+    if not target_originals:
+        return {"success": True, "restored_count": 0, "message": "복원할 제외 항목이 없습니다.", "restored_items": []}
+
+    # 2. ExcludedSentence 테이블에서 삭제 (제외 해제)
+    db.query(ExcludedSentence).filter(
+        ExcludedSentence.url == req.url,
+        ExcludedSentence.original.in_(list(target_originals))
+    ).delete(synchronize_session=False)
+
+    restored_items = []
+    now = int(time.time())
+
+    # 3-A. TranslationTrash에서 백업된 항목 복원
+    trash_items = db.query(TranslationTrash).filter(
+        TranslationTrash.url == req.url,
+        TranslationTrash.original.in_(list(target_originals))
+    ).all()
+
+    restored_from_trash_originals = set()
+    for trash in trash_items:
+        existing = db.query(Translation).filter(
+            Translation.url == trash.url,
+            Translation.pid == trash.pid,
+            Translation.original == trash.original
+        ).first()
+
+        if existing:
+            existing.translated = trash.translated
+            existing.timestamp = trash.timestamp or now
+            if trash.folderName:
+                existing.folderName = trash.folderName
+            if trash.title:
+                existing.title = trash.title
+            if trash.toc_sort_order is not None:
+                existing.toc_sort_order = trash.toc_sort_order
+        else:
+            new_t = Translation(
+                url=trash.url,
+                pid=trash.pid,
+                original=trash.original,
+                translated=trash.translated,
+                timestamp=trash.timestamp or now,
+                folderName=trash.folderName,
+                title=trash.title,
+                toc_sort_order=trash.toc_sort_order
+            )
+            db.add(new_t)
+
+        restored_items.append({
+            "pid": trash.pid,
+            "original": trash.original,
+            "translated": trash.translated,
+            "timestamp": trash.timestamp or now
+        })
+        restored_from_trash_originals.add(trash.original)
+        db.delete(trash)
+
+    # 3-B. 만약 클라이언트가 items를 넘겨주었고 휴지통에 없던 항목이면 직접 복원
+    if req.items:
+        for item in req.items:
+            if item.original in restored_from_trash_originals:
+                continue
+            if item.original not in target_originals:
+                continue
+
+            existing = db.query(Translation).filter(
+                Translation.url == req.url,
+                Translation.pid == item.pid,
+                Translation.original == item.original
+            ).first()
+
+            if existing:
+                if item.translated:
+                    existing.translated = item.translated
+                existing.timestamp = item.timestamp or now
+            else:
+                new_t = Translation(
+                    url=req.url,
+                    pid=item.pid,
+                    original=item.original,
+                    translated=item.translated,
+                    timestamp=item.timestamp or now,
+                    folderName=item.folderName,
+                    title=item.title,
+                    toc_sort_order=item.toc_sort_order
+                )
+                db.add(new_t)
+
+            restored_items.append({
+                "pid": item.pid,
+                "original": item.original,
+                "translated": item.translated,
+                "timestamp": item.timestamp or now
+            })
+
+    db.commit()
+    return {
+        "success": True,
+        "restored_count": len(restored_items),
+        "message": f"{len(restored_items)}개의 번역 항목이 정상 복원되었습니다.",
+        "restored_items": restored_items
+    }
+
+
+@router.get(
+    "/translations/excluded_details",
+    tags=["Translation"],
+    summary="제외된 문장 상세 정보 조회",
+    description="특정 URL에 대해 제외된 문장들과 휴지통에 보관된 번역문 정보를 함께 조회합니다."
+)
+def get_excluded_details(url: str, db: Session = Depends(get_db)):
+    excluded_rows = db.query(ExcludedSentence).filter(ExcludedSentence.url == url).all()
+    if not excluded_rows:
+        return {"url": url, "excluded_items": []}
+
+    originals = [r.original for r in excluded_rows]
+    trash_items = db.query(TranslationTrash).filter(
+        TranslationTrash.url == url,
+        TranslationTrash.original.in_(originals)
+    ).all()
+    trash_map = {t.original: t for t in trash_items}
+
+    items = []
+    for r in excluded_rows:
+        t_match = trash_map.get(r.original)
+        items.append({
+            "id": r.id,
+            "original": r.original,
+            "pid": t_match.pid if t_match else None,
+            "translated": t_match.translated if t_match else None,
+            "deleted_at": t_match.deleted_at if t_match else None,
+            "reason_category": t_match.reason_category if t_match else "excluded"
+        })
+
+    return {"url": url, "excluded_items": items}
 
 
 @router.post(
