@@ -251,10 +251,7 @@ function updateStatistics(groupedData) {
     const folders = Object.keys(groupedData || {});
     const totalBooks = folders.length;
     
-    // 로컬 클라이언트 기준 오늘 00:00:00 KST
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
-    const todayStartMs = todayStart.getTime();
+    const quotaWindowStartMs = getQuotaWindowStartMs(latestQuotaSummary);
 
     for (const folderName in groupedData) {
         const urlGroups = groupedData[folderName]; // This is an array of urlGroup objects
@@ -267,7 +264,7 @@ function updateStatistics(groupedData) {
                     totalCount++;
                     totalLength += item.translated ? item.translated.length : 0;
                     
-                    if ((item.timestamp * 1000) >= todayStartMs) {
+                    if ((item.timestamp * 1000) >= quotaWindowStartMs) {
                         todayCount++;
                         hasTodayItem = true;
                     }
@@ -314,11 +311,11 @@ function updateStatistics(groupedData) {
     const currentResetHourStr = currentResetHour > 12 ? `오후 ${currentResetHour - 12}시` : `${currentResetHour}시`;
     const todayStatItem = document.getElementById('todayStatItem');
     if (todayStatItem) {
-        todayStatItem.title = `오늘 번역된 회차(페이지) 및 문단 수 (오늘 자정 이후 기준)`;
+        todayStatItem.title = `오늘 번역된 회차(페이지) 및 문단 수 (API 리셋 기준: 매일 ${currentResetHourStr} 초기화)`;
     }
     const todayCountLabel = document.getElementById('todayCountLabel');
     if (todayCountLabel) {
-        todayCountLabel.innerHTML = `오늘 번역 (<span id="todayCount">${todayCount.toLocaleString()}</span>문단)`;
+        todayCountLabel.innerHTML = `오늘 번역 (<span id="todayCount">${todayCount.toLocaleString()}</span>문단) <span style="font-size: 11px; opacity: 0.85; font-weight: normal;">(${currentResetHourStr} 리셋)</span>`;
     }
 
     // API 쿼터 통계 갱신
@@ -3159,7 +3156,7 @@ function renderActivityTab(activity) {
         todayEpisodes.innerHTML = `${eps.toLocaleString()}<span class="kpi-unit">화</span>`;
         const todayLabelEl = todayEpisodes.parentElement ? todayEpisodes.parentElement.querySelector('.kpi-label') : null;
         if (todayLabelEl) {
-            todayLabelEl.innerHTML = `🔥 오늘 번역 회차 (페이지)`;
+            todayLabelEl.innerHTML = `⚡ 오늘 번역 회차 <span style="font-size: 11px; font-weight: normal; opacity: 0.85;">(${resetHStr} 초기화)</span>`;
         }
     }
 

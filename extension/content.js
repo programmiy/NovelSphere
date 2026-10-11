@@ -2319,7 +2319,9 @@ async function updateAndGetBatchCount(currentCleanUrl) {
         }
     } catch (_) {}
 
-    const todayDateStr = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD
+    const currentWindow = getCurrentQuotaWindow();
+    const cutoffInfo = typeof detectCutoffInfo === 'function' ? detectCutoffInfo() : { hour: 16, label: '오후 4시' };
+    const cutoffHour = cutoffInfo.hour;
     const now = Date.now();
     const SESSION_TIMEOUT_MS = 30 * 60 * 1000; // 30분 미활동 시 세션 만료 (새 세션은 1화부터 시작)
 
@@ -2327,7 +2329,7 @@ async function updateAndGetBatchCount(currentCleanUrl) {
         consecutiveCount: 0,
         lastUpdated: 0,
         lastUrl: '',
-        date: todayDateStr
+        window: currentWindow
     };
 
     try {
@@ -2338,18 +2340,18 @@ async function updateAndGetBatchCount(currentCleanUrl) {
             state.consecutiveCount = (typeof s.consecutiveCount === 'number') ? s.consecutiveCount : 0;
             state.lastUpdated = s.lastUpdated || 0;
             state.lastUrl = s.lastUrl || '';
-            state.date = s.date || todayDateStr;
+            state.window = s.window || currentWindow;
         }
     } catch (e) {
         console.warn('[ntfy] Failed to read batch state from storage:', e);
     }
 
-    // 1. 자정(날짜 변경) 도달 시 카운터 0으로 갱신
-    if (state.date !== todayDateStr) {
-        logToSidebar(`🔄 [일일 갱신] 새 날짜(${todayDateStr})가 시작되어 이번 세션 연속 번역 카운터를 새로 시작합니다.`);
+    // 1. API 일일 쿼터 초기화 시각(오후 4시/16시 또는 오후 5시/17시) 도달 시 카운터 0으로 갱신
+    if (state.window && state.window !== currentWindow) {
+        logToSidebar(`🔄 [일일 갱신] Gemini API 쿼터 초기화 시간(${cutoffHour}시)에 도달하여 이번 세션 연속 번역 카운터를 새로 시작합니다.`);
         state.consecutiveCount = 0;
         state.lastUrl = '';
-        state.date = todayDateStr;
+        state.window = currentWindow;
     }
 
     // 2. 세션 타임아웃 검사 (이전 번역 완료 후 30분 이상 지났으면 새 세션으로 0으로 초기화)
@@ -2373,7 +2375,7 @@ async function updateAndGetBatchCount(currentCleanUrl) {
 
     state.lastUpdated = now;
     state.lastUrl = currentCleanUrl;
-    state.date = todayDateStr;
+    state.window = currentWindow;
 
     try {
         await chrome.storage.local.set({ [stateKey]: state });

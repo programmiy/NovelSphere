@@ -725,9 +725,9 @@ def get_translation_session_count(
     if not folder_name and novel_title and novel_title != "기본 소설":
         folder_name = novel_title
 
-    # 해당 소설의 오늘 번역 회차 수 조회 (URL 프리픽스 OR folderName OR clean_url 모두 포괄)
+    # 해당 소설의 오늘(현재 쿼터 주기, 16시/17시 초기화 기준) 번역 회차 수 조회
     conditions = []
-    params = {"ts": today_start_ts}
+    params = {"ts": window_start_ts}
 
     if prefix:
         conditions.append("url LIKE :prefix")
@@ -748,10 +748,10 @@ def get_translation_session_count(
     else:
         count = 0
 
-    # 소설 불문 전체 고유 URL 오늘(00:00 KST 기준) 번역 회차 수
+    # 소설 불문 전체 고유 URL 현재 쿼터 주기(16시/17시 기준) 번역 회차 수
     total_today_count = db.execute(
         text("SELECT COUNT(DISTINCT url) FROM translations WHERE timestamp >= :ts"),
-        {"ts": today_start_ts}
+        {"ts": window_start_ts}
     ).scalar() or 0
 
     return {
@@ -759,8 +759,9 @@ def get_translation_session_count(
         "novel_today_count": count,
         "total_today_count": total_today_count,
         "window_start_ts": window_start_ts,
-        "today_start_ts": today_start_ts,
-        "cutoff_hour": cutoff_hour
+        "today_start_ts": window_start_ts,
+        "cutoff_hour": cutoff_hour,
+        "is_us_dst": is_us_dst()
     }
 
 
