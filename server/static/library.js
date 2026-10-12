@@ -18,10 +18,30 @@ document.addEventListener('DOMContentLoaded', () => {
     const bookSearchInput = document.getElementById('bookSearchInput');
     const searchClearBtn = document.getElementById('searchClearBtn');
     const sortDropdown = document.getElementById('sortDropdown');
+    const btnViewShelf = document.getElementById('btnViewShelf');
     const btnViewGrid = document.getElementById('btnViewGrid');
     const btnViewList = document.getElementById('btnViewList');
     const statusTabBtns = document.querySelectorAll('.status-tab-btn');
     const darkModeToggle = document.getElementById('darkModeToggle');
+
+    // 3D Tome Modal Elements
+    const tomeModal = document.getElementById('tome-3d-modal');
+    const tomeBook3D = document.getElementById('tomeBook3D');
+    const tomeModalCloseBtn = document.getElementById('tomeModalCloseBtn');
+    const tomeModalBadge = document.getElementById('tomeModalBadge');
+    const tomeModalTitle = document.getElementById('tomeModalTitle');
+    const tomeModalTags = document.getElementById('tomeModalTags');
+    const tomeDialHand = document.getElementById('tomeDialHand');
+    const tomeProgressPct = document.getElementById('tomeProgressPct');
+    const tomeChapterCount = document.getElementById('tomeChapterCount');
+    const tomeSynopsisText = document.getElementById('tomeSynopsisText');
+    const tomeLastChapter = document.getElementById('tomeLastChapter');
+    const tomeLastTime = document.getElementById('tomeLastTime');
+    const tomeMainReadBtn = document.getElementById('tomeMainReadBtn');
+    const tomeTocBtn = document.getElementById('tomeTocBtn');
+    const tomePinBtn = document.getElementById('tomePinBtn');
+    const tomeEditBtn = document.getElementById('tomeEditBtn');
+    let currentTomeBook = null;
 
     // Stats Elements
     const statTotalBooks = document.getElementById('statTotalBooks');
@@ -319,14 +339,23 @@ document.addEventListener('DOMContentLoaded', () => {
         heroContinueReading.style.display = 'block';
     }
 
-    // --- View Mode Management (4번 기능) ---
+    // --- View Mode Management (Grid / Compact List / 3D Steampunk Shelf) ---
     function setViewMode(mode) {
         currentViewMode = mode;
         localStorage.setItem('library_view_mode', mode);
 
+        if (btnViewShelf) btnViewShelf.classList.toggle('active', mode === 'shelf');
         if (btnViewGrid) btnViewGrid.classList.toggle('active', mode === 'grid');
         if (btnViewList) btnViewList.classList.toggle('active', mode === 'list');
-        if (bookShelf) bookShelf.classList.toggle('list-view', mode === 'list');
+        
+        if (bookShelf) {
+            bookShelf.classList.toggle('list-view', mode === 'list');
+            bookShelf.classList.toggle('shelf-view', mode === 'shelf');
+        }
+
+        if (window.SteampunkSound) {
+            window.SteampunkSound.playSwitch();
+        }
 
         renderBooks();
     }
@@ -420,7 +449,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return list;
     }
 
-    // --- Book Shelf Rendering (Dual: Grid vs Compact List) ---
+    // --- Book Shelf Rendering (Grid / Compact List / 3D Steampunk Shelf) ---
     function renderBooks() {
         renderHeroContinueReading();
 
@@ -437,11 +466,17 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        if (currentViewMode === 'list') {
+        if (currentViewMode === 'shelf') {
+            bookShelf.classList.add('shelf-view');
+            bookShelf.classList.remove('list-view');
+            renderShelfView(booksToRender);
+        } else if (currentViewMode === 'list') {
             bookShelf.classList.add('list-view');
+            bookShelf.classList.remove('shelf-view');
             bookShelf.innerHTML = booksToRender.map(book => renderListRow(book)).join('');
         } else {
             bookShelf.classList.remove('list-view');
+            bookShelf.classList.remove('shelf-view');
             bookShelf.innerHTML = booksToRender.map(book => renderGridCard(book)).join('');
         }
     }
@@ -606,6 +641,218 @@ document.addEventListener('DOMContentLoaded', () => {
             </div>
         </div>
         `;
+    }
+
+    // ==========================================================================
+    // 3D Steampunk Mahogany Bookshelf & Hardcover Tome Showcase Engine
+    // ==========================================================================
+
+    let lastSfxHoverTime = 0;
+
+    // Render Bookshelf Rack Rows
+    function renderShelfView(books) {
+        if (!books || books.length === 0) {
+            bookShelf.innerHTML = '';
+            return;
+        }
+
+        // Divide tomes into shelf tiers (8 books per tier)
+        const BOOKS_PER_SHELF = 8;
+        const tiers = [];
+        for (let i = 0; i < books.length; i += BOOKS_PER_SHELF) {
+            tiers.push(books.slice(i, i + BOOKS_PER_SHELF));
+        }
+
+        let html = '';
+        tiers.forEach((shelfBooks, tierIdx) => {
+            const tomesHtml = shelfBooks.map((b, idx) => {
+                const globalIdx = (tierIdx * BOOKS_PER_SHELF) + idx;
+                return renderTomeSpine(b, globalIdx);
+            }).join('');
+
+            html += `
+            <div class="wooden-shelf-rack">
+                <div class="shelf-bracket bracket-left"></div>
+                <div class="shelf-bracket bracket-right"></div>
+                <div class="shelf-tomes-row">
+                    ${tomesHtml}
+                </div>
+                <div class="wooden-shelf-plank">
+                    <div class="shelf-inlay-brass"></div>
+                    <div class="shelf-wood-grain"></div>
+                </div>
+            </div>
+            `;
+        });
+
+        bookShelf.innerHTML = html;
+
+        // Attach tactical hover sound to each 3D tome spine
+        const spineItems = bookShelf.querySelectorAll('.tome-spine-item');
+        spineItems.forEach(spine => {
+            spine.addEventListener('mouseenter', () => {
+                const now = Date.now();
+                if (now - lastSfxHoverTime > 75) {
+                    lastSfxHoverTime = now;
+                    if (window.SteampunkSound && typeof window.SteampunkSound.playKeyClick === 'function') {
+                        window.SteampunkSound.playKeyClick();
+                    }
+                }
+            });
+        });
+    }
+
+    // Render Individual 3D Spine
+    function renderTomeSpine(book, index) {
+        const { name, pinned, activity = {}, chapter_count = 0 } = book;
+        const progress = calculateProgress(book);
+
+        // Leather Palette Mapping
+        let leatherClass = 'leather-amber';
+        if (progress.isCompleted) {
+            leatherClass = 'leather-obsidian-gold';
+        } else if (pinned) {
+            leatherClass = 'leather-ruby';
+        } else if (!progress.isUnread) {
+            leatherClass = (index % 2 === 0) ? 'leather-sapphire' : 'leather-emerald';
+        }
+
+        // Variational thickness and height based on title hash and chapters
+        const hash = (name || '').split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
+        const spineHeight = 258 + (hash % 26); // 258px ~ 283px
+        const spineWidth = 52 + Math.min(22, Math.floor(chapter_count / 15)); // 52px ~ 74px
+
+        let badgeHtml = '';
+        if (progress.isCompleted) {
+            badgeHtml = '<div class="tome-spine-ch-badge">완결</div>';
+        } else if (progress.percentage > 0) {
+            badgeHtml = `<div class="tome-spine-ch-badge">${progress.percentage}%</div>`;
+        } else if (chapter_count > 0) {
+            badgeHtml = `<div class="tome-spine-ch-badge">${chapter_count}화</div>`;
+        }
+
+        const ribbonHtml = !progress.isUnread ? '<div class="tome-ribbon-tail"></div>' : '';
+
+        return `
+        <div class="tome-spine-item" data-book-name="${escapeHtml(name)}" style="width: ${spineWidth}px; height: ${spineHeight}px;" title="${escapeHtml(name)} (클릭하여 3D 양장본 펼치기)">
+            <div class="tome-spine-shadow"></div>
+            <div class="tome-spine-face ${leatherClass}">
+                <div class="tome-rib-line"></div>
+                <div class="tome-rib-line" style="margin-top: 4px;"></div>
+                <div class="tome-spine-title">${escapeHtml(name)}</div>
+                ${badgeHtml}
+                <div class="tome-rib-line" style="margin-top: auto; margin-bottom: 4px;"></div>
+                <div class="tome-rib-line"></div>
+                ${ribbonHtml}
+            </div>
+        </div>
+        `;
+    }
+
+    // 3D Tome Showcase Modal Control
+    function openTomeModal(bookName) {
+        const book = allBooks.find(b => b.name === bookName);
+        if (!book || !tomeModal) return;
+
+        currentTomeBook = book;
+        const { name, pinned, tags = [], activity = {}, chapter_count = 0 } = book;
+        const progress = calculateProgress(book);
+        const timeAgo = activity?.last_read_timestamp ? formatTimeAgo(activity.last_read_timestamp) : '';
+
+        // Left Wing (Parchment Metadata)
+        if (tomeModalBadge) {
+            let badgeText = '연재중';
+            if (progress.isCompleted) badgeText = '완결작';
+            else if (progress.isUnread) badgeText = '미열람';
+            tomeModalBadge.textContent = badgeText;
+        }
+        if (tomeModalTitle) tomeModalTitle.textContent = name;
+        if (tomeModalTags) {
+            tomeModalTags.innerHTML = tags.map(t => `<span class="tag-mini">#${escapeHtml(t.name)}</span>`).join('');
+        }
+        if (tomeProgressPct) tomeProgressPct.textContent = `${progress.percentage}%`;
+        if (tomeChapterCount) tomeChapterCount.textContent = `총 ${chapter_count}화`;
+        if (tomeDialHand) {
+            // Dial rotates from -90deg (0%) to +90deg (100%)
+            const angle = (progress.percentage * 1.8) - 90;
+            tomeDialHand.style.transform = `rotate(${angle}deg)`;
+        }
+        if (tomeSynopsisText) {
+            const summary = activity?.summary || activity?.notes || '등록된 줄거리나 메모가 없습니다. [설정]에서 줄거리를 크롤링하거나 입력할 수 있습니다.';
+            tomeSynopsisText.textContent = summary;
+        }
+
+        // Right Wing (Record & Action Deck)
+        if (tomeLastChapter) {
+            tomeLastChapter.textContent = progress.displayChapter || '아직 읽지 않은 도서입니다.';
+        }
+        if (tomeLastTime) {
+            tomeLastTime.textContent = timeAgo ? `${timeAgo} 읽음` : (progress.isUnread ? '독서 대기 중' : '기록 없음');
+        }
+
+        // Buttons
+        if (tomePinBtn) {
+            tomePinBtn.innerHTML = `<span class="material-icons">${pinned ? 'star' : 'star_border'}</span> ${pinned ? '즐겨찾기 됨' : '즐겨찾기'}`;
+            tomePinBtn.classList.toggle('active', Boolean(pinned));
+        }
+
+        if (tomeMainReadBtn) {
+            tomeMainReadBtn.onclick = () => {
+                closeTomeModal();
+                window.location.href = `/viewer?book=${encodeURIComponent(name)}${progress.rawTitle ? `&title=${encodeURIComponent(progress.rawTitle)}` : ''}`;
+            };
+        }
+
+        if (tomeTocBtn) {
+            tomeTocBtn.onclick = () => {
+                closeTomeModal();
+                openUrlListModal(name);
+            };
+        }
+
+        if (tomePinBtn) {
+            tomePinBtn.onclick = async () => {
+                await togglePin(name);
+                const updated = allBooks.find(b => b.name === name);
+                if (updated && tomePinBtn) {
+                    tomePinBtn.innerHTML = `<span class="material-icons">${updated.pinned ? 'star' : 'star_border'}</span> ${updated.pinned ? '즐겨찾기 됨' : '즐겨찾기'}`;
+                    tomePinBtn.classList.toggle('active', Boolean(updated.pinned));
+                }
+            };
+        }
+
+        if (tomeEditBtn) {
+            tomeEditBtn.onclick = () => {
+                closeTomeModal();
+                openEditModal(name);
+            };
+        }
+
+        // Open animation with tactile page flip sound
+        if (window.SteampunkSound && typeof window.SteampunkSound.playPageFlip === 'function') {
+            window.SteampunkSound.playPageFlip();
+        }
+
+        tomeModal.style.display = 'flex';
+        requestAnimationFrame(() => {
+            tomeModal.classList.add('open');
+            if (tomeBook3D) tomeBook3D.classList.add('opened');
+        });
+    }
+
+    function closeTomeModal() {
+        if (!tomeModal || tomeModal.style.display === 'none') return;
+
+        if (window.SteampunkSound && typeof window.SteampunkSound.playPageFlip === 'function') {
+            window.SteampunkSound.playPageFlip();
+        }
+
+        if (tomeBook3D) tomeBook3D.classList.remove('opened');
+        tomeModal.classList.remove('open');
+        setTimeout(() => {
+            tomeModal.style.display = 'none';
+            currentTomeBook = null;
+        }, 250);
     }
 
     // --- Book Actions ---
@@ -1169,8 +1416,17 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // 7. Click card background to read
-        // 7. Click card or list row background to read
+        // 7. Click 3D tome spine on mahogany shelf
+        const tomeSpine = closestBtn('.tome-spine-item');
+        if (tomeSpine && !target.closest('button') && !target.closest('a')) {
+            const bookName = tomeSpine.dataset.bookName;
+            if (bookName) {
+                openTomeModal(bookName);
+                return;
+            }
+        }
+
+        // 8. Click card or list row background to read
         const bookCard = closestBtn('.book-card');
         const bookListRow = closestBtn('.book-list-row');
         if ((bookCard || bookListRow) && !target.closest('button') && !target.closest('a') && !target.closest('input')) {
@@ -1180,8 +1436,10 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // 8. Modal close handlers
-        if (target === tagModalCloseBtn || target === tagModalCancelBtn) {
+        // 9. Modal close handlers
+        if (target === tomeModalCloseBtn || target === tomeModal) {
+            closeTomeModal();
+        } else if (target === tagModalCloseBtn || target === tagModalCancelBtn) {
             requestCloseModal();
         } else if (target === tagModalSaveBtn) {
             handleSaveModal();
@@ -1190,7 +1448,19 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // --- View Mode Toggle Events (4번 기능) ---
+    // Close 3D tome modal on Escape key
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            if (tomeModal && tomeModal.style.display !== 'none') {
+                closeTomeModal();
+            }
+        }
+    });
+
+    // --- View Mode Toggle Events (Grid / List / 3D Shelf) ---
+    if (btnViewShelf) {
+        btnViewShelf.addEventListener('click', () => setViewMode('shelf'));
+    }
     if (btnViewGrid) {
         btnViewGrid.addEventListener('click', () => setViewMode('grid'));
     }

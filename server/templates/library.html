@@ -11,7 +11,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;900&family=Special+Elite&family=Courier+Prime:ital,wght@0,400;0,700;1,400&family=Gowun+Batang:wght@400;700&family=Noto+Serif+KR:wght@400;600;700&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
-    <link rel="stylesheet" href="/static/library.css?v=3.2">
+    <link rel="stylesheet" href="/static/library.css?v=3.3">
 </head>
 <body>
     <div class="library-container">
@@ -224,6 +224,9 @@
                     </div>
 
                     <div class="view-mode-toggle" id="viewModeToggle">
+                        <button id="btnViewShelf" class="view-mode-btn" data-mode="shelf" title="3D 스팀펑크 양장본 책장 뷰">
+                            <span class="material-icons">shelves</span>
+                        </button>
                         <button id="btnViewGrid" class="view-mode-btn active" data-mode="grid" title="그리드 커버 뷰">
                             <span class="material-icons">grid_view</span>
                         </button>
@@ -399,8 +402,76 @@
     <!-- 전역 토스트 메시지 컨테이너 -->
     <div id="global-toast" class="toast" style="display: none;"></div>
 
+    <!-- 3D 스팀펑크 양장본 책 펼치기(Tome Open) 쇼케이스 모달 -->
+    <div id="tome-3d-modal" class="tome-modal-overlay" style="display: none;">
+        <div class="tome-3d-stage">
+            <button id="tomeModalCloseBtn" class="tome-modal-close-btn" title="책 덮기 (ESC)">&times;</button>
+            <div class="tome-book-3d" id="tomeBook3D">
+                <!-- 양장본 책등 힌지 -->
+                <div class="tome-spine-hinge"></div>
+                <!-- 왼쪽 날개 / 표지 & 메타 정보 -->
+                <div class="tome-page-wing tome-page-left">
+                    <div class="tome-leather-frame">
+                        <div class="brass-corner c-tl"></div><div class="brass-corner c-tr"></div>
+                        <div class="brass-corner c-bl"></div><div class="brass-corner c-br"></div>
+                        <div class="tome-inner-parchment">
+                            <div class="tome-seal-badge" id="tomeModalBadge">연재중</div>
+                            <h2 class="tome-modal-title" id="tomeModalTitle">소설 제목</h2>
+                            <div class="tome-meta-chips" id="tomeModalTags"></div>
+                            <div class="tome-gauge-rack">
+                                <div class="tome-mini-dial">
+                                    <div class="tome-dial-hand" id="tomeDialHand"></div>
+                                </div>
+                                <div class="tome-progress-desc">
+                                    <span class="tome-progress-pct" id="tomeProgressPct">0%</span>
+                                    <span class="tome-chapter-count" id="tomeChapterCount">총 0화</span>
+                                </div>
+                            </div>
+                            <div class="tome-synopsis-box" id="tomeSynopsisBox">
+                                <p class="tome-synopsis-text" id="tomeSynopsisText">등록된 줄거리가 없습니다.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <!-- 오른쪽 날개 / 컨트롤 덱 -->
+                <div class="tome-page-wing tome-page-right">
+                    <div class="tome-leather-frame">
+                        <div class="brass-corner c-tl"></div><div class="brass-corner c-tr"></div>
+                        <div class="brass-corner c-bl"></div><div class="brass-corner c-br"></div>
+                        <div class="tome-inner-parchment">
+                            <div class="tome-ribbon-marker"></div>
+                            <div class="tome-record-header">
+                                <span class="material-icons">history_edu</span> 최근 독서 기록
+                            </div>
+                            <div class="tome-last-read-card">
+                                <div class="tome-last-chapter" id="tomeLastChapter">아직 읽지 않은 도서입니다.</div>
+                                <div class="tome-last-time" id="tomeLastTime">대기 중</div>
+                            </div>
+                            <div class="tome-action-deck">
+                                <button class="btn btn-primary tome-main-read-btn" id="tomeMainReadBtn">
+                                    <span class="material-icons">menu_book</span> 이어보기
+                                </button>
+                                <div class="tome-sub-actions">
+                                    <button class="btn btn-outline" id="tomeTocBtn">
+                                        <span class="material-icons">format_list_bulleted</span> 목차
+                                    </button>
+                                    <button class="btn btn-outline" id="tomePinBtn">
+                                        <span class="material-icons">star_border</span> 즐겨찾기
+                                    </button>
+                                    <button class="btn btn-outline" id="tomeEditBtn">
+                                        <span class="material-icons">settings</span> 설정
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script src="/static/steampunk-sound.js?v=2.0"></script>
-    <script type="module" src="/static/library.js?v=3.0"></script>
+    <script type="module" src="/static/library.js?v=3.1"></script>
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
