@@ -13,6 +13,7 @@ from server.database import get_db, get_sqlite_conn, SessionLocal
 from server.models import Translation, AiReviewQueue
 from server.settings import settings
 from server.services.abnormal_service import get_abnormal_translations_data
+from server.services.similarity_service import get_cause_reference_data, get_cause_keywords
 from server.routers.translation import call_gemini_api
 import re
 
@@ -507,12 +508,19 @@ async def get_review_queue(folderName: Optional[str] = None, db: Session = Depen
                 ctx_a = db.query(Translation).filter(Translation.folderName == folder, Translation.id > base_trans.id).order_by(Translation.id.asc()).limit(3).all()
                 context_after = [format_ctx(c) for c in ctx_a]
                 
+        cause_kws = get_cause_keywords(
+            queue_item.original_text,
+            queue_item.old_translated_text,
+            queue_item.ai_translated_text
+        )
+        
         res.append({
             "queue_id": queue_item.id,
             "translation_id": queue_item.translation_id,
             "original_text": queue_item.original_text,
             "old_translated_text": clean_ai_translation(queue_item.old_translated_text) if queue_item.old_translated_text else None,
             "ai_translated_text": clean_ai_translation(queue_item.ai_translated_text),
+            "cause_keywords": cause_kws,
             "model_used": queue_item.model_used,
             "is_reretranslated": queue_item.model_used != "gemini-3.1-flash-lite",
             "folderName": folder,
@@ -521,6 +529,67 @@ async def get_review_queue(folderName: Optional[str] = None, db: Session = Depen
             "context_after": context_after
         })
     return {"items": res}
+
+@router.get("/api/ai_review/cause_reference")
+async def get_cause_reference(
+    keyword: Optional[str] = None,
+    folderName: Optional[str] = None,
+    queue_id: Optional[int] = None,
+    limit: int = 6,
+    db: Session = Depends(get_db)
+):
+    """
+    이상번역 원인 텍스트에 대한 다른 단락 번역 사례(유사단락) 및 빈출 표현 Top 5를 반환합니다.
+    """
+    target_kw = (keyword or "").strip()
+    exclude_trans_id = None
+    
+    if not target_kw and queue_id:
+        q_item = db.query(AiReviewQueue).filter(AiReviewQueue.id == queue_id).first()
+        if q_item:
+            exclude_trans_id = q_item.translation_id
+            kws = get_cause_keywords(
+                q_item.original_text,
+                q_item.old_translated_text,
+                q_item.ai_translated_text
+            )
+            if kws:
+                target_kw = kws[0]
+
+    data = get_cause_reference_data(
+        keyword=target_kw,
+        folder=folderName,
+        exclude_id=exclude_trans_id,
+        limit=limit,
+        db=db
+    )
+    return data
+
+@router.get("/api/admin/similar_recommendation")
+async def similar_recommendation_fallback(
+    keyword: str,
+    folderName: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    """관리자/리뷰 호환용 엔드포인트"""
+    data = get_cause_reference_data(
+        keyword=keyword,
+        folder=folderName,
+        exclude_id=None,
+        limit=6,
+        db=db
+    )
+    # 기존 recommendPopup이 기대하던 results 포맷도 지원
+    results = [
+        {"translated": item["word"], "count": item["count"]}
+        for item in data.get("top5_expressions", [])
+    ]
+    return {
+        "keyword": data.get("keyword", keyword),
+        "results": results,
+        "top5_expressions": data.get("top5_expressions", []),
+        "examples": data.get("examples", [])
+    }
 
 @router.get("/api/ai_review/reroll")
 async def reroll_translation(queue_id: int, db: Session = Depends(get_db)):

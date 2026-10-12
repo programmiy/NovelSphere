@@ -1036,6 +1036,280 @@
             transform: translateY(-1px);
         }
 
+        /* --- Cause Keyword Reference & Top 5 Expressions --- */
+        .cause-ref-section {
+            background: rgba(99, 102, 241, 0.05);
+            border: 1px solid var(--glass-border);
+            border-radius: 14px;
+            padding: 10px 14px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            transition: all 0.25s ease;
+        }
+        html.dark-mode .cause-ref-section {
+            background: rgba(99, 102, 241, 0.12);
+            border-color: rgba(255, 255, 255, 0.12);
+        }
+        .cause-ref-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+        .cause-ref-title {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 11px;
+            font-weight: 800;
+            color: var(--text-secondary);
+            letter-spacing: 0.5px;
+        }
+        .cause-kw-badge {
+            background: linear-gradient(135deg, #ef4444, #f97316);
+            color: #ffffff;
+            font-weight: 800;
+            font-size: 11px;
+            padding: 2px 8px;
+            border-radius: 6px;
+            display: inline-flex;
+            align-items: center;
+            letter-spacing: 0.3px;
+            box-shadow: 0 2px 6px rgba(239, 68, 68, 0.3);
+        }
+        .cause-kw-tabs {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            flex-wrap: wrap;
+        }
+        .cause-kw-tab-btn {
+            font-size: 11px;
+            font-weight: 700;
+            padding: 2px 7px;
+            border-radius: 6px;
+            background: var(--btn-glass-bg);
+            border: 1px solid var(--btn-glass-border);
+            color: var(--text-muted);
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .cause-kw-tab-btn:hover {
+            color: var(--accent-brand);
+            border-color: var(--accent-brand);
+        }
+        .cause-kw-tab-btn.active {
+            background: var(--accent-brand);
+            color: #ffffff;
+            border-color: var(--accent-brand);
+        }
+
+        .top5-container {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .top5-label {
+            font-size: 11px;
+            font-weight: 800;
+            color: var(--accent-brand);
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            white-space: nowrap;
+        }
+        .top5-chips {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex-wrap: wrap;
+            flex: 1;
+        }
+        .top5-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 3px 9px;
+            border-radius: 10px;
+            font-size: 12px;
+            font-weight: 700;
+            background: var(--btn-glass-bg);
+            border: 1.5px solid rgba(99, 102, 241, 0.4);
+            color: var(--text-primary);
+            cursor: pointer;
+            transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+            user-select: none;
+        }
+        .top5-chip:hover {
+            background: var(--accent-brand);
+            color: #ffffff;
+            border-color: var(--accent-brand);
+            transform: translateY(-2px) scale(1.05);
+            box-shadow: 0 4px 14px var(--accent-brand-glow);
+        }
+        .top5-chip .top5-count {
+            font-size: 10px;
+            opacity: 0.75;
+            font-weight: 600;
+        }
+        .top5-empty, .top5-loading {
+            font-size: 11px;
+            color: var(--text-muted);
+        }
+
+        /* --- Similar Examples Drawer in Card --- */
+        .similar-drawer {
+            background: var(--orig-box-bg);
+            border: 1.5px solid var(--orig-box-border);
+            border-radius: 16px;
+            overflow: hidden;
+            transition: all 0.3s ease;
+        }
+        .similar-drawer-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 14px;
+            cursor: pointer;
+            user-select: none;
+            background: rgba(0, 0, 0, 0.02);
+            border-bottom: 1px solid transparent;
+            transition: background 0.2s;
+        }
+        html.dark-mode .similar-drawer-header {
+            background: rgba(255, 255, 255, 0.03);
+        }
+        .similar-drawer-header:hover {
+            background: rgba(99, 102, 241, 0.08);
+        }
+        .similar-drawer.is-open .similar-drawer-header {
+            border-bottom-color: var(--side-border);
+        }
+        .similar-drawer-title {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+            font-weight: 800;
+            color: var(--text-primary);
+        }
+        .sim-count-badge {
+            background: rgba(99, 102, 241, 0.15);
+            color: var(--accent-brand);
+            font-size: 10px;
+            font-weight: 800;
+            padding: 1px 6px;
+            border-radius: 8px;
+        }
+        .similar-drawer-toggle {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 11px;
+            color: var(--text-muted);
+        }
+        .sim-drawer-icon {
+            font-size: 18px;
+            transition: transform 0.3s ease;
+        }
+        .similar-drawer.is-open .sim-drawer-icon {
+            transform: rotate(180deg);
+        }
+
+        .similar-drawer-body {
+            max-height: 0;
+            overflow-y: auto;
+            transition: max-height 0.35s cubic-bezier(0.25, 1, 0.5, 1);
+            scrollbar-width: thin;
+        }
+        .similar-drawer.is-open .similar-drawer-body {
+            max-height: 240px;
+            padding: 10px 12px;
+        }
+        .sim-cards-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .sim-item-card {
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
+            border-radius: 12px;
+            padding: 10px 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+        }
+        .sim-item-header {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 11px;
+            color: var(--text-muted);
+        }
+        .sim-item-novel {
+            color: var(--accent-brand);
+            font-weight: 700;
+        }
+        .sim-item-title {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            max-width: 180px;
+        }
+        .sim-item-link {
+            margin-left: auto;
+            font-size: 11px;
+            color: var(--accent-brand);
+            text-decoration: none;
+        }
+        .sim-item-link:hover {
+            text-decoration: underline;
+        }
+        .sim-item-ori {
+            font-size: 12px;
+            color: var(--text-muted);
+            line-height: 1.4;
+        }
+        .sim-item-tra {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-primary);
+            line-height: 1.4;
+        }
+        .sim-item-actions {
+            display: flex;
+            justify-content: flex-end;
+            margin-top: 4px;
+        }
+        .sim-apply-btn {
+            padding: 3px 8px;
+            font-size: 11px;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            border-radius: 8px;
+            border: 1px solid var(--accent-brand);
+            color: var(--accent-brand);
+            cursor: pointer;
+            background: transparent;
+            transition: all 0.2s;
+        }
+        .sim-apply-btn:hover {
+            background: var(--accent-brand);
+            color: #ffffff;
+        }
+        .sim-empty-state, .sim-loading-state {
+            padding: 16px;
+            text-align: center;
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
         @keyframes spin { 100% { transform: rotate(360deg); } }
         .animate-spin { animation: spin 1s linear infinite; }
     </style>
@@ -1497,7 +1771,7 @@
                             </button>
                         </div>
                     </div>
-                    <div class="card-body" style="display: flex; flex-direction: column; height: 100%; gap: 14px;">
+                    <div class="card-body" style="display: flex; flex-direction: column; height: 100%; gap: 12px; overflow-y: auto; padding-right: 6px;">
                         <div class="orig-text" title="클릭하여 원문 복사" data-copy-text="${safeOrig}" onclick="copyTextFromData(this)">
                             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
                                 <span class="orig-label">ORIGINAL (일본어 원문)</span>
@@ -1505,8 +1779,48 @@
                             </div>
                             <div class="orig-content">${safeOrig}</div>
                         </div>
-                        <div class="edit-wrap" style="flex: 1; display: flex;">
+
+                        <!-- 💡 이상번역 원인 텍스트 & TOP 5 빈출 표현 칩 바 -->
+                        <div class="cause-ref-section" id="cause-section-${item.queue_id}">
+                            <div class="cause-ref-header">
+                                <div class="cause-ref-title">
+                                    <span class="material-icons-round" style="font-size: 15px; color: var(--accent-brand);">psychology</span>
+                                    <span>이상 원인:</span>
+                                    <span class="cause-kw-badge" id="cause-badge-${item.queue_id}">분석 중...</span>
+                                </div>
+                                <div class="cause-kw-tabs" id="cause-tabs-${item.queue_id}"></div>
+                            </div>
+                            <div class="top5-container" id="top5-container-${item.queue_id}">
+                                <div class="top5-label">🏆 빈출 TOP 5:</div>
+                                <div class="top5-chips" id="top5-chips-${item.queue_id}">
+                                    <span class="top5-loading">조회 중...</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 🇰🇷 번역문 편집창 -->
+                        <div class="edit-wrap" style="flex: 1; display: flex; min-height: 85px;">
                             <textarea class="trans-editor" id="trans-${item.queue_id}" spellcheck="false" placeholder="번역문을 입력하거나 수정하세요...">${cleanText}</textarea>
+                        </div>
+
+                        <!-- 📚 관리자 유사단락 드로어 (다른 단락 번역 사례) -->
+                        <div class="similar-drawer" id="sim-drawer-${item.queue_id}">
+                            <div class="similar-drawer-header" onclick="toggleSimilarDrawer(${item.queue_id})">
+                                <div class="similar-drawer-title">
+                                    <span class="material-icons-round" style="font-size: 16px; color: var(--accent-brand);">library_books</span>
+                                    <span>다른 단락 번역 사례 (유사단락)</span>
+                                    <span class="sim-count-badge" id="sim-count-${item.queue_id}">0건</span>
+                                </div>
+                                <div class="similar-drawer-toggle">
+                                    <span id="sim-toggle-text-${item.queue_id}">펼치기</span>
+                                    <span class="material-icons-round sim-drawer-icon" id="sim-icon-${item.queue_id}">expand_more</span>
+                                </div>
+                            </div>
+                            <div class="similar-drawer-body" id="sim-body-${item.queue_id}">
+                                <div class="sim-cards-list" id="sim-list-${item.queue_id}">
+                                    <div class="sim-loading-state">원인 텍스트가 포함된 다른 단락 검색 중...</div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 `;
@@ -1540,10 +1854,11 @@
                 container.insertBefore(card, dock);
             }
 
-            // Always guarantee context sidebars update for the current active card
+            // Always guarantee context sidebars and cause reference update for the current active card
             const currentActiveItem = currentQueue[currentIndex];
             if (currentActiveItem) {
                 updateContextSidebars(currentActiveItem);
+                loadCauseReference(currentActiveItem);
             }
         }
 
@@ -1952,6 +2267,206 @@
             } catch (e) {}
         }
 
+        // --- Cause Keyword & Similar Reference Engine ---
+        let causeRefAbortController = null;
+
+        function escapeRegExp(string) {
+            return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        }
+
+        function highlightKw(text, kw) {
+            if (!text || !kw) return escapeHtml(text || '');
+            const safeText = escapeHtml(text);
+            const safeKw = escapeHtml(kw);
+            const reg = new RegExp(`(${escapeRegExp(safeKw)})`, 'gi');
+            return safeText.replace(reg, '<mark style="background-color: #fef08a; color: #854d0e; padding: 1px 3px; border-radius: 4px; font-weight: 700;">$1</mark>');
+        }
+
+        function flashTextarea(textarea) {
+            if (!textarea) return;
+            textarea.style.transition = 'background-color 0.15s ease, border-color 0.15s ease';
+            textarea.style.background = 'rgba(16, 185, 129, 0.2)';
+            textarea.style.borderColor = 'var(--accent-approve)';
+            setTimeout(() => {
+                textarea.style.background = '';
+                textarea.style.borderColor = '';
+            }, 450);
+        }
+
+        async function loadCauseReference(item, customKeyword = null) {
+            if (!item) return;
+            const queueId = item.queue_id;
+            const badgeEl = document.getElementById(`cause-badge-${queueId}`);
+            const chipsEl = document.getElementById(`top5-chips-${queueId}`);
+            const tabsEl = document.getElementById(`cause-tabs-${queueId}`);
+            const listEl = document.getElementById(`sim-list-${queueId}`);
+
+            if (!badgeEl || !chipsEl) return;
+
+            let targetKw = customKeyword;
+            if (!targetKw) {
+                targetKw = (item.cause_keywords && item.cause_keywords.length > 0) ? item.cause_keywords[0] : '';
+            }
+
+            badgeEl.textContent = targetKw ? targetKw : '분석 중...';
+            chipsEl.innerHTML = '<span class="top5-loading"><span class="material-icons-round animate-spin" style="font-size:12px; vertical-align:middle;">sync</span> 빈출 표현 분석 중...</span>';
+            if (listEl) listEl.innerHTML = '<div class="sim-loading-state"><span class="material-icons-round animate-spin" style="font-size:14px; vertical-align:middle;">sync</span> 다른 단락 번역 사례 검색 중...</div>';
+
+            if (causeRefAbortController) {
+                causeRefAbortController.abort();
+            }
+            causeRefAbortController = new AbortController();
+
+            try {
+                const folder = item.folderName || '';
+                const url = `/api/ai_review/cause_reference?keyword=${encodeURIComponent(targetKw)}&folderName=${encodeURIComponent(folder)}&queue_id=${queueId}&limit=6`;
+                const res = await fetch(url, { signal: causeRefAbortController.signal });
+                if (!res.ok) throw new Error('조회 실패');
+                const data = await res.json();
+
+                renderCauseReference(queueId, item, data, targetKw);
+            } catch (err) {
+                if (err.name !== 'AbortError') {
+                    badgeEl.textContent = targetKw || '오류';
+                    chipsEl.innerHTML = '<span class="top5-empty">빈출 표현 조회 실패</span>';
+                    if (listEl) listEl.innerHTML = '<div class="sim-empty-state">유사 단락을 불러오지 못했습니다.</div>';
+                }
+            }
+        }
+
+        function renderCauseReference(queueId, item, data, currentKw) {
+            const badgeEl = document.getElementById(`cause-badge-${queueId}`);
+            const chipsEl = document.getElementById(`top5-chips-${queueId}`);
+            const tabsEl = document.getElementById(`cause-tabs-${queueId}`);
+            const countEl = document.getElementById(`sim-count-${queueId}`);
+            const listEl = document.getElementById(`sim-list-${queueId}`);
+
+            const activeKw = data.keyword || currentKw || '';
+            badgeEl.textContent = activeKw ? activeKw : '(감지된 원인 어휘 없음)';
+
+            // Render Alternative Keyword Tabs if multiple keywords exist
+            if (tabsEl) {
+                const allKws = item.cause_keywords || [];
+                if (allKws.length > 1) {
+                    tabsEl.innerHTML = allKws.map(k => `
+                        <button type="button" class="cause-kw-tab-btn ${k === activeKw ? 'active' : ''}" onclick="loadCauseReference(currentQueue[currentIndex], '${escapeHtml(k)}')">${escapeHtml(k)}</button>
+                    `).join('');
+                } else {
+                    tabsEl.innerHTML = '';
+                }
+            }
+
+            // Render Top 5 Expressions
+            const top5 = data.top5_expressions || [];
+            if (top5.length > 0) {
+                chipsEl.innerHTML = top5.map((expr, idx) => {
+                    const safeWord = escapeHtml(expr.word);
+                    const safeCount = expr.count;
+                    const safeKw = escapeHtml(activeKw);
+                    return `
+                        <span class="top5-chip" onclick="applyTop5Word('${safeWord}', '${safeKw}', ${queueId})" title="클릭 시 '${safeWord}'(으)로 번역창 치환/적용">
+                            <strong>${idx + 1}.</strong> ${safeWord} <span class="top5-count">(${safeCount})</span>
+                        </span>
+                    `;
+                }).join('');
+            } else {
+                chipsEl.innerHTML = '<span class="top5-empty">정상 번역 단락 내 빈출 표현 통계 없음</span>';
+            }
+
+            // Render Similar Translation Examples
+            const examples = data.examples || [];
+            if (countEl) countEl.textContent = `${examples.length}건`;
+
+            if (listEl) {
+                if (examples.length > 0) {
+                    listEl.innerHTML = examples.map(ex => {
+                        const novelTitle = ex.folderName || '소설';
+                        const epTitle = ex.title || '회차';
+                        const highlightedOri = highlightKw(ex.original || '', activeKw);
+                        const highlightedTra = highlightKw(ex.translated || '', activeKw);
+                        const safeRawTra = escapeHtml(ex.translated || '');
+                        const cleanUrl = (ex.url || '').split('#')[0];
+                        const targetUrl = ex.pid ? `${cleanUrl}#${ex.pid}` : cleanUrl;
+
+                        return `
+                            <div class="sim-item-card">
+                                <div class="sim-item-header">
+                                    <span class="sim-item-novel">[${escapeHtml(novelTitle)}]</span>
+                                    <span class="sim-item-title" title="${escapeHtml(epTitle)}">${escapeHtml(epTitle)}</span>
+                                    ${cleanUrl ? `<a href="${escapeHtml(targetUrl)}" target="_blank" class="sim-item-link">🔗 원본 화 ↗</a>` : ''}
+                                </div>
+                                <div class="sim-item-ori">${highlightedOri}</div>
+                                <div class="sim-item-tra">${highlightedTra}</div>
+                                <div class="sim-item-actions">
+                                    <button type="button" class="sim-apply-btn" onclick="applySimilarTranslation('${safeRawTra}', ${queueId})" title="이 번역문을 현재 편집창에 복사/적용">
+                                        <span class="material-icons-round" style="font-size: 13px;">content_copy</span> 번역 채택
+                                    </button>
+                                </div>
+                            </div>
+                        `;
+                    }).join('');
+                } else {
+                    listEl.innerHTML = `<div class="sim-empty-state">'${escapeHtml(activeKw)}' 원인 텍스트가 포함된 다른 정상 번역 단락이 없습니다.</div>`;
+                }
+            }
+        }
+
+        function applyTop5Word(word, keyword, queueId) {
+            const textarea = document.getElementById(`trans-${queueId}`);
+            if (!textarea) return;
+
+            let text = textarea.value;
+            let replaced = false;
+
+            // If keyword exists in text, replace all occurrences of keyword with word
+            if (keyword && text.includes(keyword)) {
+                const reg = new RegExp(escapeRegExp(keyword), 'g');
+                textarea.value = text.replace(reg, word);
+                replaced = true;
+            } else {
+                // If cursor position is available, insert at cursor
+                const start = textarea.selectionStart;
+                const end = textarea.selectionEnd;
+                if (start !== undefined && end !== undefined && start !== end) {
+                    textarea.value = text.substring(0, start) + word + text.substring(end);
+                    replaced = true;
+                } else if (start !== undefined) {
+                    textarea.value = text.substring(0, start) + word + text.substring(start);
+                    replaced = true;
+                } else {
+                    textarea.value = text + " " + word;
+                    replaced = true;
+                }
+            }
+
+            flashTextarea(textarea);
+            showToast(`'${word}' 표현이 번역창에 적용되었습니다.`);
+            textarea.focus();
+        }
+
+        function applySimilarTranslation(fullText, queueId) {
+            const textarea = document.getElementById(`trans-${queueId}`);
+            if (!textarea) return;
+
+            // Unescape HTML entities if any
+            const tempDiv = document.createElement('div');
+            tempDiv.innerHTML = fullText;
+            const plainText = tempDiv.textContent || tempDiv.innerText || fullText;
+
+            textarea.value = plainText;
+            flashTextarea(textarea);
+            showToast('추천 단락의 번역문 전체가 채택되어 입력창에 적용되었습니다.');
+            textarea.focus();
+        }
+
+        function toggleSimilarDrawer(queueId) {
+            const drawer = document.getElementById(`sim-drawer-${queueId}`);
+            if (!drawer) return;
+            const isOpen = drawer.classList.toggle('is-open');
+            const toggleText = document.getElementById(`sim-toggle-text-${queueId}`);
+            if (toggleText) toggleText.textContent = isOpen ? '접기' : '펼치기';
+        }
+
         async function handleTextSelection() {
             const selection = window.getSelection();
             const text = selection.toString().trim();
@@ -1959,45 +2474,18 @@
             
             if (!activeCardEl || !activeCardEl.contains(selection.anchorNode)) return;
             const origNode = activeCardEl.querySelector('.orig-text');
-            if (!origNode.contains(selection.anchorNode)) return;
+            const transNode = activeCardEl.querySelector('.trans-editor');
             
-            const folder = origNode.dataset.folder || '';
+            const isInsideOrig = origNode && origNode.contains(selection.anchorNode);
+            const isInsideTrans = transNode && transNode.contains(selection.anchorNode);
+
+            if (!isInsideOrig && !isInsideTrans) return;
             
-            try {
-                const res = await fetch(`/api/admin/similar_recommendation?keyword=${encodeURIComponent(text)}&folderName=${encodeURIComponent(folder)}`);
-                const data = await res.json();
-                
-                const popup = document.getElementById('recommendPopup');
-                const content = document.getElementById('recommendContent');
-                content.innerHTML = '';
-                
-                if (data.results && data.results.length > 0) {
-                    data.results.forEach(r => {
-                        const div = document.createElement('div');
-                        div.className = 'rec-item';
-                        div.innerHTML = `
-                            <div class="rec-trans">${r.translated}</div>
-                            <div class="rec-meta">Frequency: ${r.count}</div>
-                        `;
-                        div.onclick = () => {
-                            const textarea = activeCardEl.querySelector('textarea');
-                            textarea.value = r.translated;
-                            popup.style.display = 'none';
-                            window.getSelection().removeAllRanges();
-                            
-                            // Flash effect
-                            textarea.style.background = 'rgba(16, 185, 129, 0.2)';
-                            setTimeout(() => textarea.style.background = '', 400);
-                        };
-                        content.appendChild(div);
-                    });
-                    
-                    const rect = selection.getRangeAt(0).getBoundingClientRect();
-                    popup.style.left = `${Math.max(10, rect.left)}px`;
-                    popup.style.top = `${rect.bottom + window.scrollY + 10}px`;
-                    popup.style.display = 'block';
-                }
-            } catch (e) {}
+            // 실시간 원인 단어 및 유사단락 동적 재조회 트리거
+            const currentActiveItem = currentQueue[currentIndex];
+            if (currentActiveItem) {
+                loadCauseReference(currentActiveItem, text);
+            }
         }
 
         // --- Hyper-Visual Ambient Canvas & Particle System ---
