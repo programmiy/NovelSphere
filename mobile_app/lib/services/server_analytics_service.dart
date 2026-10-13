@@ -20,7 +20,7 @@ class ServerAnalyticsService {
         '$serverUrl/admin/analytics${folderName != null && folderName.isNotEmpty && folderName != '__all__' ? '?folder_name=${Uri.encodeComponent(folderName)}' : ''}',
       );
 
-      final response = await http.get(uri).timeout(const Duration(seconds: 10));
+      final response = await http.get(uri, headers: PreferencesService.authHeaders).timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 200) {
         final decoded = json.decode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
@@ -44,7 +44,7 @@ class ServerAnalyticsService {
 
     try {
       final uri = Uri.parse('$serverUrl/admin/analytics/novel?folder_name=${Uri.encodeComponent(folderName)}');
-      final response = await http.get(uri).timeout(const Duration(seconds: 8));
+      final response = await http.get(uri, headers: PreferencesService.authHeaders).timeout(const Duration(seconds: 8));
 
       if (response.statusCode == 200) {
         final decoded = json.decode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;

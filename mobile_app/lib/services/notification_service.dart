@@ -27,7 +27,7 @@ class NotificationService {
     try {
       final serverUrl = PreferencesService.serverUrl;
       final uri = Uri.parse('$serverUrl/api/notifications/recent?limit=30');
-      final res = await http.get(uri).timeout(const Duration(seconds: 4));
+      final res = await http.get(uri, headers: PreferencesService.authHeaders).timeout(const Duration(seconds: 4));
 
       if (res.statusCode == 200) {
         final data = jsonDecode(utf8.decode(res.bodyBytes));
@@ -81,6 +81,7 @@ class NotificationService {
     try {
       final request = http.Request('GET', streamUri);
       request.headers['Accept'] = 'text/event-stream';
+      request.headers.addAll(PreferencesService.authHeaders);
       final response = await client.send(request).timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 200) {

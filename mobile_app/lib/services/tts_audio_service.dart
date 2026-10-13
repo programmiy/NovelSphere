@@ -53,7 +53,7 @@ class TtsAudioService {
     final uri = Uri.parse('$serverUrl/api/sync/tts-pack?book=${Uri.encodeComponent(book)}&chapter=${Uri.encodeComponent(chapter)}');
 
     try {
-      final res = await http.get(uri).timeout(const Duration(seconds: 40));
+      final res = await http.get(uri, headers: PreferencesService.authHeaders).timeout(const Duration(seconds: 40));
       if (res.statusCode == 200) {
         await File(localPath).writeAsBytes(res.bodyBytes, flush: true);
         return true;

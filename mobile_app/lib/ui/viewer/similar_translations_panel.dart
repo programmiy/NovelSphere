@@ -104,7 +104,7 @@ class _SimilarTranslationsPanelState extends State<SimilarTranslationsPanel> {
           '$serverUrl/translations/similar_examples?keyword=${Uri.encodeComponent(keyword)}&folder=${Uri.encodeComponent(widget.bookName ?? '')}&limit=8',
         );
 
-        final res = await http.get(uri).timeout(const Duration(milliseconds: 1500));
+        final res = await http.get(uri, headers: PreferencesService.authHeaders).timeout(const Duration(milliseconds: 1500));
         if (res.statusCode == 200) {
           final data = jsonDecode(utf8.decode(res.bodyBytes));
           final serverList = (data['examples'] as List<dynamic>?) ?? [];

@@ -6,16 +6,20 @@ import 'preferences_service.dart';
 
 class CharacterFixerService {
   static String get _serverUrl => PreferencesService.serverUrl.trim();
+  static Map<String, String> _headers([Map<String, String>? extra]) => {
+    ...PreferencesService.authHeaders,
+    if (extra != null) ...extra,
+  };
 
   /// 서버의 소설 폴더 목록 및 문단 수 조회
   static Future<List<Map<String, dynamic>>> fetchFolders() async {
     if (_serverUrl.isEmpty) return [];
     try {
       var uri = Uri.parse('$_serverUrl/api/db_editor/folders');
-      var res = await http.get(uri).timeout(const Duration(seconds: 8));
+      var res = await http.get(uri, headers: _headers()).timeout(const Duration(seconds: 8));
       if (res.statusCode != 200) {
         uri = Uri.parse('$_serverUrl/api/db_editor/novels');
-        res = await http.get(uri).timeout(const Duration(seconds: 8));
+        res = await http.get(uri, headers: _headers()).timeout(const Duration(seconds: 8));
       }
       if (res.statusCode == 200) {
         final decoded = json.decode(utf8.decode(res.bodyBytes));
@@ -38,7 +42,7 @@ class CharacterFixerService {
     if (_serverUrl.isEmpty) return [];
     try {
       final uri = Uri.parse('$_serverUrl/api/db_editor/rules?folderName=${Uri.encodeComponent(folderName)}');
-      final res = await http.get(uri).timeout(const Duration(seconds: 8));
+      final res = await http.get(uri, headers: _headers()).timeout(const Duration(seconds: 8));
       if (res.statusCode == 200) {
         final decoded = json.decode(utf8.decode(res.bodyBytes));
         if (decoded is Map) {
@@ -62,7 +66,7 @@ class CharacterFixerService {
       final uri = Uri.parse('$_serverUrl/api/db_editor/rules');
       final res = await http.post(
         uri,
-        headers: {'Content-Type': 'application/json'},
+        headers: _headers({'Content-Type': 'application/json'}),
         body: json.encode({
           'folderName': folderName,
           'rules': rules.map((r) => r.toJson()).toList(),
@@ -86,7 +90,7 @@ class CharacterFixerService {
       final uri = Uri.parse('$_serverUrl/api/db_editor/discover_misreadings');
       final res = await http.post(
         uri,
-        headers: {'Content-Type': 'application/json'},
+        headers: _headers({'Content-Type': 'application/json'}),
         body: json.encode({
           'folderName': folderName,
           'source': source,
@@ -112,7 +116,7 @@ class CharacterFixerService {
       final uri = Uri.parse('$_serverUrl/api/db_editor/scan');
       final res = await http.post(
         uri,
-        headers: {'Content-Type': 'application/json'},
+        headers: _headers({'Content-Type': 'application/json'}),
         body: json.encode({'folderName': folderName}),
       ).timeout(const Duration(seconds: 30));
       if (res.statusCode == 200) {
@@ -147,7 +151,7 @@ class CharacterFixerService {
       final uri = Uri.parse('$_serverUrl/api/db_editor/approve_single');
       final res = await http.post(
         uri,
-        headers: {'Content-Type': 'application/json'},
+        headers: _headers({'Content-Type': 'application/json'}),
         body: json.encode({
           'id': id,
           'translated': translated,
@@ -179,7 +183,7 @@ class CharacterFixerService {
       final uri = Uri.parse('$_serverUrl/api/db_editor/approve_batch');
       final res = await http.post(
         uri,
-        headers: {'Content-Type': 'application/json'},
+        headers: _headers({'Content-Type': 'application/json'}),
         body: json.encode({
           'items': items,
           'backup': backup,

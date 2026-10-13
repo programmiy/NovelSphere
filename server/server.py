@@ -1,6 +1,7 @@
 import json
 import time
 import os
+import hmac
 import asyncio
 import shutil
 import subprocess
@@ -165,6 +166,8 @@ async def lifespan(app: FastAPI):
     
     backup_task = asyncio.create_task(backup_check_task())
     bracket_task = asyncio.create_task(periodic_bracket_restoration_task(interval_seconds=1800))
+    from server.remote_control import alert_monitor_loop
+    remote_alert_task = asyncio.create_task(alert_monitor_loop())
 
     Base.metadata.create_all(bind=engine)
     try:
@@ -213,8 +216,9 @@ async def lifespan(app: FastAPI):
     # Graceful shutdown: cancel background tasks
     backup_task.cancel()
     bracket_task.cancel()
+    remote_alert_task.cancel()
     try:
-        await asyncio.gather(backup_task, bracket_task, return_exceptions=True)
+        await asyncio.gather(backup_task, bracket_task, remote_alert_task, return_exceptions=True)
     except Exception:
         pass
 
@@ -242,6 +246,58 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# --- Security Middleware (로컬 루프백 프리패스 + 외부 LAN 암호화 토큰 검증) ---
+from server.security import verify_token
+
+@app.middleware("http")
+async def lanovel_security_middleware(request: Request, call_next):
+    client_ip = request.client.host if request.client else ""
+    is_loopback = client_ip in ("127.0.0.1", "::1", "localhost", "testclient")
+
+    stored_credential = (
+        settings.lanovel_auth_hash
+        or settings.lanovel_auth_token
+        or settings.remote_token
+        or ""
+    ).strip()
+
+    # 1. PC 내부 로컬호스트(루프백) 접근: 기본적으로 100% 프리패스 (1인 개발/사용 편의성 유지)
+    if is_loopback:
+        # 단, 브라우저를 통한 미허가 외부 사이트의 Cross-Origin CSRF 요청은 차단
+        origin = request.headers.get("origin")
+        if origin and origin not in settings.allowed_origins and not origin.startswith("chrome-extension://"):
+            return Response(
+                status_code=403,
+                content='{"detail": "Cross-Origin CSRF request blocked"}',
+                media_type="application/json"
+            )
+        return await call_next(request)
+
+    # 2. 외부 LAN(모바일 기기 등) 접근 제어
+    path = request.url.path
+    # 읽기 전용 정적 에셋, 랜딩 페이지, 헬스체크, 앱 다운로드/버전 확인은 허용
+    if path.startswith("/static") or path in ("/download", "/favicon.ico", "/service-worker.js", "/service-worker", "/health", "/api/app/version", "/api/app/download"):
+        return await call_next(request)
+
+    # 토큰이 설정되어 있는 경우 암호화 해시와 상수 시간 비교 검증
+    if stored_credential:
+        auth_token = (
+            request.headers.get("X-Lanovel-Key")
+            or request.headers.get("X-Remote-Token")
+            or request.query_params.get("key")
+            or request.query_params.get("token")
+        )
+        if not verify_token(auth_token, stored_credential):
+            return Response(
+                status_code=401,
+                content='{"detail": "LAN Access Denied: Valid X-Lanovel-Key required"}',
+                media_type="application/json"
+            )
+
+    return await call_next(request)
+
+
 
 # --- Static Files and Templates ---
 app.mount("/static", StaticFiles(directory=settings.static_dir), name="static")
@@ -296,7 +352,7 @@ async def redirect_service_worker():
     return RedirectResponse(url="/service-worker.js")
 
 # --- Routers ---
-from server.routers import ui, translation, data_crud, books, system, tasks, admin, url_config, db_editor, toc_importer, separators, notifications, sync, app_release, unclassified, dictionary, corpus_ai, ai_review
+from server.routers import ui, translation, data_crud, books, system, tasks, admin, url_config, db_editor, toc_importer, separators, notifications, sync, app_release, unclassified, dictionary, corpus_ai, ai_review, remote
 app.include_router(ui.router)
 app.include_router(translation.router)
 app.include_router(data_crud.router)
@@ -315,6 +371,7 @@ app.include_router(unclassified.router)
 app.include_router(dictionary.router)
 app.include_router(corpus_ai.router)
 app.include_router(ai_review.router)
+app.include_router(remote.router)
 
 @app.get("/api/status/summary", tags=["Status"])
 def get_api_status_summary():

@@ -11,6 +11,7 @@ from server.celery_app import celery_app
 from celery.result import AsyncResult
 from server.database import get_sqlite_conn
 from server.notifications import notify_task_event
+from server.security import is_safe_external_url
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -19,6 +20,9 @@ _fallback_status = {}
 
 def _fetch_and_update_title_worker(url: str):
     """Internal worker to fetch a single title. Returns True if title is valid and updated."""
+    if not is_safe_external_url(url):
+        logger.warning(f"Skipping unsafe or private URL for SSRF protection: {url}")
+        return False
     try:
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'

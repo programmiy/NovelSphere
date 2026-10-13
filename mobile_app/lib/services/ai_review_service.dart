@@ -6,13 +6,17 @@ import 'preferences_service.dart';
 
 class AiReviewService {
   static String get _serverUrl => PreferencesService.serverUrl.trim();
+  static Map<String, String> _headers([Map<String, String>? extra]) => {
+    ...PreferencesService.authHeaders,
+    if (extra != null) ...extra,
+  };
 
   /// 1차 AI 검수 큐 목록 조회
   static Future<List<AiReviewItem>> fetchQueue() async {
     if (_serverUrl.isEmpty) return [];
     try {
       final uri = Uri.parse('$_serverUrl/api/ai_review/queue');
-      final res = await http.get(uri).timeout(const Duration(seconds: 10));
+      final res = await http.get(uri, headers: _headers()).timeout(const Duration(seconds: 10));
       if (res.statusCode == 200) {
         final decoded = json.decode(utf8.decode(res.bodyBytes));
         final items = (decoded['items'] as List<dynamic>?) ?? [];
@@ -32,7 +36,7 @@ class AiReviewService {
     if (_serverUrl.isEmpty) return null;
     try {
       final uri = Uri.parse('$_serverUrl/api/ai_review/stats');
-      final res = await http.get(uri).timeout(const Duration(seconds: 6));
+      final res = await http.get(uri, headers: _headers()).timeout(const Duration(seconds: 6));
       if (res.statusCode == 200) {
         final decoded = json.decode(utf8.decode(res.bodyBytes));
         return AiReviewStats.fromJson(Map<String, dynamic>.from(decoded as Map));
@@ -52,7 +56,7 @@ class AiReviewService {
       final res = await http
           .post(
             uri,
-            headers: {'Content-Type': 'application/json'},
+            headers: _headers({'Content-Type': 'application/json'}),
             body: json.encode({
               'queue_id': queueId,
               'translated_text': translatedText,
@@ -74,7 +78,7 @@ class AiReviewService {
       final res = await http
           .post(
             uri,
-            headers: {'Content-Type': 'application/json'},
+            headers: _headers({'Content-Type': 'application/json'}),
             body: json.encode({'queue_id': queueId}),
           )
           .timeout(const Duration(seconds: 8));
@@ -93,7 +97,7 @@ class AiReviewService {
       final res = await http
           .post(
             uri,
-            headers: {'Content-Type': 'application/json'},
+            headers: _headers({'Content-Type': 'application/json'}),
             body: json.encode({'queue_id': queueId}),
           )
           .timeout(const Duration(seconds: 8));
@@ -109,7 +113,7 @@ class AiReviewService {
     if (_serverUrl.isEmpty) return null;
     try {
       final uri = Uri.parse('$_serverUrl/api/ai_review/reroll?queue_id=$queueId');
-      final res = await http.get(uri).timeout(const Duration(seconds: 15));
+      final res = await http.get(uri, headers: _headers()).timeout(const Duration(seconds: 15));
       if (res.statusCode == 200) {
         final decoded = json.decode(utf8.decode(res.bodyBytes));
         final raw = decoded['translated_text'] as String?;
@@ -130,7 +134,7 @@ class AiReviewService {
       final res = await http
           .post(
             uri,
-            headers: {'Content-Type': 'application/json'},
+            headers: _headers({'Content-Type': 'application/json'}),
             body: json.encode({
               'translation_id': translationId,
               'translated_text': translatedText,
@@ -149,7 +153,7 @@ class AiReviewService {
     if (_serverUrl.isEmpty) return {};
     try {
       final uri = Uri.parse('$_serverUrl/api/ai_review/reretranslate/queue');
-      final res = await http.get(uri).timeout(const Duration(seconds: 8));
+      final res = await http.get(uri, headers: _headers()).timeout(const Duration(seconds: 8));
       if (res.statusCode == 200) {
         final decoded = json.decode(utf8.decode(res.bodyBytes));
         final modelsMap = (decoded['models'] as Map<String, dynamic>?) ?? {};
@@ -177,7 +181,7 @@ class AiReviewService {
       final res = await http
           .post(
             uri,
-            headers: {'Content-Type': 'application/json'},
+            headers: _headers({'Content-Type': 'application/json'}),
             body: json.encode({
               'queue_ids': queueIds,
               'model': model,
@@ -196,7 +200,7 @@ class AiReviewService {
     if (_serverUrl.isEmpty) return false;
     try {
       final uri = Uri.parse('$_serverUrl/api/ai_review/reretranslate/item/$queueId');
-      final res = await http.delete(uri).timeout(const Duration(seconds: 8));
+      final res = await http.delete(uri, headers: _headers()).timeout(const Duration(seconds: 8));
       return res.statusCode == 200;
     } catch (e) {
       if (kDebugMode) print('[AiReviewService] deleteReretranslateItem error: $e');
@@ -209,7 +213,7 @@ class AiReviewService {
     if (_serverUrl.isEmpty) return false;
     try {
       final uri = Uri.parse('$_serverUrl/api/ai_review/trigger_initial');
-      final res = await http.post(uri).timeout(const Duration(seconds: 10));
+      final res = await http.post(uri, headers: _headers()).timeout(const Duration(seconds: 10));
       return res.statusCode == 200;
     } catch (e) {
       if (kDebugMode) print('[AiReviewService] triggerInitial error: $e');

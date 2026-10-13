@@ -84,6 +84,14 @@ class PreferencesService {
     return url.replaceAll(RegExp(r'/+$'), '');
   }
 
+  // PC 서버 LAN 연동 보안 토큰 (기본값: lnv_1lFxviC0NUXQqwUVwSuPM-QhxMieK_BX)
+  static String get authToken => _prefs.getString('pc_auth_token') ?? 'lnv_1lFxviC0NUXQqwUVwSuPM-QhxMieK_BX';
+  static Future<void> setAuthToken(String value) => _prefs.setString('pc_auth_token', value.trim());
+
+  static Map<String, String> get authHeaders => {
+    if (authToken.isNotEmpty) 'X-Lanovel-Key': authToken,
+  };
+
   static int get lastSyncedTimestamp => _prefs.getInt('last_synced_timestamp') ?? 0;
   static Future<void> setLastSyncedTimestamp(int value) => _prefs.setInt('last_synced_timestamp', value);
 

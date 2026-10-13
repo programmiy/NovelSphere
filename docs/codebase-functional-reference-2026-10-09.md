@@ -10,13 +10,14 @@
 | 구분 | 파일 경로 | 핵심 역할 및 주요 함수/클래스 |
 | :--- | :--- | :--- |
 | **데스크톱** | `main.py` | PyWebView 윈도우 + 시스템 트레이(`Pystray`) + 서버/셀러리 서브프로세스 수명주기 관리 |
-| **설정/연결** | `server/settings.py` | Pydantic 환경변수 (.env), Gemini 모델(`gemini-3.5-flash-lite`), 포트(8001), CORS 허용 출처 |
+| **설정/연결** | `server/settings.py` | Pydantic 환경변수 (.env), Gemini 모델(`gemini-3.5-flash-lite`), 포트(8001), CORS 허용 출처, 보안 토큰 해시 |
+| **보안 코어** | `server/security.py` | PBKDF2-HMAC-SHA256 (10만 회 솔트 해시), `verify_token` 상수 시간 비교, `is_safe_external_url` SSRF 사설망 방어 |
 | **DB 코어** | `server/database.py` | SQLite WAL 모드, `busy_timeout=5000`, `REGEXP` 함수 주입, SQLAlchemy 세션 제너레이터 |
 | **ORM 모델** | `server/models.py` | `Translation`, `BookActivity`(`is_visible` 포함), `NovelSeparatorSetting`, `TranslationTrash` 등 12개 테이블 |
 | **RPM 관리** | `server/services/rpm_manager.py` | **2단계 슬라이딩 윈도우(API 60초 + 회차 5분)**, 최근 회차 가중 적응형 휴식([`proactive_rpm_rest`](file:///C:/LANOVEL/server/services/rpm_manager.py)), 세션 소켓 재생성, 회차 기반 가변 딜레이 계산([`calculate_episode_adaptive_delay`](file:///C:/LANOVEL/server/services/rpm_manager.py)) |
 | **품질/복원** | `server/rule_classifier.py` | 100% 룰베이스 번역 품질 분류(규칙 1~4), 대사 괄호(`「%」`) 자동 복원([`restore_brackets`](file:///C:/LANOVEL/server/rule_classifier.py)) |
 | **알림/현황판** | `server/notifications.py` | 배민 스타일 단일 번역 현황판([`update_translation_status`](file:///C:/LANOVEL/server/notifications.py)), Gemini API 오류 통계, 인메모리 버퍼 & SSE 스트림 |
-| **서버 코어** | `server/server.py` | **15개 라우터 등록**, FTS5 가상테이블/트리거, 30분 괄호복원 태스크, 24시간 온라인 백업, 캐시 버스팅 |
+| **서버 코어** | `server/server.py` | **15개 라우터 등록**, `lanovel_security_middleware` (루프백 100% 프리패스 + LAN 토큰 검증 + CSRF 차단), FTS5 가상테이블/트리거, 30분 괄호복원, 백업 |
 | **번역 엔진** | `server/routers/translation.py` | Gemini 호출, 기본모델 verbatim 2단계 자체 복구([`_recover_verbatim_items`](file:///C:/LANOVEL/server/routers/translation.py)), 17시 안전 중단, **`GET /api/rpm_status`** |
 | **데이터 CRUD** | `server/routers/data_crud.py` | FTS5 전문 검색, N+1 제거 upsert, 이상 번역 검출, 복원 센터 모달(휴지통/알림) |
 | **사전/코퍼스** | `server/routers/dictionary.py` | **100% No-AI 사전 연동 및 누적 코퍼스 검색** (`GET /api/dictionary/lookup`, `GET /api/dictionary/links`) |
@@ -140,3 +141,19 @@
 | **"뷰어에서 읽던 위치(진도)가 저장이 안 돼"** | `server/static/viewer.js`<br>`mobile_app/lib/ui/viewer/reader_screen.dart`<br>`server/routers/books.py` | 회차 내부 페이지/스크롤 위치를 정확히 저장 및 복원. |
 | **"Gemini 모델 바꿔줘" / "재번역할 때 다른 모델 쓰게 해줘"** | `server/settings.py` (`gemini_default_model`, `gemini_retranslation_model`)<br>`server/routers/translation.py` | 일반 번역은 `gemini-3.5-flash-lite`, 단락 재번역은 `gemini-3.8-flash` 분기 사용. |
 | **"책을 파일 하나로 저장해서 인터넷 없이 보고 싶어"** | `server/routers/books.py` (`export_book_as_html`) | CSS/JS와 소설 JSON 데이터를 인라인 결합한 단일 HTML 파일 내보내기. |
+| **"보안 기능 끄고 작업할래" / "보안 어떻게 켜고 꺼?" / "다른 세션에서 보안 토큰 빼고 작업해줘"** | [`docs/SECURITY_SYSTEM_REFERENCE.md`](file:///C:/LANOVEL/docs/SECURITY_SYSTEM_REFERENCE.md)<br>`server/server.py` (`lanovel_security_middleware`)<br>`.env` (`LANOVEL_AUTH_HASH`) | `.env`에서 `LANOVEL_AUTH_HASH=""`로 비우면 즉시 100% 무인증 프리패스 모드로 전환. 상세 온/오프 및 바이패스 방법은 [SECURITY_SYSTEM_REFERENCE.md](file:///C:/LANOVEL/docs/SECURITY_SYSTEM_REFERENCE.md) 참조. |
+| **"모바일 앱 토큰 인증 어떻게 돼?" / "스마트폰 동기화 안 돼"** | `server/security.py`<br>`mobile_app/lib/services/preferences_service.dart`<br>`mobile_app/lib/services/sync_service.dart` | 모바일 앱(v1.4.1+)에 `lnv_1lFxviC0NUXQqwUVwSuPM-QhxMieK_BX` 기본 내장되어 `X-Lanovel-Key`로 전송. 서버는 PBKDF2 해시 검증. |
+
+---
+
+## 3. 🛡️ 보안 아키텍처 및 세션별 온/오프(Bypass) 가이드
+
+* **전체 상세 레퍼런스 문서:** [`docs/SECURITY_SYSTEM_REFERENCE.md`](file:///C:/LANOVEL/docs/SECURITY_SYSTEM_REFERENCE.md)
+* **보안 요약:**
+  1. **로컬 루프백 100% 프리패스 (`127.0.0.1`, `localhost`):** PC 브라우저, 크롬 확장, 개발 테스트는 토큰 없이 작동.
+  2. **브라우저 Cross-Origin CSRF 차단:** 악성 외부 사이트에서 로컬 서버로 들어오는 요청 차단 (`403 Forbidden`).
+  3. **외부 LAN 기기 토큰 검증:** 스마트폰 등 외부 기기는 `X-Lanovel-Key` 검증 (`server/server.py`).
+  4. **단방향 솔트 해시 보관:** `.env`에 `LANOVEL_AUTH_HASH` (PBKDF2-HMAC-SHA256 100,000회)로 보관.
+* **다른 개발 세션에서 보안 해제(Bypass) 필요 시:**
+  * `.env` 파일에서 `LANOVEL_AUTH_HASH=""` 및 `REMOTE_TOKEN=""` 으로 비우기만 하면 즉시 모든 API가 완전 무인증 프리패스로 전환됩니다.
+

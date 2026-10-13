@@ -71,6 +71,7 @@ class SyncService {
     try {
       final res = await http.get(
         Uri.parse('$serverUrl/api/sync/ping'),
+        headers: PreferencesService.authHeaders,
       ).timeout(const Duration(seconds: 4));
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body);
@@ -97,7 +98,7 @@ class SyncService {
     final uri = Uri.parse('$serverUrl/api/sync/full-pack');
 
     try {
-      final request = http.Request('GET', uri);
+      final request = http.Request('GET', uri)..headers.addAll(PreferencesService.authHeaders);
       final response = await http.Client().send(request).timeout(const Duration(seconds: 60));
 
       if (response.statusCode != 200) {
@@ -146,7 +147,7 @@ class SyncService {
       // [핵심] 전송 확인 후 PC 서버 임시 파일 즉시 삭제 요청 (사용자 코멘트 반영)
       if (packId.isNotEmpty) {
         try {
-          await http.delete(Uri.parse('$serverUrl/api/sync/full-pack/$packId'));
+          await http.delete(Uri.parse('$serverUrl/api/sync/full-pack/$packId'), headers: PreferencesService.authHeaders);
         } catch (_) {}
       }
 
@@ -233,6 +234,7 @@ class SyncService {
           headers: {
             'Content-Type': 'application/json',
             'Content-Encoding': 'gzip',
+            ...PreferencesService.authHeaders,
           },
           body: compressedBytes,
         ).timeout(const Duration(seconds: 15));
@@ -257,7 +259,7 @@ class SyncService {
 
       while (hasMore) {
         final uri = Uri.parse('$serverUrl/api/sync/pull?since=$currentSince&last_id=$currentLastId&limit=10000');
-        final pullRes = await http.get(uri).timeout(const Duration(seconds: 30));
+        final pullRes = await http.get(uri, headers: PreferencesService.authHeaders).timeout(const Duration(seconds: 30));
 
         if (pullRes.statusCode != 200) {
           throw Exception('서버 응답 오류 (HTTP ${pullRes.statusCode})');

@@ -380,9 +380,10 @@ def cleanup_temp_pack(pack_id: str):
     """
     file_path = _ACTIVE_TEMP_PACKS.pop(pack_id, None)
     if not file_path:
-        temp_dir = _get_temp_sync_dir()
-        potential_path = os.path.join(temp_dir, f"{pack_id}.db.gz")
-        if os.path.exists(potential_path):
+        temp_dir = os.path.abspath(_get_temp_sync_dir())
+        clean_pack_id = os.path.basename(str(pack_id).replace("\\", "/"))
+        potential_path = os.path.abspath(os.path.join(temp_dir, f"{clean_pack_id}.db.gz"))
+        if potential_path.startswith(temp_dir) and os.path.exists(potential_path):
             file_path = potential_path
 
     if file_path and os.path.exists(file_path):
@@ -638,19 +639,25 @@ def get_chapter_tts_audio(book: str, chapter: str):
     PC에서 고품질로 생성된 챕터별 TTS 오디오 파일이 보관된 디렉토리에서
     해당 챕터의 오디오(예: mp3/opus)를 압축/스트리밍하여 모바일 앱으로 전송합니다.
     """
-    decoded_book = unquote(book)
+    decoded_book = os.path.basename(unquote(book).replace("\\", "/"))
     decoded_chapter = unquote(chapter)
 
     # PC 서버 내 TTS 오디오 저장 디렉토리 (기본값: server/tts_cache/)
     base_data = getattr(settings, 'data_dir', os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data"))
-    tts_dir = os.path.join(base_data, "tts_cache", decoded_book)
+    base_tts_cache = os.path.abspath(os.path.join(base_data, "tts_cache"))
+    tts_dir = os.path.abspath(os.path.join(base_tts_cache, decoded_book))
+
+    # Path traversal 방어: base_tts_cache 하위 디렉토리인지 검증
+    if not tts_dir.startswith(base_tts_cache):
+        raise HTTPException(status_code=400, detail="Invalid book path")
+
     safe_filename = "".join(c for c in decoded_chapter if c.isalnum() or c in (' ', '_', '-')).rstrip()
     
     # mp3, m4a, ogg 탐색
     found_path = None
     for ext in [".mp3", ".m4a", ".ogg", ".opus"]:
-        candidate = os.path.join(tts_dir, f"{safe_filename}{ext}")
-        if os.path.exists(candidate):
+        candidate = os.path.abspath(os.path.join(tts_dir, f"{safe_filename}{ext}"))
+        if candidate.startswith(base_tts_cache) and os.path.exists(candidate):
             found_path = candidate
             break
 

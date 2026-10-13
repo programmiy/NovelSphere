@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin
+from server.security import is_safe_external_url
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -21,6 +22,8 @@ class TocUrl(BaseModel):
 )
 async def import_toc(item: TocUrl):
     toc_url = item.toc_url.strip()
+    if not is_safe_external_url(toc_url):
+        raise HTTPException(status_code=400, detail="유효하지 않거나 안전하지 않은 외부 URL입니다.")
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
     }

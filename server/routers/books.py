@@ -16,6 +16,7 @@ from fastapi.templating import Jinja2Templates
 from server.settings import settings
 from server.database import get_sqlite_conn, dict_factory, get_db_path
 from server.utils import natural_sort_key
+from server.security import is_safe_external_url
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -383,11 +384,13 @@ async def export_book_as_html(folder_name: str):
     except FileNotFoundError:
         raise HTTPException(status_code=500, detail="Viewer assets (CSS/JS) not found.")
 
+    raw_json = json.dumps(book_data, ensure_ascii=False)
+    safe_json = raw_json.replace("</", "<\\/")
     template_context = {
         "request": None,
         "book_name": decoded_folder_name,
         "viewer_css": viewer_css,
-        "book_data_json": json.dumps(book_data, ensure_ascii=False),
+        "book_data_json": safe_json,
         "viewer_js": viewer_js
     }
     
@@ -536,6 +539,10 @@ def _crawl_and_update_summary_worker(folder_name: str, url: str):
             nup_match = re.search(r'https?://novelup\.plus/story/(\d+)', url)
             if nup_match:
                 target_url = f"https://novelup.plus/story/{nup_match.group(1)}"
+
+        if not is_safe_external_url(target_url):
+            logger.warning(f"[줄거리 수집 차단] 안전하지 않거나 내부망 URL입니다: '{folder_name}' ({target_url})")
+            return False
 
         with requests.Session() as s:
             s.headers.update(headers)

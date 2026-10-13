@@ -122,7 +122,7 @@ class StatusDashboardService {
     try {
       final serverUrl = PreferencesService.serverUrl;
       final uri = Uri.parse('$serverUrl/api/status/summary');
-      final res = await http.get(uri).timeout(const Duration(seconds: 4));
+      final res = await http.get(uri, headers: PreferencesService.authHeaders).timeout(const Duration(seconds: 4));
 
       if (res.statusCode == 200) {
         final data = DashboardStatusData.fromJson(

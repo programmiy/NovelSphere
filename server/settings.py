@@ -80,6 +80,11 @@ class Settings(BaseSettings):
     ntfy_topic: str = Field(default="NovelSphere", description="ntfy 토픽 이름")
     ntfy_progress_step: int = Field(default=100, description="번역 진행도 알림 주기 (100은 100% 완료 시에만 알림, 25/50은 중간 진행률 알림)")
 
+    # --- Remote Control & LAN Security Token ---
+    remote_token: str = Field(default="", description="원격 제어 API 인증 토큰 또는 해시 (.env의 REMOTE_TOKEN)")
+    lanovel_auth_token: str = Field(default="", description="로컬 LAN 및 모바일 연동 평문 토큰 (.env의 LANOVEL_AUTH_TOKEN)")
+    lanovel_auth_hash: str = Field(default="", description="PBKDF2-SHA256 암호화된 토큰 해시 (.env의 LANOVEL_AUTH_HASH)")
+
 
 # 설정 객체 인스턴스화
 # 이 객체를 다른 모듈에서 import하여 사용합니다.
