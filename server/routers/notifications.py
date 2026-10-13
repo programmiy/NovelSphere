@@ -247,6 +247,8 @@ def get_status_summary():
         "quota_reset_hour": trans_status.get("quota_reset_hour", 16),
         "quota_window_start_ts": trans_status.get("quota_window_start_ts", 0),
         "today_translations_count": trans_status.get("today_translations_count", 0),
+        "today_episodes_count": trans_status.get("today_episodes_count", 0),
+        "today_start_ts": trans_status.get("today_start_ts", 0),
         "current_rpm": trans_status.get("current_rpm", 0),
         "updated_at": trans_status.get("updated_at", 0)
     }

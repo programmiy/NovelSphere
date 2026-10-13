@@ -311,5 +311,54 @@ def test_status_summary_endpoint():
     assert "503 OVERLOAD" in data2["api_errors"]["by_type"]
     assert "429 QUOTA" in data2["api_errors"]["by_type"]
     assert "2건" in data2["api_errors"]["summary_text"]
+    assert "today_episodes_count" in data2
+    assert "today_translations_count" in data2
+    assert isinstance(data2["today_episodes_count"], int)
+    assert isinstance(data2["today_translations_count"], int)
+
+
+def test_unclassified_episodes_included_in_today_count():
+    """미분류(folderName IS NULL 또는 빈 문자열) 보관함의 오늘 번역 회차가 today_episodes_count에 반영되는지 검증"""
+    import time
+    from server.database import SessionLocal
+    from server.models import Translation
+
+    now_ts = int(time.time())
+    with SessionLocal() as db:
+        # 미분류 에피소드 1 (folderName = None)
+        t1 = Translation(
+            url="https://kakuyomu.jp/works/test_unclassified_999/episodes/1",
+            pid="p1",
+            original="テスト本文1",
+            translated="테스트 본문 1",
+            timestamp=now_ts,
+            folderName=None,
+            title="미분류 1화"
+        )
+        # 미분류 에피소드 2 (folderName = "")
+        t2 = Translation(
+            url="https://kakuyomu.jp/works/test_unclassified_999/episodes/2",
+            pid="p2",
+            original="テスト本文2",
+            translated="테스트 본문 2",
+            timestamp=now_ts,
+            folderName="",
+            title="미분류 2화"
+        )
+        db.add_all([t1, t2])
+        db.commit()
+
+        try:
+            res = client.get("/api/notifications/summary")
+            assert res.status_code == 200
+            data = res.json()
+            # 오늘 번역 회차 수에 미분류 회차가 최소 2개 이상 잡혀야 함
+            assert data["today_episodes_count"] >= 2
+            assert data["today_translations_count"] >= 2
+        finally:
+            db.delete(t1)
+            db.delete(t2)
+            db.commit()
+
 
 

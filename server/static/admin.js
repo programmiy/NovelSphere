@@ -4342,6 +4342,17 @@ async function checkAndLoadUnclassifiedNovels() {
         const res = await fetch(`/api/unclassified_novels?t=${Date.now()}`);
         if (!res.ok) return;
         unclassifiedData = await res.json();
+
+        // 미분류 데이터 변동 시 상단 오늘 번역 실적 및 쿼터 현황도 최신화
+        try {
+            const summaryRes = await fetch(`/api/notifications/summary?t=${Date.now()}`);
+            if (summaryRes.ok) {
+                latestQuotaSummary = await summaryRes.json();
+                updateStatistics(groupedTranslations);
+            }
+        } catch (e) {
+            // silent
+        }
         
         const toggleBar = document.getElementById('unclassifiedToggleBar');
         const badge = document.getElementById('unclassifiedToggleBadge');

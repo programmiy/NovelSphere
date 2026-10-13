@@ -289,12 +289,12 @@ def send_ntfy(
     active_topic = (topic or settings.ntfy_topic or "").strip()
     active_server = (server or settings.ntfy_server or "https://ntfy.sh").strip()
 
-    # ntfy 외부 서비스 완전 분리: 설정이 비활성화되어 있으면 외부 HTTP 요청 원천 차단 (단, 명시적 topic 테스트는 허용)
+    # ntfy 외부 서비스 완전 분리 및 해제: 비활성화 상태이면 외부 HTTP 요청 원천 차단 (명시적 topic 테스트 mock만 허용)
     if not settings.ntfy_enabled and not topic:
         return False
 
-    if not active_topic:
-        logger.debug("[ntfy] 토픽명이 설정되지 않아 전송을 생략합니다.")
+    if not active_topic or not active_server:
+        logger.debug("[ntfy] 토픽명 또는 서버 URL이 설정되지 않아 전송을 생략합니다.")
         return False
 
     num_priority = PRIORITY_MAP.get(str(priority).lower(), 3)
