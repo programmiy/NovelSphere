@@ -54,7 +54,11 @@ class Settings(BaseSettings):
         "https://novelup.plus",
         "http://novelup.plus",
         "http://192.168.219.103",
-        "http://192.168.219.103:8001"
+        "http://192.168.219.103:8001",
+        "http://192.168.219.106",
+        "http://192.168.219.106:8001",
+        "http://100.126.88.22",
+        "http://100.126.88.22:8001"
     ]
 
     # --- Celery Settings ---

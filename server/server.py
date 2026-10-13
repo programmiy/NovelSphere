@@ -250,10 +250,20 @@ app.add_middleware(
 # --- Security Middleware (로컬 루프백 프리패스 + 외부 LAN 암호화 토큰 검증) ---
 from server.security import verify_token
 
+import ipaddress
+
+TAILSCALE_NETWORK = ipaddress.ip_network("100.64.0.0/10")
+
 @app.middleware("http")
 async def lanovel_security_middleware(request: Request, call_next):
     client_ip = request.client.host if request.client else ""
     is_loopback = client_ip in ("127.0.0.1", "::1", "localhost", "testclient")
+    is_tailscale = False
+    if not is_loopback and client_ip:
+        try:
+            is_tailscale = ipaddress.ip_address(client_ip) in TAILSCALE_NETWORK
+        except Exception:
+            is_tailscale = False
 
     stored_credential = (
         settings.lanovel_auth_hash
@@ -262,8 +272,9 @@ async def lanovel_security_middleware(request: Request, call_next):
         or ""
     ).strip()
 
-    # 1. PC 내부 로컬호스트(루프백) 접근: 기본적으로 100% 프리패스 (1인 개발/사용 편의성 유지)
-    if is_loopback:
+    # 1. PC 내부 로컬호스트(루프백) 및 Tailscale 가상 사설망(100.64.0.0/10) 접근:
+    # 1인 소유 기기 간 WireGuard 암호화 통신이 보장되므로 편의를 위해 프리패스 허용
+    if is_loopback or is_tailscale:
         # 단, 브라우저를 통한 미허가 외부 사이트의 Cross-Origin CSRF 요청은 차단
         origin = request.headers.get("origin")
         if origin and origin not in settings.allowed_origins and not origin.startswith("chrome-extension://"):
@@ -274,10 +285,10 @@ async def lanovel_security_middleware(request: Request, call_next):
             )
         return await call_next(request)
 
-    # 2. 외부 LAN(모바일 기기 등) 접근 제어
+    # 2. 외부 LAN(공유기 Wi-Fi 등) 접근 제어
     path = request.url.path
-    # 읽기 전용 정적 에셋, 랜딩 페이지, 헬스체크, 앱 다운로드/버전 확인은 허용
-    if path.startswith("/static") or path in ("/download", "/favicon.ico", "/service-worker.js", "/service-worker", "/health", "/api/app/version", "/api/app/download"):
+    # 읽기 전용 정적 에셋, 랜딩 페이지, 헬스체크, 앱 다운로드/버전 확인, 핑 확인은 허용
+    if path.startswith("/static") or path in ("/download", "/favicon.ico", "/service-worker.js", "/service-worker", "/health", "/api/app/version", "/api/app/download", "/api/sync/ping"):
         return await call_next(request)
 
     # 토큰이 설정되어 있는 경우 암호화 해시와 상수 시간 비교 검증
