@@ -239,7 +239,7 @@ async def trigger_manual_reretranslate(background_tasks: BackgroundTasks, db: Se
         return {"message": "거절(재재번역 대기)된 항목이 없습니다."}
     
     background_tasks.add_task(process_batch_reretranslation_bg)
-    return {"message": f"총 {count}건의 문장에 대해 통계 기반 다중 모델(3.0~3.8) 재재번역 작업이 백그라운드에서 시작되었습니다."}
+    return {"message": f"총 {count}건의 문장에 대해 통계 기반 다중 모델(3.5~3.8) 재재번역 작업이 백그라운드에서 시작되었습니다."}
 
 @router.get("/api/ai_review/reretranslate/queue")
 async def get_reretranslate_queue(folderName: Optional[str] = None, db: Session = Depends(get_db)):
@@ -260,7 +260,7 @@ async def get_reretranslate_queue(folderName: Optional[str] = None, db: Session 
     p = get_percentiles(lengths, [25, 50, 75])
     
     model_batches = {
-        'gemini-3.0-flash': [],
+        'gemini-3.5-flash': [],
         'gemini-3.6-flash': [],
         'gemini-3.7-flash': [],
         'gemini-3.8-flash': []
@@ -268,7 +268,7 @@ async def get_reretranslate_queue(folderName: Optional[str] = None, db: Session 
     
     for item, base_trans in results:
         length = len(item.original_text) if item.original_text else 0
-        if length <= p['p25']: model = 'gemini-3.0-flash'
+        if length <= p['p25']: model = 'gemini-3.5-flash'
         elif length <= p['p50']: model = 'gemini-3.6-flash'
         elif length <= p['p75']: model = 'gemini-3.7-flash'
         else: model = 'gemini-3.8-flash'
@@ -379,7 +379,7 @@ async def process_batch_reretranslation_bg():
         
         # Group by model
         model_batches = {
-            'gemini-3.0-flash': [],
+            'gemini-3.5-flash': [],
             'gemini-3.6-flash': [],
             'gemini-3.7-flash': [],
             'gemini-3.8-flash': []
@@ -387,7 +387,7 @@ async def process_batch_reretranslation_bg():
         
         for item in items:
             length = len(item.original_text)
-            if length <= p['p25']: model = 'gemini-3.0-flash'
+            if length <= p['p25']: model = 'gemini-3.5-flash'
             elif length <= p['p50']: model = 'gemini-3.6-flash'
             elif length <= p['p75']: model = 'gemini-3.7-flash'
             else: model = 'gemini-3.8-flash'

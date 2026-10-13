@@ -2844,9 +2844,9 @@ async function translateAllPTags(isRetranslation = false) {
                 if (response && response.notification) {
                     logToSidebar(response.notification, 'log-error');
                     if (response.stop) {
-                        if (response.isQuotaResetStop) {
-                            // 쿼터 초기화(16시/17시) 정각 도달: 재시도나 재개 대기 없이 즉시 완전 중단
-                            await abortTurboMode("초기화 시간 도달");
+                        if (response.isQuotaResetStop || response.isServerOffline) {
+                            // 쿼터 초기화(16시/17시) 정각 도달 또는 서버 오프라인: 재시도나 재개 대기 없이 즉시 완전 중단
+                            await abortTurboMode(response.isServerOffline ? "서버 오프라인" : "초기화 시간 도달");
                             return;
                         }
 
@@ -3025,6 +3025,9 @@ async function translateAllPTags(isRetranslation = false) {
             if (response && response.notification) {
                 logToSidebar(response.notification, 'log-error');
                 if (response.stop) {
+                    if (response.isQuotaResetStop || response.isServerOffline) {
+                        await abortTurboMode(response.isServerOffline ? "서버 오프라인" : "초기화 시간 도달");
+                    }
                     isTranslationCancelled = true;
                     document.getElementById('stop-translation-btn').style.display = 'none';
                     updateSidebarWithCancelled();

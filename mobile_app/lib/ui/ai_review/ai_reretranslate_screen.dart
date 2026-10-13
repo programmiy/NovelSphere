@@ -18,11 +18,10 @@ class _AiReretranslateScreenState extends State<AiReretranslateScreen> {
   final Set<String> _runningModels = {};
 
   static const Map<String, Map<String, dynamic>> _modelMeta = {
-    'gemini-3.0-flash': {'color': Colors.blue, 'desc': '초단문 (하위 20%)', 'icon': Icons.bolt_rounded},
-    'gemini-3.5-flash': {'color': Colors.teal, 'desc': '단문 대화체 (20~40%)', 'icon': Icons.chat_bubble_outline_rounded},
-    'gemini-3.6-flash': {'color': Colors.purple, 'desc': '중문 일반 서술 (40~60%)', 'icon': Icons.auto_stories_rounded},
-    'gemini-3.7-flash': {'color': Colors.pinkAccent, 'desc': '장문 복합 문장 (60~80%)', 'icon': Icons.psychology_rounded},
-    'gemini-3.8-flash': {'color': Colors.amber, 'desc': '초장문/고난도 묘사 (상위 20%)', 'icon': Icons.diamond_rounded},
+    'gemini-3.5-flash': {'color': Colors.blue, 'desc': '초단문 (하위 25%)', 'icon': Icons.bolt_rounded},
+    'gemini-3.6-flash': {'color': Colors.purple, 'desc': '단문 일반 서술 (25~50%)', 'icon': Icons.auto_stories_rounded},
+    'gemini-3.7-flash': {'color': Colors.pinkAccent, 'desc': '중문 복합 문장 (50~75%)', 'icon': Icons.psychology_rounded},
+    'gemini-3.8-flash': {'color': Colors.amber, 'desc': '장문/고난도 묘사 (상위 25%)', 'icon': Icons.diamond_rounded},
   };
 
   @override
@@ -112,7 +111,7 @@ class _AiReretranslateScreenState extends State<AiReretranslateScreen> {
 
     if (!mounted) return;
     setState(() => _runningModels.clear());
-    _showToast('총 $launched건의 문장이 5개 모델로 분산 재재번역 시작되었습니다!');
+    _showToast('총 $launched건의 문장이 4개 모델(3.5~3.8)로 분산 재재번역 시작되었습니다!');
     _loadData();
   }
 
@@ -229,7 +228,7 @@ class _AiReretranslateScreenState extends State<AiReretranslateScreen> {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    '길이 백분위 통계 기반 5개 모델 분산 라우팅',
+                    '길이 백분위 통계 기반 4개 모델(3.5~3.8) 분산 라우팅',
                     style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
                   ),
                 ],

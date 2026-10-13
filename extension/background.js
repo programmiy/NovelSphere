@@ -1,5 +1,5 @@
-let apiErrorCount = 0;
-const API_ERROR_LIMIT = 3;
+// 원격 제어(모바일 앱 → 서버 → 확장) 모듈 로드
+importScripts('remote.js');
 
 // =================================================================================
 // One-time migration script for quote style
@@ -103,7 +103,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                     request.isRetranslation || false, 
                     request.model || null
                 );
-                apiErrorCount = 0; // 성공 시 카운터 리셋
                 try {
                     sendResponse({
                         translations: result.translations,
@@ -131,6 +130,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                             notification: error.message,
                             stop: true,
                             isQuotaResetStop: true
+                        });
+                    } else if (error.message && (error.message.includes("Failed to fetch") || error.message.includes("NetworkError") || error.message.includes("network error"))) {
+                        // PC 로컬 번역 서버(http://127.0.0.1:8001) 미실행 또는 네트워크 연결 불가 (Fast-Fail)
+                        sendResponse({
+                            notification: "❌ PC 번역 서버(http://127.0.0.1:8001)에 연결할 수 없습니다. main.py(서버)가 실행 중인지 확인해주세요.",
+                            stop: true,
+                            isServerOffline: true
                         });
                     } else {
                         // Generic error for other issues
