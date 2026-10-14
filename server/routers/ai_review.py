@@ -2,7 +2,8 @@ import time
 import math
 import asyncio
 import json
-from typing import List, Optional, Dict, Any
+import logging
+from typing import List, Optional, Dict, Any, Tuple
 from fastapi import APIRouter, Depends, HTTPException, Request, BackgroundTasks
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
@@ -17,7 +18,41 @@ from server.services.similarity_service import get_cause_reference_data, get_cau
 from server.routers.translation import call_gemini_api
 import re
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter()
+
+def call_gemini_with_model_fallback(primary_model: str, prompt: str) -> Tuple[Optional[dict], str]:
+    """
+    Calls Gemini API with primary_model. If 503 (high demand), 429, or timeout occurs,
+    automatically tries fallback models in sequence.
+    Returns (response_dict, actual_model_used).
+    """
+    model_hierarchy = [
+        'gemini-3.8-flash',
+        'gemini-3.7-flash',
+        'gemini-3.6-flash',
+        'gemini-3.5-flash',
+        'gemini-2.5-flash'
+    ]
+    models_to_try = [primary_model]
+    for m in model_hierarchy:
+        if m not in models_to_try:
+            models_to_try.append(m)
+            
+    last_err = None
+    for m in models_to_try:
+        api_url = f"https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent?key={settings.gemini_api_key}"
+        try:
+            res = call_gemini_api(api_url, prompt, timeout=15)
+            return res, m
+        except Exception as e:
+            last_err = e
+            logger.warning(f"[Gemini Fallback] Model '{m}' failed with {e}. Trying next available model...")
+            continue
+            
+    raise last_err or RuntimeError("All Gemini models failed")
+
 
 class ApproveRejectReq(BaseModel):
     queue_id: int
@@ -27,9 +62,20 @@ class ApproveRejectReq(BaseModel):
 class UndoReq(BaseModel):
     queue_id: int
 
-def clean_ai_translation(text: Optional[str]) -> str:
+def clean_ai_translation(text: Any) -> str:
     if not text:
         return ""
+    if isinstance(text, dict):
+        val = text.get("translated") or text.get("translation") or text.get("text")
+        if isinstance(val, (str, dict, list)):
+            return clean_ai_translation(val)
+        return str(text).strip()
+    if isinstance(text, list):
+        if len(text) > 0:
+            return clean_ai_translation(text[0])
+        return ""
+    if not isinstance(text, str):
+        text = str(text)
     cleaned = text.strip()
     
     # 0. 마크다운 코드블록 내부에 들어있는 경우 추출
@@ -141,7 +187,7 @@ async def get_ai_review_stats(folderName: Optional[str] = None, db: Session = De
 async def process_initial_translation_bg(items_to_translate: list):
     db = SessionLocal()
     try:
-        model = "gemini-3.1-flash-lite"
+        model = getattr(settings, "gemini_retranslation_model", "gemini-3.8-flash") or "gemini-3.8-flash"
         api_url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={settings.gemini_api_key}"
         
         # We will batch 20 items per API call to reduce RPM
@@ -168,7 +214,7 @@ async def process_initial_translation_bg(items_to_translate: list):
 {originals_json}
 """
             try:
-                res = await asyncio.to_thread(call_gemini_api, api_url, prompt)
+                res, actual_model = await asyncio.to_thread(call_gemini_with_model_fallback, model, prompt)
                 new_texts = []
                 
                 if res and "candidates" in res and res["candidates"]:
@@ -182,15 +228,15 @@ async def process_initial_translation_bg(items_to_translate: list):
                         try:
                             new_texts = json.loads(raw_text.strip())
                         except json.JSONDecodeError:
-                            print("Failed to parse JSON array from model output")
+                            logger.error("Failed to parse JSON array from model output")
                             
                 for idx, item in enumerate(batch):
                     trans_text = ""
                     if isinstance(new_texts, list) and idx < len(new_texts):
-                        trans_text = new_texts[idx]
+                        trans_text = clean_ai_translation(new_texts[idx])
                         
                     if not trans_text:
-                        trans_text = item['translated'] + " [AI 재번역 파싱 실패]"
+                        trans_text = clean_ai_translation(item.get('translated') or '') + " [AI 재번역 파싱 실패]"
                     else:
                         trans_text = clean_ai_translation(trans_text)
                         
@@ -201,7 +247,7 @@ async def process_initial_translation_bg(items_to_translate: list):
                         old_translated_text=clean_ai_translation(item['translated']),
                         ai_translated_text=trans_text.strip(),
                         status='pending_review',
-                        model_used=model,
+                        model_used=actual_model,
                         created_at=now,
                         updated_at=now
                     )
@@ -253,11 +299,35 @@ async def get_reretranslate_queue(folderName: Optional[str] = None, db: Session 
     all_pending = db.query(Translation.folderName).join(AiReviewQueue, Translation.id == AiReviewQueue.translation_id).filter(AiReviewQueue.status == 'pending_reretranslate').distinct().all()
     folders = [f[0] for f in all_pending if f[0]]
 
+    # Stable baseline percentiles derived from entire corpus (p25=18, p50=28, p75=46)
+    default_p = {'p25': 18, 'p50': 28, 'p75': 46}
+
     if not results:
-        return {"models": {}, "total": 0, "percentiles": {}, "folders": folders}
+        return {
+            "models": {
+                'gemini-3.5-flash': [],
+                'gemini-3.6-flash': [],
+                'gemini-3.7-flash': [],
+                'gemini-3.8-flash': []
+            },
+            "total": 0,
+            "percentiles": default_p,
+            "folders": folders,
+            "avg_length": 0
+        }
         
     lengths = [len(item.original_text) for item, _ in results if item.original_text]
-    p = get_percentiles(lengths, [25, 50, 75])
+    
+    # If queue has enough data (>= 8), compute dynamic percentiles with monotonic guarantee.
+    # Otherwise use stable corpus percentiles so small sample sizes don't skew the routing.
+    if len(lengths) >= 8:
+        raw_p = get_percentiles(lengths, [25, 50, 75])
+        p25 = max(raw_p['p25'], 12)
+        p50 = max(raw_p['p50'], p25 + 1)
+        p75 = max(raw_p['p75'], p50 + 1)
+        p = {'p25': p25, 'p50': p50, 'p75': p75}
+    else:
+        p = default_p
     
     model_batches = {
         'gemini-3.5-flash': [],
@@ -317,22 +387,22 @@ async def process_specific_reretranslation_bg(queue_ids: List[int], model: str):
         if not items: return
         
         batch_size = 20
-        api_url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={settings.gemini_api_key}"
         
         for i in range(0, len(items), batch_size):
             batch = items[i:i+batch_size]
-            originals = [item.original_text for item in batch]
-            originals_json = json.dumps(originals, ensure_ascii=False)
+            items_by_id = {str(item.id): item for item in batch}
+            input_list = [{"id": str(item.id), "text": item.original_text} for item in batch]
+            input_json = json.dumps(input_list, ensure_ascii=False)
             
             prompt = f"""다음 일본어 소설 문장들을 번역해줘. 이전 번역이 의역이 심하거나 원문의 맛을 살리지 못해 거절된 상태야. 원문의 구조, 어조, 세세한 뉘앙스 하나까지 훼손하지 말고 원문을 최대한 100% 살려서 정밀하고 충실하게 번역해야 해.
 특히 작은 히라가나(ぁ, ぃ, ぅ, ぇ, ぉ, っ 등)로 발음을 늘이거나 억양을 강조한 표현이 있다면, 한국어 번역에서도 반드시 모음을 연장하여(예: '그렇구나' -> '그렇구나아') 원문 특유의 감각을 살려줘.
-결과는 반드시 입력된 원문 배열과 동일한 길이의 JSON 배열(Array of strings) 형식으로만 출력해줘. 백틱이나 마크다운 없이 순수 JSON 배열만 출력해.
+결과는 반드시 입력된 원문 배열과 동일한 길이의 JSON 배열(Array of objects with 'id' and 'translated', or array of strings) 형식으로만 출력해줘. 백틱이나 마크다운 없이 순수 JSON 배열만 출력해.
 
 원문 목록:
-{originals_json}
+{input_json}
 """
             try:
-                res = await asyncio.to_thread(call_gemini_api, api_url, prompt)
+                res, actual_model = await asyncio.to_thread(call_gemini_with_model_fallback, model, prompt)
                 new_texts = []
                 if res and "candidates" in res and res["candidates"]:
                     parts = res["candidates"][0].get("content", {}).get("parts", [])
@@ -344,23 +414,37 @@ async def process_specific_reretranslation_bg(queue_ids: List[int], model: str):
                         try:
                             new_texts = json.loads(raw_text.strip())
                         except json.JSONDecodeError:
-                            pass
+                            logger.error(f"Failed to parse JSON array in re-retranslation: {raw_text[:200]}")
                             
-                for idx, item in enumerate(batch):
-                    trans_text = ""
-                    if isinstance(new_texts, list) and idx < len(new_texts):
-                        trans_text = new_texts[idx]
-                        
-                    if trans_text:
-                        item.ai_translated_text = clean_ai_translation(trans_text)
-                        item.status = 'pending_review'
-                        item.model_used = model
-                        item.updated_at = int(time.time())
-                        
+                matched_ids = set()
+                if isinstance(new_texts, list):
+                    for entry in new_texts:
+                        if isinstance(entry, dict) and "id" in entry and str(entry["id"]) in items_by_id:
+                            item_id_str = str(entry["id"])
+                            item = items_by_id[item_id_str]
+                            clean_txt = clean_ai_translation(entry.get("translated", ""))
+                            if clean_txt:
+                                item.ai_translated_text = clean_txt
+                                item.status = 'pending_review'
+                                item.model_used = actual_model
+                                item.updated_at = int(time.time())
+                                matched_ids.add(item_id_str)
+                                
+                    for idx, item in enumerate(batch):
+                        if str(item.id) in matched_ids:
+                            continue
+                        if idx < len(new_texts):
+                            clean_txt = clean_ai_translation(new_texts[idx])
+                            if clean_txt:
+                                item.ai_translated_text = clean_txt
+                                item.status = 'pending_review'
+                                item.model_used = actual_model
+                                item.updated_at = int(time.time())
+                                
                 db.commit()
-                await asyncio.sleep(2)
+                await asyncio.sleep(1)
             except Exception as e:
-                print(f"Error re-retranslating specific batch with {model}: {e}")
+                logger.error(f"Error re-retranslating specific batch with {model}: {e}", exc_info=True)
                 
     finally:
         db.close()
@@ -372,12 +456,19 @@ async def process_batch_reretranslation_bg():
         if not items:
             return
             
-        # Group items by length category to send them to specific models in batches
         lengths = [len(item.original_text) for item in items if item.original_text]
         if not lengths: return
-        p = get_percentiles(lengths, [25, 50, 75])
         
-        # Group by model
+        default_p = {'p25': 18, 'p50': 28, 'p75': 46}
+        if len(lengths) >= 8:
+            raw_p = get_percentiles(lengths, [25, 50, 75])
+            p25 = max(raw_p['p25'], 12)
+            p50 = max(raw_p['p50'], p25 + 1)
+            p75 = max(raw_p['p75'], p50 + 1)
+            p = {'p25': p25, 'p50': p50, 'p75': p75}
+        else:
+            p = default_p
+        
         model_batches = {
             'gemini-3.5-flash': [],
             'gemini-3.6-flash': [],
@@ -396,24 +487,23 @@ async def process_batch_reretranslation_bg():
         for model, batch_items in model_batches.items():
             if not batch_items: continue
             
-            # Batch size for re-retranslation
             batch_size = 20
-            api_url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={settings.gemini_api_key}"
             
             for i in range(0, len(batch_items), batch_size):
                 batch = batch_items[i:i+batch_size]
-                originals = [item.original_text for item in batch]
-                originals_json = json.dumps(originals, ensure_ascii=False)
+                items_by_id = {str(item.id): item for item in batch}
+                input_list = [{"id": str(item.id), "text": item.original_text} for item in batch]
+                input_json = json.dumps(input_list, ensure_ascii=False)
                 
                 prompt = f"""다음 일본어 문장들을 번역해줘. 이전 번역이 의역이 심하거나 원문의 맛을 살리지 못해 거절된 상태야. 원문의 구조, 어조, 세세한 뉘앙스 하나까지 훼손하지 말고 원문을 최대한 100% 살려서 정밀하고 충실하게 번역해야 해.
 특히 작은 히라가나(ぁ, ぃ, ぅ, ぇ, ぉ, っ 등)로 발음을 늘이거나 억양을 강조한 표현이 있다면, 한국어 번역에서도 반드시 모음을 연장하여(예: '그렇구나' -> '그렇구나아') 원문 특유의 감각을 살려줘.
-결과는 반드시 입력된 원문 배열과 동일한 길이의 JSON 배열(Array of strings) 형식으로만 출력해줘. 백틱이나 마크다운 없이 순수 JSON 배열만 출력해.
+결과는 반드시 입력된 원문 배열과 동일한 길이의 JSON 배열(Array of objects with 'id' and 'translated', or array of strings) 형식으로만 출력해줘. 백틱이나 마크다운 없이 순수 JSON 배열만 출력해.
 
 원문 목록:
-{originals_json}
+{input_json}
 """
                 try:
-                    res = await asyncio.to_thread(call_gemini_api, api_url, prompt)
+                    res, actual_model = await asyncio.to_thread(call_gemini_with_model_fallback, model, prompt)
                     new_texts = []
                     
                     if res and "candidates" in res and res["candidates"]:
@@ -426,23 +516,37 @@ async def process_batch_reretranslation_bg():
                             try:
                                 new_texts = json.loads(raw_text.strip())
                             except json.JSONDecodeError:
-                                print("Failed to parse JSON array in re-retranslation")
+                                logger.error(f"Failed to parse JSON array in batch re-retranslation: {raw_text[:200]}")
                                 
-                    for idx, item in enumerate(batch):
-                        trans_text = ""
-                        if isinstance(new_texts, list) and idx < len(new_texts):
-                            trans_text = new_texts[idx]
-                            
-                        if trans_text:
-                            item.ai_translated_text = clean_ai_translation(trans_text)
-                            item.status = 'pending_review'
-                            item.model_used = model
-                            item.updated_at = int(time.time())
-                            
+                    matched_ids = set()
+                    if isinstance(new_texts, list):
+                        for entry in new_texts:
+                            if isinstance(entry, dict) and "id" in entry and str(entry["id"]) in items_by_id:
+                                item_id_str = str(entry["id"])
+                                item = items_by_id[item_id_str]
+                                clean_txt = clean_ai_translation(entry.get("translated", ""))
+                                if clean_txt:
+                                    item.ai_translated_text = clean_txt
+                                    item.status = 'pending_review'
+                                    item.model_used = actual_model
+                                    item.updated_at = int(time.time())
+                                    matched_ids.add(item_id_str)
+                                    
+                        for idx, item in enumerate(batch):
+                            if str(item.id) in matched_ids:
+                                continue
+                            if idx < len(new_texts):
+                                clean_txt = clean_ai_translation(new_texts[idx])
+                                if clean_txt:
+                                    item.ai_translated_text = clean_txt
+                                    item.status = 'pending_review'
+                                    item.model_used = actual_model
+                                    item.updated_at = int(time.time())
+                                
                     db.commit()
-                    await asyncio.sleep(2)
+                    await asyncio.sleep(1)
                 except Exception as e:
-                    print(f"Error re-retranslating batch with {model}: {e}")
+                    logger.error(f"Error re-retranslating batch with {model}: {e}", exc_info=True)
                     
     finally:
         db.close()
@@ -598,7 +702,6 @@ async def reroll_translation(queue_id: int, db: Session = Depends(get_db)):
         return {"message": "항목을 찾을 수 없습니다."}
         
     model = "gemini-3.8-flash"
-    api_url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={settings.gemini_api_key}"
     
     prompt = f"""다음 일본어 원문을 한국어로 번역해줘. 이전 번역들이 전부 마음에 들지 않아 거절된 상태야.
 의역을 배제하고 원문의 구조, 어조, 뉘앙스를 최대한 100% 직역에 가깝게 살려서 정밀하게 번역해야 해.
@@ -610,14 +713,14 @@ async def reroll_translation(queue_id: int, db: Session = Depends(get_db)):
 결과는 다른 설명이나 마크다운 없이 순수하게 번역된 한국어 문자열 한 줄만 출력해."""
     
     try:
-        res = await asyncio.to_thread(call_gemini_api, api_url, prompt)
+        res, actual_model = await asyncio.to_thread(call_gemini_with_model_fallback, model, prompt)
         if res and "candidates" in res and res["candidates"]:
             parts = res["candidates"][0].get("content", {}).get("parts", [])
             if parts:
                 raw_text = parts[0].get("text", "").strip()
                 cleaned_text = clean_ai_translation(raw_text)
                 item.ai_translated_text = cleaned_text
-                item.model_used = model
+                item.model_used = actual_model
                 db.commit()
                 return {"translated_text": cleaned_text}
                 
@@ -633,7 +736,7 @@ async def approve_review(req: ApproveRejectReq, db: Session = Depends(get_db)):
     trans = db.query(Translation).filter(Translation.id == item.translation_id).first()
     if trans:
         item.old_translated_text = trans.translated
-        final_text = req.translated_text if req.translated_text else item.ai_translated_text
+        final_text = clean_ai_translation(req.translated_text if req.translated_text else item.ai_translated_text)
         trans.translated = final_text
         trans.timestamp = int(time.time())
         item.status = 'approved'

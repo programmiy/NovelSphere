@@ -22,7 +22,8 @@ build/
 dist/
 
 # Environment variables
-.env
+.env*
+!.env.example
 venv/
 
 # Local DBs and Scratch
@@ -32,13 +33,36 @@ venv/
 scratch_*
 *.apk
 cloudflared.exe
+.git_backup*
 
 # 임시 벤치마킹/테스트 DB 파일 (명시적 제외)
 server/temp_*.db
 LANOVEL.db
 
-# 임시 분석/스크래치 스크립트 및 검색 덤프
+# 임시 검수/배치 작업 덤프 및 스크래치 파일
+inspection_workspace/
+scripts/batch*
+scripts/*_inspect.txt
+scripts/*_raw.json
+scripts/*_translations.json
+scripts/unreviewed_temp.json
+scripts/maid_summary.txt
 search_*.txt
 calc_lengths.py
 check_db*.py
 create_tables.py
+
+# Tests & Logs
+.pytest_cache/
+*.log
+
+# Keystores & Properties (안전 장치)
+*.jks
+*.keystore
+key.properties
+
+# OS & Editor
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini

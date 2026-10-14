@@ -66,7 +66,7 @@ class TranslationItemInput(BaseModel):
     text: str
 
 
-def call_gemini_api(api_url: str, prompt: str, api_key: Optional[str] = None, system_instruction: Optional[dict] = None):
+def call_gemini_api(api_url: str, prompt: str, api_key: Optional[str] = None, system_instruction: Optional[dict] = None, timeout: int = 180):
     """
     Calls the Gemini API using requests.Session with header authentication,
     low temperature (0.3), systemInstruction separation, and response_schema.
@@ -117,7 +117,7 @@ def call_gemini_api(api_url: str, prompt: str, api_key: Optional[str] = None, sy
     _record_call_timestamp()
 
     try:
-        response = session.post(api_url, json=payload, headers=headers, timeout=180)
+        response = session.post(api_url, json=payload, headers=headers, timeout=timeout)
         record_api_call(model=model_name, status_code=response.status_code)
         response.raise_for_status()
         return response.json()

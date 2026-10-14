@@ -266,10 +266,12 @@
             <div class="panel-top">
                 <div class="panel-title">
                     <h2><span class="material-icons-round" style="color: var(--accent-gold); font-size: 26px;">tune</span> 2차 다중 모델 정밀 재재번역 통제실</h2>
-                    <p>검수 중 거절(Reject)된 문장들을 길이 백분위 통계에 따라 5개의 Gemini 3.X 모델로 스마트 라우팅합니다.</p>
+                    <p>검수 중 거절(Reject)된 문장들을 길이 백분위 통계에 따라 4개의 Gemini 3.X 모델로 스마트 라우팅합니다.</p>
                 </div>
                 <div style="display: flex; gap: 10px; align-items: center;">
-                    
+                    <select id="folderSelect" class="btn" onchange="onFolderChange(this.value)">
+                        <option value="">전체 소설</option>
+                    </select>
                     <button class="btn" onclick="loadData()" title="새로고침">
                         <span class="material-icons-round">refresh</span>
                     </button>
@@ -291,7 +293,7 @@
                 </div>
                 <div class="stat-card">
                     <div class="stat-label">할당 모델 수</div>
-                    <div class="stat-val" id="statActiveModels">5 Models</div>
+                    <div class="stat-val" id="statActiveModels">4 Models</div>
                 </div>
             </div>
 
@@ -319,11 +321,21 @@
         let activeFolder = "";
 
         const MODEL_META = {
-            'gemini-3.0-flash': { color: '#60a5fa', desc: '단문/감탄사 (하위 25%)', icon: 'bolt' },
-            'gemini-3.6-flash': { color: '#a78bfa', desc: '단·중문 일반 서술 (25~50%)', icon: 'auto_stories' },
-            'gemini-3.7-flash': { color: '#f472b6', desc: '중·장문 복합 문장 (50~75%)', icon: 'psychology' },
-            'gemini-3.8-flash': { color: '#fbbf24', desc: '초장문/고난도 묘사 (상위 25%)', icon: 'diamond' }
+            'gemini-3.5-flash': { color: '#60a5fa', desc: '초단문 (하위 25%)', icon: 'bolt' },
+            'gemini-3.6-flash': { color: '#a78bfa', desc: '단문 일반 서술 (25~50%)', icon: 'auto_stories' },
+            'gemini-3.7-flash': { color: '#f472b6', desc: '중문 복합 문장 (50~75%)', icon: 'psychology' },
+            'gemini-3.8-flash': { color: '#fbbf24', desc: '장문/고난도 묘사 (상위 25%)', icon: 'diamond' }
         };
+
+        function escapeHtml(str) {
+            if (!str) return '';
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
 
         function initTheme() {
             try {
@@ -368,23 +380,36 @@
             setTimeout(() => t.classList.remove('show'), 3200);
         }
 
+        function onFolderChange(val) {
+            activeFolder = val;
+            loadData();
+        }
+
         async function loadData() {
             try {
                 const url = activeFolder 
                     ? `/api/ai_review/reretranslate/queue?folderName=${encodeURIComponent(activeFolder)}`
                     : '/api/ai_review/reretranslate/queue';
                 const res = await fetch(url);
+                if (!res.ok) throw new Error('서버 응답 오류: ' + res.status);
                 queueData = await res.json();
                 
-                // Populate folder select if first time
-                " ${f === curVal ? 'selected' : ''}>${f}</option>`;
+                // Populate folder select
+                const folderSelect = document.getElementById('folderSelect');
+                if (folderSelect && queueData.folders) {
+                    const curVal = activeFolder;
+                    let optionsHtml = '<option value="">전체 소설</option>';
+                    queueData.folders.forEach(f => {
+                        optionsHtml += `<option value="${escapeHtml(f)}" ${f === curVal ? 'selected' : ''}>${escapeHtml(f)}</option>`;
                     });
+                    folderSelect.innerHTML = optionsHtml;
                 }
 
                 renderStats();
                 renderModels();
             } catch(e) {
-                document.getElementById('modelsContainer').innerHTML = '<div class="empty-box">데이터 로드 실패</div>';
+                console.error("loadData error:", e);
+                document.getElementById('modelsContainer').innerHTML = `<div class="empty-box">데이터 로드 실패: ${escapeHtml(e.message || e)}</div>`;
             }
         }
 
@@ -392,26 +417,49 @@
             document.getElementById('statTotal').textContent = (queueData.total || 0) + '건';
             document.getElementById('statAvg').textContent = (queueData.avg_length || 0) + '자';
             
-            const p = queueData.percentiles || {};
+            const p = queueData.percentiles || { p25: 18, p50: 28, p75: 46 };
+            const p25 = p.p25 !== undefined ? p.p25 : 18;
+            const p50 = Math.max(p.p50 !== undefined ? p.p50 : 28, p25 + 1);
+            const p75 = Math.max(p.p75 !== undefined ? p.p75 : 46, p50 + 1);
+
             const pGrid = document.getElementById('percentileGrid');
             pGrid.innerHTML = `
                 <div class="p-cell">
-                    <div class="p-model">3.0 Flash</div>
-                    <div class="p-range">≤ ${p.p25 || 0}자</div>
+                    <div class="p-model">3.5 Flash</div>
+                    <div class="p-range">≤ ${p25}자</div>
                 </div>
                 <div class="p-cell">
                     <div class="p-model">3.6 Flash</div>
-                    <div class="p-range">${(p.p25||0)+1} ~ ${p.p50 || 0}자</div>
+                    <div class="p-range">${p25 + 1} ~ ${p50}자</div>
                 </div>
                 <div class="p-cell">
                     <div class="p-model">3.7 Flash</div>
-                    <div class="p-range">${(p.p50||0)+1} ~ ${p.p75 || 0}자</div>
+                    <div class="p-range">${p50 + 1} ~ ${p75}자</div>
                 </div>
                 <div class="p-cell">
                     <div class="p-model">3.8 Flash</div>
-                    <div class="p-range">> ${p.p75 || 0}자</div>
+                    <div class="p-range">> ${p75}자</div>
                 </div>
             `;
+        }
+
+        function findItemByQueueId(queueId) {
+            if (!queueData || !queueData.models) return null;
+            for (const items of Object.values(queueData.models)) {
+                const found = items.find(i => i.queue_id === queueId);
+                if (found) return found;
+            }
+            return null;
+        }
+
+        function copyOrigText(queueId) {
+            const item = findItemByQueueId(queueId);
+            if (!item || !item.original_text) return;
+            navigator.clipboard.writeText(item.original_text).then(() => {
+                showToast('원문이 클립보드에 복사되었습니다.');
+            }).catch(() => {
+                showToast('복사에 실패했습니다.', false);
+            });
         }
 
         function renderModels() {
@@ -423,7 +471,7 @@
 
             for (const [modelName, items] of Object.entries(models)) {
                 totalItems += items.length;
-                const meta = MODEL_META[modelName] || { color: '#fff', desc: 'Gemini Model', icon: 'memory' };
+                const meta = MODEL_META[modelName] || { color: '#60a5fa', desc: 'Gemini Model', icon: 'memory' };
                 
                 const card = document.createElement('div');
                 card.className = 'model-card';
@@ -432,13 +480,13 @@
                 const rowsHtml = items.map(item => `
                     <div class="sentence-row" id="row-${item.queue_id}">
                         <div class="s-len">Len: ${item.length}</div>
-                        <div class="s-orig" title="클릭하여 원문 복사" onclick="navigator.clipboard.writeText('${item.original_text.replace(/'/g, "\\'")}'); showToast('원문이 복사되었습니다.');">
-                            ${item.original_text}
+                        <div class="s-orig" title="클릭하여 원문 복사" onclick="copyOrigText(${item.queue_id})">
+                            ${escapeHtml(item.original_text)}
                         </div>
-                        <div class="s-old">${item.old_translated_text || ''}</div>
+                        <div class="s-old">${escapeHtml(item.old_translated_text || '')}</div>
                         <div>
                             <select class="s-model-select" onchange="changeItemModel(${item.queue_id}, '${modelName}', this.value)">
-                                <option value="gemini-3.0-flash" ${modelName === 'gemini-3.0-flash' ? 'selected' : ''}>3.0 Flash</option>
+                                <option value="gemini-3.5-flash" ${modelName === 'gemini-3.5-flash' ? 'selected' : ''}>3.5 Flash</option>
                                 <option value="gemini-3.6-flash" ${modelName === 'gemini-3.6-flash' ? 'selected' : ''}>3.6 Flash</option>
                                 <option value="gemini-3.7-flash" ${modelName === 'gemini-3.7-flash' ? 'selected' : ''}>3.7 Flash</option>
                                 <option value="gemini-3.8-flash" ${modelName === 'gemini-3.8-flash' ? 'selected' : ''}>3.8 Flash</option>
@@ -476,10 +524,6 @@
                                 <div>길이</div>
                                 <div>일본어 원문 (클릭 시 복사)</div>
                                 <div>거절된 이전 번역</div>
-                                <div>모델 변경</div>
-                                <div style="text-align: right;">제외</div>
-                            </div>
-                                <div>거절된 번역문 (재재번역 대상)</div>
                                 <div>모델 변경</div>
                                 <div style="text-align: right;">제외</div>
                             </div>
@@ -533,7 +577,7 @@
                 showToast(data.message);
                 
                 // Refresh data after brief delay
-                setTimeout(loadData, 1500);
+                setTimeout(loadData, 2000);
             } catch(e) {
                 showToast('실행 요청 실패', false);
             } finally {
@@ -564,16 +608,17 @@
                 }
             }
 
-            showToast(`총 ${launched}건의 문장이 5개 모델로 분산 번역 시작되었습니다!`);
+            showToast(`총 ${launched}건의 문장이 4개 모델(3.5~3.8)로 분산 번역 시작되었습니다!`);
             setTimeout(() => {
                 btn.innerHTML = '<span class="material-icons-round">bolt</span> 전체 일괄 재재번역 실행';
                 btn.disabled = false;
                 loadData();
-            }, 2000);
+            }, 2500);
         }
 
         function changeItemModel(queueId, fromModel, toModel) {
             if (fromModel === toModel) return;
+            if (!queueData || !queueData.models || !queueData.models[fromModel] || !queueData.models[toModel]) return;
             const itemIdx = queueData.models[fromModel].findIndex(i => i.queue_id === queueId);
             if (itemIdx > -1) {
                 const [item] = queueData.models[fromModel].splice(itemIdx, 1);
