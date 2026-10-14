@@ -34,7 +34,7 @@
    * (ELSE 대부분의 작업) 수정된 **코드 파일**, 생성된 **작업 문서 파일**, 갱신된 **레퍼런스 파일**을 함께 스테이징합니다.
    * 파일들을 **하나의 커밋**으로 묶습니다.
 
-5. 원격 저장소는 `main`만 존재, `origin` 사용하지 않음
+5. 원격 저장소는 `origin` (NovelSphere) 사용
 6. [분기] 푸시 여부 확인 - 푸시 여부를 질문합니다 -
    * **IF (질문결과 : 푸시 승인):**
      * ```shell
@@ -46,13 +46,11 @@
      * 사용자의 추가 명령을 기다립니다.
      * 필요에 따라 1단계부터 다시 수행합니다.
 
-7. **마무리:** `git push main extra:main` (로컬 extra를 원격 main에 푸시)
-8. 자동화된 병합 워크플로우 (MCP/GitHub Actions)
-   1. **main pull 이후 작업 브랜치로 복귀**
-      * `main` 브랜치가 최신화되었으므로, 로컬 `extra` 브랜치도 최신 `main`을 반영합니다.
-        ```shell
-        git checkout main
-        git pull main main
-        git checkout extra
-        git rebase main
-        ```
+7. **마무리:** `git push origin extra:main` (로컬 extra를 원격 main에 푸시)
+8. **브랜치 동기화:**
+   * `main` 브랜치에 최신 커밋 반영 및 `extra` 동기화:
+     ```shell
+     git checkout main
+     git merge extra
+     git checkout extra
+     ```
