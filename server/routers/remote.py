@@ -11,7 +11,7 @@ import hmac
 import logging
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 
 from server.remote_control import hub
@@ -21,18 +21,37 @@ router = APIRouter(prefix="/api/remote", tags=["Remote"])
 logger = logging.getLogger(__name__)
 
 
-def _token_ok(token: Optional[str]) -> bool:
+LOOPBACK_HOSTS = ("127.0.0.1", "::1", "localhost")
+
+
+def _stored_credentials() -> list:
+    """서버 미들웨어와 같은 자격증명 후보(해시/평문). 비어 있으면 인증 수단 없음."""
+    creds = [settings.lanovel_auth_hash, settings.lanovel_auth_token, settings.remote_token]
+    return [c.strip() for c in creds if c and c.strip()]
+
+
+def _credential_ok(provided: Optional[str]) -> bool:
     from server.security import verify_token
-    expected = (settings.remote_token or "").strip()
-    return verify_token(token, expected)
+    return any(verify_token(provided, stored) for stored in _stored_credentials())
 
 
-def require_token(x_remote_token: Optional[str] = Header(default=None), token: Optional[str] = Query(default=None)):
-    expected = (settings.remote_token or "").strip()
-    if not expected:
-        raise HTTPException(status_code=503, detail="REMOTE_TOKEN이 서버에 설정되지 않았습니다.")
-    if not _token_ok(x_remote_token or token):
-        raise HTTPException(status_code=401, detail="리모컨 토큰이 올바르지 않습니다.")
+def _extract_credential(request_headers, query_params) -> Optional[str]:
+    return (
+        request_headers.get("x-lanovel-key")
+        or request_headers.get("x-remote-token")
+        or query_params.get("key")
+        or query_params.get("token")
+    )
+
+
+def require_token(request: Request):
+    host = request.client.host if request.client else ""
+    if host in LOOPBACK_HOSTS:
+        return  # PC 본인(확장 포함): 서버 전체 정책과 동일하게 프리패스 (Origin은 상위 미들웨어가 검사)
+    if not _stored_credentials():
+        raise HTTPException(status_code=503, detail="서버에 인증 토큰이 설정되지 않아 외부 원격 제어가 비활성화되어 있습니다. .env의 LANOVEL_AUTH_HASH(또는 REMOTE_TOKEN)를 설정하세요.")
+    if not _credential_ok(_extract_credential(request.headers, request.query_params)):
+        raise HTTPException(status_code=401, detail="리모컨 인증 토큰이 올바르지 않습니다.")
 
 
 class CommandRequest(BaseModel):
@@ -125,9 +144,12 @@ async def _push_pending_to_ws() -> bool:
 
 
 @router.websocket("/ws")
-async def extension_ws(ws: WebSocket, token: Optional[str] = Query(default=None)):
-    if not _token_ok(token):
-        await ws.close(code=4401)
+async def extension_ws(ws: WebSocket):
+    host = ws.client.host if ws.client else ""
+    origin = ws.headers.get("origin", "")
+    # 확장은 항상 PC 안에서만 접속한다. 외부 기기는 /command·/status 만 사용.
+    if host not in LOOPBACK_HOSTS or not (not origin or origin.startswith("chrome-extension://")):
+        await ws.close(code=4403)
         return
     await ws.accept()
     hub.ws_clients.add(ws)

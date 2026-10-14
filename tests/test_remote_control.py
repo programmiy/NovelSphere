@@ -95,15 +95,19 @@ def test_go_next_site_without_provider_is_rejected_then_works_with_provider():
 # ---------- API 테스트 ----------
 @pytest.fixture
 def client(monkeypatch):
+    # 테스트 환경의 .env 값에 영향받지 않도록 자격증명을 고정
+    monkeypatch.setattr(settings, "lanovel_auth_hash", "")
+    monkeypatch.setattr(settings, "lanovel_auth_token", "")
     monkeypatch.setattr(settings, "remote_token", "secret-token")
     fresh = RemoteHub()
     monkeypatch.setattr(remote_router, "hub", fresh)
     app = FastAPI()
     app.include_router(remote_router.router)
-    return TestClient(app), fresh
+    return TestClient(app), fresh   # TestClient 의 client host 는 'testclient' → 외부 기기 취급
 
 
 H = {"X-Remote-Token": "secret-token"}
+H_APP = {"X-Lanovel-Key": "secret-token"}   # 모바일 앱이 이미 쓰는 헤더
 
 
 def test_api_rejects_missing_or_wrong_token(client):
@@ -112,10 +116,27 @@ def test_api_rejects_missing_or_wrong_token(client):
     assert c.get("/api/remote/status", headers={"X-Remote-Token": "nope"}).status_code == 401
 
 
-def test_api_disabled_when_token_unset(client, monkeypatch):
+def test_api_accepts_app_header_and_hashed_credential(client, monkeypatch):
+    from server.security import hash_token
+    c, _ = client
+    assert c.get("/api/remote/status", headers=H_APP).status_code == 200
+    monkeypatch.setattr(settings, "remote_token", "")
+    monkeypatch.setattr(settings, "lanovel_auth_hash", hash_token("phone-key", iterations=1000))
+    assert c.get("/api/remote/status", headers={"X-Lanovel-Key": "phone-key"}).status_code == 200
+    assert c.get("/api/remote/status", headers={"X-Lanovel-Key": "wrong"}).status_code == 401
+
+
+def test_api_disabled_for_external_when_no_credential_configured(client, monkeypatch):
     c, _ = client
     monkeypatch.setattr(settings, "remote_token", "")
     assert c.get("/api/remote/status", headers=H).status_code == 503
+
+
+def test_loopback_needs_no_token(client, monkeypatch):
+    c, _ = client
+    monkeypatch.setattr(remote_router, "LOOPBACK_HOSTS", ("testclient",))
+    assert c.get("/api/remote/status").status_code == 200
+    assert c.get("/api/remote/poll").status_code == 200
 
 
 def test_api_command_poll_ack_flow(client):
@@ -134,21 +155,30 @@ def test_api_bad_command_400(client):
     assert c.post("/api/remote/command", json={"type": "nope"}, headers=H).status_code == 400
 
 
-def test_websocket_delivers_command_and_status(client):
+def test_websocket_delivers_command_and_status(client, monkeypatch):
     c, hub = client
-    with c.websocket_connect("/api/remote/ws?token=secret-token") as ws:
+    monkeypatch.setattr(remote_router, "LOOPBACK_HOSTS", ("testclient",))
+    with c.websocket_connect("/api/remote/ws") as ws:
         ws.send_json({"type": "status", "data": {"phase": "translating", "percentage": 5, "url": "https://x"}})
         ws.send_json({"type": "ping"})
         assert ws.receive_json()["type"] == "pong"
-        r = c.post("/api/remote/command", json={"type": "next"}, headers=H)
+        r = c.post("/api/remote/command", json={"type": "next"})
         assert r.json()["delivered_via_ws"] is True
         msg = ws.receive_json()
         assert msg["type"] == "commands" and msg["commands"][0]["type"] == "next"
     assert hub.status.percentage == 5
 
 
-def test_websocket_rejects_bad_token(client):
-    c, _ = client
+def test_websocket_rejected_from_external_host(client):
+    c, _ = client   # 'testclient' 는 루프백이 아님
     with pytest.raises(Exception):
-        with c.websocket_connect("/api/remote/ws?token=bad"):
+        with c.websocket_connect("/api/remote/ws"):
+            pass
+
+
+def test_websocket_rejects_web_page_origin(client, monkeypatch):
+    c, _ = client
+    monkeypatch.setattr(remote_router, "LOOPBACK_HOSTS", ("testclient",))
+    with pytest.raises(Exception):
+        with c.websocket_connect("/api/remote/ws", headers={"origin": "https://evil.example"}):
             pass
