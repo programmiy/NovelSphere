@@ -10,6 +10,7 @@ import 'preferences_service.dart';
 
 class AppUpdateInfo {
   final String version;
+  final String baseVersion;
   final int buildNumber;
   final int fileSize;
   final String releaseNotes;
@@ -17,6 +18,7 @@ class AppUpdateInfo {
 
   AppUpdateInfo({
     required this.version,
+    required this.baseVersion,
     required this.buildNumber,
     required this.fileSize,
     required this.releaseNotes,
@@ -26,6 +28,8 @@ class AppUpdateInfo {
   factory AppUpdateInfo.fromJson(Map<String, dynamic> json) {
     return AppUpdateInfo(
       version: json['version'] as String? ?? '1.0.0',
+      baseVersion: json['base_version'] as String? ??
+          (json['version'] as String? ?? '1.0.0').split('+').first,
       buildNumber: (json['build_number'] as num?)?.toInt() ?? 1,
       fileSize: (json['file_size'] as num?)?.toInt() ?? 0,
       releaseNotes: json['release_notes'] as String? ?? '',
@@ -48,7 +52,7 @@ class AppUpdateService {
     bool silent = true,
     BuildContext? context,
   }) async {
-    final serverUrl = PreferencesService.serverUrl;
+    final serverUrl = PreferencesService.normalizeServerUrl(PreferencesService.serverUrl);
     if (serverUrl.isEmpty) {
       if (!silent && context != null && context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -60,7 +64,10 @@ class AppUpdateService {
 
     try {
       final res = await http
-          .get(Uri.parse('$serverUrl/api/app/version'))
+          .get(
+            Uri.parse('$serverUrl/api/app/version'),
+            headers: PreferencesService.authHeaders,
+          )
           .timeout(const Duration(seconds: 4));
 
       if (res.statusCode == 200) {
@@ -70,14 +77,14 @@ class AppUpdateService {
         final currentPkg = await getPackageInfo();
         final currentBuild = int.tryParse(currentPkg.buildNumber) ?? 1;
 
-        // 서버의 빌드 번호가 더 높거나, 빌드 번호가 같더라도 버전 문자열이 높은 경우
+        // 서버의 빌드 번호가 더 높거나, 빌드 번호가 같더라도 베이스 버전 문자열이 높은 경우
         final isNewer = updateInfo.buildNumber > currentBuild ||
             (updateInfo.buildNumber == currentBuild &&
-                _compareSemVer(updateInfo.version, currentPkg.version) > 0);
+                _compareSemVer(updateInfo.baseVersion, currentPkg.version) > 0);
 
         if (isNewer && updateInfo.hasApk) {
           if (PreferencesService.autoSilentUpdate) {
-            // 별도 대화상자 없이 백그라운드에서 바로 무설치 자동 업데이트 실행
+            // 별도 대화상자 없이 백그라운드에서 바로 자동 업데이트 실행
             if (context != null && context.mounted) {
               performSilentBackgroundUpdate(updateInfo, context: context);
             } else {
@@ -93,7 +100,7 @@ class AppUpdateService {
           if (!silent && context != null && context.mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: Text('현재 최신 버전(v${currentPkg.version})을 사용 중입니다.'),
+                content: Text('현재 최신 버전(v${currentPkg.version}+${currentPkg.buildNumber})을 사용 중입니다.'),
                 backgroundColor: Colors.teal,
               ),
             );
@@ -184,7 +191,7 @@ class AppUpdateService {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      '안드로이드 시스템 재설치 화면 없이 앱 내에서 바로 무설치(무인) 자동 교체 및 재실행됩니다.',
+                      '다운로드가 완료되면 안드로이드 패키지 설치 화면으로 즉시 연결되어 원클릭 업데이트할 수 있습니다.',
                       style: TextStyle(fontSize: 12, color: Colors.indigo.shade900),
                     ),
                   ),
@@ -200,7 +207,7 @@ class AppUpdateService {
           ),
           FilledButton.icon(
             icon: const Icon(Icons.download_rounded, size: 18),
-            label: const Text('무설치 자동 업데이트'),
+            label: const Text('간편 자동 업데이트'),
             onPressed: () {
               Navigator.pop(dialogCtx);
               downloadAndInstall(context, updateInfo);
@@ -211,12 +218,12 @@ class AppUpdateService {
     );
   }
 
-  /// APK 다운로드 후 안드로이드 시스템 무인(Silent) 설치 실행
+  /// APK 다운로드 후 안드로이드 시스템 설치 실행
   static Future<void> downloadAndInstall(
     BuildContext context,
     AppUpdateInfo updateInfo,
   ) async {
-    final serverUrl = PreferencesService.serverUrl;
+    final serverUrl = PreferencesService.normalizeServerUrl(PreferencesService.serverUrl);
     if (serverUrl.isEmpty) return;
 
     double progress = 0.0;
@@ -237,7 +244,7 @@ class AppUpdateService {
               ? (receivedBytes / totalBytes).clamp(0.0, 1.0)
               : progress;
           return AlertDialog(
-            title: Text(isApplying ? '📦 무설치 업데이트 적용 중' : '앱 업데이트 다운로드'),
+            title: Text(isApplying ? '📦 업데이트 적용 준비 중' : '앱 업데이트 다운로드'),
             content: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -257,7 +264,7 @@ class AppUpdateService {
                   ),
                   const SizedBox(height: 8),
                   const Text(
-                    '다운로드가 끝나면 설치 화면 없이 백그라운드에서 즉시 교체됩니다.',
+                    '다운로드가 끝나면 패키지 설치 화면이 자동으로 호출됩니다.',
                     style: TextStyle(fontSize: 12, color: Colors.grey),
                   ),
                 ] else ...[
@@ -271,7 +278,7 @@ class AppUpdateService {
                   ),
                   const SizedBox(height: 20),
                   const Text(
-                    '시스템 재설치 화면 없이 최신 버전으로 교체 중입니다.\n잠시 후 앱이 자동으로 재실행됩니다.',
+                    '설치 관리자를 호출하고 있습니다.\n잠시 후 나타나는 시스템 설치 창에서 [업데이트]를 눌러주세요.',
                     textAlign: TextAlign.center,
                     style: TextStyle(fontSize: 13, height: 1.4),
                   ),
@@ -295,7 +302,8 @@ class AppUpdateService {
 
     try {
       final client = http.Client();
-      final request = http.Request('GET', Uri.parse('$serverUrl/api/app/download'));
+      final request = http.Request('GET', Uri.parse('$serverUrl/api/app/download'))
+        ..headers.addAll(PreferencesService.authHeaders);
       final response = await client.send(request);
 
       if (response.statusCode != 200) {
@@ -352,7 +360,8 @@ class AppUpdateService {
       if (success != true && context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('설치 화면 호출에 실패했습니다. 파일 관리자에서 APK를 직접 실행해 주세요.'),
+            content: Text('설치 권한이 필요하여 설정 화면으로 이동했거나 호출에 실패했습니다. "알 수 없는 앱 설치"를 허용한 후 다시 시도해 주세요.'),
+            duration: Duration(seconds: 4),
           ),
         );
       }
@@ -370,7 +379,7 @@ class AppUpdateService {
 
   static bool _isBackgroundUpdating = false;
 
-  /// 팝업/안내 없이 백그라운드에서 완전히 자동으로 수행하는 무설치 업데이트
+  /// 팝업/안내 없이 백그라운드에서 자동으로 수행하는 업데이트
   static Future<void> performSilentBackgroundUpdate(
     AppUpdateInfo updateInfo, {
     BuildContext? context,
@@ -379,7 +388,7 @@ class AppUpdateService {
     _isBackgroundUpdating = true;
 
     try {
-      final serverUrl = PreferencesService.serverUrl;
+      final serverUrl = PreferencesService.normalizeServerUrl(PreferencesService.serverUrl);
       if (serverUrl.isEmpty) return;
 
       // 사용자에게 방해되지 않는 하단 스낵바 알림
@@ -396,7 +405,7 @@ class AppUpdateService {
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    '새 버전(v${updateInfo.version}) 백그라운드 무설치 자동 업데이트 중...',
+                    '새 버전(v${updateInfo.version}) 백그라운드 다운로드 중...',
                     style: const TextStyle(fontSize: 12),
                   ),
                 ),
@@ -410,7 +419,8 @@ class AppUpdateService {
       }
 
       final client = http.Client();
-      final request = http.Request('GET', Uri.parse('$serverUrl/api/app/download'));
+      final request = http.Request('GET', Uri.parse('$serverUrl/api/app/download'))
+        ..headers.addAll(PreferencesService.authHeaders);
       final response = await client.send(request);
 
       if (response.statusCode != 200) {
@@ -432,12 +442,22 @@ class AppUpdateService {
       client.close();
 
       // 설치 창 호출
-      await _installerChannel.invokeMethod<bool>(
+      final success = await _installerChannel.invokeMethod<bool>(
         'installApk',
         {'filePath': apkFile.path},
       );
+
+      if (success != true && context != null && context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('앱 업데이트 설치 권한이 필요합니다. 설정에서 "알 수 없는 앱 설치"를 허용해주세요.'),
+            backgroundColor: Colors.orange,
+            duration: Duration(seconds: 4),
+          ),
+        );
+      }
     } catch (e) {
-      debugPrint('[AppUpdateService] Auto silent update error: $e');
+      debugPrint('[AppUpdateService] Auto update error: $e');
     } finally {
       _isBackgroundUpdating = false;
     }

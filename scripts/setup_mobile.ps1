@@ -100,8 +100,14 @@ if ($RunWeb) {
     Write-Host "`n[SUCCESS] APK build complete! Location:" -ForegroundColor Green
     Write-Host $apkPath -ForegroundColor Yellow
 
-    # 3. 무설치 자동 업데이트 배포 (ADB 연결 기기 직배포 & Wi-Fi 실시간 푸시)
-    Write-Host "`n[3/3] 모바일 기기 무설치(무인) 자동 업데이트 감지 및 배포 시작..." -ForegroundColor Cyan
+    # server/static에도 복사하여 정적 호스팅 지원
+    if (Test-Path "C:\LANOVEL\server\static") {
+        Copy-Item -Path $apkPath -Destination "C:\LANOVEL\server\static\lanovel-reader-release.apk" -Force
+        Write-Host "  -> [COPY] server\static\lanovel-reader-release.apk 동기화 완료" -ForegroundColor Green
+    }
+
+    # 3. 자동 업데이트 배포 (ADB 연결 기기 직배포 & Wi-Fi 실시간 푸시)
+    Write-Host "`n[3/3] 모바일 기기 자동 업데이트 감지 및 배포 시작..." -ForegroundColor Cyan
 
     $adbPath = "C:\Users\parkp\AppData\Local\Android\Sdk\platform-tools\adb.exe"
     if (-not (Test-Path $adbPath)) {
