@@ -582,7 +582,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
   }
 
   // ============================================================================
-  // 상단 플로팅 에어-글래스 다이내믹 아일랜드 헤더 (Floating Air-Glass Header)
+  // 상단 플로팅 헤더 (Floating Reader Header)
   // ============================================================================
   Widget _buildTopBar(ReaderThemeData theme, Chapter currentChap) {
     final primary = HyperAestheticTheme.getAmbientPrimary(theme);
@@ -591,34 +591,39 @@ class _ReaderScreenState extends State<ReaderScreen> {
     return SafeArea(
       bottom: false,
       child: Container(
-        margin: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+        margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
         child: HyperGlassCard(
           theme: theme,
-          borderRadius: 24,
-          blur: 24.0,
-          opacity: 0.82,
-          glow: true,
-          glowColor: primary.withOpacity(0.25),
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          borderRadius: 20,
+          blur: 16.0,
+          opacity: 0.92,
+          glow: false,
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
           child: Row(
             children: [
-              // 뒤로가기 햅틱 원형 버튼
-              GestureDetector(
+              // 뒤로가기 버튼 (44dp 안심 터치 타깃)
+              InkWell(
                 onTap: () {
                   HapticFeedback.lightImpact();
                   Navigator.pop(context);
                 },
-                child: Container(
-                  width: 36,
-                  height: 36,
-                  decoration: BoxDecoration(
-                    color: primary.withOpacity(0.14),
-                    shape: BoxShape.circle,
+                borderRadius: BorderRadius.circular(20),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+                  child: Center(
+                    child: Container(
+                      width: 34,
+                      height: 34,
+                      decoration: BoxDecoration(
+                        color: primary.withOpacity(0.12),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(Icons.arrow_back_rounded, color: theme.textColor, size: 20),
+                    ),
                   ),
-                  child: Icon(Icons.arrow_back_rounded, color: theme.textColor, size: 20),
                 ),
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: 8),
               // 중앙 소설명 및 챕터명
               Expanded(
                 child: Column(
@@ -672,13 +677,15 @@ class _ReaderScreenState extends State<ReaderScreen> {
                   ],
                 ),
               ),
-              // 우측 컨트롤 글래스 클러스터
+              // 우측 컨트롤 그룹 (최소 44dp 안심 터치 타깃 보장)
               Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   IconButton(
                     icon: Icon(Icons.list_rounded, color: theme.textColor, size: 22),
                     tooltip: '목차',
+                    constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+                    padding: const EdgeInsets.all(8),
                     onPressed: () {
                       HapticFeedback.lightImpact();
                       _scaffoldKey.currentState?.openDrawer();
@@ -691,6 +698,8 @@ class _ReaderScreenState extends State<ReaderScreen> {
                       size: 22,
                     ),
                     tooltip: '사전 & 유사 용례 검색',
+                    constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+                    padding: const EdgeInsets.all(8),
                     onPressed: () {
                       HapticFeedback.lightImpact();
                       _promptSimilarSearch(theme);
@@ -703,6 +712,8 @@ class _ReaderScreenState extends State<ReaderScreen> {
                       size: 20,
                     ),
                     tooltip: 'TTS 오디오',
+                    constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+                    padding: const EdgeInsets.all(8),
                     onPressed: () {
                       HapticFeedback.selectionClick();
                       setState(() => _showTtsPanel = !_showTtsPanel);
@@ -711,6 +722,8 @@ class _ReaderScreenState extends State<ReaderScreen> {
                   IconButton(
                     icon: Icon(Icons.text_format_rounded, color: theme.textColor, size: 22),
                     tooltip: '독서 설정',
+                    constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+                    padding: const EdgeInsets.all(8),
                     onPressed: () {
                       HapticFeedback.lightImpact();
                       showModalBottomSheet(
@@ -733,7 +746,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
   }
 
   // ============================================================================
-  // 하단 플로팅 에어로-글래스 컨트롤 독 (Floating Aero-Glass Control Deck)
+  // 하단 플로팅 컨트롤 독 (Floating Reader Control Deck)
   // ============================================================================
   Widget _buildBottomBar(ReaderThemeData theme) {
     final isPaging = PreferencesService.viewMode == 'paging';
@@ -750,18 +763,17 @@ class _ReaderScreenState extends State<ReaderScreen> {
         margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
         child: HyperGlassCard(
           theme: theme,
-          borderRadius: 28,
-          blur: 24.0,
-          opacity: 0.85,
-          glow: true,
-          glowColor: primary.withOpacity(0.25),
+          borderRadius: 24,
+          blur: 16.0,
+          opacity: 0.92,
+          glow: false,
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // 상단 듀얼 그라디언트 네온 프로그레스 레이
+              // 상단 미니멀 프로그레스 레이
               Container(
-                height: 3,
+                height: 2.5,
                 width: double.infinity,
                 decoration: BoxDecoration(
                   color: theme.isDark ? Colors.white10 : Colors.black12,
@@ -774,20 +786,13 @@ class _ReaderScreenState extends State<ReaderScreen> {
                     decoration: BoxDecoration(
                       gradient: LinearGradient(colors: [primary, secondary]),
                       borderRadius: BorderRadius.circular(1.5),
-                      boxShadow: [
-                        BoxShadow(
-                          color: primary.withOpacity(0.6),
-                          blurRadius: 6,
-                          spreadRadius: 1,
-                        ),
-                      ],
                     ),
                   ),
                 ),
               ),
               const SizedBox(height: 10),
 
-              // 1. 회차 전환 및 회차 위치 표시줄 (햅틱 캡슐)
+              // 1. 회차 전환 및 회차 위치 표시줄 (최소 44dp 터치 타깃 보장)
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -796,25 +801,27 @@ class _ReaderScreenState extends State<ReaderScreen> {
                     theme: theme,
                     icon: const Icon(Icons.arrow_back_ios_rounded, size: 12),
                     label: '이전 화',
-                    height: 36,
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    height: 40,
+                    padding: const EdgeInsets.symmetric(horizontal: 14),
                     onTap: _currentChapterIndex > 0
                         ? () => _loadChapter(_currentChapterIndex - 1)
                         : () {},
                   ),
 
-                  // 현재 회차 정보 캡슐 (탭 시 목차 오픈)
-                  GestureDetector(
+                  // 현재 회차 정보 캡슐 (탭 시 목차 오픈, 44dp 안심 영역)
+                  InkWell(
                     onTap: () {
-                      HapticFeedback.lightImpact();
+                      HapticFeedback.selectionClick();
                       _scaffoldKey.currentState?.openDrawer();
                     },
+                    borderRadius: BorderRadius.circular(18),
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      height: 40,
+                      padding: const EdgeInsets.symmetric(horizontal: 14),
                       decoration: BoxDecoration(
-                        color: primary.withOpacity(0.14),
-                        borderRadius: BorderRadius.circular(18),
-                        border: Border.all(color: primary.withOpacity(0.35)),
+                        color: primary.withOpacity(0.12),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: primary.withOpacity(0.3), width: 1.0),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
@@ -841,13 +848,13 @@ class _ReaderScreenState extends State<ReaderScreen> {
                     ),
                   ),
 
-                  // 다음 화 캡슐 (주요 액션, 네온 글로우)
+                  // 다음 화 캡슐 (주요 액션 버튼)
                   HyperHapticPill(
                     theme: theme,
                     icon: const Icon(Icons.arrow_forward_ios_rounded, size: 12, color: Colors.white),
                     label: '다음 화',
                     isPrimary: true,
-                    height: 36,
+                    height: 40,
                     padding: const EdgeInsets.symmetric(horizontal: 14),
                     onTap: _currentChapterIndex < _chapters.length - 1
                         ? () => _loadChapter(_currentChapterIndex + 1)
@@ -940,36 +947,26 @@ class _ReaderScreenState extends State<ReaderScreen> {
   }
 
   // ============================================================================
-  // 평소 독서 중 하단 미니멀 앰비언트 프로그레스 레이 (Ambient Micro Progress Ray)
+  // 평소 독서 중 하단 미니멀 프로그레스 레이 (Minimal Slim Progress Ray)
   // ============================================================================
   Widget _buildAmbientMicroProgressRay(ReaderThemeData theme) {
     final isPaging = PreferencesService.viewMode == 'paging';
     final contentPages = _contentPageCount;
     final primary = HyperAestheticTheme.getAmbientPrimary(theme);
-    final secondary = HyperAestheticTheme.getAmbientSecondary(theme);
 
     final double progress = isPaging
         ? ((_currentPage + 1) / (contentPages > 0 ? contentPages : 1)).clamp(0.0, 1.0)
         : _currentScrollProgress.clamp(0.0, 1.0);
 
     return Container(
-      height: 2.2,
+      height: 1.5,
       width: double.infinity,
       color: Colors.transparent,
       child: FractionallySizedBox(
         alignment: Alignment.centerLeft,
         widthFactor: progress.clamp(0.005, 1.0),
-        child: Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(colors: [primary, secondary]),
-            boxShadow: [
-              BoxShadow(
-                color: primary.withOpacity(0.55),
-                blurRadius: 4,
-                spreadRadius: 1,
-              ),
-            ],
-          ),
+        child: ColoredBox(
+          color: primary.withOpacity(0.85),
         ),
       ),
     );

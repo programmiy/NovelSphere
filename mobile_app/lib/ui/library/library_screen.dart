@@ -18,6 +18,7 @@ import '../../services/app_update_service.dart';
 import '../../services/notification_service.dart';
 import '../../services/status_dashboard_service.dart';
 import 'notification_center_sheet.dart';
+import '../remote/remote_control_screen.dart';
 
 class LibraryScreen extends StatefulWidget {
   const LibraryScreen({super.key});
@@ -334,7 +335,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
   }
 
   /// ============================================================================
-  /// 하이퍼 에스테틱 플로팅 글래스 네비게이션 독 (Floating Glass Navigation Dock)
+  /// 정제된 하단 플로팅 네비게이션 독 (Refined Floating Navigation Dock)
   /// ============================================================================
   Widget _buildFloatingGlassNavDock(ReaderThemeData theme) {
     final items = [
@@ -348,70 +349,73 @@ class _LibraryScreenState extends State<LibraryScreen> {
 
     return SafeArea(
       child: Container(
-        margin: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+        margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
         height: 64,
         decoration: HyperAestheticTheme.glassBox(
           theme: theme,
           borderRadius: 32,
-          opacity: 0.72,
-          borderWidth: 1.2,
+          opacity: 0.88,
+          borderWidth: 1.0,
           glow: true,
-          glowColor: primary.withOpacity(0.2),
+          glowColor: primary.withOpacity(0.12),
         ),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(32),
           child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+            filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: List.generate(items.length, (idx) {
                 final isSelected = (_currentNavIndex == idx);
                 final item = items[idx];
 
-                return GestureDetector(
+                return InkWell(
                   onTap: () {
                     HapticFeedback.selectionClick();
                     setState(() => _currentNavIndex = idx);
                     if (idx == 0) _loadLibrary();
                   },
-                  behavior: HitTestBehavior.opaque,
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 220),
-                    curve: Curves.easeOutCubic,
-                    padding: EdgeInsets.symmetric(
-                      horizontal: isSelected ? 16 : 10,
-                      vertical: 8,
-                    ),
-                    decoration: BoxDecoration(
-                      color: isSelected
-                          ? primary.withOpacity(theme.isDark ? 0.28 : 0.16)
-                          : Colors.transparent,
-                      borderRadius: BorderRadius.circular(24),
-                      border: isSelected
-                          ? Border.all(color: primary.withOpacity(0.4), width: 1.0)
-                          : null,
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          item['icon'] as IconData,
-                          size: 20,
-                          color: isSelected ? primary : theme.subTextColor,
-                        ),
-                        if (isSelected) ...[
-                          const SizedBox(width: 6),
-                          Text(
-                            item['label'] as String,
-                            style: TextStyle(
-                              color: isSelected ? primary : theme.subTextColor,
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                              letterSpacing: -0.3,
-                            ),
+                  borderRadius: BorderRadius.circular(24),
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(minWidth: 56, minHeight: 48),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 220),
+                      curve: Curves.easeOutCubic,
+                      padding: EdgeInsets.symmetric(
+                        horizontal: isSelected ? 14 : 10,
+                        vertical: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        color: isSelected
+                            ? primary.withOpacity(theme.isDark ? 0.22 : 0.12)
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(20),
+                        border: isSelected
+                            ? Border.all(color: primary.withOpacity(0.4), width: 1.0)
+                            : null,
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            item['icon'] as IconData,
+                            size: 20,
+                            color: isSelected ? primary : theme.subTextColor,
                           ),
+                          if (isSelected) ...[
+                            const SizedBox(width: 6),
+                            Text(
+                              item['label'] as String,
+                              style: TextStyle(
+                                color: isSelected ? primary : theme.subTextColor,
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                                letterSpacing: -0.2,
+                              ),
+                            ),
+                          ],
                         ],
-                      ],
+                      ),
                     ),
                   ),
                 );
@@ -519,7 +523,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
   }
 
   /// ============================================================================
-  /// 상단 글래스 헤더 허브 (Glass Header Hub)
+  /// 상단 헤더 허브 (Header Hub)
   /// ============================================================================
   Widget _buildHeaderHub(ReaderThemeData theme) {
     final primary = HyperAestheticTheme.getAmbientPrimary(theme);
@@ -532,7 +536,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
         children: [
           Row(
             children: [
-              // 럭셔리 엠블럼 아이콘
+              // 정제된 엠블럼 아이콘
               Container(
                 width: 38,
                 height: 38,
@@ -541,9 +545,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   borderRadius: BorderRadius.circular(12),
                   boxShadow: [
                     BoxShadow(
-                      color: primary.withOpacity(0.4),
-                      blurRadius: 12,
-                      offset: const Offset(0, 4),
+                      color: primary.withOpacity(0.25),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
                     ),
                   ],
                 ),
@@ -568,9 +572,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                         decoration: BoxDecoration(
-                          color: primary.withOpacity(0.18),
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: primary.withOpacity(0.35), width: 0.8),
+                          color: primary.withOpacity(0.14),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: primary.withOpacity(0.3), width: 0.8),
                         ),
                         child: Text(
                           '${_books.length}작품',
@@ -596,22 +600,33 @@ class _LibraryScreenState extends State<LibraryScreen> {
             ],
           ),
 
-          // 우측 컨트롤 그룹
+          // 우측 컨트롤 그룹 (최소 44dp 안심 터치 타깃 보장)
           Row(
             children: [
               IconButton(
-                icon: Icon(Icons.insights_rounded, color: primary, size: 22),
+                icon: Icon(Icons.insights_rounded, color: primary, size: 21),
                 tooltip: '서재 통계 & 분석',
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(),
+                constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+                padding: const EdgeInsets.all(8),
                 onPressed: () {
                   HapticFeedback.lightImpact();
                   setState(() => _currentNavIndex = 2);
                 },
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: 4),
+              IconButton(
+                icon: Icon(Icons.settings_remote_rounded, color: primary, size: 21),
+                tooltip: '번역 리모컨',
+                constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+                padding: const EdgeInsets.all(8),
+                onPressed: () {
+                  HapticFeedback.lightImpact();
+                  Navigator.push(context, MaterialPageRoute(builder: (_) => const RemoteControlScreen()));
+                },
+              ),
+              const SizedBox(width: 4),
               _buildNotificationBell(theme),
-              const SizedBox(width: 8),
+              const SizedBox(width: 6),
               _buildSyncStatusBadge(theme),
             ],
           ),
@@ -629,59 +644,84 @@ class _LibraryScreenState extends State<LibraryScreen> {
       child: Row(
         children: [
           Expanded(
-            child: HyperGlassCard(
-              theme: theme,
-              borderRadius: 16,
-              opacity: 0.65,
-              blur: 14.0,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
-              child: SizedBox(
-                height: 38,
-                child: TextField(
-                  controller: _searchController,
-                  style: TextStyle(color: theme.textColor, fontSize: 13, fontWeight: FontWeight.w500),
-                  decoration: InputDecoration(
-                    hintText: '장서 내 제목 또는 작가 검색...',
-                    hintStyle: TextStyle(
-                      color: theme.subTextColor.withOpacity(0.65),
-                      fontSize: 13,
-                    ),
-                    prefixIcon: Icon(Icons.search_rounded, size: 18, color: theme.subTextColor),
-                    suffixIcon: _searchQuery.isNotEmpty
-                        ? IconButton(
-                            icon: const Icon(Icons.clear_rounded, size: 16),
-                            onPressed: () {
-                              _searchController.clear();
-                              setState(() => _searchQuery = '');
-                              _loadLibrary();
-                            },
-                          )
-                        : null,
-                    border: InputBorder.none,
-                    contentPadding: const EdgeInsets.symmetric(vertical: 9),
-                  ),
-                  onChanged: (val) {
-                    setState(() => _searchQuery = val);
-                    _loadLibrary();
-                  },
+            child: Container(
+              height: 44,
+              decoration: BoxDecoration(
+                color: theme.surfaceColor,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: theme.borderColor.withOpacity(0.85),
+                  width: 1.0,
                 ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(theme.isDark ? 0.22 : 0.03),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: TextField(
+                controller: _searchController,
+                style: TextStyle(color: theme.textColor, fontSize: 13, fontWeight: FontWeight.w500),
+                decoration: InputDecoration(
+                  hintText: '장서 내 제목 또는 작가 검색...',
+                  hintStyle: TextStyle(
+                    color: theme.subTextColor.withOpacity(0.65),
+                    fontSize: 13,
+                  ),
+                  prefixIcon: Icon(Icons.search_rounded, size: 18, color: theme.subTextColor),
+                  prefixIconConstraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                  suffixIcon: _searchQuery.isNotEmpty
+                      ? IconButton(
+                          icon: const Icon(Icons.clear_rounded, size: 16),
+                          constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+                          onPressed: () {
+                            _searchController.clear();
+                            setState(() => _searchQuery = '');
+                            _loadLibrary();
+                          },
+                        )
+                      : null,
+                  border: InputBorder.none,
+                  contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+                onChanged: (val) {
+                  setState(() => _searchQuery = val);
+                  _loadLibrary();
+                },
               ),
             ),
           ),
           const SizedBox(width: 8),
-          // 그리드/리스트 토글 글래스 버튼
-          GestureDetector(
+          // 그리드/리스트 토글 버튼 (44dp 안심 터치 타깃)
+          InkWell(
             onTap: () async {
               HapticFeedback.selectionClick();
               final next = !_isGridView;
               await PreferencesService.setLibraryViewMode(next ? 'grid' : 'list');
               setState(() => _isGridView = next);
             },
-            child: HyperGlassCard(
-              theme: theme,
-              borderRadius: 16,
-              opacity: 0.65,
-              padding: const EdgeInsets.all(10),
+            borderRadius: BorderRadius.circular(14),
+            child: Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: theme.surfaceColor,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: theme.borderColor.withOpacity(0.85),
+                  width: 1.0,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(theme.isDark ? 0.22 : 0.03),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
               child: Icon(
                 _isGridView ? Icons.view_list_rounded : Icons.grid_view_rounded,
                 color: theme.textColor,
@@ -703,148 +743,188 @@ class _LibraryScreenState extends State<LibraryScreen> {
 
     const progress = 0.65;
 
-    return HyperGlassCard(
-      theme: theme,
+    return Container(
       margin: const EdgeInsets.fromLTRB(20, 10, 20, 14),
-      borderRadius: 24,
-      blur: 20,
-      opacity: 0.72,
-      glow: true,
-      glowColor: primary,
-      padding: const EdgeInsets.all(18),
-      onTap: () => _openReader(book),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              // 3D 북 커버 아트 뱃지
-              Container(
-                width: 58,
-                height: 76,
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [primary, secondary],
-                  ),
-                  borderRadius: BorderRadius.circular(12),
-                  boxShadow: [
-                    BoxShadow(
-                      color: primary.withOpacity(0.4),
-                      blurRadius: 14,
-                      offset: const Offset(0, 6),
-                    ),
-                  ],
-                ),
-                child: Stack(
-                  children: [
-                    // 책 등표지(Spine) 입체 라인
-                    Positioned(
-                      left: 0,
-                      top: 0,
-                      bottom: 0,
-                      width: 5,
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.25),
-                          borderRadius: const BorderRadius.horizontal(left: Radius.circular(12)),
-                        ),
-                      ),
-                    ),
-                    const Center(
-                      child: Icon(Icons.auto_stories_rounded, color: Colors.white, size: 26),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2.5),
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(colors: [primary, secondary]),
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: const Text(
-                            '계속 읽기',
-                            style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w900),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          '${book.totalChapters}화 수록',
-                          style: TextStyle(color: theme.subTextColor, fontSize: 11, fontWeight: FontWeight.w600),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      book.folderName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: theme.textColor,
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: -0.4,
-                      ),
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      book.lastReadChapterTitle ?? '첫 회차',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: theme.subTextColor,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              // 네온 진도율 링
-              HyperProgressRing(
-                progress: progress,
-                size: 46,
-                theme: theme,
-                centerWidget: Text(
-                  '${(progress * 100).toInt()}%',
-                  style: TextStyle(
-                    color: primary,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          // 원터치 햅틱 캡슐 [즉시 뷰어 진입]
-          SizedBox(
-            width: double.infinity,
-            child: HyperHapticPill(
-              theme: theme,
-              icon: const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 18),
-              label: '이어서 읽기',
-              isPrimary: true,
-              height: 40,
-              onTap: () => _openReader(book),
-            ),
+      decoration: BoxDecoration(
+        color: theme.surfaceColor,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: theme.borderColor.withOpacity(0.9),
+          width: 1.0,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(theme.isDark ? 0.25 : 0.04),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
           ),
         ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(20),
+        child: InkWell(
+          onTap: () => _openReader(book),
+          borderRadius: BorderRadius.circular(20),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    // 북 자켓 프리뷰 (2:3 비율 미니어처)
+                    Container(
+                      width: 52,
+                      height: 72,
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [
+                            primary.withOpacity(0.9),
+                            secondary.withOpacity(0.9),
+                          ],
+                        ),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: Colors.white.withOpacity(0.2),
+                          width: 1.0,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(theme.isDark ? 0.35 : 0.12),
+                            blurRadius: 8,
+                            offset: const Offset(0, 3),
+                          ),
+                        ],
+                      ),
+                      child: Stack(
+                        children: [
+                          // 책 등표지(Spine) 제본 라인
+                          Positioned(
+                            left: 0,
+                            top: 0,
+                            bottom: 0,
+                            width: 5,
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(0.25),
+                                borderRadius: const BorderRadius.horizontal(left: Radius.circular(9)),
+                              ),
+                            ),
+                          ),
+                          // 상단 림라이트
+                          Positioned(
+                            top: 0,
+                            left: 0,
+                            right: 0,
+                            height: 1.5,
+                            child: Container(
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  colors: [Colors.white.withOpacity(0.4), Colors.transparent],
+                                ),
+                              ),
+                            ),
+                          ),
+                          const Center(
+                            child: Icon(Icons.auto_stories_rounded, color: Colors.white, size: 24),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: primary.withOpacity(0.14),
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: Border.all(color: primary.withOpacity(0.3), width: 0.8),
+                                ),
+                                child: Text(
+                                  '계속 읽기',
+                                  style: TextStyle(color: primary, fontSize: 10, fontWeight: FontWeight.bold),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                '${book.totalChapters}화 수록',
+                                style: TextStyle(color: theme.subTextColor, fontSize: 11, fontWeight: FontWeight.w500),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 5),
+                          Text(
+                            book.folderName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: theme.textColor,
+                              fontSize: 15,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: -0.3,
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            book.lastReadChapterTitle ?? '첫 회차',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: theme.subTextColor,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    // 정제된 프로그레스 링
+                    HyperProgressRing(
+                      progress: progress,
+                      size: 44,
+                      theme: theme,
+                      centerWidget: Text(
+                        '${(progress * 100).toInt()}%',
+                        style: TextStyle(
+                          color: primary,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: HyperHapticPill(
+                    theme: theme,
+                    icon: const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 18),
+                    label: '이어서 읽기',
+                    isPrimary: true,
+                    height: 42,
+                    onTap: () => _openReader(book),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
 
   /// ============================================================================
-  /// 네온 글래스 필터 캡슐 바 (Filter Chips)
+  /// 정제된 필터 캡슐 바 (Filter Chips)
   /// ============================================================================
   Widget _buildFilterChips(ReaderThemeData theme) {
     final filters = [
@@ -867,41 +947,51 @@ class _LibraryScreenState extends State<LibraryScreen> {
           final isSelected = (_filter == f['id']);
           return Padding(
             padding: const EdgeInsets.only(right: 8),
-            child: GestureDetector(
+            child: InkWell(
               onTap: () {
                 HapticFeedback.selectionClick();
                 setState(() => _filter = f['id']!);
                 _loadLibrary();
               },
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-                decoration: BoxDecoration(
-                  color: isSelected
-                      ? primary
-                      : (theme.isDark ? theme.surfaceColor.withOpacity(0.6) : Colors.white.withOpacity(0.7)),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
+              borderRadius: BorderRadius.circular(18),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(minHeight: 38),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  decoration: BoxDecoration(
                     color: isSelected
-                        ? Colors.white.withOpacity(0.4)
-                        : theme.borderColor.withOpacity(0.6),
-                    width: 1.0,
+                        ? primary
+                        : theme.surfaceColor,
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(
+                      color: isSelected
+                          ? primary
+                          : theme.borderColor.withOpacity(0.85),
+                      width: 1.0,
+                    ),
+                    boxShadow: [
+                      if (isSelected)
+                        BoxShadow(
+                          color: primary.withOpacity(0.28),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
+                        )
+                      else
+                        BoxShadow(
+                          color: Colors.black.withOpacity(theme.isDark ? 0.2 : 0.02),
+                          blurRadius: 4,
+                          offset: const Offset(0, 1),
+                        ),
+                    ],
                   ),
-                  boxShadow: [
-                    if (isSelected)
-                      BoxShadow(
-                        color: primary.withOpacity(0.4),
-                        blurRadius: 10,
-                        offset: const Offset(0, 3),
-                      ),
-                  ],
-                ),
-                child: Text(
-                  f['label']!,
-                  style: TextStyle(
-                    color: isSelected ? Colors.white : theme.textColor,
-                    fontSize: 12,
-                    fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                  child: Text(
+                    f['label']!,
+                    style: TextStyle(
+                      color: isSelected ? Colors.white : theme.textColor,
+                      fontSize: 12,
+                      fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                    ),
                   ),
                 ),
               ),
@@ -913,7 +1003,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
   }
 
   /// ============================================================================
-  /// 그리드형 책 슬리버 (3D Prism Grid)
+  /// 모던 북 자켓 그리드 슬리버 (Modern Book Jacket Grid)
   /// ============================================================================
   Widget _buildGridSliver(ReaderThemeData theme) {
     final primary = HyperAestheticTheme.getAmbientPrimary(theme);
@@ -924,129 +1014,171 @@ class _LibraryScreenState extends State<LibraryScreen> {
       sliver: SliverGrid(
         gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: 2,
-          childAspectRatio: 0.72,
+          childAspectRatio: 0.68,
           crossAxisSpacing: 14,
           mainAxisSpacing: 14,
         ),
         delegate: SliverChildBuilderDelegate(
           (context, index) {
             final book = _books[index];
-            return HyperGlassCard(
-              theme: theme,
-              borderRadius: 20,
-              blur: 14,
-              opacity: 0.65,
-              padding: const EdgeInsets.all(12),
-              onTap: () => _openReader(book),
-              child: GestureDetector(
-                onLongPress: () => _showBookActionSheet(book, theme),
-                behavior: HitTestBehavior.opaque,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // 상단 북 커버 프리뷰
-                    Expanded(
-                      child: Container(
-                        width: double.infinity,
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                            colors: [
-                              primary.withOpacity(0.85),
-                              secondary.withOpacity(0.85),
-                            ],
-                          ),
-                          borderRadius: BorderRadius.circular(14),
-                          boxShadow: [
-                            BoxShadow(
-                              color: primary.withOpacity(0.25),
-                              blurRadius: 10,
-                              offset: const Offset(0, 4),
-                            ),
-                          ],
-                        ),
-                        child: Stack(
-                          children: [
-                            // 3D 등표지 바인딩 라인
-                            Positioned(
-                              left: 0,
-                              top: 0,
-                              bottom: 0,
-                              width: 6,
-                              child: Container(
-                                decoration: BoxDecoration(
-                                  color: Colors.white.withOpacity(0.3),
-                                  borderRadius: const BorderRadius.horizontal(left: Radius.circular(14)),
-                                ),
-                              ),
-                            ),
-                            Center(
-                              child: Icon(
-                                Icons.auto_stories_rounded,
-                                size: 38,
-                                color: Colors.white.withOpacity(0.9),
-                              ),
-                            ),
-                            // 즐겨찾기 별 뱃지
-                            if (book.isPinned)
-                              Positioned(
-                                top: 8,
-                                right: 8,
-                                child: Container(
-                                  padding: const EdgeInsets.all(4),
-                                  decoration: const BoxDecoration(
-                                    color: Colors.amber,
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: const Icon(Icons.star_rounded, size: 12, color: Colors.black87),
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    Row(
+            return Container(
+              decoration: BoxDecoration(
+                color: theme.surfaceColor,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: theme.borderColor.withOpacity(0.85),
+                  width: 1.0,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(theme.isDark ? 0.25 : 0.04),
+                    blurRadius: 10,
+                    offset: const Offset(0, 3),
+                  ),
+                ],
+              ),
+              child: Material(
+                color: Colors.transparent,
+                borderRadius: BorderRadius.circular(16),
+                child: InkWell(
+                  onTap: () => _openReader(book),
+                  onLongPress: () => _showBookActionSheet(book, theme),
+                  borderRadius: BorderRadius.circular(16),
+                  child: Padding(
+                    padding: const EdgeInsets.all(10),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        // 상단 모던 북 자켓 커버 (2:3 비율)
                         Expanded(
-                          child: Text(
-                            book.folderName,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: theme.textColor,
-                              fontSize: 13,
-                              fontWeight: FontWeight.bold,
-                              letterSpacing: -0.3,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          '총 ${book.totalChapters}화',
-                          style: TextStyle(color: theme.subTextColor, fontSize: 11, fontWeight: FontWeight.w600),
-                        ),
-                        if (book.isCompleted)
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                          child: Container(
+                            width: double.infinity,
                             decoration: BoxDecoration(
-                              color: const Color(0xFF10B981).withOpacity(0.18),
-                              borderRadius: BorderRadius.circular(4),
+                              gradient: LinearGradient(
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                                colors: [
+                                  primary.withOpacity(0.85),
+                                  secondary.withOpacity(0.85),
+                                ],
+                              ),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: Colors.white.withOpacity(0.2),
+                                width: 1.0,
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(theme.isDark ? 0.35 : 0.1),
+                                  blurRadius: 8,
+                                  offset: const Offset(0, 3),
+                                ),
+                              ],
                             ),
-                            child: const Text(
-                              '완결',
-                              style: TextStyle(color: Color(0xFF10B981), fontSize: 9, fontWeight: FontWeight.bold),
+                            child: Stack(
+                              children: [
+                                // 왼쪽 등표지(Spine) 제본 라인
+                                Positioned(
+                                  left: 0,
+                                  top: 0,
+                                  bottom: 0,
+                                  width: 6,
+                                  child: Container(
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withOpacity(0.25),
+                                      borderRadius: const BorderRadius.horizontal(left: Radius.circular(11)),
+                                    ),
+                                  ),
+                                ),
+                                // 상단 루미너리 림라이트
+                                Positioned(
+                                  top: 0,
+                                  left: 0,
+                                  right: 0,
+                                  height: 1.5,
+                                  child: Container(
+                                    decoration: BoxDecoration(
+                                      gradient: LinearGradient(
+                                        colors: [Colors.white.withOpacity(0.35), Colors.transparent],
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                Center(
+                                  child: Icon(
+                                    Icons.auto_stories_rounded,
+                                    size: 34,
+                                    color: Colors.white.withOpacity(0.9),
+                                  ),
+                                ),
+                                // 즐겨찾기 별 뱃지 (안전한 터치 타깃)
+                                Positioned(
+                                  top: 4,
+                                  right: 4,
+                                  child: InkWell(
+                                    onTap: () async {
+                                      HapticFeedback.selectionClick();
+                                      await LocalDbService.togglePinBook(book.folderName, book.isPinned);
+                                      _loadLibrary();
+                                    },
+                                    borderRadius: BorderRadius.circular(20),
+                                    child: Container(
+                                      width: 32,
+                                      height: 32,
+                                      alignment: Alignment.center,
+                                      decoration: BoxDecoration(
+                                        color: book.isPinned ? Colors.amber : Colors.black26,
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: Icon(
+                                        book.isPinned ? Icons.star_rounded : Icons.star_border_rounded,
+                                        size: 16,
+                                        color: book.isPinned ? Colors.black87 : Colors.white,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          book.folderName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: theme.textColor,
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: -0.3,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              '총 ${book.totalChapters}화',
+                              style: TextStyle(color: theme.subTextColor, fontSize: 11, fontWeight: FontWeight.w500),
+                            ),
+                            if (book.isCompleted)
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF10B981).withOpacity(0.16),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: const Text(
+                                  '완결',
+                                  style: TextStyle(color: Color(0xFF10B981), fontSize: 9, fontWeight: FontWeight.bold),
+                                ),
+                              ),
+                          ],
+                        ),
                       ],
                     ),
-                  ],
+                  ),
                 ),
               ),
             );
@@ -1058,10 +1190,11 @@ class _LibraryScreenState extends State<LibraryScreen> {
   }
 
   /// ============================================================================
-  /// 리스트형 책 슬리버 (Wide Slab Glass List)
+  /// 리스트형 책 슬리버 (Clean Surface Book List)
   /// ============================================================================
   Widget _buildListSliver(ReaderThemeData theme) {
     final primary = HyperAestheticTheme.getAmbientPrimary(theme);
+    final secondary = HyperAestheticTheme.getAmbientSecondary(theme);
 
     return SliverPadding(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
@@ -1070,77 +1203,118 @@ class _LibraryScreenState extends State<LibraryScreen> {
           (context, index) {
             final book = _books[index];
             return Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: HyperGlassCard(
-                theme: theme,
-                borderRadius: 18,
-                blur: 14,
-                opacity: 0.65,
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                onTap: () => _openReader(book),
-                child: GestureDetector(
-                  onLongPress: () => _showBookActionSheet(book, theme),
-                  behavior: HitTestBehavior.opaque,
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 44,
-                        height: 54,
-                        decoration: BoxDecoration(
-                          color: primary.withOpacity(0.18),
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: primary.withOpacity(0.35)),
-                        ),
-                        child: Icon(Icons.book_rounded, color: primary, size: 22),
-                      ),
-                      const SizedBox(width: 14),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: theme.surfaceColor,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: theme.borderColor.withOpacity(0.85),
+                    width: 1.0,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(theme.isDark ? 0.22 : 0.03),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Material(
+                  color: Colors.transparent,
+                  borderRadius: BorderRadius.circular(16),
+                  child: InkWell(
+                    onTap: () => _openReader(book),
+                    onLongPress: () => _showBookActionSheet(book, theme),
+                    borderRadius: BorderRadius.circular(16),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 44,
+                            height: 56,
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                                colors: [primary.withOpacity(0.85), secondary.withOpacity(0.85)],
+                              ),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.white.withOpacity(0.2), width: 1.0),
+                            ),
+                            child: Stack(
                               children: [
-                                if (book.isPinned) ...[
-                                  const Icon(Icons.star_rounded, color: Colors.amber, size: 16),
-                                  const SizedBox(width: 4),
-                                ],
-                                Expanded(
-                                  child: Text(
-                                    book.folderName,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                      color: theme.textColor,
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 14,
+                                Positioned(
+                                  left: 0,
+                                  top: 0,
+                                  bottom: 0,
+                                  width: 4,
+                                  child: Container(
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withOpacity(0.25),
+                                      borderRadius: const BorderRadius.horizontal(left: Radius.circular(7)),
                                     ),
                                   ),
                                 ),
+                                const Center(
+                                  child: Icon(Icons.book_rounded, color: Colors.white, size: 20),
+                                ),
                               ],
                             ),
-                            const SizedBox(height: 3),
-                            Text(
-                              book.lastReadChapterTitle != null
-                                  ? '읽던 곳: ${book.lastReadChapterTitle}'
-                                  : '총 ${book.totalChapters}화',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(color: theme.subTextColor, fontSize: 11),
+                          ),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    if (book.isPinned) ...[
+                                      const Icon(Icons.star_rounded, color: Colors.amber, size: 16),
+                                      const SizedBox(width: 4),
+                                    ],
+                                    Expanded(
+                                      child: Text(
+                                        book.folderName,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          color: theme.textColor,
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 14,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 3),
+                                Text(
+                                  book.lastReadChapterTitle != null
+                                      ? '읽던 곳: ${book.lastReadChapterTitle}'
+                                      : '총 ${book.totalChapters}화',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(color: theme.subTextColor, fontSize: 11),
+                                ),
+                              ],
                             ),
-                          ],
-                        ),
+                          ),
+                          IconButton(
+                            icon: Icon(
+                              book.isPinned ? Icons.star_rounded : Icons.star_border_rounded,
+                              color: book.isPinned ? Colors.amber : theme.subTextColor,
+                            ),
+                            constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+                            onPressed: () async {
+                              HapticFeedback.selectionClick();
+                              await LocalDbService.togglePinBook(book.folderName, book.isPinned);
+                              _loadLibrary();
+                            },
+                          ),
+                        ],
                       ),
-                      IconButton(
-                        icon: Icon(
-                          book.isPinned ? Icons.star_rounded : Icons.star_border_rounded,
-                          color: book.isPinned ? Colors.amber : theme.subTextColor,
-                        ),
-                        onPressed: () async {
-                          await LocalDbService.togglePinBook(book.folderName, book.isPinned);
-                          _loadLibrary();
-                        },
-                      ),
-                    ],
+                    ),
                   ),
                 ),
               ),
@@ -1169,11 +1343,10 @@ class _LibraryScreenState extends State<LibraryScreen> {
         return HyperGlassCard(
           theme: theme,
           margin: const EdgeInsets.fromLTRB(20, 6, 20, 10),
-          borderRadius: 18,
-          blur: 16,
-          opacity: 0.75,
-          glow: true,
-          glowColor: const Color(0xFF10B981),
+          borderRadius: 16,
+          blur: 0,
+          opacity: 1.0,
+          glow: false,
           padding: const EdgeInsets.all(14),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1181,18 +1354,11 @@ class _LibraryScreenState extends State<LibraryScreen> {
               Row(
                 children: [
                   Container(
-                    width: 9,
-                    height: 9,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF10B981),
+                    width: 8,
+                    height: 8,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFF10B981),
                       shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: const Color(0xFF10B981).withOpacity(0.6),
-                          blurRadius: 6,
-                          spreadRadius: 2,
-                        ),
-                      ],
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -1238,12 +1404,12 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 borderRadius: BorderRadius.circular(4),
                 child: LinearProgressIndicator(
                   value: progress,
-                  minHeight: 5,
+                  minHeight: 4,
                   backgroundColor: theme.borderColor.withOpacity(0.4),
                   valueColor: AlwaysStoppedAnimation<Color>(primary),
                 ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 6),
               Text(
                 status.statusText,
                 style: TextStyle(color: theme.subTextColor, fontSize: 11),
@@ -1257,7 +1423,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
     );
   }
 
-  // 알림 센터 벨
+  // 알림 센터 벨 (44dp 안심 터치 타깃)
   Widget _buildNotificationBell(ReaderThemeData theme) {
     return ValueListenableBuilder<int>(
       valueListenable: NotificationService.unreadCount,
@@ -1276,39 +1442,41 @@ class _LibraryScreenState extends State<LibraryScreen> {
             );
           },
           borderRadius: BorderRadius.circular(20),
-          child: Padding(
-            padding: const EdgeInsets.all(6),
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                Icon(
-                  unread > 0 ? Icons.notifications_active_rounded : Icons.notifications_none_rounded,
-                  color: unread > 0 ? HyperAestheticTheme.getAmbientPrimary(theme) : theme.textColor,
-                  size: 22,
-                ),
-                if (unread > 0)
-                  Positioned(
-                    top: -2,
-                    right: -2,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                      decoration: const BoxDecoration(
-                        color: Colors.redAccent,
-                        shape: BoxShape.circle,
-                      ),
-                      constraints: const BoxConstraints(minWidth: 14, minHeight: 14),
-                      child: Text(
-                        unread > 9 ? '9+' : '$unread',
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 9,
-                          fontWeight: FontWeight.bold,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+            child: Center(
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Icon(
+                    unread > 0 ? Icons.notifications_active_rounded : Icons.notifications_none_rounded,
+                    color: unread > 0 ? HyperAestheticTheme.getAmbientPrimary(theme) : theme.textColor,
+                    size: 21,
+                  ),
+                  if (unread > 0)
+                    Positioned(
+                      top: -2,
+                      right: -2,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                        decoration: const BoxDecoration(
+                          color: Colors.redAccent,
+                          shape: BoxShape.circle,
+                        ),
+                        constraints: const BoxConstraints(minWidth: 14, minHeight: 14),
+                        child: Text(
+                          unread > 9 ? '9+' : '$unread',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 9,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ),
                     ),
-                  ),
-              ],
+                ],
+              ),
             ),
           ),
         );
