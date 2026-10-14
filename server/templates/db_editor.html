@@ -1184,9 +1184,10 @@
             </header>
 
             <div class="modal-body-scroll">
-                <div style="font-size:13px; color:var(--text-secondary); line-height:1.5;">
-                    원문에 지정된 한자/단어가 존재하지만, 번역문에 올바른 이름이 누락된 문장만을 안전하게 색인합니다.
-                    자주 발생하는 오독 단어들을 등록해 두면 스마트 교정 제안문이 자동으로 완성됩니다.
+                <div style="font-size:13px; color:var(--text-secondary); line-height:1.6; background:var(--bg-color); padding:10px 14px; border-radius:6px; border:1px solid var(--border-color);">
+                    <div>• <strong>원문 한자/단어 &amp; 올바른 표기</strong>: 원문에 해당 한자가 있으나 번역문에 올바른 표기가 누락된 문장만을 정밀 색인합니다.</div>
+                    <div>• <strong>오독 단어 목록</strong>: 자주 발생하는 오역을 등록하면 스마트 교정 제안문이 자동으로 치환·생성됩니다.</div>
+                    <div>• <strong>감지 제외/예외 단어 목록</strong>: <code>英</code>(영국, 영어, 영웅)처럼 인명 한자가 일반 단어로도 쓰이는 경우, 원문 또는 번역문에 해당 단어가 들어있으면 감지 대상에서 완전히 제외합니다.</div>
                 </div>
 
                 <div id="rulesListContainer" style="display:flex; flex-direction:column; gap:12px;">
@@ -1359,6 +1360,7 @@
                 card.dataset.index = idx;
 
                 const misreadingsStr = (rule.misreadings || []).join(", ");
+                const exceptionsStr = (rule.exceptions || []).join(", ");
                 card.innerHTML = `
                     <div class="rule-grid-row">
                         <div>
@@ -1390,12 +1392,26 @@
                             </button>
                         </div>
                         <input type="text" class="form-input rule-misreadings" value="${misreadingsStr}" style="width:100%; font-size:12px;" placeholder="예: 하루토, 유토, 하루카, 유카루">
+                        
+                        <div style="margin-top:8px;">
+                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                                <label style="font-size:11px; font-weight:600; color:var(--fixer-danger); display:flex; align-items:center; gap:4px;">
+                                    <span class="material-icons" style="font-size:13px;">block</span>
+                                    감지 제외/예외 단어 목록 (원문 또는 번역문에 포함 시 감지 건너뛰기, 쉼표 구분)
+                                </label>
+                                <span style="font-size:10.5px; color:var(--text-muted);">
+                                    예: 영국, 영어, 英国, 英語, 영웅
+                                </span>
+                            </div>
+                            <input type="text" class="form-input rule-exceptions" value="${exceptionsStr}" style="width:100%; font-size:12px;" placeholder="예: 영국, 영어, 英国, 英語, 영웅 (원문 또는 번역문에 포함 시 이 규칙 감지 제외)">
+                        </div>
+
                         <div class="discovered-candidates-box" style="display:none; margin-top:8px; padding:10px 12px; background:var(--card-bg); border:1px dashed var(--border-color); border-radius:6px;">
                             <div style="font-size:11.5px; font-weight:600; color:var(--primary-color); display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-                                <span class="discovered-summary-text">🎯 발굴된 오역 단어 후보:</span>
-                                <button type="button" class="btn btn-sm btn-primary btn-add-all-candidates" style="padding:2px 8px; font-size:11px;">+ 추천 전체 추가</button>
+                                <span class="discovered-summary-text">🎯 발굴된 단어 후보:</span>
+                                <button type="button" class="btn btn-sm btn-primary btn-add-all-candidates" style="padding:2px 8px; font-size:11px;">+ 추천 전체 오독에 추가</button>
                             </div>
-                            <div class="discovered-chips-list" style="display:flex; flex-wrap:wrap; gap:4px;"></div>
+                            <div class="discovered-chips-list" style="display:flex; flex-wrap:wrap; gap:6px;"></div>
                         </div>
                     </div>
                 `;
@@ -1413,6 +1429,7 @@
                 const summaryText = card.querySelector(".discovered-summary-text");
                 const btnAddAll = card.querySelector(".btn-add-all-candidates");
                 const misreadingsInput = card.querySelector(".rule-misreadings");
+                const exceptionsInput = card.querySelector(".rule-exceptions");
 
                 btnDiscover.addEventListener("click", async () => {
                     const src = card.querySelector(".rule-source").value.trim();
@@ -1443,33 +1460,53 @@
 
                         const candidates = data.candidates || [];
                         if (candidates.length === 0) {
-                            showToast("발굴된 오역 단어 후보가 없습니다.", false);
+                            showToast("발굴된 단어 후보가 없습니다.", false);
                             candidatesBox.style.display = "none";
                             return;
                         }
 
                         chipsList.innerHTML = "";
-                        summaryText.textContent = `🎯 통계 발굴된 오역 단어 (${candidates.length}건):`;
+                        summaryText.textContent = `🎯 통계 발굴된 단어 (${candidates.length}건): [오독 추가] 또는 [🚫 예외 등록]`;
 
                         candidates.forEach(cand => {
-                            const chip = document.createElement("button");
-                            chip.type = "button";
-                            chip.className = "btn btn-sm btn-outline";
-                            chip.style.cssText = "padding:3px 7px; font-size:11.5px; border-radius:12px; display:inline-flex; align-items:center; gap:4px;";
-                            chip.innerHTML = `+ <strong>${cand.word}</strong> <span style="font-size:10px; color:var(--text-muted); font-family:var(--font-mono);">(${cand.count}회 / ${(cand.ratio*100).toFixed(0)}%)</span>`;
+                            const chipWrap = document.createElement("div");
+                            chipWrap.style.cssText = "display:inline-flex; align-items:center; border:1px solid var(--border-color); border-radius:14px; overflow:hidden; font-size:11.5px; background:var(--card-bg);";
 
-                            chip.addEventListener("click", () => {
+                            const btnAddMis = document.createElement("button");
+                            btnAddMis.type = "button";
+                            btnAddMis.style.cssText = "padding:3px 8px; border:none; background:transparent; font-size:11px; cursor:pointer; display:inline-flex; align-items:center; gap:3px; color:var(--text-color);";
+                            btnAddMis.innerHTML = `+ <strong>${cand.word}</strong> <span style="font-size:9.5px; color:var(--text-muted); font-family:var(--font-mono);">(${cand.count}회)</span>`;
+                            btnAddMis.title = `'${cand.word}'를 오독/오번역 단어 목록에 추가`;
+                            btnAddMis.addEventListener("click", () => {
                                 const currentVals = misreadingsInput.value.split(",").map(s => s.trim()).filter(Boolean);
                                 if (!currentVals.includes(cand.word)) {
                                     currentVals.push(cand.word);
                                     misreadingsInput.value = currentVals.join(", ");
-                                    chip.style.opacity = "0.5";
-                                    chip.disabled = true;
-                                    showToast(`'${cand.word}' 추가되었습니다.`);
+                                    btnAddMis.style.opacity = "0.5";
+                                    btnAddMis.disabled = true;
+                                    showToast(`'${cand.word}' 오독 목록에 추가되었습니다.`);
                                 }
                             });
 
-                            chipsList.appendChild(chip);
+                            const btnAddExc = document.createElement("button");
+                            btnAddExc.type = "button";
+                            btnAddExc.style.cssText = "padding:3px 7px; border:none; border-left:1px solid var(--border-color); background:rgba(239, 68, 68, 0.08); color:var(--fixer-danger); font-size:10.5px; cursor:pointer; font-weight:600;";
+                            btnAddExc.innerHTML = `🚫 예외`;
+                            btnAddExc.title = `'${cand.word}'를 감지 제외/예외 단어 목록에 추가 (감지 방지)`;
+                            btnAddExc.addEventListener("click", () => {
+                                const currentExcs = exceptionsInput.value.split(",").map(s => s.trim()).filter(Boolean);
+                                if (!currentExcs.includes(cand.word)) {
+                                    currentExcs.push(cand.word);
+                                    exceptionsInput.value = currentExcs.join(", ");
+                                    btnAddExc.style.opacity = "0.5";
+                                    btnAddExc.disabled = true;
+                                    showToast(`'${cand.word}' 감지 제외 단어 목록에 추가되었습니다.`);
+                                }
+                            });
+
+                            chipWrap.appendChild(btnAddMis);
+                            chipWrap.appendChild(btnAddExc);
+                            chipsList.appendChild(chipWrap);
                         });
 
                         btnAddAll.onclick = () => {
@@ -1490,7 +1527,7 @@
                         };
 
                         candidatesBox.style.display = "block";
-                        showToast(`${candidates.length}개의 오역 단어 후보를 자동 발굴했습니다!`);
+                        showToast(`${candidates.length}개의 단어 후보를 자동 발굴했습니다!`);
                     } catch (err) {
                         btnDiscover.innerHTML = origBtnHtml;
                         btnDiscover.disabled = false;
@@ -1510,7 +1547,8 @@
                 target: "",
                 enabled: true,
                 description: "",
-                misreadings: []
+                misreadings: [],
+                exceptions: []
             });
             renderRulesInModal();
         });
@@ -1524,10 +1562,31 @@
                 const tgt = card.querySelector(".rule-target").value.trim();
                 const desc = card.querySelector(".rule-desc").value.trim();
                 const enabled = card.querySelector(".rule-enabled").checked;
-                const misreadings = card.querySelector(".rule-misreadings").value
+                
+                const rawMisreadings = card.querySelector(".rule-misreadings").value
                     .split(",")
                     .map(s => s.trim())
                     .filter(s => s.length > 0);
+
+                const rawExceptions = (card.querySelector(".rule-exceptions")?.value || "")
+                    .split(",")
+                    .map(s => s.trim())
+                    .filter(s => s.length > 0);
+
+                // Smart separation: if user prefixed words in misreadings with '-' or '!', classify as exceptions
+                const misreadings = [];
+                const exceptions = [...rawExceptions];
+
+                rawMisreadings.forEach(m => {
+                    if (m.startsWith("-") || m.startsWith("!")) {
+                        const clean = m.replace(/^[-!]+/, "").trim();
+                        if (clean && !exceptions.includes(clean)) {
+                            exceptions.push(clean);
+                        }
+                    } else {
+                        misreadings.push(m);
+                    }
+                });
 
                 if (src && tgt) {
                     updatedRules.push({
@@ -1536,7 +1595,8 @@
                         target: tgt,
                         enabled: enabled,
                         description: desc,
-                        misreadings: misreadings
+                        misreadings: misreadings,
+                        exceptions: exceptions
                     });
                 }
             });

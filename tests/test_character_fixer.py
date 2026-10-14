@@ -274,3 +274,240 @@ def test_discover_misreadings_endpoint():
     assert fail_res.status_code == 400
 
 
+def test_exceptions_in_scan():
+    folder = "테스트_예외단어_소설"
+    db = SessionLocal()
+    # Insert test rows: one is normal exception, one is an actual misreading
+    r1 = Translation(
+        url="http://example.com/ex1",
+        pid="ex_p1",
+        original="英国風のメイド服を着て、英語で話す。",
+        translated="영국풍의 메이드복을 입고, 영어로 말한다.",
+        timestamp=2000,
+        folderName=folder,
+        title="예외 테스트 1"
+    )
+    r2 = Translation(
+        url="http://example.com/ex2",
+        pid="ex_p2",
+        original="英は怒って立ち去った。",
+        translated="에이는 화가 나서 떠나갔다.",
+        timestamp=2001,
+        folderName=folder,
+        title="예외 테스트 2"
+    )
+    db.add_all([r1, r2])
+    db.commit()
+    db.close()
+
+    try:
+        rules = [
+            {
+                "id": "rule-hide",
+                "source": "英",
+                "target": "하나부사",
+                "enabled": True,
+                "misreadings": ["에이"],
+                "exceptions": ["영국", "영어", "英国", "英語"]
+            }
+        ]
+        res = client.post("/api/db_editor/scan", json={
+            "folderName": folder,
+            "rules": rules
+        })
+        assert res.status_code == 200
+        data = res.json()
+        
+        # r1 ("영국", "영어") should NOT be matched because of exceptions!
+        # Only r2 ("에이") should be matched!
+        matched_pids = [item["pid"] for item in data["items"]]
+        assert "ex_p1" not in matched_pids
+        assert "ex_p2" in matched_pids
+        assert data["total_matched"] == 1
+        
+        # Check auto suggestion on r2
+        item_r2 = next(i for i in data["items"] if i["pid"] == "ex_p2")
+        assert "하나부사는" in item_r2["suggested"]
+    finally:
+        db = SessionLocal()
+        db.query(Translation).filter(Translation.folderName == folder).delete()
+        db.commit()
+        db.close()
+
+
+def test_generate_smart_suggestion_with_exceptions():
+    from server.routers.db_editor import generate_smart_suggestion
+
+    # 1. Rule with explicit exceptions
+    rule_with_exc = [{
+        "source": "英",
+        "target": "하나부사",
+        "enabled": True,
+        "misreadings": ["에이"],
+        "exceptions": ["영국", "영어", "英国", "英語"]
+    }]
+    # Sentence with exception word in translated
+    suggested, reasons, tags = generate_smart_suggestion("英会話", "영국 메이드", rule_with_exc)
+    assert suggested == "영국 메이드"  # Should NOT be replaced!
+    assert "하나부사 누락" not in reasons
+    assert "하나부사 누락" not in tags
+
+    # Sentence with exception word in original
+    suggested_jp, reasons_jp, tags_jp = generate_smart_suggestion("英国", "에이 나라", rule_with_exc)
+    assert suggested_jp == "에이 나라"
+    assert "하나부사 누락" not in reasons_jp
+
+    # Sentence without exception word
+    suggested_valid, reasons_valid, tags_valid = generate_smart_suggestion("英が笑った", "에이가 웃었다", rule_with_exc)
+    assert suggested_valid == "하나부사가 웃었다"
+    assert any("에이 ➔ 하나부사" in r for r in reasons_valid)
+
+    # 2. Rule with '-' or '!' prefix in misreadings (smart auto-detection)
+    rule_prefix = [{
+        "source": "英",
+        "target": "하나부사",
+        "enabled": True,
+        "misreadings": ["에이", "-영국", "!영어"]
+    }]
+    suggested_pref, reasons_pref, _ = generate_smart_suggestion("英", "영국", rule_prefix)
+    assert suggested_pref == "영국"
+    assert "하나부사 누락" not in reasons_pref
+
+
+def test_save_and_retrieve_rules_with_exceptions():
+    folder = "테스트_규칙_소설"
+    test_rules = [
+        {
+            "id": "rule-exc-test",
+            "source": "英",
+            "target": "하나부사",
+            "enabled": True,
+            "description": "예외 테스트 규칙",
+            "misreadings": ["에이", "히데"],
+            "exceptions": ["영국", "영어", "英国", "英語"]
+        }
+    ]
+    save_res = client.post("/api/db_editor/rules", json={
+        "folderName": folder,
+        "rules": test_rules
+    })
+    assert save_res.status_code == 200
+    assert save_res.json()["status"] == "success"
+
+    get_res = client.get(f"/api/db_editor/rules?folderName={folder}")
+    assert get_res.status_code == 200
+    rules = get_res.json()["rules"]
+    target_rule = next(r for r in rules if r["id"] == "rule-exc-test")
+    assert target_rule["exceptions"] == ["영국", "영어", "英国", "英語"]
+    assert target_rule["misreadings"] == ["에이", "히데"]
+
+
+def test_coexisting_name_and_exception():
+    folder = "테스트_공존_소설"
+    db = SessionLocal()
+    # r1: 인명(英) + 예외어(英国) 공존, 타깃(하나부사) 누락 (에이로 오역됨) -> 감지 대상!
+    r1 = Translation(
+        url="http://example.com/co1",
+        pid="co_p1",
+        original="英は英国に向かった。",
+        translated="에이는 영국으로 향했다.",
+        timestamp=3000,
+        folderName=folder,
+        title="공존 테스트 1"
+    )
+    # r2: 인명(英) + 예외어(英国) 공존, 타깃(하나부사) 정상 번역됨 -> 누락 아님 (비감지)!
+    r2 = Translation(
+        url="http://example.com/co2",
+        pid="co_p2",
+        original="英は英国に向かった。",
+        translated="하나부사는 영국으로 향했다.",
+        timestamp=3001,
+        folderName=folder,
+        title="공존 테스트 2"
+    )
+    # r3: 예외어(英国)만 있고 인명 없음 -> 누락 아님 (비감지)!
+    r3 = Translation(
+        url="http://example.com/co3",
+        pid="co_p3",
+        original="ここは英国の庭園だ。",
+        translated="여기는 영국의 정원이다.",
+        timestamp=3002,
+        folderName=folder,
+        title="공존 테스트 3"
+    )
+    db.add_all([r1, r2, r3])
+    db.commit()
+    db.close()
+
+    try:
+        rules = [
+            {
+                "id": "rule-hide-coexist",
+                "source": "英",
+                "target": "하나부사",
+                "enabled": True,
+                "misreadings": ["에이"],
+                "exceptions": ["영국", "영어", "英国", "英語"]
+            }
+        ]
+        res = client.post("/api/db_editor/scan", json={
+            "folderName": folder,
+            "rules": rules
+        })
+        assert res.status_code == 200
+        data = res.json()
+        
+        # 오직 r1만 감지되어야 함! (인명용 한자가 존재하고 target이 누락된 상태이므로)
+        matched_pids = [item["pid"] for item in data["items"]]
+        assert "co_p1" in matched_pids
+        assert "co_p2" not in matched_pids
+        assert "co_p3" not in matched_pids
+        assert data["total_matched"] == 1
+
+        # r1의 제안문 확인: 예외어 "영국"은 유지되고 인명 "에이"만 "하나부사"로 치환!
+        co1 = next(item for item in data["items"] if item["pid"] == "co_p1")
+        assert co1["suggested"] == "하나부사는 영국으로 향했다."
+        assert any("에이 ➔ 하나부사" in r for r in co1["reasons"])
+    finally:
+        db = SessionLocal()
+        db.query(Translation).filter(Translation.folderName == folder).delete()
+        db.commit()
+        db.close()
+
+
+def test_method3_placeholder_protection():
+    from server.routers.db_editor import generate_smart_suggestion
+
+    rules = [{
+        "source": "英",
+        "target": "하나부사",
+        "enabled": True,
+        "misreadings": ["하나에", "하나"]
+    }]
+
+    # 1. Existing '하나부사' + misreading '하나에' + misreading '하나'
+    # 원문: 英 3개, 번역문: 하나부사 1개, 하나에 1개, 하나 1개
+    orig = "英、英、英。"
+    trans = "하나부사는 하나에 씨를 바래다주고, 하나 씨도 만났다."
+    suggested, reasons, tags = generate_smart_suggestion(orig, trans, rules)
+
+    # 기존 '하나부사'가 '하나부사부사'로 변질되지 않고, '하나에'와 '하나'만 각각 '하나부사'로 깔끔하게 교정되어야 함!
+    assert suggested == "하나부사는 하나부사 씨를 바래다주고, 하나부사 씨도 만났다."
+    assert "하나부사부사" not in suggested
+    assert "하나부사에" not in suggested
+
+    # 2. Existing '하나부사' + only '하나'
+    orig2 = "英、英。"
+    trans2 = "하나부사는 하나 씨를 만났다."
+    suggested2, _, _ = generate_smart_suggestion(orig2, trans2, rules)
+    assert suggested2 == "하나부사는 하나부사 씨를 만났다."
+    assert "하나부사부사" not in suggested2
+
+    # 3. Already correct translation should remain completely unchanged
+    orig_clean = "英は走った。"
+    trans_clean = "하나부사는 달렸다."
+    suggested_clean, _, _ = generate_smart_suggestion(orig_clean, trans_clean, rules)
+    assert suggested_clean == "하나부사는 달렸다."
+    assert "하나부사부사" not in suggested_clean
+
+

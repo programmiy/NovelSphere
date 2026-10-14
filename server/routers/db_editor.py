@@ -125,6 +125,105 @@ def create_name_fix_backup(force: bool = False, cooldown_days: float = 3.0, max_
     )
 
 
+def get_rule_exceptions(rule: Dict[str, Any]) -> List[str]:
+    """
+    Extracts exception words that should prevent matching when present in original or translation.
+    Supports both rule['exceptions'] list and misreadings prefixed with '-' or '!'.
+    """
+    excs = []
+    raw_excs = rule.get("exceptions", [])
+    if isinstance(raw_excs, list):
+        for e in raw_excs:
+            if isinstance(e, str) and e.strip():
+                excs.append(e.strip())
+
+    misreadings = rule.get("misreadings", [])
+    if isinstance(misreadings, list):
+        for m in misreadings:
+            if isinstance(m, str):
+                s = m.strip()
+                if s.startswith("-") or s.startswith("!"):
+                    clean = s.lstrip("-!").strip()
+                    if clean and clean not in excs:
+                        excs.append(clean)
+
+    return list(dict.fromkeys(excs))
+
+
+def get_rule_misreadings(rule: Dict[str, Any]) -> List[str]:
+    """Extracts genuine misreadings (excluding those starting with '-' or '!')."""
+    mis = []
+    raw_mis = rule.get("misreadings", [])
+    if isinstance(raw_mis, list):
+        for m in raw_mis:
+            if isinstance(m, str):
+                s = m.strip()
+                if s and not s.startswith("-") and not s.startswith("!"):
+                    mis.append(s)
+    return list(dict.fromkeys(mis))
+
+
+def check_rule_missing_status(
+    orig: str,
+    trans: str,
+    rule: Dict[str, Any]
+) -> tuple[bool, int]:
+    """
+    Checks whether the rule's target is genuinely missing from the translation,
+    accounting for source characters that may be used in non-name exception words (e.g. 英国, 英語 for 英).
+
+    Returns:
+        (is_missing: bool, needed_target_count: int)
+    """
+    source = rule.get("source", "").strip()
+    target = rule.get("target", "").strip()
+    if not source or not target:
+        return False, 0
+
+    orig_str = orig or ""
+    trans_str = trans or ""
+
+    total_src_count = orig_str.count(source)
+    if total_src_count == 0:
+        return False, 0
+
+    # Extract all exception words
+    exceptions = get_rule_exceptions(rule)
+    if not exceptions:
+        target_count = trans_str.count(target)
+        is_missing = (target_count < total_src_count)
+        return is_missing, total_src_count
+
+    # 1. Mask exception words in original (JP)
+    masked_orig = orig_str
+    for exc in sorted(exceptions, key=len, reverse=True):
+        if exc in masked_orig:
+            masked_orig = masked_orig.replace(exc, " " * len(exc))
+
+    pure_src_count = masked_orig.count(source)
+
+    # 2. Check if remaining source count can be explained by exception words in translation (KR)
+    masked_trans = trans_str
+    exc_count_in_trans = 0
+    for exc in sorted(exceptions, key=len, reverse=True):
+        if exc in masked_trans:
+            cnt = masked_trans.count(exc)
+            exc_count_in_trans += cnt
+            masked_trans = masked_trans.replace(exc, " " * len(exc))
+
+    needed_target_count = max(0, min(pure_src_count, total_src_count - exc_count_in_trans))
+
+    # If all occurrences of source were consumed by exception words, no character name was present!
+    if pure_src_count == 0 or needed_target_count == 0:
+        return False, 0
+
+    # 3. Check if target is genuinely missing in translation
+    target_count = trans_str.count(target)
+    is_missing = (target_count < needed_target_count)
+
+    return is_missing, needed_target_count
+
+
 def generate_smart_suggestion(
     orig: str,
     trans: str,
@@ -138,7 +237,7 @@ def generate_smart_suggestion(
     reasons = []
     tags = set()
 
-    for rule in active_rules:
+    for idx, rule in enumerate(active_rules):
         if not rule.get("enabled", True):
             continue
 
@@ -147,23 +246,31 @@ def generate_smart_suggestion(
         if not source or not target:
             continue
 
-        misreadings = rule.get("misreadings", [])
-        if not isinstance(misreadings, list):
-            misreadings = []
+        # Only perform replacement if target is in a genuinely missing state
+        is_missing, _ = check_rule_missing_status(orig, after, rule)
+        if not is_missing:
+            continue
 
-        # If source is present in original and target is not in current translation
-        if source in orig and target not in after:
-            # 1. Custom misreadings (sorted by length descending for greedy match)
-            sorted_misreadings = sorted(
-                [m.strip() for m in misreadings if m.strip()],
-                key=len,
-                reverse=True
-            )
-            for wrong in sorted_misreadings:
-                if wrong in after:
-                    after = after.replace(wrong, target)
-                    reasons.append(f"{wrong} ➔ {target}")
-                    tags.add(wrong)
+        misreadings = get_rule_misreadings(rule)
+
+        # --- Method 3: 3-Step Placeholder Protection Engine ---
+        # Step 1 (Protect): Mask existing target occurrences in 'after' to prevent substring corruptions
+        # (e.g. if target is '하나부사' and misreading is '하나', existing '하나부사' won't become '하나부사부사')
+        target_token = f"__TOKEN_TARGET_{idx}_{abs(hash(target)) % 100000}__"
+        after = after.replace(target, target_token)
+
+        # Step 2 (Replace): Replace misreadings (sorted by length descending for greedy match)
+        # Replacing with target_token protects newly replaced targets from subsequent shorter misreadings
+        sorted_misreadings = sorted(
+            [m.strip() for m in misreadings if m.strip()],
+            key=len,
+            reverse=True
+        )
+        for wrong in sorted_misreadings:
+            if wrong in after:
+                after = after.replace(wrong, target_token)
+                reasons.append(f"{wrong} ➔ {target}")
+                tags.add(wrong)
 
             # 2. Domain-specific heuristics for known Japanese novel patterns
             # Heuristics for '悠' -> '유우'
@@ -234,13 +341,19 @@ def generate_smart_suggestion(
                         reasons.append(f"{wrong} ➔ 유리카")
                         tags.add("유리카")
 
+        # Step 3 (Restore): Restore all protected target placeholders back to the genuine target
+        after = after.replace(target_token, target)
+
     # If target is still missing after applying rules
     for rule in active_rules:
         if not rule.get("enabled", True):
             continue
         src = rule.get("source", "").strip()
         tgt = rule.get("target", "").strip()
-        if src in orig and tgt not in after:
+        if not src or not tgt:
+            continue
+        is_missing, _ = check_rule_missing_status(orig, after, rule)
+        if is_missing:
             reason_text = f"{src} ➔ {tgt} 누락"
             if reason_text not in reasons:
                 reasons.append(reason_text)
@@ -262,6 +375,7 @@ class RuleItem(BaseModel):
     enabled: bool = True
     description: Optional[str] = ""
     misreadings: Optional[List[str]] = []
+    exceptions: Optional[List[str]] = []
 
 class SaveRulesRequest(BaseModel):
     folderName: str
@@ -437,6 +551,7 @@ async def scan_sentences(req: ScanRequest, db: Session = Depends(get_db)):
         tgt_param = f"tgt_{idx}"
         params[src_param] = f"%{rule['source']}%"
         params[tgt_param] = f"%{rule['target']}%"
+        # Candidate filter: original contains source and target is not in translated
         conditions.append(f"(original LIKE :{src_param} AND (translated IS NULL OR translated NOT LIKE :{tgt_param}))")
 
     where_clause = " OR ".join(conditions)
@@ -454,7 +569,22 @@ async def scan_sentences(req: ScanRequest, db: Session = Depends(get_db)):
 
     for row in rows:
         _id, title, url, pid, orig, trans = row
-        suggested, reasons, tags = generate_smart_suggestion(orig or "", trans or "", active_rules)
+        orig_str = orig or ""
+        trans_str = trans or ""
+
+        # Strictly check which rules genuinely have their target missing,
+        # distinguishing between character name usages and non-name exception words
+        matching_rules = []
+        for rule in active_rules:
+            is_missing, _ = check_rule_missing_status(orig_str, trans_str, rule)
+            if is_missing:
+                matching_rules.append(rule)
+
+        # Skip sentence if no rule is in a genuinely missing state
+        if not matching_rules:
+            continue
+
+        suggested, reasons, tags = generate_smart_suggestion(orig_str, trans_str, matching_rules)
 
         for tag in tags:
             tag_counts[tag] = tag_counts.get(tag, 0) + 1
@@ -464,8 +594,8 @@ async def scan_sentences(req: ScanRequest, db: Session = Depends(get_db)):
             "title": title or "제목 없음",
             "url": url or "",
             "pid": pid or "",
-            "original": orig or "",
-            "translated": trans or "",
+            "original": orig_str,
+            "translated": trans_str,
             "suggested": suggested,
             "reasons": reasons,
             "tags": tags

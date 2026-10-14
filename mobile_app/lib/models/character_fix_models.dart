@@ -57,6 +57,7 @@ class CharacterRule {
   bool enabled;
   String description;
   List<String> misreadings;
+  List<String> exceptions;
 
   CharacterRule({
     required this.id,
@@ -65,6 +66,7 @@ class CharacterRule {
     this.enabled = true,
     this.description = '',
     this.misreadings = const [],
+    this.exceptions = const [],
   });
 
   factory CharacterRule.fromJson(Map<String, dynamic> json) {
@@ -75,6 +77,7 @@ class CharacterRule {
       enabled: json['enabled'] as bool? ?? true,
       description: json['description'] as String? ?? '',
       misreadings: (json['misreadings'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [],
+      exceptions: (json['exceptions'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [],
     );
   }
 
@@ -86,6 +89,7 @@ class CharacterRule {
       'enabled': enabled,
       'description': description,
       'misreadings': misreadings,
+      'exceptions': exceptions,
     };
   }
 }
