@@ -939,6 +939,26 @@
             transform: rotate(-360deg) scale(1.12); 
         }
 
+        .circle-btn-hint {
+            position: absolute;
+            bottom: -8px;
+            background: var(--card-bg);
+            border: 1px solid var(--circle-btn-border);
+            color: var(--text-secondary);
+            font-size: 11px;
+            font-weight: 800;
+            padding: 1px 7px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+            pointer-events: none;
+            letter-spacing: 0.5px;
+            transition: all 0.2s ease;
+        }
+        .circle-btn:hover .circle-btn-hint {
+            border-color: currentColor;
+            color: currentColor;
+        }
+
         /* Keyframe FX Library */
         @keyframes rotateBorder {
             0% { --border-angle: 0deg; filter: hue-rotate(0deg); }
@@ -1404,14 +1424,17 @@
                 
                 <!-- Dock -->
                 <div class="action-dock" id="dock" style="display: none;">
-                    <button class="circle-btn reject" onclick="triggerAction('left')" title="거절 (재재번역 큐)">
+                    <button class="circle-btn reject" onclick="triggerAction('left')" title="거절 [왼쪽 화살표 ←]">
                         <span class="material-icons-round">close</span>
+                        <span class="circle-btn-hint">←</span>
                     </button>
-                    <button class="circle-btn approve" onclick="triggerAction('right')" title="승인 (저장)">
+                    <button class="circle-btn approve" onclick="triggerAction('right')" title="승인 [오른쪽 화살표 →]">
                         <span class="material-icons-round">favorite</span>
+                        <span class="circle-btn-hint">→</span>
                     </button>
-                    <button class="circle-btn undo" id="undoBtn" style="display: none;" title="실행 취소">
+                    <button class="circle-btn undo" id="undoBtn" onclick="undoLastAction()" style="display: none;" title="실행 취소 [Z]">
                         <span class="material-icons-round">undo</span>
+                        <span class="circle-btn-hint">Z</span>
                     </button>
                 </div>
             </div>
@@ -1539,9 +1562,16 @@
                     return;
                 }
 
-                if (e.key === 'ArrowRight') triggerAction('right');
-                else if (e.key === 'ArrowLeft') triggerAction('left');
-                else if (e.key === 'z' && e.ctrlKey) undoLastAction();
+                if (e.key === 'ArrowRight' || e.code === 'ArrowRight') {
+                    e.preventDefault();
+                    triggerAction('right');
+                } else if (e.key === 'ArrowLeft' || e.code === 'ArrowLeft') {
+                    e.preventDefault();
+                    triggerAction('left');
+                } else if (e.key === 'z' || e.key === 'Z' || e.code === 'KeyZ') {
+                    e.preventDefault();
+                    undoLastAction();
+                }
             });
         });
         
@@ -1566,9 +1596,11 @@
                 const res = await fetch('/api/ai_review/folders');
                 const data = await res.json();
                 const sel = document.getElementById('novelSelect');
-                data.folders.forEach(f => {
-                    if (f) sel.innerHTML += `<option value="${f}">${f}</option>`;
-                });
+                if (sel && data.folders) {
+                    data.folders.forEach(f => {
+                        if (f) sel.innerHTML += `<option value="${f}">${f}</option>`;
+                    });
+                }
                 loadStats();
                 loadQueue();
             } catch(e) {}
@@ -2250,8 +2282,16 @@
         }
 
         async function undoLastAction() {
-            if (!lastAction) return;
-            document.getElementById('undoBtn').style.display = 'none';
+            if (!lastAction) {
+                showToast("되돌릴 이전 작업이 없습니다.");
+                return;
+            }
+            const undoBtn = document.getElementById('undoBtn');
+            if (undoBtn) {
+                undoBtn.style.transform = 'rotate(-360deg) scale(1.15)';
+                setTimeout(() => { if (undoBtn) undoBtn.style.transform = ''; }, 300);
+                undoBtn.style.display = 'none';
+            }
             try {
                 await fetch('/api/ai_review/undo', {
                     method: 'POST',
@@ -2262,9 +2302,12 @@
                 if (currentIndex > 0) {
                     currentIndex--;
                     renderCards();
-                    showToast('Undo Successful');
+                    showToast('이전 작업을 되돌렸습니다. (Undo)');
                 }
-            } catch (e) {}
+            } catch (e) {
+                showToast('취소 실패: ' + e.message);
+                if (undoBtn) undoBtn.style.display = 'flex';
+            }
         }
 
         // --- Cause Keyword & Similar Reference Engine ---

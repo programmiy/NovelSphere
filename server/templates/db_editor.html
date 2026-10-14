@@ -1107,16 +1107,16 @@
                     <!-- Footer Controls -->
                     <footer class="card-footer">
                         <div class="card-btn-group">
-                            <button type="button" class="btn btn-card-action btn-skip" id="btnPrevCard" title="이전 카드로 돌아가기 (A / ←)">
-                                <span class="material-icons" style="font-size:16px;">arrow_back</span> 이전 [A]
+                            <button type="button" class="btn btn-card-action btn-skip" id="btnPrevCard" title="이전 카드로 돌아가기 (← / A)">
+                                <span class="material-icons" style="font-size:16px;">arrow_back</span> 이전 [←]
                             </button>
-                            <button type="button" class="btn btn-card-action btn-skip" id="btnSkipCard" title="수정 없이 다음으로 건너뛰기 (S / Esc)">
-                                <span class="material-icons" style="font-size:16px;">skip_next</span> 건너뛰기 [S]
+                            <button type="button" class="btn btn-card-action btn-skip" id="btnSkipCard" title="수정 없이 다음으로 건너뛰기 (\ / | / S / Esc)">
+                                <span class="material-icons" style="font-size:16px;">skip_next</span> 건너뛰기 [\]
                             </button>
                         </div>
 
-                        <button type="button" class="btn btn-card-action btn-approve" id="btnApproveCard" title="DB에 즉시 저장하고 다음 카드로 (Enter / Space)">
-                            <span class="material-icons" style="font-size:18px;">check_circle</span> 승인 및 다음 [Enter]
+                        <button type="button" class="btn btn-card-action btn-approve" id="btnApproveCard" title="DB에 즉시 저장하고 다음 카드로 (→ / Enter)">
+                            <span class="material-icons" style="font-size:18px;">check_circle</span> 승인 및 다음 [→]
                         </button>
                     </footer>
                 </article>
@@ -1124,11 +1124,11 @@
 
             <!-- Bottom Keyboard Shortcut Guide -->
             <div class="shortcut-legend-bar">
-                <div class="shortcut-item"><span class="key-badge">Enter</span> 교정 승인 및 다음</div>
-                <div class="shortcut-item"><span class="key-badge">S</span> 또는 <span class="key-badge">Esc</span> 건너뛰기</div>
+                <div class="shortcut-item"><span class="key-badge">&rarr;</span> 또는 <span class="key-badge">Enter</span> 교정 승인 및 다음</div>
+                <div class="shortcut-item"><span class="key-badge">\</span> 또는 <span class="key-badge">S</span> 건너뛰기</div>
+                <div class="shortcut-item"><span class="key-badge">&larr;</span> 또는 <span class="key-badge">A</span> 이전 카드</div>
                 <div class="shortcut-item"><span class="key-badge">Shift+Enter</span> 원문 강제 승인</div>
                 <div class="shortcut-item"><span class="key-badge">R</span> 제안 복원</div>
-                <div class="shortcut-item"><span class="key-badge">A</span> 또는 <span class="key-badge">&larr;</span> 이전 카드</div>
             </div>
         </section>
 
@@ -1895,14 +1895,14 @@
                 cardAfterInput.style.borderColor = "var(--fixer-warning)";
                 cardAfterInput.style.boxShadow = "0 0 0 3px rgba(245, 158, 11, 0.2)";
                 btnApproveCard.classList.add("btn-warning-state");
-                btnApproveCard.innerHTML = `<span class="material-icons" style="font-size:18px;">warning</span> 수동 수정 필요 [Enter 차단]`;
-                btnApproveCard.title = "번역문이 수정되지 않았습니다. 직접 수정한 후 승인하거나, [S] 건너뛰기를 누르세요. (강제 승인은 Shift+Enter 또는 클릭)";
+                btnApproveCard.innerHTML = `<span class="material-icons" style="font-size:18px;">warning</span> 수동 수정 필요 [→ 차단]`;
+                btnApproveCard.title = "번역문이 수정되지 않았습니다. 직접 수정한 후 승인하거나, [\\ / 건너뛰기]를 누르세요. (강제 승인은 Shift+Enter 또는 클릭)";
             } else {
                 cardAfterInput.style.borderColor = "var(--fixer-success)";
                 cardAfterInput.style.boxShadow = "0 0 0 3px rgba(16, 185, 129, 0.12)";
                 btnApproveCard.classList.remove("btn-warning-state");
-                btnApproveCard.innerHTML = `<span class="material-icons" style="font-size:18px;">check_circle</span> 승인 및 다음 [Enter]`;
-                btnApproveCard.title = "DB에 즉시 저장하고 다음 카드로 (Enter / Space)";
+                btnApproveCard.innerHTML = `<span class="material-icons" style="font-size:18px;">check_circle</span> 승인 및 다음 [→]`;
+                btnApproveCard.title = "DB에 즉시 저장하고 다음 카드로 (오른쪽 화살표 → / Enter)";
             }
         }
 
@@ -1951,8 +1951,10 @@
             cardAfterInput.value = currentVal;
             updateCardDiffView(item.translated || "", currentVal);
 
-            // Auto-focus after input
-            cardAfterInput.focus();
+            // Keep keyboard navigation active by default (user can click textarea if manual edit is needed)
+            if (document.activeElement === cardAfterInput) {
+                cardAfterInput.blur();
+            }
 
             // Disable prev button if first
             btnPrevCard.disabled = state.currentIndex === 0;
@@ -2090,24 +2092,59 @@
             // Only active in Card Mode
             if (state.mode !== "card" || cardModeSection.style.display === "none") return;
 
-            // Check key
-            if (e.key === "Enter" && !e.shiftKey) {
-                // Plain Enter -> approve with unchanged guard (isForced = false)
+            const isInputFocused = (e.target === cardAfterInput);
+            const isBackslashKey = e.key === "\\" || e.key === "|" || e.key === "₩" || e.code === "Backslash";
+
+            // If user is actively typing in the textarea
+            if (isInputFocused) {
+                if (e.key === "Escape") {
+                    e.preventDefault();
+                    cardAfterInput.blur();
+                    return;
+                }
+                if (e.key === "Enter" && !e.shiftKey && !e.ctrlKey) {
+                    e.preventDefault();
+                    cardAfterInput.blur();
+                    approveCurrentCard(false);
+                    return;
+                }
+                if (e.key === "Enter" && (e.shiftKey || e.ctrlKey)) {
+                    e.preventDefault();
+                    cardAfterInput.blur();
+                    approveCurrentCard(true);
+                    return;
+                }
+                // Allow normal text typing for arrows, backslash, letters
+                return;
+            }
+
+            // --- Card Navigation Shortcuts (When outside textarea) ---
+            if (e.key === "ArrowRight" || e.code === "ArrowRight" || (e.key === "Enter" && !e.shiftKey)) {
+                // 오른쪽 화살표 키 (또는 Enter) -> 교정 승인 및 다음
                 e.preventDefault();
+                btnApproveCard.style.transform = "scale(0.96)";
+                setTimeout(() => { btnApproveCard.style.transform = ""; }, 150);
                 approveCurrentCard(false);
+            } else if (e.key === "ArrowLeft" || e.code === "ArrowLeft" || e.key.toLowerCase() === "a") {
+                // 왼쪽 화살표 키 (또는 A) -> 이전 카드로 돌아가기
+                e.preventDefault();
+                btnPrevCard.style.transform = "scale(0.96)";
+                setTimeout(() => { btnPrevCard.style.transform = ""; }, 150);
+                btnPrevCard.click();
+            } else if (isBackslashKey || e.key === "Escape" || e.key.toLowerCase() === "s") {
+                // \ | ₩ 키 (또는 Esc, S) -> 수정 없이 다음으로 건너뛰기
+                e.preventDefault();
+                btnSkipCard.style.transform = "scale(0.96)";
+                setTimeout(() => { btnSkipCard.style.transform = ""; }, 150);
+                btnSkipCard.click();
             } else if (e.key === "Enter" && e.shiftKey) {
-                // Shift+Enter -> force approve with confirmation dialog if unchanged
+                // Shift+Enter -> 원문 강제 승인
                 e.preventDefault();
                 approveCurrentCard(true);
-            } else if (e.key === "Escape" || e.key.toLowerCase() === "s" && e.target !== cardAfterInput) {
-                e.preventDefault();
-                btnSkipCard.click();
-            } else if (e.key.toLowerCase() === "r" && e.target !== cardAfterInput) {
+            } else if (e.key.toLowerCase() === "r") {
+                // R -> 제안 복원
                 e.preventDefault();
                 btnResetSuggestionCard.click();
-            } else if ((e.key === "ArrowLeft" || e.key.toLowerCase() === "a") && e.target !== cardAfterInput) {
-                e.preventDefault();
-                btnPrevCard.click();
             }
         });
 
