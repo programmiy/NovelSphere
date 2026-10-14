@@ -4,80 +4,53 @@ from fastapi.testclient import TestClient
 from server.server import app
 from server.settings import settings
 from server.notifications import (
-    send_ntfy,
     notify_translation_progress,
     notify_translation_complete,
     notify_episode_progress,
     notify_api_error,
     notify_verbatim_cleanup,
-    notify_task_event
+    notify_task_event,
+    get_recent_notifications,
+    clear_recent_notifications
 )
 
 client = TestClient(app)
 
-def test_send_ntfy_payload_and_headers():
-    """send_ntfy 호출 시 JSON payload 및 인자가 ntfy 서버로 올바르게 전달되는지 검증"""
-    with patch("server.notifications.requests.post") as mock_post:
-        mock_post.return_value.status_code = 200
-
-        result = send_ntfy(
-            title="테스트 제목",
-            message="테스트 본문 내용",
-            priority="high",
-            tags=["tada", "books"],
-            click_url="http://127.0.0.1:8001/viewer?url=test",
-            topic="NovelSphere",
-            server="https://ntfy.sh",
-            synchronous=True
-        )
-
-        assert result is True
-        mock_post.assert_called_once()
-        args, kwargs = mock_post.call_args
-        assert args[0] == "https://ntfy.sh"
-        assert kwargs["headers"]["Content-Type"] == "application/json; charset=utf-8"
-
-        import json
-        payload = json.loads(kwargs["data"].decode("utf-8"))
-        assert payload["topic"] == "NovelSphere"
-        assert payload["title"] == "테스트 제목"
-        assert payload["message"] == "테스트 본문 내용"
-        assert payload["priority"] == 4  # high -> 4
-        assert payload["tags"] == ["tada", "books"]
-        assert payload["click"] == "http://127.0.0.1:8001/viewer?url=test"
-
 def test_notify_translation_complete_includes_viewer_link():
-    """번역 완료 알림 시 뷰어 바로가기 URL이 포함되는지 검증"""
-    with patch("server.notifications.send_ntfy") as mock_send:
-        notify_translation_complete(
-            novel_title="이세계 라노벨",
-            episode_title="제1화 시작",
-            total_count=120,
-            url="https://kakuyomu.jp/works/123/episodes/456"
-        )
+    """번역 완료 알림 시 뷰어 바로가기 URL이 포함되어 인메모리 히스토리에 적재되는지 검증"""
+    clear_recent_notifications()
+    notify_translation_complete(
+        novel_title="이세계 라노벨",
+        episode_title="제1화 시작",
+        total_count=120,
+        url="https://kakuyomu.jp/works/123/episodes/456"
+    )
 
-        mock_send.assert_called_once()
-        _, kwargs = mock_send.call_args
-        assert "이세계 라노벨" in kwargs["title"]
-        assert "120개 문장" in kwargs["message"]
-        assert kwargs["priority"] == "high"
-        assert kwargs["click_url"] == f"http://127.0.0.1:{settings.server_port}/viewer?url=https://kakuyomu.jp/works/123/episodes/456"
+    notifs = get_recent_notifications(limit=5)
+    assert len(notifs) >= 1
+    item = notifs[0]
+    assert "이세계 라노벨" in item["title"]
+    assert "120개 문장" in item["message"]
+    assert item["priority"] == "high"
+    assert item["type"] == "complete"
+    assert item["click_url"] == f"http://127.0.0.1:{settings.server_port}/viewer?url=https://kakuyomu.jp/works/123/episodes/456"
 
 def test_notify_api_error_sets_urgent_priority():
-    """API 오류 알림 시 긴급(urgent) 우선순위 및 경고 태그가 설정되는지 검증"""
-    with patch("server.notifications.send_ntfy") as mock_send:
-        notify_api_error(
-            error_title="과부하 발생",
-            message="503 Overloaded",
-            error_type="503 OVERLOAD",
-            url="https://kakuyomu.jp/works/123"
-        )
+    """API 오류 알림 시 긴급(urgent) 우선순위로 기록되는지 검증"""
+    clear_recent_notifications()
+    notify_api_error(
+        error_title="과부하 발생",
+        message="503 Overloaded",
+        error_type="503 OVERLOAD",
+        url="https://kakuyomu.jp/works/123"
+    )
 
-        mock_send.assert_called_once()
-        _, kwargs = mock_send.call_args
-        assert kwargs["priority"] == "urgent"
-        assert "warning" in kwargs["tags"]
-        assert "503 OVERLOAD" in kwargs["title"]
+    notifs = get_recent_notifications(limit=5)
+    assert len(notifs) >= 1
+    item = notifs[0]
+    assert item["priority"] == "urgent"
+    assert item["type"] == "error"
+    assert "503 OVERLOAD" in item["title"]
 
 def test_api_get_and_update_notifications_config():
     """GET /api/notifications/config 및 POST /api/notifications/config 엔드포인트 동작 검증"""
@@ -85,53 +58,50 @@ def test_api_get_and_update_notifications_config():
     res = client.get("/api/notifications/config")
     assert res.status_code == 200
     data = res.json()
-    assert "ntfy_enabled" in data
-    assert "ntfy_topic" in data
-    assert data["ntfy_topic"] == "NovelSphere"
+    assert "notification_progress_step" in data
 
     # 2. 업데이트
     update_res = client.post("/api/notifications/config", json={
-        "ntfy_topic": "NovelSphere_Updated",
-        "ntfy_progress_step": 50
+        "notification_progress_step": 50
     })
     assert update_res.status_code == 200
     up_data = update_res.json()
-    assert up_data["config"]["ntfy_topic"] == "NovelSphere_Updated"
-    assert up_data["config"]["ntfy_progress_step"] == 50
+    assert up_data["config"]["notification_progress_step"] == 50
 
     # 원복
     client.post("/api/notifications/config", json={
-        "ntfy_topic": "NovelSphere",
-        "ntfy_progress_step": 25
+        "notification_progress_step": 100
     })
 
 def test_api_test_notification_endpoint():
-    """POST /api/notifications/test 엔드포인트 검증"""
-    with patch("server.notifications.requests.post") as mock_post:
-        mock_post.return_value.status_code = 200
+    """POST /api/notifications/test 엔드포인트 검증 (실시간 알림 브로드캐스트)"""
+    clear_recent_notifications()
+    res = client.post("/api/notifications/test")
+    assert res.status_code == 200
+    assert res.json()["success"] is True
 
-        res = client.post("/api/notifications/test", json={
-            "topic": "NovelSphere"
-        })
-        assert res.status_code == 200
-        assert res.json()["success"] is True
+    notifs = get_recent_notifications(limit=5)
+    assert len(notifs) >= 1
+    assert "테스트 알림" in notifs[0]["title"]
+    assert notifs[0]["type"] == "test"
 
 def test_notify_episode_progress():
     """10화 단위 에피소드 진행 마일스톤 알림 검증"""
-    with patch("server.notifications.send_ntfy") as mock_send:
-        notify_episode_progress(
-            novel_title="전생 슬라임",
-            episode_title="제 10화 결전의 날",
-            episode_count=10,
-            url="https://novel18.syosetu.com/n1234/10/"
-        )
+    clear_recent_notifications()
+    notify_episode_progress(
+        novel_title="전생 슬라임",
+        episode_title="제 10화 결전의 날",
+        episode_count=10,
+        url="https://novel18.syosetu.com/n1234/10/"
+    )
 
-        mock_send.assert_called_once()
-        kwargs = mock_send.call_args[1]
-        assert "[번역 진행 10화 완료]" in kwargs["title"]
-        assert "총 10개 화 100% 번역 완료!" in kwargs["message"]
-        assert "hourglass_flowing_sand" in kwargs["tags"]
-        assert "viewer?url=" in kwargs["click_url"]
+    notifs = get_recent_notifications(limit=5)
+    assert len(notifs) >= 1
+    item = notifs[0]
+    assert "[번역 진행 10화 완료]" in item["title"]
+    assert "총 10개 화 100% 번역 완료!" in item["message"]
+    assert item["type"] == "episode_milestone"
+    assert "viewer?url=" in item["click_url"]
 
 def test_api_progress_and_complete_endpoints():
     """POST /api/notifications/progress 및 complete 엔드포인트 검증 (10화 단위 및 100% 모드 필터링)"""
@@ -156,8 +126,8 @@ def test_api_progress_and_complete_endpoints():
             url="https://example.com/10"
         )
 
-        # 2. ntfy_progress_step >= 100 일 때 단일 회차 도중 진행률(25%) 요청 -> 스킵 확인
-        settings.ntfy_progress_step = 100
+        # 2. notification_progress_step >= 100 일 때 단일 회차 도중 진행률(25%) 요청 -> 스킵 확인
+        settings.notification_progress_step = 100
         skipped_res = client.post("/api/notifications/progress", json={
             "novel_title": "테스트 소설",
             "episode_title": "1화",
@@ -170,8 +140,8 @@ def test_api_progress_and_complete_endpoints():
         assert skipped_res.json()["status"] == "skipped"
         mock_prog.assert_not_called()
 
-        # 3. ntfy_progress_step = 25 로 변경 시 단일 회차 도중 진행률(25%) 허용 확인
-        settings.ntfy_progress_step = 25
+        # 3. notification_progress_step = 25 로 변경 시 단일 회차 도중 진행률(25%) 허용 확인
+        settings.notification_progress_step = 25
         allowed_res = client.post("/api/notifications/progress", json={
             "novel_title": "테스트 소설",
             "episode_title": "1화",

@@ -29,7 +29,7 @@ flowchart TD
         LiveDB[("translations.db (SQLite WAL, 550MB+)")]
         CorpusDB[("corpus_ai.db (초경량 색인 DB)")]
         GeminiAPI["Google Gemini 3.x Flash API"]
-        NtfyServer["ntfy 푸시 알림 서버"]
+        LocalSSE["실시간 SSE 스트림 브로드캐스터"]
     end
 
     Clients <-->|REST API / WebSocket| RouterLayer
@@ -37,7 +37,7 @@ flowchart TD
     ServiceLayer --> LiveDB
     ServiceLayer --> CorpusDB
     ServiceLayer --> GeminiAPI
-    BgTasks --> NtfyServer
+    BgTasks --> LocalSSE
 ```
 
 ---
@@ -53,8 +53,8 @@ flowchart TD
 * **제외 번역 안전 백업 및 복원 (`test_exclude_restore.py`)**:
   - 광고, 배너, 작가 후기, 사이트 공지 등 번역 불필요 단락의 안전 필터링.
   - 확장 프로그램 및 서버 간 제외 데이터의 상호 백업 및 원클릭 복원(Restore) 지원.
-* **ntfy 실시간 진행률 푸시 알림 (`notifications.py`)**:
-  - 번역 진행도(25%, 50%, 75%, 100%) 및 회차 완료 시 스마트폰/데스크톱으로 즉각적인 시스템 푸시 발송.
+* **실시간 진행률 및 마일스톤 푸시 알림 (`notifications.py`)**:
+  - 번역 진행도, 10화 단위 마일스톤 및 회차 완료 시 모바일 앱/웹으로 실시간 SSE 브로드캐스트.
 
 ---
 

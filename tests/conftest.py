@@ -49,18 +49,6 @@ with sdb.engine.begin() as conn:
     except Exception:
         pass
 
-@pytest.fixture(autouse=True)
-def block_external_notifications(monkeypatch, request):
-    """
-    테스트 스위트 실행 중 외부 ntfy 서버로 실제 HTTP 알림이 전송되는 것을 100% 차단합니다.
-    test_send_ntfy_payload_and_headers와 같이 자체 mock을 검증하는 테스트는 제외합니다.
-    """
-    if "test_send_ntfy_payload_and_headers" in request.node.name:
-        return
-    from unittest.mock import MagicMock
-    import server.notifications as sn
-    monkeypatch.setattr(sn, "_send_ntfy_request", MagicMock(return_value=True))
-
 def pytest_sessionfinish(session, exitstatus):
     """테스트 세션 종료 시 임시 DB 디렉토리 정리"""
     try:

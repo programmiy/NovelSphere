@@ -299,7 +299,7 @@ hub = RemoteHub()
 
 async def alert_monitor_loop(interval_seconds: int = 15) -> None:
     """lifespan 에서 asyncio.create_task 로 실행. 멈춤/끊김 시 알림 발송."""
-    from server.notifications import record_notification, send_ntfy
+    from server.notifications import record_notification
 
     while True:
         try:
@@ -309,7 +309,6 @@ async def alert_monitor_loop(interval_seconds: int = 15) -> None:
                     title=alert["title"], message=alert["message"],
                     event_type=alert["event"], priority="high",
                 )
-                send_ntfy(title=alert["title"], message=alert["message"], priority="high", tags=["warning"])
                 logger.warning(f"[remote] {alert['title']}: {alert['message']}")
         except Exception as e:
             logger.error(f"[remote] 알림 모니터 오류: {e}")

@@ -144,7 +144,7 @@ def handle_verbatim_cleanup_items(
         f"즉시 삭제하고 알림 시스템(배치 ID: {batch_id})으로 이전했습니다."
     )
 
-    # ntfy 푸시 알림 전송
+    # 실시간 알림 전송
     notify_verbatim_cleanup(
         novel_title=novel_title,
         episode_title=episode_title,

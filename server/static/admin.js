@@ -25,7 +25,6 @@ let isRecommendCollapsed = false;
 let modalAutoRefreshTimer = null;
 let currentRestoreTab = 'notifications';
 let deselectAllBtn, retranslateSelectedBtn, copySelectedOriginalBtn, bulkFindReplaceBtn, bulkWhitelistAbnormalBtn, bulkMoveToCleanupBtn, excludeSelectedBtn;
-let openNtfySettingsBtn, ntfySettingsModal, closeNtfySettingsBtn, closeNtfySettingsBottomBtn, ntfyEnabledCheckbox, ntfyServerInput, ntfyTopicInput, ntfyProgressStepSelect, sendNtfyTestBtn, saveNtfySettingsBtn, ntfyTopicLink, ntfyTestResult;
 
 // Debounce timer
 let searchTimeout;
@@ -127,20 +126,6 @@ function cacheDOMElements() {
     bulkWhitelistAbnormalBtn = document.getElementById('bulkWhitelistAbnormalBtn');
     bulkMoveToCleanupBtn = document.getElementById('bulkMoveToCleanupBtn');
     excludeSelectedBtn = document.getElementById('excludeSelectedBtn');
-
-    // ntfy settings modal elements
-    openNtfySettingsBtn = document.getElementById('openNtfySettingsBtn');
-    ntfySettingsModal = document.getElementById('ntfySettingsModal');
-    closeNtfySettingsBtn = document.getElementById('closeNtfySettingsBtn');
-    closeNtfySettingsBottomBtn = document.getElementById('closeNtfySettingsBottomBtn');
-    ntfyEnabledCheckbox = document.getElementById('ntfyEnabledCheckbox');
-    ntfyServerInput = document.getElementById('ntfyServerInput');
-    ntfyTopicInput = document.getElementById('ntfyTopicInput');
-    ntfyProgressStepSelect = document.getElementById('ntfyProgressStepSelect');
-    sendNtfyTestBtn = document.getElementById('sendNtfyTestBtn');
-    saveNtfySettingsBtn = document.getElementById('saveNtfySettingsBtn');
-    ntfyTopicLink = document.getElementById('ntfyTopicLink');
-    ntfyTestResult = document.getElementById('ntfyTestResult');
 }
 
 function showCyberLoader() {
@@ -788,15 +773,6 @@ function setupEventListeners() {
         });
     }
 
-    // ntfy settings modal listeners
-    if (openNtfySettingsBtn) openNtfySettingsBtn.addEventListener('click', openNtfyModal);
-    if (closeNtfySettingsBtn) closeNtfySettingsBtn.addEventListener('click', closeNtfyModal);
-    if (closeNtfySettingsBottomBtn) closeNtfySettingsBottomBtn.addEventListener('click', closeNtfyModal);
-    if (saveNtfySettingsBtn) saveNtfySettingsBtn.addEventListener('click', saveNtfySettings);
-    if (sendNtfyTestBtn) sendNtfyTestBtn.addEventListener('click', sendNtfyTest);
-    if (ntfyTopicInput) ntfyTopicInput.addEventListener('input', updateNtfyTopicLink);
-    if (ntfyServerInput) ntfyServerInput.addEventListener('input', updateNtfyTopicLink);
-
     // Translation drag / text selection listener for similar recommendations
     document.addEventListener('mouseup', handleDocumentMouseUp);
     document.addEventListener('keyup', (e) => {
@@ -832,96 +808,6 @@ function setupEventListeners() {
             }, 100);
         }
     });
-}
-
-// --- ntfy Push Notification Modal & Actions ---
-function updateNtfyTopicLink() {
-    if (!ntfyTopicLink) return;
-    const server = (ntfyServerInput ? ntfyServerInput.value : 'https://ntfy.sh').trim().replace(/\/+$/, '');
-    const topic = (ntfyTopicInput ? ntfyTopicInput.value : 'NovelSphere').trim();
-    ntfyTopicLink.href = topic ? `${server}/${encodeURIComponent(topic)}` : server;
-}
-
-async function openNtfyModal() {
-    if (!ntfySettingsModal) return;
-    if (ntfyTestResult) ntfyTestResult.innerHTML = '';
-    
-    try {
-        const res = await fetch('/api/notifications/config');
-        if (res.ok) {
-            const config = await res.json();
-            if (ntfyEnabledCheckbox) ntfyEnabledCheckbox.checked = !!config.ntfy_enabled;
-            if (ntfyServerInput) ntfyServerInput.value = config.ntfy_server || 'https://ntfy.sh';
-            if (ntfyTopicInput) ntfyTopicInput.value = config.ntfy_topic || 'NovelSphere';
-            if (ntfyProgressStepSelect) ntfyProgressStepSelect.value = String(config.ntfy_progress_step || 100);
-            updateNtfyTopicLink();
-        }
-    } catch (e) {
-        console.warn('Failed to load ntfy config:', e);
-    }
-    ntfySettingsModal.style.display = 'block';
-}
-
-function closeNtfyModal() {
-    if (ntfySettingsModal) ntfySettingsModal.style.display = 'none';
-}
-
-async function saveNtfySettings() {
-    const payload = {
-        ntfy_enabled: ntfyEnabledCheckbox ? ntfyEnabledCheckbox.checked : true,
-        ntfy_server: ntfyServerInput ? ntfyServerInput.value.trim() : 'https://ntfy.sh',
-        ntfy_topic: ntfyTopicInput ? ntfyTopicInput.value.trim() : 'NovelSphere',
-        ntfy_progress_step: ntfyProgressStepSelect ? parseInt(ntfyProgressStepSelect.value, 10) : 100
-    };
-
-    try {
-        const res = await fetch('/api/notifications/config', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        });
-
-        if (!res.ok) throw new Error('설정 저장 실패');
-        showToast('ntfy 알림 설정이 저장되었습니다.', 'success');
-        closeNtfyModal();
-    } catch (err) {
-        showToast(`설정 저장 중 오류: ${err.message}`, 'error');
-    }
-}
-
-async function sendNtfyTest() {
-    if (!sendNtfyTestBtn || !ntfyTestResult) return;
-    const topic = (ntfyTopicInput ? ntfyTopicInput.value : '').trim();
-    const server = (ntfyServerInput ? ntfyServerInput.value : '').trim();
-
-    if (!topic) {
-        ntfyTestResult.innerHTML = '<span style="color: var(--danger-color, #dc3545);">토픽명을 입력해주세요.</span>';
-        return;
-    }
-
-    sendNtfyTestBtn.disabled = true;
-    ntfyTestResult.innerHTML = '<span style="color: var(--primary-color, #0d6efd);">알림 발송 중...</span>';
-
-    try {
-        const res = await fetch('/api/notifications/test', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ topic, server })
-        });
-
-        const data = await res.json();
-        if (res.ok && data.success) {
-            ntfyTestResult.innerHTML = `<span style="color: var(--success-color, #28a745);">✅ 발송 성공! 스마트폰 ntfy 앱이나 웹 피드를 확인하세요.</span>`;
-            showToast('테스트 알림이 성공적으로 발송되었습니다.', 'success');
-        } else {
-            throw new Error(data.detail || '전송 실패');
-        }
-    } catch (err) {
-        ntfyTestResult.innerHTML = `<span style="color: var(--danger-color, #dc3545);">❌ 실패: ${err.message}</span>`;
-        showToast(`테스트 알림 발송 실패: ${err.message}`, 'error');
-    } finally {
-        sendNtfyTestBtn.disabled = false;
-    }
 }
 
 async function loadAndRenderAbnormal() {

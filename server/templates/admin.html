@@ -144,7 +144,6 @@
                         <button id="openUnclassifiedDrawerBtn" class="btn btn-cyber-tool" title="미분류 소설 보관함 열기/닫기">
                             <span class="btn-icon">📦</span> 미분류 보관함 <span id="unclassifiedHudBadge" class="badge-count" style="display: none; background: #00f2fe; color: #090a0f; font-weight: 800; border-radius: 10px; padding: 1px 6px; font-size: 10.5px; margin-left: 4px;">0</span>
                         </button>
-                        <button id="openNtfySettingsBtn" class="btn btn-cyber-tool" title="모바일 푸시 알림 ntfy 연동"><span class="btn-icon">📲</span> Ntfy 알림 설정</button>
                         <a href="/logs" class="btn btn-cyber-tool" title="실시간 서버 로그 뷰어"><span class="btn-icon">📜</span> 로그 뷰어</a>
                         <button id="openAppReleaseModalBtn" class="btn btn-cyber-tool" title="안드로이드 앱 릴리즈 버전 및 APK 배포 관리"><span class="btn-icon">📱</span> 앱 릴리즈</button>
                     </div>
@@ -898,53 +897,6 @@
             <!-- 모달 하단 액션 바 -->
             <div class="modal-actions stats-modal-footer">
                 <button type="button" class="btn btn-outline" id="closeStatsModalBottomBtn">닫기</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- ntfy 푸시 알림 설정 모달 -->
-    <div id="ntfySettingsModal" class="modal" style="display: none;">
-        <div class="modal-content" style="max-width: 480px;">
-            <div class="modal-header">
-                <h2>🔔 ntfy 푸시 알림 설정</h2>
-                <span class="close-btn" id="closeNtfySettingsBtn">&times;</span>
-            </div>
-            <div class="modal-body" style="padding: 16px 0;">
-                <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 16px; line-height: 1.5;">
-                    스마트폰 ntfy 앱(Android/iOS)에서 아래 토픽을 구독하시면 번역 진행도, 완료, API 오류 등의 알림을 실시간으로 받을 수 있습니다.
-                </p>
-                <div style="margin-bottom: 16px;">
-                    <label class="checkbox-container">
-                        <input type="checkbox" id="ntfyEnabledCheckbox" checked>
-                        <span class="checkmark"></span>
-                        ntfy 푸시 알림 활성화
-                    </label>
-                </div>
-                <div style="margin-bottom: 14px;">
-                    <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px;">ntfy 서버 주소</label>
-                    <input type="text" id="ntfyServerInput" class="form-input" style="width: 100%; box-sizing: border-box;" placeholder="https://ntfy.sh" value="https://ntfy.sh">
-                </div>
-                <div style="margin-bottom: 14px;">
-                    <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px;">구독 토픽명</label>
-                    <input type="text" id="ntfyTopicInput" class="form-input" style="width: 100%; box-sizing: border-box;" placeholder="NovelSphere" value="NovelSphere">
-                </div>
-                <div style="margin-bottom: 16px;">
-                    <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px;">진행도 알림 주기</label>
-                    <select id="ntfyProgressStepSelect" class="form-select" style="width: 100%; box-sizing: border-box;">
-                        <option value="100">100% 완료 시에만 알림 (10화 단위 마일스톤 진행, 추천)</option>
-                        <option value="50">50% 마다 (50%, 100%)</option>
-                        <option value="25">25% 마다 (25%, 50%, 75%, 100%)</option>
-                    </select>
-                </div>
-                <div style="display: flex; gap: 8px; align-items: center;">
-                    <button type="button" class="btn btn-outline" id="sendNtfyTestBtn" style="flex: 1;">📲 테스트 알림 발송</button>
-                    <a id="ntfyTopicLink" href="https://ntfy.sh/NovelSphere" target="_blank" class="btn btn-outline" style="text-decoration: none;" title="웹 브라우저에서 토픽 피드 열기">🌐 웹 피드</a>
-                </div>
-                <div id="ntfyTestResult" style="font-size: 13px; margin-top: 10px; min-height: 20px;"></div>
-            </div>
-            <div class="modal-actions" style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px;">
-                <button type="button" class="btn btn-outline" id="closeNtfySettingsBottomBtn">취소</button>
-                <button type="button" class="btn btn-primary" id="saveNtfySettingsBtn">설정 저장</button>
             </div>
         </div>
     </div>

@@ -2637,7 +2637,7 @@ async function updateAndGetBatchCount(currentCleanUrl) {
             state.window = s.window || currentWindow;
         }
     } catch (e) {
-        console.warn('[ntfy] Failed to read batch state from storage:', e);
+        console.warn('[Notification] Failed to read batch state from storage:', e);
     }
 
     // 1. API 일일 쿼터 초기화 시각(오후 4시/16시 또는 오후 5시/17시) 도달 시 카운터 0으로 갱신
@@ -2674,7 +2674,7 @@ async function updateAndGetBatchCount(currentCleanUrl) {
     try {
         await chrome.storage.local.set({ [stateKey]: state });
     } catch (e) {
-        console.warn('[ntfy] Failed to save batch state:', e);
+        console.warn('[Notification] Failed to save batch state:', e);
     }
 
     // 4. [서버 DB 동기화] 오늘 번역된 DB 기록을 바탕으로 오늘 소설 누적 및 전체 누적 회차 동기화
@@ -2715,10 +2715,10 @@ async function resetBatchCount() {
 }
 
 // =================================================================================
-// ntfy Push Notifications
+// Realtime Server Push Notifications
 // =================================================================================
 
-async function sendNtfyProgress(novelTitle, episodeTitle, current, total, percentage, url, episodeCount = null) {
+async function sendProgressNotification(novelTitle, episodeTitle, current, total, percentage, url, episodeCount = null) {
     try {
         const payload = {
             novel_title: novelTitle || '',
@@ -2741,7 +2741,7 @@ async function sendNtfyProgress(novelTitle, episodeTitle, current, total, percen
     }
 }
 
-async function sendNtfyComplete(novelTitle, episodeTitle, totalCount, url, episodeCount = null) {
+async function sendCompleteNotification(novelTitle, episodeTitle, totalCount, url, episodeCount = null) {
     try {
         const payload = {
             novel_title: novelTitle || '',
@@ -3312,15 +3312,15 @@ async function translateAllPTags(isRetranslation = false) {
         const consecutiveCount = batchStats.consecutiveCount;
         const novelTodayCount = batchStats.novelTodayCount;
         const totalTodayCount = batchStats.totalTodayCount;
-        const currentBatchCount = consecutiveCount; // ntfy 완료 핸들러 등 호환성 유지
+        const currentBatchCount = consecutiveCount; // 완료 핸들러 등 호환성 유지
 
         const totalTodayMsg = totalTodayCount ? ` / 전체: ${totalTodayCount}화` : '';
         logToSidebar(`[번역 진행 카운터] 현재 소설 이번 연속: ${consecutiveCount}화 완료 (오늘 이 소설: ${novelTodayCount}화${totalTodayMsg})`);
 
         // 10의 배수(10, 20, 30, ...) 화가 100% 완료되었을 때만 진행 알림 발송!
         if (consecutiveCount > 0 && consecutiveCount % 10 === 0) {
-            logToSidebar(`🔔 [ntfy] 이번 연속 ${consecutiveCount}화 달성! 10화 단위 번역 진행 알림을 발송합니다.`);
-            sendNtfyProgress(
+            logToSidebar(`🔔 [알림] 이번 연속 ${consecutiveCount}화 달성! 10화 단위 번역 진행 알림을 발송합니다.`);
+            sendProgressNotification(
                 currentNovelTitle,
                 extractEpisodeTitle() || document.title || '',
                 textsToTranslate.length,
@@ -3330,7 +3330,7 @@ async function translateAllPTags(isRetranslation = false) {
                 consecutiveCount
             );
         } else {
-            logToSidebar(`[ntfy] 10화 단위 알림 정책 적용 중 (현재 이번 연속: ${consecutiveCount}화, 다음 알림: ${Math.ceil(consecutiveCount / 10) * 10}화)`);
+            logToSidebar(`[알림] 10화 단위 알림 정책 적용 중 (현재 이번 연속: ${consecutiveCount}화, 다음 알림: ${Math.ceil(consecutiveCount / 10) * 10}화)`);
         }
 
         const currentUrl = getCleanUrl(); // Get the current clean URL
@@ -3406,7 +3406,7 @@ async function translateAllPTags(isRetranslation = false) {
                         } else {
                             logToSidebar("다음 페이지 버튼을 찾을 수 없습니다. (소설 연속 번역 종료)");
                             // 마지막 화에 도달하여 다음 화가 없으므로 최종 완료 알림 발송
-                            sendNtfyComplete(
+                            sendCompleteNotification(
                                 currentNovelTitle,
                                 extractEpisodeTitle() || document.title || '',
                                 textsToTranslate.length,
@@ -3428,7 +3428,7 @@ async function translateAllPTags(isRetranslation = false) {
                             navigateToNextChapter(nextLink.href);
                         } else {
                             logToSidebar("다음 페이지 버튼을 찾을 수 없습니다. (소설 연속 번역 종료)");
-                            sendNtfyComplete(
+                            sendCompleteNotification(
                                 currentNovelTitle,
                                 extractEpisodeTitle() || document.title || '',
                                 textsToTranslate.length,
@@ -3447,7 +3447,7 @@ async function translateAllPTags(isRetranslation = false) {
                             navigateToNextChapter(nextButton.href);
                         } else {
                             logToSidebar("다음 페이지 버튼을 찾을 수 없습니다. (소설 연속 번역 종료)");
-                            sendNtfyComplete(
+                            sendCompleteNotification(
                                 currentNovelTitle,
                                 extractEpisodeTitle() || document.title || '',
                                 textsToTranslate.length,
