@@ -156,6 +156,11 @@ button, input, select, textarea {
     font-family: inherit;
 }
 
+/* Typography Utility Classes */
+.font-display { font-family: var(--font-display) !important; }
+.font-serif { font-family: var(--font-serif) !important; }
+.font-typewriter { font-family: var(--font-typewriter) !important; }
+
 .library-container {
     max-width: 1440px;
     margin: 0 auto;
@@ -321,6 +326,16 @@ button, input, select, textarea {
     height: 100%;
 }
 
+.pipe-segment.conduit-brass {
+    background: linear-gradient(180deg, #f7d58b 0%, #b8832a 35%, #5e3f12 75%, #a67524 100%);
+    box-shadow: inset 0 2px 2px rgba(255, 255, 255, 0.4), 0 3px 6px rgba(0, 0, 0, 0.35);
+}
+
+.pipe-segment.conduit-copper {
+    background: linear-gradient(180deg, #e8956e 0%, #b3562a 35%, #4f210d 75%, #8f401d 100%);
+    box-shadow: inset 0 2px 2px rgba(255, 255, 255, 0.35), 0 3px 6px rgba(0, 0, 0, 0.35);
+}
+
 .pipe-joint {
     width: 14px;
     height: 24px;
@@ -356,7 +371,7 @@ button, input, select, textarea {
     flex-shrink: 0;
 }
 
-/* 붉은 황동 압력 밸브 휠 */
+/* 붉은 황동 압력 밸브 휠 (인터랙티브 기계식 핸들) */
 .pipe-valve-wheel {
     width: 36px;
     height: 36px;
@@ -366,7 +381,9 @@ button, input, select, textarea {
     box-shadow: 0 3px 8px rgba(0, 0, 0, 0.6), inset 0 0 4px rgba(0, 0, 0, 0.6);
     cursor: pointer;
     position: relative;
-    transition: transform 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+    transition: transform 0.65s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.2s ease, filter 0.2s ease;
+    outline: none;
+    padding: 0;
 }
 
 .pipe-valve-wheel::before, .pipe-valve-wheel::after {
@@ -393,7 +410,13 @@ button, input, select, textarea {
 }
 
 .pipe-valve-wheel:hover {
-    transform: rotate(90deg) scale(1.05);
+    transform: rotate(90deg) scale(1.08);
+    filter: brightness(1.15);
+    box-shadow: 0 0 14px rgba(223, 158, 87, 0.7), 0 4px 10px rgba(0, 0, 0, 0.7);
+}
+
+.pipe-valve-wheel:active {
+    transform: scale(0.92);
 }
 
 /* 배관 위 작은 미니 게이지 */
@@ -409,6 +432,11 @@ button, input, select, textarea {
     flex-shrink: 0;
 }
 
+.pipe-gauge-mini.brass-glow-gauge {
+    box-shadow: 0 0 8px rgba(212, 175, 55, 0.5), inset 0 1px 2px rgba(255, 255, 255, 0.4);
+    border-color: #f7d58b;
+}
+
 .pipe-gauge-mini::after {
     content: '';
     position: absolute;
@@ -422,6 +450,44 @@ button, input, select, textarea {
     border-radius: 1px;
 }
 
+/* 증기 배출 파티클 Emitter */
+.steam-puff-emitter {
+    position: absolute;
+    top: -24px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 40px;
+    height: 30px;
+    pointer-events: none;
+    z-index: 20;
+}
+
+.steam-puff-particle {
+    position: absolute;
+    bottom: 0;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(255, 255, 255, 0.85) 0%, rgba(240, 235, 225, 0.5) 50%, rgba(255, 255, 255, 0) 100%);
+    filter: blur(2px);
+    animation: steamPuff 1.2s cubic-bezier(0.1, 0.8, 0.3, 1) forwards;
+    opacity: 0.9;
+}
+
+@keyframes steamPuff {
+    0% {
+        transform: translate(0, 0) scale(0.5);
+        opacity: 0.85;
+    }
+    50% {
+        opacity: 0.7;
+    }
+    100% {
+        transform: translate(var(--drift-x, -15px), -45px) scale(calc(var(--scale-mult, 1) * 3));
+        opacity: 0;
+    }
+}
+
 /* 우측 맞물려 돌아가는 차분기관 기어 클러스터 */
 .steam-gear-cluster {
     position: relative;
@@ -433,22 +499,10 @@ button, input, select, textarea {
 .gear-cog {
     position: absolute;
     border-radius: 50%;
-    background: radial-gradient(circle, #382412 26%, #b58941 28%, #e0be77 55%, #7a541c 85%);
     box-shadow: 0 3px 8px rgba(0, 0, 0, 0.55), inset 0 2px 3px rgba(255, 255, 255, 0.4);
     display: flex;
     align-items: center;
     justify-content: center;
-}
-
-/* 톱니바퀴 톱니 이빨 */
-.gear-cog::before {
-    content: '';
-    position: absolute;
-    inset: -4px;
-    border-radius: 50%;
-    background: repeating-conic-gradient(#d4af37 0deg 15deg, transparent 15deg 30deg);
-    z-index: -1;
-    box-shadow: 0 0 3px rgba(0, 0, 0, 0.5);
 }
 
 /* 기어 중심 황동 볼트 축 */
@@ -468,6 +522,21 @@ button, input, select, textarea {
     right: 0;
     top: 2px;
     animation: gearSpinCW 20s linear infinite;
+    background: radial-gradient(circle, #382412 26%, #b58941 28%, #e0be77 55%, #7a541c 85%);
+}
+
+.gear-large::before {
+    content: '';
+    position: absolute;
+    inset: -4px;
+    border-radius: 50%;
+    background: repeating-conic-gradient(#d4af37 0deg 15deg, transparent 15deg 30deg);
+    z-index: -1;
+    box-shadow: 0 0 3px rgba(0, 0, 0, 0.5);
+}
+
+.gear-large.brass-sheen {
+    background: radial-gradient(circle, #382412 24%, #b58941 28%, #fae29f 55%, #7a541c 85%);
 }
 
 .gear-medium {
@@ -476,6 +545,25 @@ button, input, select, textarea {
     right: 38px;
     top: 10px;
     animation: gearSpinCCW 14s linear infinite;
+    background: radial-gradient(circle, #382412 26%, #b58941 28%, #e0be77 55%, #7a541c 85%);
+}
+
+.gear-medium::before {
+    content: '';
+    position: absolute;
+    inset: -4px;
+    border-radius: 50%;
+    background: repeating-conic-gradient(#c76f44 0deg 12deg, transparent 12deg 24deg);
+    z-index: -1;
+    box-shadow: 0 0 3px rgba(0, 0, 0, 0.5);
+}
+
+.gear-medium.steel-teeth {
+    background: radial-gradient(circle, #22252a 24%, #808b96 28%, #d5dbdb 55%, #424949 85%);
+}
+
+.gear-medium.steel-teeth::before {
+    background: repeating-conic-gradient(#bdc3c7 0deg 12deg, transparent 12deg 24deg);
 }
 
 .gear-small {
@@ -484,11 +572,27 @@ button, input, select, textarea {
     right: 66px;
     top: 6px;
     animation: gearSpinCW 9s linear infinite;
+    background: radial-gradient(circle, #2d1806 24%, #c77b38 28%, #f8c291 55%, #854010 85%);
+}
+
+.gear-small::before {
+    content: '';
+    position: absolute;
+    inset: -4px;
+    border-radius: 50%;
+    background: repeating-conic-gradient(#e67e22 0deg 18deg, transparent 18deg 36deg);
+    z-index: -1;
+    box-shadow: 0 0 3px rgba(0, 0, 0, 0.5);
 }
 
 .steam-gear-cluster:hover .gear-large { animation-duration: 6s; }
 .steam-gear-cluster:hover .gear-medium { animation-duration: 4.2s; }
 .steam-gear-cluster:hover .gear-small { animation-duration: 2.7s; }
+
+/* 차분기관 가속 연산 상태 (밸브 개방 시) */
+.steam-gear-cluster.gears-accelerated .gear-large { animation-duration: 1.2s !important; }
+.steam-gear-cluster.gears-accelerated .gear-medium { animation-duration: 0.75s !important; }
+.steam-gear-cluster.gears-accelerated .gear-small { animation-duration: 0.45s !important; }
 
 @keyframes gearSpinCW {
     from { transform: rotate(0deg); }
@@ -631,7 +735,7 @@ button, input, select, textarea {
     }
 }
 
-/* 개별 압력계 마운트 카드 */
+/* 개별 압력계 마운트 카드 (인터랙티브 스위치) */
 .manometer-gauge-card {
     display: flex;
     flex-direction: column;
@@ -643,14 +747,55 @@ button, input, select, textarea {
     box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.8), 0 6px 16px rgba(0, 0, 0, 0.45);
     position: relative;
     overflow: hidden;
-    transition: transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1), border-color 0.25s ease, box-shadow 0.25s ease;
+    transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.25s ease, box-shadow 0.25s ease;
     user-select: none;
 }
 
-.manometer-gauge-card:hover {
-    transform: translateY(-3px);
-    border-color: #c5a059;
-    box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.8), 0 10px 24px rgba(197, 160, 89, 0.22);
+.manometer-gauge-card.interactive-gauge {
+    cursor: pointer;
+    touch-action: manipulation;
+    outline: none;
+}
+
+.manometer-gauge-card.interactive-gauge:hover {
+    transform: translateY(-5px) scale(1.03);
+    border-color: #f7d58b;
+    box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.8), 0 12px 28px rgba(184, 134, 11, 0.35);
+}
+
+.manometer-gauge-card.interactive-gauge:active {
+    transform: translateY(-1px) scale(0.99);
+}
+
+.manometer-gauge-card.interactive-gauge.active {
+    border-color: #ffd700;
+    background: linear-gradient(180deg, #352517 0%, #1c130b 100%);
+    box-shadow: 
+        inset 0 3px 8px rgba(0, 0, 0, 0.9), 
+        0 0 22px rgba(255, 215, 0, 0.45), 
+        0 8px 24px rgba(0, 0, 0, 0.6);
+}
+
+.manometer-gauge-card.interactive-gauge.active .manometer-brass-bezel {
+    box-shadow: 0 0 18px rgba(255, 215, 0, 0.6), inset 0 2px 4px rgba(255, 255, 255, 0.6);
+}
+
+.manometer-gauge-card.interactive-gauge.active .manometer-dial-face.parchment-dial {
+    background: radial-gradient(circle at 50% 45%, #fffdf5 0%, #f6e8cc 70%, #d8be8d 100%);
+    border-color: #8c622d;
+}
+
+body.dark-mode .manometer-gauge-card.interactive-gauge.active .manometer-dial-face.parchment-dial {
+    background: radial-gradient(circle at 50% 45%, #3a2818 0%, #22170d 75%, #100b06 100%);
+    border-color: #d4af37;
+}
+
+.manometer-gauge-card.interactive-gauge.active .manometer-dial-face.parchment-dial .dial-unit-label {
+    color: #8c5e15;
+}
+
+body.dark-mode .manometer-gauge-card.interactive-gauge.active .manometer-dial-face.parchment-dial .dial-unit-label {
+    color: #fcd34d;
 }
 
 .manometer-gauge-card:hover .manometer-needle {
@@ -791,6 +936,19 @@ button, input, select, textarea {
     100% { transform: rotate(calc(var(--rot, 30deg) - 2deg)); }
 }
 
+@keyframes needleSpringBounce {
+    0% { transform: rotate(var(--rot, 30deg)); }
+    22% { transform: rotate(calc(var(--rot, 30deg) + 16deg)); }
+    45% { transform: rotate(calc(var(--rot, 30deg) - 10deg)); }
+    68% { transform: rotate(calc(var(--rot, 30deg) + 5deg)); }
+    85% { transform: rotate(calc(var(--rot, 30deg) - 2deg)); }
+    100% { transform: rotate(var(--rot, 30deg)); }
+}
+
+.manometer-needle.needle-spring-bounce {
+    animation: needleSpringBounce 0.7s cubic-bezier(0.25, 1, 0.5, 1) !important;
+}
+
 /* 중심 황동 축 캡 (Brass Hub) */
 .needle-brass-hub {
     position: absolute;
@@ -882,237 +1040,269 @@ button, input, select, textarea {
    ========================================================================== */
 
 .hero-continue-section {
-    margin-bottom: 26px;
+    margin-bottom: 28px;
 }
 
-.hero-card {
+/* ==========================================================================
+   Hero Continue Reading Section (Royal Lectern & Difference Engine Console)
+   ========================================================================== */
+
+.hero-lectern-card {
     position: relative;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 24px;
-    padding: 22px 30px;
-    background: linear-gradient(135deg, var(--card-bg) 0%, var(--border-light) 100%);
-    border: 2px solid var(--brass-border);
-    border-radius: var(--border-radius-lg);
-    box-shadow: var(--shadow-md), inset 0 1px 2px rgba(255, 255, 255, 0.4);
+    gap: 28px;
+    padding: 24px 32px;
+    background: linear-gradient(135deg, #2b170c 0%, #1b0e07 60%, #100804 100%);
+    border: 3px solid #b8860b;
+    border-radius: 12px;
+    box-shadow: 
+        inset 0 2px 4px rgba(255, 255, 255, 0.15),
+        inset 0 -2px 6px rgba(0, 0, 0, 0.8),
+        0 14px 32px rgba(0, 0, 0, 0.6),
+        0 0 24px rgba(184, 134, 11, 0.15);
     overflow: hidden;
-    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    user-select: none;
+    transition: transform 0.25s ease, box-shadow 0.25s ease;
 }
 
-.hero-card:hover {
-    transform: translateY(-2px);
-    box-shadow: var(--shadow-lg);
+.hero-lectern-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 
+        inset 0 2px 4px rgba(255, 255, 255, 0.2),
+        0 18px 40px rgba(0, 0, 0, 0.7),
+        0 0 30px rgba(212, 175, 55, 0.25);
 }
 
-.hero-left {
-    display: flex;
-    align-items: center;
-    gap: 20px;
+/* Left: 3D Open Tome on Lectern */
+.hero-lectern-tome {
     flex-shrink: 0;
 }
 
-.hero-book-cover {
-    width: 72px;
-    height: 100px;
-    background: var(--card-leather);
-    border-radius: 6px;
-    box-shadow: 3px 5px 14px rgba(0, 0, 0, 0.4), inset 0 0 10px rgba(0, 0, 0, 0.6);
+.hero-tome-cover {
+    width: 90px;
+    height: 120px;
+    background: linear-gradient(135deg, #4a1d0d, #290e05);
+    border-radius: 4px 8px 8px 4px;
+    border: 2px solid #b8860b;
+    box-shadow: -4px 0 10px rgba(0, 0, 0, 0.7), 4px 6px 16px rgba(0, 0, 0, 0.8);
+    position: relative;
+    display: flex;
+    overflow: hidden;
+}
+
+.hero-tome-cover.completed {
+    background: linear-gradient(135deg, #0f2d18, #05140a);
+    border-color: #2ba162;
+}
+
+.hero-tome-spine {
+    width: 14px;
+    height: 100%;
+    background: linear-gradient(90deg, #1f0b04 0%, #522310 50%, #150602 100%);
+    border-right: 1px solid #733112;
+    box-shadow: inset 1px 0 2px rgba(255, 255, 255, 0.2);
+}
+
+.hero-tome-body {
+    flex: 1;
+    padding: 8px 6px;
     display: flex;
     flex-direction: column;
     justify-content: space-between;
-    padding: 8px 6px;
-    border: 1px solid var(--brass-border);
     position: relative;
+    background: radial-gradient(circle at 70% 30%, rgba(184, 134, 11, 0.15) 0%, transparent 80%);
 }
 
-/* Brass corner clip simulation */
-.hero-book-cover::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    right: 0;
-    width: 14px;
-    height: 14px;
-    background: var(--brass-gradient);
-    clip-path: polygon(100% 0, 0 0, 100% 100%);
-    border-top-right-radius: 6px;
-}
-
-.hero-book-cover-badge {
-    align-self: flex-start;
-    font-family: var(--font-typewriter);
-    font-size: 10px;
+.hero-tome-seal {
+    font-size: 8px;
     font-weight: 700;
-    background: var(--seal-red);
-    color: #ffffff;
-    padding: 2px 6px;
-    border-radius: 4px;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+    color: #f7df94;
+    background: rgba(184, 134, 11, 0.35);
+    border: 1px solid #d4af37;
+    border-radius: 2px;
+    padding: 1px 4px;
+    align-self: flex-start;
+    letter-spacing: 0.05em;
 }
 
-.hero-book-cover-title {
-    font-family: var(--font-serif);
+.hero-tome-title {
     font-size: 11px;
     font-weight: 700;
-    color: #f7ede2;
-    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+    color: #fcefd4;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
+    line-height: 1.35;
     display: -webkit-box;
-    -webkit-line-clamp: 2;
+    -webkit-line-clamp: 3;
     -webkit-box-orient: vertical;
     overflow: hidden;
-    line-height: 1.3;
 }
 
-.hero-center {
+.hero-tome-ribbon {
+    position: absolute;
+    bottom: -8px;
+    right: 12px;
+    width: 10px;
+    height: 22px;
+    background: linear-gradient(180deg, #991b1b, #dc2626);
+    clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 75%, 0 100%);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.6);
+}
+
+/* Center: Lectern Engine Console */
+.hero-lectern-console {
     flex-grow: 1;
     min-width: 0;
 }
 
-.hero-badge-row {
+.hero-console-header {
     display: flex;
     align-items: center;
-    gap: 8px;
-    margin-bottom: 6px;
+    gap: 12px;
+    margin-bottom: 8px;
 }
 
-.hero-tag-badge {
+.hero-plaque {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
-    font-family: var(--font-typewriter);
+    gap: 6px;
     font-size: 11px;
     font-weight: 700;
-    color: var(--brass-gold);
-    background: var(--primary-light);
-    border: 1px solid var(--brass-border);
-    padding: 2px 8px;
+    color: #f5d48e;
+    background: linear-gradient(180deg, #3d2512 0%, #1f1107 100%);
+    border: 1px solid #9e6c27;
     border-radius: 4px;
-    letter-spacing: 0.02em;
+    padding: 3px 9px;
+    box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.2);
+    letter-spacing: 0.08em;
 }
 
-.hero-title {
-    font-family: var(--font-serif);
-    font-size: 19px;
+.hero-reading-time {
+    font-size: 11px;
+    color: #bfa182;
+}
+
+.hero-main-title {
+    font-size: 22px;
     font-weight: 700;
-    color: var(--text-color);
-    margin-bottom: 6px;
+    color: #fff8eb;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8), 0 0 10px rgba(245, 212, 142, 0.2);
+    margin-bottom: 8px;
+    cursor: pointer;
+    line-height: 1.3;
+    transition: color 0.15s ease;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
 }
 
-.hero-chapter-info {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 13px;
-    color: var(--text-secondary);
-    margin-bottom: 10px;
+.hero-main-title:hover {
+    color: #ffd700;
 }
 
-.hero-chapter-name {
+.hero-chapter-display {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 14px;
+}
+
+.hero-chapter-display .chapter-icon {
+    font-size: 16px;
+    color: #dfad52;
+}
+
+.hero-chapter-display .chapter-text {
+    font-size: 14px;
     font-weight: 600;
-    color: var(--brass-gold);
-}
-
-.hero-progress-track {
-    width: 100%;
-    max-width: 480px;
-    height: 8px;
-    background: var(--border-light);
-    border-radius: 4px;
+    color: #e2ceb8;
+    white-space: nowrap;
     overflow: hidden;
-    border: 1px solid var(--border-color);
-    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.2);
+    text-overflow: ellipsis;
 }
 
-.hero-progress-fill {
+/* Odometer Progress Rack */
+.hero-progress-rack {
+    max-width: 560px;
+}
+
+.hero-progress-rack .hero-progress-track {
+    width: 100%;
+    height: 10px;
+    background: #140b05;
+    border: 1.5px solid #6b4518;
+    border-radius: 5px;
+    overflow: hidden;
+    box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.9);
+}
+
+.hero-progress-rack .hero-progress-fill {
     height: 100%;
-    background: linear-gradient(90deg, var(--brass-gold), var(--amber-glow));
-    border-radius: 4px;
-    transition: width 0.4s ease;
+    background: linear-gradient(90deg, #dfad52 0%, #e67e22 70%, #ffd700 100%);
+    box-shadow: 0 0 8px rgba(255, 157, 59, 0.6);
+    transition: width 0.4s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.hero-progress-meta {
+.hero-progress-rack .hero-progress-meta {
     display: flex;
     align-items: center;
-    gap: 12px;
-    font-family: var(--font-typewriter);
+    gap: 10px;
     font-size: 11px;
-    color: var(--text-muted);
-    margin-top: 5px;
-    max-width: 480px;
+    color: #aa9075;
+    margin-top: 6px;
+    letter-spacing: 0.05em;
 }
 
-.hero-progress-pct {
+.hero-progress-rack .hero-progress-pct {
+    color: #ff9d3b;
     font-weight: 700;
-    color: var(--amber-glow);
 }
 
-.hero-right {
+.hero-progress-rack .sep {
+    color: #5a3c1d;
+}
+
+/* Right: Brass Action Buttons */
+.hero-lectern-actions {
     display: flex;
-    align-items: center;
+    flex-direction: column;
     gap: 10px;
     flex-shrink: 0;
 }
 
-.hero-continue-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 12px 24px;
-    background: var(--brass-gradient);
-    color: #1a1208;
-    border-radius: 8px;
+.hero-engage-btn {
+    padding: 12px 22px;
     font-size: 14px;
     font-weight: 700;
-    border: 1px solid var(--brass-border);
-    cursor: pointer;
-    box-shadow: 0 4px 0 var(--brass-dark), 0 5px 12px rgba(0, 0, 0, 0.25);
-    transition: all 0.15s ease;
-    text-decoration: none;
-    text-shadow: 0 1px 0 rgba(255, 255, 255, 0.35);
-}
-
-.hero-continue-btn:hover {
-    filter: brightness(1.08);
-    transform: translateY(-1px);
-}
-
-.hero-continue-btn:active {
-    transform: translateY(3px);
-    box-shadow: 0 1px 0 var(--brass-dark);
-}
-
-.hero-continue-btn .material-icons {
-    font-size: 20px;
-}
-
-.hero-toc-btn {
-    padding: 11px 16px;
-    font-size: 13px;
-    font-weight: 600;
+    letter-spacing: 0.04em;
+    background: linear-gradient(135deg, #ffd700 0%, #b8860b 50%, #8b6508 100%) !important;
+    color: #1a0f05 !important;
+    border: 2px solid #ffe680 !important;
     border-radius: 8px;
-    background-color: var(--card-bg);
-    border: 1px solid var(--border-color);
-    color: var(--text-secondary);
-    cursor: pointer;
-    transition: all 0.15s ease;
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    box-shadow: 0 2px 0 var(--border-color);
+    box-shadow: 0 4px 14px rgba(184, 134, 11, 0.5), inset 0 1px 2px rgba(255, 255, 255, 0.6);
+    transition: all 0.2s ease;
 }
 
-.hero-toc-btn:hover {
-    border-color: var(--brass-border);
-    color: var(--text-color);
+.hero-engage-btn:hover {
+    filter: brightness(1.12);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(255, 215, 0, 0.6);
 }
 
-.hero-toc-btn:active {
-    transform: translateY(2px);
-    box-shadow: none;
+.hero-sub-action {
+    padding: 8px 16px;
+    font-size: 13px;
+    background: rgba(30, 16, 8, 0.8) !important;
+    color: #e5cdb0 !important;
+    border: 1px solid #8a5e20 !important;
+    border-radius: 6px;
+}
+
+.hero-sub-action:hover {
+    background: rgba(60, 32, 16, 0.9) !important;
+    color: #fff !important;
+    border-color: #dfad52 !important;
 }
 
 @media (max-width: 768px) {
@@ -1353,7 +1543,10 @@ button, input, select, textarea {
     gap: 22px;
 }
 
-/* 1. Vintage Leather Binder Card */
+/* ==========================================================================
+   1. Victorian 3D Hardcover Tome Shelf Cards (Royal Bibliotheca Craftsmanship)
+   ========================================================================== */
+
 .book-card {
     position: relative;
     background-color: var(--card-bg);
@@ -1362,72 +1555,143 @@ button, input, select, textarea {
     box-shadow: var(--shadow-sm);
     display: flex;
     flex-direction: column;
-    overflow: hidden;
-    transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+    transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.3s ease, border-color 0.2s ease;
+    user-select: none;
 }
 
-/* Brass Corner Clips */
-.book-card::before {
-    content: '';
+/* 3D Tome Card Full-Spec Enhancements */
+.book-card.tome-card-3d {
+    border-radius: 4px 10px 10px 4px;
+    box-shadow: 
+        -4px 0 8px rgba(0, 0, 0, 0.35),
+        4px 8px 18px rgba(40, 25, 10, 0.25),
+        inset 0 1px 1px rgba(255, 255, 255, 0.3);
+    perspective: 1200px;
+    transform-style: preserve-3d;
+    padding-left: 20px; /* Space for the 3D Spine */
+    border: none;
+    overflow: visible;
+}
+
+/* 3D Perspective Tilt on Hover */
+.book-card.tome-card-3d:hover {
+    transform: perspective(1000px) rotateY(-8deg) translateY(-8px);
+    box-shadow: 
+        -8px 4px 16px rgba(0, 0, 0, 0.5),
+        12px 18px 32px rgba(30, 18, 8, 0.45),
+        0 0 20px rgba(212, 175, 55, 0.25);
+    z-index: 10;
+}
+
+/* 3D Spine on the Left */
+.tome-card-spine {
     position: absolute;
     top: 0;
+    bottom: 0;
     left: 0;
-    width: 16px;
-    height: 16px;
-    background: var(--brass-gradient);
-    clip-path: polygon(0 0, 100% 0, 0 100%);
-    border-top-left-radius: var(--border-radius);
-    z-index: 2;
-    pointer-events: none;
+    width: 22px;
+    border-radius: 4px 0 0 4px;
+    box-shadow: inset -3px 0 6px rgba(0, 0, 0, 0.6), 2px 0 4px rgba(0, 0, 0, 0.3);
+    z-index: 5;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-around;
+    align-items: center;
+    padding: 20px 0;
 }
 
-.book-card::after {
-    content: '';
+/* Gold Raised Ribs on the Spine */
+.tome-card-spine .spine-rib {
+    width: 85%;
+    height: 4px;
+    background: linear-gradient(90deg, #664614, #ffd700 50%, #664614);
+    border-radius: 2px;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.8), inset 0 1px 1px rgba(255, 255, 255, 0.5);
+}
+
+/* 5 Rich Leather Color Variations */
+.tome-card-3d.leather-ruby {
+    background: linear-gradient(135deg, #4f1111 0%, #7d1c1c 40%, #3d0a0a 100%);
+}
+.tome-card-3d.leather-ruby .tome-card-spine {
+    background: linear-gradient(90deg, #380707 0%, #7d1c1c 50%, #290404 100%);
+    border-right: 1px solid #992424;
+}
+
+.tome-card-3d.leather-sapphire {
+    background: linear-gradient(135deg, #0f233d 0%, #1c4273 40%, #091729 100%);
+}
+.tome-card-3d.leather-sapphire .tome-card-spine {
+    background: linear-gradient(90deg, #071221 0%, #1c4273 50%, #050d17 100%);
+    border-right: 1px solid #285e9e;
+}
+
+.tome-card-3d.leather-amber {
+    background: linear-gradient(135deg, #3d230e 0%, #663c1a 40%, #291506 100%);
+}
+.tome-card-3d.leather-amber .tome-card-spine {
+    background: linear-gradient(90deg, #241204 0%, #663c1a 50%, #170a02 100%);
+    border-right: 1px solid #8c5223;
+}
+
+.tome-card-3d.leather-emerald {
+    background: linear-gradient(135deg, #0e301d 0%, #1a5734 40%, #081f12 100%);
+}
+.tome-card-3d.leather-emerald .tome-card-spine {
+    background: linear-gradient(90deg, #06170d 0%, #1a5734 50%, #041008 100%);
+    border-right: 1px solid #247547;
+}
+
+.tome-card-3d.leather-obsidian-gold {
+    background: linear-gradient(135deg, #171618 0%, #2a282e 40%, #0e0d0f 100%);
+    box-shadow: 0 0 16px rgba(212, 175, 55, 0.25);
+}
+.tome-card-3d.leather-obsidian-gold .tome-card-spine {
+    background: linear-gradient(90deg, #0a090b 0%, #2e2b33 50%, #050506 100%);
+    border-right: 1px solid #ffd700;
+}
+
+/* Ornate Gilded Brass Corner Protectors */
+.tome-card-3d .brass-corner {
     position: absolute;
-    top: 0;
-    right: 0;
-    width: 16px;
-    height: 16px;
-    background: var(--brass-gradient);
-    clip-path: polygon(0 0, 100% 0, 100% 100%);
-    border-top-right-radius: var(--border-radius);
-    z-index: 2;
+    width: 22px;
+    height: 22px;
+    background: linear-gradient(135deg, #fce09b 0%, #c49339 50%, #7a5416 100%);
+    z-index: 6;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
     pointer-events: none;
 }
+.tome-card-3d .brass-corner.c-tl { top: 0; left: 22px; clip-path: polygon(0 0, 100% 0, 0 100%); }
+.tome-card-3d .brass-corner.c-tr { top: 0; right: 0; clip-path: polygon(0 0, 100% 0, 100% 100%); }
+.tome-card-3d .brass-corner.c-bl { bottom: 0; left: 22px; clip-path: polygon(0 0, 0 100%, 100% 100%); }
+.tome-card-3d .brass-corner.c-br { bottom: 0; right: 0; clip-path: polygon(100% 0, 0 100%, 100% 100%); }
 
-.book-card:hover {
-    transform: translateY(-4px);
-    box-shadow: var(--shadow-lg);
-    border-color: var(--brass-border);
+/* Silk Ribbon Bookmark hanging below tome */
+.tome-card-3d .tome-ribbon-tail {
+    position: absolute;
+    bottom: -18px;
+    right: 36px;
+    width: 14px;
+    height: 24px;
+    background: linear-gradient(180deg, #991b1b, #dc2626);
+    clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 75%, 0 100%);
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.5);
+    z-index: 4;
+    transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-/* Card Cover Top Spine */
-.card-cover-spine {
-    height: 8px;
-    width: 100%;
-    background: var(--brass-gradient);
+.tome-card-3d:hover .tome-ribbon-tail {
+    transform: translateY(5px) rotate(6deg);
 }
 
-.card-cover-spine.completed {
-    background: linear-gradient(90deg, #10b981, #059669);
-}
-
-/* Difference Engine Punch-card Strip (차분기관 천공 테이프 스트립) */
-.punch-card-strip {
-    height: 7px;
-    width: 100%;
-    background-color: #2b1d12;
-    background-image: radial-gradient(circle, #0e0905 1.5px, transparent 1.5px);
-    background-size: 8px 6px;
-    border-bottom: 1px solid rgba(212, 175, 55, 0.25);
-    opacity: 0.85;
-}
-
+/* Card Top Bar */
 .card-top-bar {
     display: flex;
     align-items: center;
     justify-content: space-between;
     padding: 12px 14px 4px;
+    position: relative;
+    z-index: 3;
 }
 
 .badge-group {
@@ -1465,6 +1729,13 @@ button, input, select, textarea {
     border: 1px solid var(--border-color);
 }
 
+.status-badge.pinned {
+    background: linear-gradient(135deg, #ffd700, #b8860b);
+    color: #1a0f05;
+    border: 1px solid #ffe680;
+    font-weight: 700;
+}
+
 .chapter-count-badge {
     font-family: var(--font-typewriter);
     font-size: 11px;
@@ -1476,7 +1747,13 @@ button, input, select, textarea {
     border: 1px solid var(--border-color);
 }
 
-/* Card Reading Progress Bar (Oil Gauge Tube) */
+.tome-card-3d .chapter-count-badge {
+    background: rgba(0, 0, 0, 0.4);
+    color: #f7df94;
+    border-color: rgba(212, 175, 55, 0.4);
+}
+
+/* Card Reading Progress Bar */
 .card-progress-wrap {
     margin-top: 8px;
     margin-bottom: 8px;
@@ -1525,20 +1802,41 @@ button, input, select, textarea {
     line-height: 1;
 }
 
+.tome-card-3d .pin-btn {
+    color: rgba(247, 223, 148, 0.6);
+}
+
 .pin-btn:hover {
     transform: scale(1.15);
     color: var(--amber-glow);
 }
 
 .pin-btn.pinned {
-    color: var(--amber-glow);
+    color: #ffd700;
+    text-shadow: 0 0 8px rgba(255, 215, 0, 0.6);
 }
 
+/* Inner Parchment Inlay */
 .card-main {
     padding: 10px 16px 14px;
     flex-grow: 1;
     display: flex;
     flex-direction: column;
+}
+
+.tome-card-3d .card-main {
+    background: #fdf9f0;
+    margin: 8px 10px 12px 14px;
+    border-radius: 6px;
+    padding: 14px;
+    border: 1px solid #d4c4a8;
+    box-shadow: inset 0 0 14px rgba(184, 134, 11, 0.12), 0 2px 5px rgba(0, 0, 0, 0.2);
+}
+
+body.dark-mode .tome-card-3d .card-main {
+    background: #1c1813;
+    border-color: #4a3622;
+    box-shadow: inset 0 0 16px rgba(0, 0, 0, 0.6);
 }
 
 .book-card-title {
@@ -1559,14 +1857,57 @@ button, input, select, textarea {
     color: var(--brass-gold);
 }
 
-.book-card-tags {
+.brass-plaque-inset {
+    background: linear-gradient(180deg, rgba(184, 134, 11, 0.08) 0%, rgba(184, 134, 11, 0.02) 100%);
+    border-left: 3px solid #b8860b;
+    border-radius: 0 4px 4px 0;
+    padding: 6px 10px;
+    margin-bottom: 10px;
+}
+
+.last-read-box {
     display: flex;
-    flex-wrap: wrap;
-    gap: 4px;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    background: var(--border-light);
+    border-radius: 6px;
     margin-bottom: 8px;
 }
 
-.book-tag {
+.last-read-icon {
+    font-size: 16px;
+    color: var(--brass-gold);
+    flex-shrink: 0;
+}
+
+.last-read-content {
+    min-width: 0;
+    flex-grow: 1;
+}
+
+.last-read-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-color);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.last-read-time {
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+.tags-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 6px;
+}
+
+.tag-mini {
     font-size: 11px;
     padding: 1px 6px;
     background-color: var(--border-light);
@@ -1575,14 +1916,18 @@ button, input, select, textarea {
     border-radius: 4px;
 }
 
-.book-card-last-read {
-    font-size: 12px;
-    color: var(--text-secondary);
+.card-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 14px 14px;
+    border-top: 1px solid rgba(184, 134, 11, 0.2);
+}
+
+.tome-card-3d .card-actions {
     margin-top: auto;
-    padding-top: 6px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    padding: 8px 12px 14px 16px;
+    border-top: none;
 }
 
 .card-actions-bar {
@@ -1902,6 +2247,731 @@ button, input, select, textarea {
 }
 
 /* ==========================================================================
+   Victorian Royal Archive Chapter Index Modal (TOC Ledger & Difference Engine)
+   ========================================================================== */
+
+.modal-content.url-modal-content {
+    width: min(840px, 94vw);
+    max-width: 840px;
+    height: 88vh;
+    max-height: 88vh;
+    border: 2px solid var(--brass-border);
+    border-radius: 14px;
+    background: var(--modal-bg);
+    box-shadow: 0 25px 60px rgba(0, 0, 0, 0.65), 0 0 30px rgba(200, 150, 62, 0.18), inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    position: relative;
+}
+
+/* 1. Modal Header: Archival Seal & Plaque */
+.toc-modal-header {
+    padding: 18px 26px 16px 26px;
+    background: linear-gradient(180deg, rgba(200, 150, 62, 0.08) 0%, rgba(0, 0, 0, 0.04) 100%), var(--header-bg);
+    border-bottom: 2px solid var(--brass-border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.toc-modal-header .modal-title-wrap {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    min-width: 0;
+}
+
+.toc-title-insignia {
+    width: 44px;
+    height: 44px;
+    border-radius: 10px;
+    background: var(--brass-gradient);
+    color: #281a0b;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25), inset 1px 1px 2px rgba(255, 255, 255, 0.6);
+    flex-shrink: 0;
+    border: 1px solid var(--brass-dark);
+}
+
+.toc-title-insignia .material-icons {
+    font-size: 24px;
+}
+
+.toc-title-headings {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.toc-badge-archive {
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    color: var(--brass-gold);
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.toc-modal-header h2 {
+    font-family: var(--font-display);
+    font-size: 19px;
+    font-weight: 700;
+    color: var(--text-color);
+    margin: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    letter-spacing: 0.01em;
+}
+
+.toc-modal-header .modal-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+}
+
+.btn-brass-gear {
+    background: var(--brass-gradient);
+    color: #261705;
+    font-weight: 700;
+    border: 1px solid var(--brass-dark);
+    border-radius: 8px;
+    padding: 7px 14px;
+    font-size: 13px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.2), inset 0 1px 1px rgba(255, 255, 255, 0.4);
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.btn-brass-gear:hover {
+    filter: brightness(1.1);
+    transform: translateY(-1px);
+    box-shadow: 0 5px 14px rgba(200, 150, 62, 0.35);
+}
+
+.btn-brass-gear:active {
+    transform: translateY(1px);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.steam-close-btn {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: 1.5px solid var(--border-color);
+    background: var(--card-bg);
+    color: var(--text-muted);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.08);
+}
+
+.steam-close-btn:hover {
+    background: var(--seal-red);
+    color: #ffffff;
+    border-color: var(--seal-red-border);
+    transform: rotate(90deg);
+}
+
+/* 2. Modal Toolbar: Typewriter Search & Archival Controls */
+.url-modal-toolbar {
+    padding: 12px 24px;
+    background: var(--bg-secondary);
+    border-bottom: 1.5px solid var(--border-color);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    flex-wrap: wrap;
+}
+
+.toc-search-box {
+    position: relative;
+    flex: 1 1 240px;
+    min-width: 220px;
+    max-width: 380px;
+}
+
+.toc-search-box .form-input {
+    width: 100%;
+    height: 38px;
+    padding: 0 34px 0 34px;
+    border: 1.5px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--card-bg);
+    color: var(--text-color);
+    font-size: 13px;
+    font-family: var(--font-typewriter);
+    transition: all 0.2s ease;
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+
+.toc-search-box .form-input:focus {
+    border-color: var(--brass-gold);
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(200, 150, 62, 0.2), inset 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
+.toc-search-box .search-icon {
+    position: absolute;
+    left: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--brass-gold);
+    font-size: 18px;
+    pointer-events: none;
+}
+
+.toc-search-clear-btn {
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 18px;
+    cursor: pointer;
+    padding: 2px 6px;
+    line-height: 1;
+    border-radius: 4px;
+}
+
+.toc-search-clear-btn:hover {
+    color: var(--danger-color);
+    background: rgba(185, 28, 28, 0.1);
+}
+
+.toc-toolbar-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.toc-tool-btn {
+    height: 38px;
+    padding: 0 12px;
+    border: 1.5px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--card-bg);
+    color: var(--text-color);
+    font-size: 12px;
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+    user-select: none;
+}
+
+.toc-tool-btn .material-icons {
+    font-size: 16px;
+    color: var(--brass-gold);
+}
+
+.toc-tool-btn:hover:not(:disabled) {
+    border-color: var(--brass-gold);
+    color: var(--brass-gold);
+    transform: translateY(-1px);
+    box-shadow: 0 3px 8px rgba(60, 40, 20, 0.12);
+}
+
+.toc-tool-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+.url-list-stats {
+    height: 38px;
+    padding: 0 14px;
+    border: 1.5px solid var(--border-color);
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.06);
+    color: var(--brass-gold);
+    font-family: var(--font-typewriter);
+    font-size: 12px;
+    font-weight: 700;
+    display: inline-flex;
+    align-items: center;
+    letter-spacing: 0.05em;
+    user-select: none;
+}
+
+body.dark-mode .url-list-stats {
+    background: rgba(0, 0, 0, 0.35);
+    border-color: rgba(200, 150, 62, 0.3);
+}
+
+/* 3. Modal Body & Steampunk Scrollbar */
+.modal-body.url-list-body {
+    padding: 14px 20px;
+    overflow-y: auto;
+    flex-grow: 1;
+    background: var(--modal-bg);
+}
+
+.custom-brass-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: var(--brass-dark) transparent;
+}
+
+.custom-brass-scrollbar::-webkit-scrollbar {
+    width: 8px;
+}
+
+.custom-brass-scrollbar::-webkit-scrollbar-track {
+    background: rgba(0, 0, 0, 0.06);
+    border-radius: 4px;
+}
+
+.custom-brass-scrollbar::-webkit-scrollbar-thumb {
+    background: linear-gradient(180deg, var(--brass-gold), var(--brass-dark));
+    border-radius: 4px;
+    border: 1px solid rgba(0, 0, 0, 0.15);
+}
+
+.custom-brass-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: var(--brass-gold);
+    box-shadow: 0 0 8px rgba(200, 150, 62, 0.6);
+}
+
+/* 4. Chapter List Items: Royal Ledger Strip */
+.url-list-items {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.toc-chapter-entry {
+    border-radius: 10px;
+    border: 1px solid var(--border-color);
+    background: var(--card-bg);
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    position: relative;
+    overflow: hidden;
+}
+
+.toc-chapter-entry:hover {
+    border-color: var(--brass-gold);
+    background: var(--card-hover-bg);
+    transform: translateX(4px);
+    box-shadow: 0 4px 14px rgba(60, 40, 20, 0.12), 0 0 0 1px rgba(200, 150, 62, 0.2);
+}
+
+.toc-chapter-link {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 18px;
+    text-decoration: none;
+    color: inherit;
+    min-height: 52px;
+    gap: 14px;
+}
+
+.toc-chapter-prefix {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+}
+
+.toc-chapter-num {
+    font-family: var(--font-typewriter);
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--brass-dark);
+    padding: 3px 8px;
+    background: rgba(200, 150, 62, 0.12);
+    border: 1px solid rgba(200, 150, 62, 0.25);
+    border-radius: 6px;
+    letter-spacing: 0.05em;
+    min-width: 58px;
+    text-align: center;
+}
+
+body.dark-mode .toc-chapter-num {
+    color: var(--brass-light);
+    background: rgba(200, 150, 62, 0.15);
+}
+
+.toc-bookmark-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 8px;
+    background: var(--brass-gradient);
+    color: #281705;
+    font-size: 11px;
+    font-weight: 700;
+    border-radius: 4px;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    animation: ribbonShine 2.5s infinite ease-in-out;
+}
+
+.toc-bookmark-pill .material-icons {
+    font-size: 13px;
+}
+
+.toc-read-check {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: rgba(46, 125, 50, 0.14);
+    color: var(--success-color);
+}
+
+.toc-read-check .material-icons {
+    font-size: 15px;
+}
+
+.toc-chapter-main {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.toc-chapter-title {
+    font-family: var(--font-serif);
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-color);
+    line-height: 1.4;
+    word-break: break-all;
+    transition: color 0.15s ease;
+}
+
+.toc-chapter-entry:hover .toc-chapter-title {
+    color: var(--brass-dark);
+}
+
+body.dark-mode .toc-chapter-entry:hover .toc-chapter-title {
+    color: var(--brass-light);
+}
+
+.toc-chapter-sub {
+    font-size: 11px;
+    font-family: var(--font-typewriter);
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    opacity: 0.8;
+}
+
+.toc-search-highlight {
+    background: rgba(200, 150, 62, 0.28);
+    color: inherit;
+    padding: 0 2px;
+    border-radius: 2px;
+    font-weight: 700;
+}
+
+.toc-chapter-meta {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-shrink: 0;
+}
+
+.toc-para-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-family: var(--font-typewriter);
+    font-size: 11px;
+    color: var(--text-muted);
+    background: var(--bg-secondary);
+    padding: 4px 10px;
+    border-radius: 6px;
+    border: 1px solid var(--border-color);
+}
+
+.toc-para-badge .material-icons {
+    font-size: 13px;
+    color: var(--brass-gold);
+}
+
+.toc-action-arrow {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 6px;
+    background: rgba(200, 150, 62, 0.08);
+    border: 1px solid rgba(200, 150, 62, 0.2);
+    color: var(--brass-gold);
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.toc-action-arrow .material-icons {
+    font-size: 18px;
+}
+
+.toc-chapter-entry:hover .toc-action-arrow {
+    background: var(--brass-gradient);
+    color: #281705;
+    transform: translateX(3px);
+    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.2);
+}
+
+/* Current Reading Bookmark Strip */
+.toc-chapter-entry.is-current-bookmark {
+    border: 1.5px solid var(--brass-gold);
+    background: linear-gradient(90deg, rgba(200, 150, 62, 0.14) 0%, var(--card-bg) 100%);
+    box-shadow: 0 4px 18px rgba(200, 150, 62, 0.25), inset 3px 0 0 var(--brass-gold);
+    animation: bookmarkPulse 3s infinite ease-in-out;
+}
+
+/* Read Chapter Vintage Tone */
+.toc-chapter-entry.is-read-chapter {
+    opacity: 0.88;
+}
+
+.toc-chapter-entry.is-read-chapter .toc-chapter-title {
+    font-weight: 500;
+}
+
+/* Flash Jump Animation */
+.toc-chapter-entry.highlight-flash {
+    animation: flashHighlight 1.5s ease-out;
+}
+
+@keyframes bookmarkPulse {
+    0%, 100% {
+        box-shadow: 0 4px 16px rgba(200, 150, 62, 0.22), inset 3px 0 0 var(--brass-gold);
+    }
+    50% {
+        box-shadow: 0 4px 26px rgba(200, 150, 62, 0.48), inset 3px 0 0 var(--brass-light);
+    }
+}
+
+@keyframes ribbonShine {
+    0%, 100% { filter: brightness(1); }
+    50% { filter: brightness(1.2); }
+}
+
+@keyframes flashHighlight {
+    0% {
+        background-color: rgba(200, 150, 62, 0.45);
+        transform: scale(1.015);
+    }
+    100% {
+        background-color: var(--card-bg);
+        transform: scale(1);
+    }
+}
+
+/* 5. Loading, Empty & Error States */
+.toc-loading-state,
+.toc-empty-state,
+.toc-error-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 50px 24px;
+    text-align: center;
+    gap: 10px;
+}
+
+.toc-loading-gear {
+    font-size: 42px;
+    color: var(--brass-gold);
+    animation: spinGear 3s linear infinite;
+}
+
+.toc-loading-title {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text-color);
+    margin: 0;
+}
+
+.toc-loading-sub {
+    font-size: 12px;
+    color: var(--text-muted);
+    letter-spacing: 0.1em;
+}
+
+.toc-empty-icon,
+.toc-error-icon {
+    font-size: 48px;
+    color: var(--text-muted);
+    margin-bottom: 4px;
+}
+
+.toc-error-icon {
+    color: var(--danger-color);
+}
+
+.toc-empty-title,
+.toc-error-title {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text-color);
+    margin: 0;
+}
+
+.toc-empty-desc,
+.toc-error-desc {
+    font-size: 13px;
+    color: var(--text-muted);
+    margin: 0 0 8px 0;
+}
+
+@keyframes spinGear {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+/* 6. Modal Footer: Archival Registry Bar */
+.toc-modal-footer {
+    padding: 14px 24px;
+    border-top: 1.5px solid var(--border-color);
+    background: var(--bg-color);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+.toc-footer-hints {
+    font-size: 12px;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.toc-footer-hints .kbd {
+    display: inline-block;
+    padding: 2px 6px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--text-secondary);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
+.toc-footer-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.btn-ghost {
+    background: transparent;
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    border-radius: var(--border-radius-sm);
+    padding: 7px 12px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.btn-ghost:hover {
+    background: var(--bg-secondary);
+    color: var(--text-color);
+    border-color: var(--brass-border);
+}
+
+/* Mobile & Touch Ergonomics */
+@media (max-width: 768px) {
+    .modal-content.url-modal-content {
+        width: 96%;
+        height: 92vh;
+        max-height: 92vh;
+    }
+
+    .toc-modal-header {
+        padding: 14px 18px;
+    }
+
+    .toc-modal-header h2 {
+        font-size: 17px;
+    }
+
+    .url-modal-toolbar {
+        padding: 10px 16px;
+        gap: 10px;
+    }
+
+    .toc-search-box {
+        max-width: 100%;
+        flex: 1 1 100%;
+    }
+
+    .toc-toolbar-controls {
+        width: 100%;
+        justify-content: space-between;
+    }
+
+    .modal-body.url-list-body {
+        padding: 10px 14px;
+    }
+
+    .toc-chapter-link {
+        padding: 10px 12px;
+        gap: 10px;
+        min-height: 48px;
+    }
+
+    .toc-chapter-title {
+        font-size: 14px;
+    }
+
+    .toc-chapter-num {
+        font-size: 12px;
+        min-width: 50px;
+        padding: 2px 6px;
+    }
+
+    .toc-footer-hints {
+        display: none;
+    }
+
+    .toc-modal-footer {
+        padding: 12px 18px;
+        justify-content: flex-end;
+    }
+}
+
+/* ==========================================================================
    Steampunk 3D Hardcover Tome Bookshelf (Shelf View) & 3D Book Stage
    ========================================================================== */
 
@@ -2207,8 +3277,8 @@ button, input, select, textarea {
     box-sizing: border-box;
 }
 
-/* Brass Ornate Corners */
-.brass-corner {
+/* Brass Ornate Corners (Scoped to 3D Tome Stage) */
+.tome-leather-frame .brass-corner {
     position: absolute;
     width: 28px;
     height: 28px;
@@ -2216,10 +3286,10 @@ button, input, select, textarea {
     z-index: 5;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
 }
-.brass-corner.c-tl { top: 0; left: 0; clip-path: polygon(0 0, 100% 0, 0 100%); }
-.brass-corner.c-tr { top: 0; right: 0; clip-path: polygon(0 0, 100% 0, 100% 100%); }
-.brass-corner.c-bl { bottom: 0; left: 0; clip-path: polygon(0 0, 0 100%, 100% 100%); }
-.brass-corner.c-br { bottom: 0; right: 0; clip-path: polygon(100% 0, 0 100%, 100% 100%); }
+.tome-leather-frame .brass-corner.c-tl { top: 0; left: 0; clip-path: polygon(0 0, 100% 0, 0 100%); }
+.tome-leather-frame .brass-corner.c-tr { top: 0; right: 0; clip-path: polygon(0 0, 100% 0, 100% 100%); }
+.tome-leather-frame .brass-corner.c-bl { bottom: 0; left: 0; clip-path: polygon(0 0, 0 100%, 100% 100%); }
+.tome-leather-frame .brass-corner.c-br { bottom: 0; right: 0; clip-path: polygon(100% 0, 0 100%, 100% 100%); }
 
 .tome-inner-parchment {
     width: 100%;
@@ -2407,4 +3477,133 @@ body.dark-mode .tome-inner-parchment {
     gap: 4px;
     font-size: 13px;
     padding: 8px 10px;
+}
+
+/* ==========================================================================
+   Responsive Smart Minimal Folding (Tablet & Mobile Craftsmanship)
+   ========================================================================== */
+
+@media (max-width: 1024px) {
+    .steam-manometer-rack {
+        grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+        gap: 12px;
+    }
+
+    .hero-lectern-card {
+        padding: 20px 24px;
+        gap: 20px;
+    }
+}
+
+@media (max-width: 900px) {
+    .library-container {
+        padding: 16px 14px 60px;
+    }
+
+    .header-nav {
+        padding: 14px 16px;
+    }
+
+    .hero-lectern-card {
+        flex-direction: column;
+        align-items: stretch;
+        padding: 20px;
+    }
+
+    .hero-lectern-tome {
+        display: none;
+    }
+
+    .hero-lectern-actions {
+        flex-direction: row;
+    }
+
+    .hero-engage-btn, .hero-sub-action {
+        flex: 1;
+        justify-content: center;
+    }
+
+    .toolbar-primary-row {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .toolbar-controls-right {
+        justify-content: space-between;
+    }
+}
+
+@media (max-width: 640px) {
+    .steam-engine-top-rig {
+        height: 38px;
+        margin-bottom: 8px;
+    }
+
+    .steam-main-pipe {
+        height: 12px;
+        margin-right: 12px;
+    }
+
+    .pipe-joint, .pipe-flange {
+        height: 18px;
+    }
+
+    .pipe-valve-wheel {
+        width: 30px;
+        height: 30px;
+    }
+
+    .pipe-gauge-mini {
+        width: 18px;
+        height: 18px;
+    }
+
+    .steam-gear-cluster {
+        width: 100px;
+        height: 38px;
+    }
+
+    .gear-large { width: 34px; height: 34px; }
+    .gear-medium { width: 24px; height: 24px; right: 28px; }
+    .gear-small { width: 18px; height: 18px; right: 52px; }
+
+    /* Smart Minimal Folding: 5-Gauge Manometer Horizontal Scroll Rack */
+    .steam-manometer-rack {
+        display: flex;
+        overflow-x: auto;
+        padding-bottom: 12px;
+        scroll-snap-type: x mandatory;
+        -webkit-overflow-scrolling: touch;
+        gap: 12px;
+    }
+
+    .manometer-gauge-card.interactive-gauge {
+        flex: 0 0 130px;
+        scroll-snap-align: start;
+        min-height: 140px;
+        padding: 10px 6px;
+    }
+
+    .manometer-brass-bezel {
+        width: 96px;
+        height: 96px;
+        padding: 6px;
+    }
+
+    .manometer-needle {
+        height: 32px;
+    }
+
+    .book-shelf {
+        grid-template-columns: 1fr;
+    }
+
+    .book-card.tome-card-3d:hover {
+        transform: translateY(-4px); /* Mobile-friendly lift instead of heavy tilt */
+    }
+
+    /* Minimum 44-48px touch targets for mobile interactive controls */
+    .btn, .status-tab-btn, .pin-btn, .view-mode-btn {
+        min-height: 44px;
+    }
 }

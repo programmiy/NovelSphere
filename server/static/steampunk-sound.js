@@ -16,8 +16,8 @@
             const savedSfx = localStorage.getItem(this.storageKey);
             this.enabled = savedSfx !== 'false';
 
-            this.sfxVolume = parseFloat(localStorage.getItem(this.storageSfxVolKey) || '0.65');
-            this.ambientVolume = parseFloat(localStorage.getItem(this.storageAmbientVolKey) || '0.45');
+            this.sfxVolume = parseFloat(localStorage.getItem(this.storageSfxVolKey) || '0.38');
+            this.ambientVolume = parseFloat(localStorage.getItem(this.storageAmbientVolKey) || '0.32');
             this.currentAmbientTrack = localStorage.getItem(this.storageAmbientKey) || 'none';
 
             // Audio Asset URLs
@@ -164,6 +164,53 @@
                 this.switchAudio.playbackRate = 0.96 + Math.random() * 0.08;
                 this.switchAudio.play().catch(() => {});
             } catch (_) {}
+        }
+
+        /**
+         * 5. High-Pressure Steam Valve Exhaust / Relief Hiss
+         * Synthesizes authentic acoustic steam pressure venting with resonance filter
+         */
+        playSteamVent() {
+            if (!this.enabled) return;
+            try {
+                const AudioCtx = window.AudioContext || window.webkitAudioContext;
+                if (!AudioCtx) return;
+                if (!this.audioCtx) {
+                    this.audioCtx = new AudioCtx();
+                }
+                if (this.audioCtx.state === 'suspended') {
+                    this.audioCtx.resume();
+                }
+                const sampleRate = this.audioCtx.sampleRate;
+                const duration = 0.75;
+                const bufferSize = Math.floor(sampleRate * duration);
+                const buffer = this.audioCtx.createBuffer(1, bufferSize, sampleRate);
+                const data = buffer.getChannelData(0);
+                for (let i = 0; i < bufferSize; i++) {
+                    const decay = Math.exp(-i / (sampleRate * 0.22));
+                    data[i] = (Math.random() * 2 - 1) * decay;
+                }
+                const noise = this.audioCtx.createBufferSource();
+                noise.buffer = buffer;
+
+                const filter = this.audioCtx.createBiquadFilter();
+                filter.type = 'bandpass';
+                filter.frequency.setValueAtTime(1200, this.audioCtx.currentTime);
+                filter.Q.setValueAtTime(2.2, this.audioCtx.currentTime);
+                filter.frequency.exponentialRampToValueAtTime(380, this.audioCtx.currentTime + duration);
+
+                const gain = this.audioCtx.createGain();
+                const targetVol = Math.max(0.04, Math.min(0.45, this.sfxVolume * 0.7));
+                gain.gain.setValueAtTime(targetVol, this.audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.001, this.audioCtx.currentTime + duration);
+
+                noise.connect(filter);
+                filter.connect(gain);
+                gain.connect(this.audioCtx.destination);
+                noise.start();
+            } catch (e) {
+                console.warn('[SoundEngine] Steam vent synthesis error:', e);
+            }
         }
 
         // ==========================================

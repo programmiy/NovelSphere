@@ -81,15 +81,24 @@ document.addEventListener('DOMContentLoaded', () => {
     const tagModalCancelBtn = document.getElementById('tag-editor-cancel');
     const tagModalSaveBtn = document.getElementById('tag-editor-save');
 
-    // URL List Modal Elements
+    // URL List Modal Elements (Royal Archive Chapter Index Ledger)
     const urlListModal = document.getElementById('url-list-modal');
     const urlListTitle = document.getElementById('url-list-title');
     const urlListBody = document.getElementById('url-list-body');
     const urlListStats = document.getElementById('urlListStats');
     const urlSearchInput = document.getElementById('urlSearchInput');
+    const urlSearchClearBtn = document.getElementById('urlSearchClearBtn');
     const importTocBtn = document.getElementById('import-toc-btn');
     const urlListCloseBtn = document.getElementById('url-list-close');
     const urlListCloseBottomBtn = document.getElementById('url-list-close-bottom');
+    const tocJumpBookmarkBtn = document.getElementById('toc-jump-bookmark-btn');
+    const tocSortToggleBtn = document.getElementById('toc-sort-toggle-btn');
+    const tocSortLabel = document.getElementById('toc-sort-label');
+    const tocScrollTopBtn = document.getElementById('toc-scroll-top-btn');
+
+    let currentModalBookName = '';
+    let currentModalBookData = null;
+    let tocSortAscending = true;
 
     // --- Theme Management ---
     function initTheme() {
@@ -181,7 +190,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // --- Stats Bar Update ---
+    // --- Stats Bar Update (Difference Engine Manometer Rack) ---
     function updateStatsBar() {
         const visibleBooks = allBooks.filter(b => b.is_visible !== 0);
         const hiddenCount = allBooks.filter(b => b.is_visible === 0).length;
@@ -204,6 +213,24 @@ document.addEventListener('DOMContentLoaded', () => {
         if (countUnread) countUnread.textContent = unread;
         if (countCompleted) countCompleted.textContent = completed;
         if (countHidden) countHidden.textContent = hiddenCount;
+
+        // Dynamic needle deflection with realistic damping physics
+        const maxVal = Math.max(total, 1);
+        const setNeedle = (selector, val, baseMin = -60, baseMax = 60) => {
+            const needle = document.querySelector(selector);
+            if (needle) {
+                const ratio = Math.min(1, Math.max(0, val / maxVal));
+                const angle = Math.round(baseMin + ratio * (baseMax - baseMin));
+                needle.style.transform = `rotate(${angle}deg)`;
+                needle.style.setProperty('--rot', `${angle}deg`);
+            }
+        };
+
+        setNeedle('.needle-p1', total, 10, 65);
+        setNeedle('.needle-p2', pinned, -55, 45);
+        setNeedle('.needle-p3', reading, -45, 55);
+        setNeedle('.needle-p4', unread, -60, 30);
+        setNeedle('.needle-p5', completed, -30, 60);
     }
 
     // --- Progress & Reading State Calculation (5번 기능) ---
@@ -266,7 +293,7 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     }
 
-    // --- Hero Continue Reading Section (1번 기능) ---
+    // --- Hero Continue Reading Section (Royal Lectern & Difference Engine Console) ---
     function renderHeroContinueReading() {
         if (!heroContinueReading) return;
 
@@ -284,54 +311,65 @@ document.addEventListener('DOMContentLoaded', () => {
         const timeAgo = formatTimeAgo(heroBook.activity.last_read_timestamp);
         const isCompleted = heroBook.activity && (heroBook.activity.is_completed === 1 || heroBook.activity.is_completed === true);
 
-        const readUrl = `/viewer?book=${encodeURIComponent(heroBook.name)}${progress.rawTitle ? `&title=${encodeURIComponent(progress.rawTitle)}` : ''}`;
-
         heroContinueReading.innerHTML = `
-            <div class="hero-card">
-                <!-- Left Cover Thumbnail -->
-                <div class="hero-left">
-                    <div class="hero-book-cover ${isCompleted ? 'completed' : ''}">
-                        <div class="hero-book-cover-badge">${isCompleted ? '완결' : '읽는중'}</div>
-                        <div class="hero-book-cover-title" title="${escapeHtml(heroBook.name)}">${escapeHtml(heroBook.name)}</div>
+            <div class="hero-lectern-card">
+                <!-- Brass Ornate Corner Accents -->
+                <div class="brass-corner c-tl"></div>
+                <div class="brass-corner c-tr"></div>
+                <div class="brass-corner c-bl"></div>
+                <div class="brass-corner c-br"></div>
+
+                <!-- Left: 3D Open Tome Preview on Lectern -->
+                <div class="hero-lectern-tome">
+                    <div class="hero-tome-cover ${isCompleted ? 'completed' : ''}">
+                        <div class="hero-tome-spine"></div>
+                        <div class="hero-tome-body">
+                            <div class="hero-tome-seal font-typewriter">${isCompleted ? 'CHRONICLE DONE' : 'IN COMPUTATION'}</div>
+                            <h3 class="hero-tome-title font-serif" title="${escapeHtml(heroBook.name)}">${escapeHtml(heroBook.name)}</h3>
+                            <div class="hero-tome-ribbon"></div>
+                        </div>
                     </div>
                 </div>
 
-                <!-- Center Info & Progress -->
-                <div class="hero-center">
-                    <div class="hero-badge-row">
-                        <span class="hero-tag-badge">
-                            <span class="material-icons" style="font-size: 13px;">history_edu</span> 최근 읽던 소설
+                <!-- Center: Lectern Engine Console & Progress -->
+                <div class="hero-lectern-console">
+                    <div class="hero-console-header">
+                        <span class="hero-plaque font-typewriter">
+                            <span class="material-icons" style="font-size: 15px; vertical-align: middle;">history_edu</span>
+                            ROYAL LECTERN ARCHIVE
                         </span>
-                        <span class="hero-relative-time">${escapeHtml(timeAgo)} 읽음</span>
+                        <span class="hero-reading-time font-typewriter">${escapeHtml(timeAgo)} 열람</span>
                     </div>
 
-                    <div class="hero-book-title" data-action="read" data-book-name="${escapeHtml(heroBook.name)}" title="${escapeHtml(heroBook.name)}">
+                    <div class="hero-main-title font-serif" data-action="read" data-book-name="${escapeHtml(heroBook.name)}" title="${escapeHtml(heroBook.name)}">
                         ${escapeHtml(heroBook.name)}
                     </div>
 
-                    <div class="hero-chapter-info">
-                        <span class="material-icons">bookmark</span>
-                        <span>${escapeHtml(progress.displayChapter)}</span>
+                    <div class="hero-chapter-display">
+                        <span class="material-icons chapter-icon">bookmark</span>
+                        <span class="chapter-text font-serif">${escapeHtml(progress.displayChapter)}</span>
                     </div>
 
-                    <div class="hero-progress-track">
-                        <div class="hero-progress-fill" style="width: ${progress.percentage}%;"></div>
-                    </div>
-
-                    <div class="hero-progress-meta">
-                        <span>진행률 <strong class="hero-progress-pct">${progress.percentage}%</strong></span>
-                        <span>•</span>
-                        <span>${progress.currentNum > 0 ? `제 ${progress.currentNum}화 / 총 ${progress.totalChapters}화` : `총 ${progress.totalChapters}화`}</span>
+                    <!-- Brass Odometer Progress Gauge -->
+                    <div class="hero-progress-rack">
+                        <div class="hero-progress-track">
+                            <div class="hero-progress-fill" style="width: ${progress.percentage}%;"></div>
+                        </div>
+                        <div class="hero-progress-meta font-typewriter">
+                            <span>COMPUTED: <strong class="hero-progress-pct">${progress.percentage}%</strong></span>
+                            <span class="sep">|</span>
+                            <span>${progress.currentNum > 0 ? `TOME ${progress.currentNum} / TOTAL ${progress.totalChapters}` : `TOTAL ${progress.totalChapters} CHRONICLES`}</span>
+                        </div>
                     </div>
                 </div>
 
-                <!-- Right Action Buttons -->
-                <div class="hero-right">
-                    <button class="hero-continue-btn" data-action="read" data-book-name="${escapeHtml(heroBook.name)}">
-                        <span class="material-icons">play_arrow</span> 이어서 읽기
+                <!-- Right: High-Craftsmanship Brass Actions -->
+                <div class="hero-lectern-actions">
+                    <button class="btn btn-primary hero-engage-btn font-display" data-action="read" data-book-name="${escapeHtml(heroBook.name)}">
+                        <span class="material-icons">menu_book</span> 서책 이어보기
                     </button>
-                    <button class="hero-toc-btn" data-action="toc" data-book-name="${escapeHtml(heroBook.name)}" title="목차 보기">
-                        <span class="material-icons">format_list_bulleted</span> 목차
+                    <button class="btn btn-outline hero-sub-action font-serif" data-action="toc" data-book-name="${escapeHtml(heroBook.name)}" title="목차 열람">
+                        <span class="material-icons">format_list_bulleted</span> 목차 색인
                     </button>
                 </div>
             </div>
@@ -477,12 +515,13 @@ document.addEventListener('DOMContentLoaded', () => {
         } else {
             bookShelf.classList.remove('list-view');
             bookShelf.classList.remove('shelf-view');
-            bookShelf.innerHTML = booksToRender.map(book => renderGridCard(book)).join('');
+            bookShelf.innerHTML = booksToRender.map((book, idx) => renderGridCard(book, idx)).join('');
+            attachCardHoverSounds();
         }
     }
 
-    // Grid Card HTML (기존 카드 + 5번 표지 오버레이 진도율)
-    function renderGridCard(book) {
+    // Grid Card HTML (19세기 왕립 양장본 고서 & 차분기관 아카이브 카드)
+    function renderGridCard(book, index = 0) {
         const { name, pinned, tags = [], activity = {}, chapter_count = 0 } = book;
         const progress = calculateProgress(book);
         const timeAgo = activity?.last_read_timestamp ? formatTimeAgo(activity.last_read_timestamp) : '';
@@ -490,56 +529,80 @@ document.addEventListener('DOMContentLoaded', () => {
 
         let badgeClass = 'serializing';
         let badgeText = '연재중';
+        let leatherClass = 'leather-amber';
+
         if (progress.isCompleted) {
             badgeClass = 'completed';
             badgeText = '완결';
+            leatherClass = 'leather-obsidian-gold';
+        } else if (pinned) {
+            badgeClass = 'pinned';
+            badgeText = '즐겨찾기';
+            leatherClass = 'leather-ruby';
         } else if (progress.isUnread) {
             badgeClass = 'unread';
             badgeText = '미열람';
+            leatherClass = 'leather-sapphire';
+        } else {
+            leatherClass = (index % 2 === 0) ? 'leather-amber' : 'leather-emerald';
         }
 
         return `
-        <div class="book-card" data-book-name="${escapeHtml(name)}">
-            <!-- Top Cover Spine Accent -->
-            <div class="card-cover-spine ${progress.isCompleted ? 'completed' : ''}"></div>
-            <div class="punch-card-strip" title="차분기관 펀치 카드 테이프"></div>
+        <div class="book-card tome-card-3d ${leatherClass}" data-book-name="${escapeHtml(name)}">
+            <!-- 3D Leather Spine with Embossed Gold Ribs -->
+            <div class="tome-card-spine">
+                <div class="spine-rib r1"></div>
+                <div class="spine-rib r2"></div>
+                <div class="spine-rib r3"></div>
+            </div>
 
-            <!-- Card Top Bar: Badges & Pin -->
+            <!-- Brass Corner Protectors -->
+            <div class="brass-corner c-tl"></div>
+            <div class="brass-corner c-tr"></div>
+            <div class="brass-corner c-bl"></div>
+            <div class="brass-corner c-br"></div>
+
+            <!-- Hanging Silk Ribbon Bookmark -->
+            <div class="tome-ribbon-tail"></div>
+
+            <!-- Card Top Bar: Badges & Pin Button -->
             <div class="card-top-bar">
                 <div class="badge-group">
                     <span class="status-badge ${badgeClass}">${badgeText}</span>
-                    <span class="chapter-count-badge">총 ${chapter_count}화</span>
+                    <span class="chapter-count-badge font-typewriter">VOL.${chapter_count}</span>
                 </div>
                 <button class="pin-btn ${pinned ? 'pinned' : ''}" data-action="pin" data-book-name="${escapeHtml(name)}" title="${pinned ? '즐겨찾기 해제' : '즐겨찾기 추가'}">
                     <span class="material-icons">${pinned ? 'star' : 'star_border'}</span>
                 </button>
             </div>
 
-            <!-- Card Main Body -->
+            <!-- Card Main Body: Parchment Inlay with Gold Stamping -->
             <div class="card-main">
-                <h2 class="book-card-title" title="${escapeHtml(name)}">${escapeHtml(name)}</h2>
+                <div class="tome-title-frame">
+                    <h2 class="book-card-title font-serif" title="${escapeHtml(name)}">${escapeHtml(name)}</h2>
+                </div>
 
-                <!-- Last Read Indicator Box -->
-                <div class="last-read-box">
+                <!-- Last Read Indicator Box (Brass Inset Plaque) -->
+                <div class="last-read-box brass-plaque-inset">
                     <span class="material-icons last-read-icon">
                         ${!progress.isUnread ? 'bookmark' : 'menu_book'}
                     </span>
                     <div class="last-read-content">
-                        <div class="last-read-title" title="${escapeHtml(progress.displayChapter)}">
+                        <div class="last-read-title font-serif" title="${escapeHtml(progress.displayChapter)}">
                             ${escapeHtml(progress.displayChapter)}
                         </div>
-                        ${timeAgo ? `<div class="last-read-time">${escapeHtml(timeAgo)} 읽음</div>` : ''}
+                        ${timeAgo ? `<div class="last-read-time font-typewriter">${escapeHtml(timeAgo)} 열람</div>` : ''}
                     </div>
                 </div>
 
-                <!-- Card Reading Progress Bar (5번 기능) -->
+                <!-- Card Reading Progress Bar (Brass Gear Ratio) -->
                 ${!progress.isUnread ? `
                 <div class="card-progress-wrap">
                     <div class="card-progress-track">
                         <div class="card-progress-fill" style="width: ${progress.percentage}%;"></div>
                     </div>
-                    <div class="card-progress-labels">
-                        <span>진행률 <strong class="card-progress-pct">${progress.percentage}%</strong></span>
+                    <div class="card-progress-labels font-typewriter">
+                        <span>진도율 <strong class="card-progress-pct">${progress.percentage}%</strong></span>
                         <span>${progress.currentNum > 0 ? `${progress.currentNum}/${progress.totalChapters}화` : ''}</span>
                     </div>
                 </div>
@@ -549,12 +612,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 <div class="tags-container">${tagsHtml}</div>
             </div>
 
-            <!-- Card Bottom Actions -->
+            <!-- Card Bottom Actions: Tactile Brass Controls -->
             <div class="card-actions">
-                <button class="btn btn-primary btn-read" data-action="read" data-book-name="${escapeHtml(name)}">
+                <button class="btn btn-primary btn-read font-display" data-action="read" data-book-name="${escapeHtml(name)}">
                     <span class="material-icons">play_arrow</span> ${!progress.isUnread ? '이어보기' : '첫화 읽기'}
                 </button>
-                <button class="btn btn-outline btn-toc" data-action="toc" data-book-name="${escapeHtml(name)}">
+                <button class="btn btn-outline btn-toc font-serif" data-action="toc" data-book-name="${escapeHtml(name)}">
                     <span class="material-icons">format_list_bulleted</span> 목차
                 </button>
                 <button class="btn btn-outline btn-info" data-action="edit" data-book-name="${escapeHtml(name)}" title="책 정보 및 설정">
@@ -1148,62 +1211,253 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // --- URL List (TOC) Modal ---
+    // --- URL List (Royal Archive Chapter Index) Modal Logic ---
+    function highlightSearchTerm(text, query) {
+        if (!query) return text;
+        const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const regex = new RegExp(`(${escaped})`, 'gi');
+        return text.replace(regex, '<mark class="toc-search-highlight">$1</mark>');
+    }
+
+    function getFilteredAndSortedUrls() {
+        const q = urlSearchInput ? urlSearchInput.value.toLowerCase().trim() : '';
+        let list = modalUrls;
+        if (q) {
+            list = modalUrls.filter(item => {
+                const titleMatch = (item.title || '').toLowerCase().includes(q);
+                const urlMatch = (item.url || '').toLowerCase().includes(q);
+                return titleMatch || urlMatch;
+            });
+        }
+        return tocSortAscending ? list : [...list].reverse();
+    }
+
     async function openUrlListModal(bookName) {
-        urlListTitle.textContent = `${bookName} - 회차 목차`;
-        urlListBody.innerHTML = '<div style="text-align: center; padding: 30px; color: var(--text-muted);"><span class="material-icons" style="animation: spin 1s linear infinite;">sync</span><p style="margin-top: 8px;">회차 목록 로딩 중...</p></div>';
-        if (urlSearchInput) urlSearchInput.value = '';
+        currentModalBookName = bookName;
+        currentModalBookData = allBooks.find(b => b.name === bookName) || null;
+        tocSortAscending = true;
+        if (tocSortLabel) tocSortLabel.textContent = '1화부터';
+
+        urlListTitle.textContent = bookName;
+        urlListBody.innerHTML = `
+            <div class="toc-loading-state">
+                <span class="material-icons toc-loading-gear">settings</span>
+                <p class="toc-loading-title font-serif">왕립 서고 차분기관 색인 불러오는 중</p>
+                <p class="toc-loading-sub font-typewriter">ARCHIVAL REGISTRY SYNCHRONIZING...</p>
+            </div>
+        `;
+        if (urlSearchInput) {
+            urlSearchInput.value = '';
+            if (urlSearchClearBtn) urlSearchClearBtn.style.display = 'none';
+        }
+        if (tocJumpBookmarkBtn) tocJumpBookmarkBtn.disabled = true;
         urlListModal.style.display = 'flex';
+
+        if (window.SteampunkSound) {
+            window.SteampunkSound.playSwitch();
+        }
 
         try {
             const response = await fetch(`/api/books/${encodeURIComponent(bookName)}/urls`);
             if (!response.ok) throw new Error(`Server error`);
             modalUrls = await response.json();
-            renderModalUrls(modalUrls, bookName);
+            renderModalUrls(getFilteredAndSortedUrls(), bookName);
+
+            // Auto-scroll to current reading bookmark if present
+            setTimeout(() => {
+                const bookmarkEl = urlListBody.querySelector('.is-current-bookmark');
+                if (bookmarkEl) {
+                    bookmarkEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+            }, 140);
         } catch (e) {
-            urlListBody.innerHTML = '<p style="color: var(--danger-color); padding: 20px; text-align: center;">URL 목록을 불러오는 데 실패했습니다.</p>';
+            urlListBody.innerHTML = `
+                <div class="toc-error-state">
+                    <span class="material-icons toc-error-icon">error_outline</span>
+                    <p class="toc-error-title font-serif">회차 목차를 불러오지 못했습니다</p>
+                    <p class="toc-error-desc font-typewriter">${escapeHtml(e.message || 'Server error')}</p>
+                </div>
+            `;
+        }
+    }
+
+    function closeUrlListModal() {
+        if (urlListModal) {
+            urlListModal.style.display = 'none';
+            if (window.SteampunkSound) {
+                window.SteampunkSound.playSwitch();
+            }
         }
     }
 
     function renderModalUrls(urls, bookName) {
+        const total = modalUrls.length;
         if (urlListStats) {
-            urlListStats.textContent = `총 ${urls.length}개 회차`;
+            if (urls.length === total) {
+                urlListStats.textContent = `[ 총 ${total}화 수록 ]`;
+            } else {
+                urlListStats.textContent = `[ 색인 ${urls.length} / 총 ${total}화 ]`;
+            }
         }
 
         if (urls.length === 0) {
-            urlListBody.innerHTML = '<p style="color: var(--text-muted); padding: 20px; text-align: center;">표시할 회차가 없습니다.</p>';
+            urlListBody.innerHTML = `
+                <div class="toc-empty-state">
+                    <span class="material-icons toc-empty-icon">search_off</span>
+                    <p class="toc-empty-title font-serif">해당하는 회차가 없습니다</p>
+                    <p class="toc-empty-desc font-typewriter">검색어를 다시 확인하거나 정렬 방식을 변경해보세요.</p>
+                    <button type="button" class="btn btn-outline btn-sm toc-empty-reset-btn" id="tocEmptyResetBtn">
+                        <span class="material-icons">refresh</span> 검색어 초기화
+                    </button>
+                </div>
+            `;
+            const resetBtn = document.getElementById('tocEmptyResetBtn');
+            if (resetBtn && urlSearchInput) {
+                resetBtn.onclick = () => {
+                    urlSearchInput.value = '';
+                    if (urlSearchClearBtn) urlSearchClearBtn.style.display = 'none';
+                    renderModalUrls(getFilteredAndSortedUrls(), bookName);
+                    urlSearchInput.focus();
+                };
+            }
             return;
         }
 
+        // Determine read bookmarks
+        const lastReadTitle = currentModalBookData?.activity?.last_read_chapter_title || '';
+        const lastReadPid = currentModalBookData?.activity?.last_read_pid || '';
+        const isCompleted = currentModalBookData?.activity && (currentModalBookData.activity.is_completed === 1 || currentModalBookData.activity.is_completed === true);
+
+        // Find canonical bookmark index in original modalUrls
+        const origBookmarkIdx = modalUrls.findIndex(u => 
+            (lastReadTitle && (u.title === lastReadTitle || u.url === lastReadTitle)) || 
+            (lastReadPid && u.url === lastReadPid)
+        );
+
+        if (tocJumpBookmarkBtn) {
+            tocJumpBookmarkBtn.disabled = (origBookmarkIdx === -1);
+            if (origBookmarkIdx !== -1) {
+                const bmChapter = modalUrls[origBookmarkIdx];
+                tocJumpBookmarkBtn.title = `최근 읽은 회차로 이동 (${bmChapter.title || '회차'})`;
+            } else {
+                tocJumpBookmarkBtn.title = '아직 읽은 이력이 없습니다';
+            }
+        }
+
+        const searchQuery = urlSearchInput ? urlSearchInput.value.trim().toLowerCase() : '';
+
         urlListBody.innerHTML = `
             <ul class="url-list-items">
-                ${urls.map((item, idx) => `
-                    <li>
-                        <a href="/viewer?book=${encodeURIComponent(bookName)}&title=${encodeURIComponent(item.title || item.url)}" class="url-item">
-                            <span class="url-item-title">${escapeHtml(item.title || item.url)}</span>
-                            <span class="url-item-badge">${item.count || 0} 단락</span>
-                        </a>
-                    </li>
-                `).join('')}
+                ${urls.map((item) => {
+                    const origIdx = modalUrls.indexOf(item);
+                    const originalNum = origIdx !== -1 ? origIdx + 1 : 1;
+                    const paddedNum = String(originalNum).padStart(3, '0');
+
+                    const isCurrentBookmark = (origBookmarkIdx !== -1 && origIdx === origBookmarkIdx);
+                    const isRead = isCompleted || (origBookmarkIdx !== -1 && origIdx <= origBookmarkIdx);
+
+                    const rawTitle = item.title || item.url || '무제 회차';
+                    const highlightedTitle = highlightSearchTerm(escapeHtml(rawTitle), searchQuery);
+                    const showUrlSub = item.title && item.url && item.title !== item.url;
+                    const highlightedUrl = showUrlSub ? highlightSearchTerm(escapeHtml(item.url), searchQuery) : '';
+
+                    return `
+                        <li class="toc-chapter-entry ${isCurrentBookmark ? 'is-current-bookmark' : ''} ${isRead && !isCurrentBookmark ? 'is-read-chapter' : ''}" data-idx="${originalNum}">
+                            <a href="/viewer?book=${encodeURIComponent(bookName)}&title=${encodeURIComponent(item.title || item.url)}" class="toc-chapter-link">
+                                <div class="toc-chapter-prefix">
+                                    <span class="toc-chapter-num font-typewriter">№ ${paddedNum}</span>
+                                    ${isCurrentBookmark ? `
+                                        <span class="toc-bookmark-pill font-typewriter" title="마지막으로 읽은 회차">
+                                            <span class="material-icons">bookmark</span> 최근 위치
+                                        </span>
+                                    ` : (isRead ? `
+                                        <span class="toc-read-check" title="열람 완료된 회차">
+                                            <span class="material-icons">check</span>
+                                        </span>
+                                    ` : '')}
+                                </div>
+                                <div class="toc-chapter-main">
+                                    <span class="toc-chapter-title">${highlightedTitle}</span>
+                                    ${showUrlSub ? `<span class="toc-chapter-sub font-typewriter">${highlightedUrl}</span>` : ''}
+                                </div>
+                                <div class="toc-chapter-meta">
+                                    <span class="toc-para-badge font-typewriter" title="번역 단락 수">
+                                        <span class="material-icons">article</span> ${item.count || 0} 단락
+                                    </span>
+                                    <span class="toc-action-arrow" title="뷰어에서 열기">
+                                        <span class="material-icons">arrow_forward</span>
+                                    </span>
+                                </div>
+                            </a>
+                        </li>
+                    `;
+                }).join('')}
             </ul>
         `;
     }
 
     if (urlSearchInput) {
         urlSearchInput.addEventListener('input', (e) => {
-            const q = e.target.value.toLowerCase().trim();
-            const bookName = urlListTitle.textContent.split(' - ')[0];
-            const filtered = modalUrls.filter(item => {
-                const titleMatch = (item.title || '').toLowerCase().includes(q);
-                const urlMatch = (item.url || '').toLowerCase().includes(q);
-                return titleMatch || urlMatch;
-            });
-            renderModalUrls(filtered, bookName);
+            const q = e.target.value;
+            if (urlSearchClearBtn) {
+                urlSearchClearBtn.style.display = q ? 'block' : 'none';
+            }
+            renderModalUrls(getFilteredAndSortedUrls(), currentModalBookName);
+        });
+    }
+
+    if (urlSearchClearBtn) {
+        urlSearchClearBtn.addEventListener('click', () => {
+            if (urlSearchInput) {
+                urlSearchInput.value = '';
+                urlSearchClearBtn.style.display = 'none';
+                renderModalUrls(getFilteredAndSortedUrls(), currentModalBookName);
+                urlSearchInput.focus();
+            }
+        });
+    }
+
+    if (tocSortToggleBtn) {
+        tocSortToggleBtn.addEventListener('click', () => {
+            tocSortAscending = !tocSortAscending;
+            if (tocSortLabel) {
+                tocSortLabel.textContent = tocSortAscending ? '1화부터' : '최신화부터';
+            }
+            if (window.SteampunkSound) {
+                window.SteampunkSound.playSwitch();
+            }
+            renderModalUrls(getFilteredAndSortedUrls(), currentModalBookName);
+        });
+    }
+
+    if (tocJumpBookmarkBtn) {
+        tocJumpBookmarkBtn.addEventListener('click', () => {
+            const bookmarkEl = urlListBody.querySelector('.is-current-bookmark');
+            if (bookmarkEl) {
+                bookmarkEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                bookmarkEl.classList.remove('highlight-flash');
+                void bookmarkEl.offsetWidth; // trigger reflow
+                bookmarkEl.classList.add('highlight-flash');
+                if (window.SteampunkSound) {
+                    window.SteampunkSound.playLever();
+                }
+            } else {
+                showToast('최근 읽은 회차를 찾을 수 없습니다.');
+            }
+        });
+    }
+
+    if (tocScrollTopBtn) {
+        tocScrollTopBtn.addEventListener('click', () => {
+            urlListBody.scrollTo({ top: 0, behavior: 'smooth' });
+            if (window.SteampunkSound) {
+                window.SteampunkSound.playPageFlip();
+            }
         });
     }
 
     async function handleImportToc() {
-        const bookName = urlListTitle.textContent.split(' - ')[0];
+        const bookName = currentModalBookName || urlListTitle.textContent.split(' - ')[0];
         if (!bookName) {
             alert('책 이름을 확인할 수 없습니다.');
             return;
@@ -1212,7 +1466,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const tocUrl = prompt('목차(TOC) 원본 URL을 입력하세요 (카쿠요무, 소설가가 되자 등):');
         if (!tocUrl) return;
 
-        urlListBody.innerHTML = '<div style="text-align: center; padding: 30px; color: var(--text-muted);"><span class="material-icons">sync</span><p style="margin-top: 8px;">목차를 수집하고 정렬을 적용하는 중...</p></div>';
+        urlListBody.innerHTML = `
+            <div class="toc-loading-state">
+                <span class="material-icons toc-loading-gear">sync</span>
+                <p class="toc-loading-title font-serif">목차 수집 및 순서 정렬 적용 중...</p>
+                <p class="toc-loading-sub font-typewriter">CONNECTING TO SOURCE REGISTRY</p>
+            </div>
+        `;
 
         try {
             const tocResponse = await fetch('/api/import-toc', {
@@ -1243,7 +1503,13 @@ document.addEventListener('DOMContentLoaded', () => {
             await openUrlListModal(bookName);
             await fetchBooks();
         } catch (error) {
-            urlListBody.innerHTML = `<p style="color: var(--danger-color); padding: 20px;">오류: ${escapeHtml(error.message)}</p>`;
+            urlListBody.innerHTML = `
+                <div class="toc-error-state">
+                    <span class="material-icons toc-error-icon">error</span>
+                    <p class="toc-error-title font-serif">TOC 동기화 실패</p>
+                    <p class="toc-error-desc font-typewriter">${escapeHtml(error.message)}</p>
+                </div>
+            `;
             alert(`TOC 가져오기 실패: ${error.message}`);
         }
     }
@@ -1354,12 +1620,143 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // --- Tactile Card Hover Audio ---
+    function attachCardHoverSounds() {
+        if (!bookShelf) return;
+        const cards = bookShelf.querySelectorAll('.book-card');
+        cards.forEach(card => {
+            card.addEventListener('mouseenter', () => {
+                const now = Date.now();
+                if (now - lastSfxHoverTime > 80) {
+                    lastSfxHoverTime = now;
+                    if (window.SteampunkSound && typeof window.SteampunkSound.playKeyClick === 'function') {
+                        window.SteampunkSound.playKeyClick();
+                    }
+                }
+            });
+        });
+    }
+
+    // --- Interactive Manometer & Status Tab Unified Filter Engine ---
+    function setStatusFilter(filterStatus, triggerBounce = true) {
+        if (!filterStatus) return;
+        activeStatusFilter = filterStatus;
+
+        // 1. Sync Status Tab Buttons
+        statusTabBtns.forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.status === filterStatus);
+        });
+
+        // 2. Sync 5-Gauge Manometer Rack Cards
+        const manometerCards = document.querySelectorAll('.manometer-gauge-card.interactive-gauge');
+        manometerCards.forEach(card => {
+            const isMatch = card.dataset.filter === filterStatus;
+            card.classList.toggle('active', isMatch);
+            if (isMatch && triggerBounce) {
+                const needle = card.querySelector('.manometer-needle');
+                if (needle) {
+                    needle.classList.remove('needle-spring-bounce');
+                    void needle.offsetWidth; // Reflow to re-trigger CSS animation
+                    needle.classList.add('needle-spring-bounce');
+                }
+            }
+        });
+
+        // 3. Audio Feedback
+        if (window.SteampunkSound) {
+            window.SteampunkSound.playSwitch();
+            window.SteampunkSound.playKeyClick();
+        }
+
+        renderBooks();
+    }
+
+    // --- Main Steam Valve & Difference Engine Accelerated Gear Rig ---
+    let valveAngle = 0;
+    const mainSteamValve = document.getElementById('mainSteamValve');
+    const steamPuffEmitter = document.getElementById('steamPuffEmitter');
+    const steamGearCluster = document.querySelector('.steam-gear-cluster');
+
+    function triggerSteamVent() {
+        valveAngle += 180;
+        if (mainSteamValve) {
+            mainSteamValve.style.transform = `rotate(${valveAngle}deg)`;
+        }
+
+        // Acoustic Steam Venting Audio
+        if (window.SteampunkSound) {
+            window.SteampunkSound.playSteamVent();
+        }
+
+        // Animated Steam Puff Cloud Emitter
+        if (steamPuffEmitter) {
+            steamPuffEmitter.innerHTML = '';
+            for (let i = 0; i < 6; i++) {
+                const puff = document.createElement('div');
+                puff.className = 'steam-puff-particle';
+                puff.style.left = `${10 + Math.random() * 20}px`;
+                puff.style.animationDelay = `${i * 65}ms`;
+                puff.style.setProperty('--drift-x', `${(Math.random() - 0.5) * 50}px`);
+                puff.style.setProperty('--scale-mult', `${0.8 + Math.random() * 0.7}`);
+                steamPuffEmitter.appendChild(puff);
+                setTimeout(() => puff.remove(), 1400);
+            }
+        }
+
+        // Accelerate Escapement Gears for 3 seconds
+        if (steamGearCluster) {
+            steamGearCluster.classList.add('gears-accelerated');
+            setTimeout(() => {
+                steamGearCluster.classList.remove('gears-accelerated');
+            }, 3000);
+        }
+
+        showToast('차분기관 메인 밸브 개방: 증기 압력 분출 및 기어 고속 연산');
+    }
+
+    if (mainSteamValve) {
+        mainSteamValve.addEventListener('click', triggerSteamVent);
+    }
+
+    // --- Keyboard Shortcuts (1~5: Manometer Filters, V: Steam Valve) ---
+    window.addEventListener('keydown', (e) => {
+        const tag = document.activeElement ? document.activeElement.tagName.toLowerCase() : '';
+        if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+
+        if (e.key === '1') setStatusFilter('all');
+        else if (e.key === '2') setStatusFilter('pinned');
+        else if (e.key === '3') setStatusFilter('reading');
+        else if (e.key === '4') setStatusFilter('unread');
+        else if (e.key === '5') setStatusFilter('completed');
+        else if (e.key && e.key.toLowerCase() === 'v') triggerSteamVent();
+    });
+
     // --- Global Click Event Delegation ---
     document.addEventListener('click', (e) => {
         const target = e.target;
         const closestBtn = (selector) => target.closest(selector);
 
-        // 1. Tag filter click
+        // 1. Manometer interactive gauge click
+        const gaugeCard = closestBtn('.manometer-gauge-card.interactive-gauge');
+        if (gaugeCard) {
+            const filterVal = gaugeCard.dataset.filter;
+            if (filterVal) {
+                setStatusFilter(filterVal, true);
+            }
+            return;
+        }
+
+        // 2. Status filter tab click
+        const statusBtn = closestBtn('.status-tab-btn');
+        if (statusBtn) {
+            const statusVal = statusBtn.dataset.status;
+            if (statusVal) {
+                setStatusFilter(statusVal, true);
+            }
+            return;
+        }
+
+        // 3. Tag filter click
         const tagFilter = closestBtn('.tag-filter');
         if (tagFilter) {
             const tagVal = tagFilter.dataset.tag;
@@ -1367,15 +1764,6 @@ document.addEventListener('DOMContentLoaded', () => {
             document.querySelectorAll('.tag-filter').forEach(el => {
                 el.classList.toggle('active', el.dataset.tag === tagVal);
             });
-            renderBooks();
-            return;
-        }
-
-        // 2. Status filter tab click
-        const statusBtn = closestBtn('.status-tab-btn');
-        if (statusBtn) {
-            activeStatusFilter = statusBtn.dataset.status;
-            statusTabBtns.forEach(b => b.classList.toggle('active', b === statusBtn));
             renderBooks();
             return;
         }
@@ -1443,15 +1831,17 @@ document.addEventListener('DOMContentLoaded', () => {
             requestCloseModal();
         } else if (target === tagModalSaveBtn) {
             handleSaveModal();
-        } else if (target === urlListCloseBtn || target === urlListCloseBottomBtn) {
-            urlListModal.style.display = 'none';
+        } else if (target === urlListCloseBtn || target === urlListCloseBottomBtn || target === urlListModal) {
+            closeUrlListModal();
         }
     });
 
-    // Close 3D tome modal on Escape key
+    // Close modals on Escape key
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') {
-            if (tomeModal && tomeModal.style.display !== 'none') {
+            if (urlListModal && urlListModal.style.display !== 'none') {
+                closeUrlListModal();
+            } else if (tomeModal && tomeModal.style.display !== 'none') {
                 closeTomeModal();
             }
         }
