@@ -53,8 +53,8 @@
             const savedSfx = localStorage.getItem(this.storageKey);
             this.enabled = savedSfx !== 'false';
 
-            this.sfxVolume = parseFloat(localStorage.getItem(this.storageSfxVolKey) || '0.5');
-            this.ambientVolume = parseFloat(localStorage.getItem(this.storageAmbientVolKey) || '0.45');
+            this.sfxVolume = parseFloat(localStorage.getItem(this.storageSfxVolKey) || '0.28');
+            this.ambientVolume = parseFloat(localStorage.getItem(this.storageAmbientVolKey) || '0.30');
             this.currentAmbientTrack = localStorage.getItem(this.storageAmbientKey) || 'none';
 
             // Polyphonic pool for click/hover to allow fast, non-clipping feedback

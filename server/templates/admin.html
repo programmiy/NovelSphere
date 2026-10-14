@@ -9,7 +9,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&family=Orbitron:wght@500;700;900&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
-    <link rel="stylesheet" href="/static/admin.css?v=3.1">
+    <link rel="stylesheet" href="/static/admin.css?v=3.3">
     <link rel="manifest" href="/static/manifest.json">
 </head>
 <body>
@@ -19,24 +19,24 @@
     <div class="cyber-scanline-overlay"></div>
 
     <div class="container">
-        <header class="main-header">
+        <header class="main-header cyber-console-header">
             <div class="header-nav">
-                <a href="/" class="btn btn-outline nav-back-btn">&larr; 서재로 돌아가기</a>
+                <a href="/" class="btn btn-outline nav-back-btn">&larr; 서재 차분기관으로 귀환</a>
                 <div class="header-title-group">
                     <div class="cyber-hud-status-bar">
-                        <span class="cyber-status-pill"><span class="pulse-dot"></span> QUANTUM SYSTEM ONLINE</span>
-                        <span class="cyber-clock-pill" id="cyberLiveClock">--:--:--</span>
-                        <button id="cyberSoundToggleBtn" class="btn btn-outline cyber-sound-btn" title="사이버 네온 사운드 FX (클릭하여 켜기/끄기)"><span class="material-icons">volume_up</span> <span class="sound-label">FX 켜짐</span></button>
-                        <button id="cyberAmbientToggleBtn" class="btn btn-outline cyber-ambient-btn" title="사이버 앰비언트 배경음 (클릭하여 전환)"><span class="material-icons">headphones</span> <span class="ambient-label" id="cyberAmbientLabel">배경음: 끄기</span></button>
-                        <button class="btn btn-outline cyber-theme-btn" id="darkModeToggle" title="다크/라이트 모드 전환"><span class="material-icons">dark_mode</span></button>
+                        <span class="cyber-status-pill"><span class="pulse-dot"></span> NEURAL TRANSLATION ONLINE</span>
+                        <span class="cyber-clock-pill font-mono" id="cyberLiveClock">--:--:--</span>
+                        <button id="cyberSoundToggleBtn" class="btn btn-outline cyber-sound-btn" title="사이버네틱 인터랙션 사운드 (클릭하여 켜기/끄기)"><span class="material-icons">volume_up</span> <span class="sound-label">FX 켜짐</span></button>
+                        <button id="cyberAmbientToggleBtn" class="btn btn-outline cyber-ambient-btn" title="딥 스페이스 앰비언트 사운드 (클릭하여 전환)"><span class="material-icons">headphones</span> <span class="ambient-label" id="cyberAmbientLabel">배경음: 끄기</span></button>
+                        <button class="btn btn-outline cyber-theme-btn" id="darkModeToggle" title="매트릭스 사이안 / 네온 바이올렛 테마 전환"><span class="material-icons">dark_mode</span></button>
                     </div>
-                    <h1>번역 관리 대시보드</h1>
-                    <p>저장된 모든 번역 기록을 탐색하고 단락별로 검수·관리합니다.</p>
+                    <h1 class="glitch-title" data-text="번역 관리 대시보드">번역 관리 대시보드</h1>
+                    <p class="cyber-subtitle">NEURAL TEXT COMPILATION & DIAGNOSTIC CONSOLE</p>
                 </div>
                 <div class="header-actions-deck">
-                    <button onclick="window.location.href='/ai_review';" class="btn btn-cyber-cyan" title="AI 단락 번역 품질 검수"><span class="btn-icon">🧠</span> AI 번역 검수 &rarr;</button>
-                    <button onclick="window.location.href='/ai_reretranslate';" class="btn btn-cyber-amber" title="AI 2차 재번역 센터"><span class="btn-icon">⚡</span> AI 재재번역 센터 &rarr;</button>
-                    <button onclick="window.location.href='/db_editor';" class="btn btn-cyber-purple nav-db-btn" title="고유명사 및 인명 용어집 편집"><span class="btn-icon">📖</span> 인명·용어 교정기 &rarr;</button>
+                    <button onclick="window.location.href='/ai_review';" class="btn btn-cyber-cyan glow-cyan" title="AI 단락 번역 품질 검수"><span class="btn-icon">🧠</span> AI 번역 검수 &rarr;</button>
+                    <button onclick="window.location.href='/ai_reretranslate';" class="btn btn-cyber-amber glow-amber" title="AI 2차 재번역 센터"><span class="btn-icon">⚡</span> AI 재재번역 센터 &rarr;</button>
+                    <button onclick="window.location.href='/db_editor';" class="btn btn-cyber-purple glow-purple nav-db-btn" title="고유명사 및 인명 용어집 편집"><span class="btn-icon">📖</span> 인명·용어 교정기 &rarr;</button>
                 </div>
             </div>
         </header>
@@ -44,108 +44,62 @@
         <div id="progress-container" style="position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background-color: var(--primary-color); color: white; padding: 10px 20px; border-radius: 8px; font-size: 14px; display: none; z-index: 1000;"></div>
 
         <div class="master-controls">
-            <!-- Deck 1: Search & Folder Management -->
-            <div class="hud-deck hud-deck-search">
-                <div class="deck-title"><span class="pulse-dot" style="background-color: #00f2fe; box-shadow: 0 0 8px #00f2fe;"></span> SEARCH & REPOSITORY CONTROLS</div>
-                <div class="search-deck-controls">
-                    <div class="search-input-wrapper">
-                        <span class="material-icons search-icon">search</span>
-                        <input type="text" class="form-input search-box" id="searchBox" placeholder="번역 데이터 검색 (원문, 번역문, 제목)...">
-                    </div>
-                    <select id="folderFilterDropdown" class="form-select cyber-select" title="소설/작품별 필터">
-                        <option value="">📁 모든 폴더</option>
-                    </select>
-                    <div class="folder-create-box">
-                        <input type="text" id="newFolderNameInput" placeholder="새 폴더 이름..." class="form-input">
-                        <button id="createFolderButton" class="btn btn-cyber-primary"><span class="btn-icon">➕</span> 폴더 생성</button>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Deck 2: AI & Diagnostic Workflow Hub -->
-            <div class="hud-deck hud-deck-tools">
-                <div class="deck-title"><span class="pulse-dot"></span> DIAGNOSTIC & WORKFLOW HUB</div>
-                <div class="tools-btn-group">
-                    <button id="findEmptyBtn" class="btn btn-cyber-tool" title="미번역 또는 번역 누락된 단락 탐색"><span class="btn-icon">🔍</span> 이상번역 찾기</button>
-                    <button id="cleanupQueueBtn" class="btn btn-cyber-tool" title="원문 그대로 반환되거나 변형된 항목 정리"><span class="btn-icon">🧹</span> 원문 복제·변형 정리</button>
-                    <button id="openGlobalFindReplaceBtn" class="btn btn-cyber-tool" title="전체 소설 단락 문자열 일괄 치환"><span class="btn-icon">🔄</span> 전체 찾아 바꾸기</button>
-                    <button id="openRestoreCenterBtn" class="btn btn-cyber-tool btn-restore-center" title="삭제된 기록 및 휴지통 복원 센터">
-                        <span class="btn-icon">🔔</span> 알림 및 복원 센터 <span id="notifBadge" class="badge-count" style="display: none;">0</span>
-                    </button>
-                    <button id="openNtfySettingsBtn" class="btn btn-cyber-tool" title="모바일 푸시 알림 ntfy 연동"><span class="btn-icon">📲</span> Ntfy 알림 설정</button>
-                    <a href="/logs" class="btn btn-cyber-tool" title="실시간 서버 로그 뷰어"><span class="btn-icon">📜</span> 로그 뷰어</a>
-                    <button id="openAppReleaseModalBtn" class="btn btn-cyber-tool" title="안드로이드 앱 릴리즈 버전 및 APK 배포 관리"><span class="btn-icon">📱</span> 앱 릴리즈</button>
-                </div>
-            </div>
-
-            <!-- Deck 3: System Utilities & Maintenance -->
-            <div class="hud-deck hud-deck-system">
-                <div class="system-left">
-                    <label class="checkbox-container cyber-checkbox">
-                        <input type="checkbox" id="autoStartCheckbox">
-                        <span class="checkmark"></span>
-                        <span class="check-label">컴퓨터 시작 시 자동 실행</span>
-                    </label>
-                </div>
-                <div class="system-right">
-                    <button class="btn btn-cyber-ghost" id="clearCacheBtn" title="작품 제목 캐시 데이터 초기화"><span class="btn-icon">⚡</span> 제목 캐시 초기화</button>
-                </div>
-            </div>
-            <div class="stats-wrapper" id="adminQuickStatsBar">
+            <!-- 1. Real-Time Telemetry & Metric Cockpit Strip (Top HUD) -->
+            <div class="stats-wrapper cyber-panel" id="adminQuickStatsBar">
                 <div class="stats-hud-beacon" title="실시간 데이터 텔레메트리 연동">
                     <span class="beacon-pulse-ring"></span>
                     <span class="beacon-radar-dot"></span>
-                    <span class="beacon-text">TELEMETRY</span>
+                    <span class="beacon-text font-mono">LIVE TELEMETRY</span>
                 </div>
-                <div class="stat-item stat-books" title="등록된 전체 소설/작품 수">
+                <div class="stat-item stat-books cyber-tile" title="등록된 전체 소설/작품 수">
                     <span class="material-icons stat-icon">library_books</span>
                     <div class="stat-body">
-                        <div class="stat-number" id="statTotalBooks">0</div>
+                        <div class="stat-number font-mono" id="statTotalBooks">0</div>
                         <div class="stat-label">작품</div>
                     </div>
                 </div>
-                <div class="stat-item stat-episodes" title="번역된 전체 회차(화수)">
+                <div class="stat-item stat-episodes cyber-tile" title="번역된 전체 회차(화수)">
                     <span class="material-icons stat-icon">format_list_numbered</span>
                     <div class="stat-body">
-                        <div class="stat-number" id="statTotalEpisodes">0</div>
+                        <div class="stat-number font-mono" id="statTotalEpisodes">0</div>
                         <div class="stat-label">회차</div>
                     </div>
                 </div>
-                <div class="stat-item stat-paragraphs" title="전체 번역 문단(단락) 수">
+                <div class="stat-item stat-paragraphs cyber-tile" title="전체 번역 문단(단락) 수">
                     <span class="material-icons stat-icon">article</span>
                     <div class="stat-body">
-                        <div class="stat-number" id="totalCount">0</div>
+                        <div class="stat-number font-mono" id="totalCount">0</div>
                         <div class="stat-label">문단</div>
                     </div>
                 </div>
-                <div class="stat-item stat-chars" title="누적 번역 글자 수">
+                <div class="stat-item stat-chars cyber-tile" title="누적 번역 글자 수">
                     <span class="material-icons stat-icon">format_size</span>
                     <div class="stat-body">
-                        <div class="stat-number" id="statTotalChars">0</div>
+                        <div class="stat-number font-mono" id="statTotalChars">0</div>
                         <div class="stat-label">글자 수</div>
                     </div>
                 </div>
-                <div class="stat-item stat-today" id="todayStatItem" title="오늘 번역된 회차(페이지) 및 문단 수">
+                <div class="stat-item stat-today cyber-tile" id="todayStatItem" title="오늘 번역된 회차(페이지) 및 문단 수">
                     <span class="material-icons stat-icon" style="color: #10b981;">auto_stories</span>
                     <div class="stat-body">
-                        <div class="stat-number" id="todayEpisodesStat">0화</div>
+                        <div class="stat-number font-mono" id="todayEpisodesStat">0화</div>
                         <div class="stat-label" id="todayCountLabel">오늘 번역 (<span id="todayCount">0</span>문단)</div>
                     </div>
                     <div class="stat-mini-bar-track"><div class="stat-mini-bar-fill today-pulse-bar"></div></div>
                 </div>
-                <div class="stat-item stat-quota" id="apiQuotaStatItem" title="오늘 Gemini API 쿼터 사용량 (매일 오후 4/5시 초기화, 기본 모델 500회 기준)">
-                    <span class="material-icons stat-icon" style="color: #f59e0b;">bolt</span>
+                <div class="stat-item stat-quota cyber-tile" id="apiQuotaStatItem" title="오늘 Gemini API 쿼터 사용량 (매일 오후 4/5시 초기화, 기본 모델 500회 기준)">
+                    <span class="material-icons stat-icon" style="color: #ffb703;">bolt</span>
                     <div class="stat-body">
-                        <div class="stat-number" id="apiQuotaCount">0 / 500</div>
+                        <div class="stat-number font-mono" id="apiQuotaCount">0 / 500</div>
                         <div class="stat-label" id="apiQuotaLabel">API 쿼터 (0%)</div>
                     </div>
                     <div class="stat-mini-bar-track"><div class="stat-mini-bar-fill quota-bar-fill" id="apiQuotaMiniFill" style="width: 0%;"></div></div>
                 </div>
 
-                <div class="stat-item stat-avg" title="단락당 평균 글자 수">
+                <div class="stat-item stat-avg cyber-tile" title="단락당 평균 글자 수">
                     <span class="material-icons stat-icon">straighten</span>
                     <div class="stat-body">
-                        <div class="stat-number" id="avgLength">0</div>
+                        <div class="stat-number font-mono" id="avgLength">0</div>
                         <div class="stat-label">평균 길이</div>
                     </div>
                 </div>
@@ -155,6 +109,60 @@
                     <span>통계 &amp; 품질 분석</span>
                     <span class="analytics-hud-tag">HUD</span>
                 </button>
+            </div>
+
+            <!-- 2. Integrated 2-Column HUD Deck Row (Search + Diagnostic Workflow Hub) -->
+            <div class="hud-deck-row">
+                <!-- Left Deck: Search & Repository Controls -->
+                <div class="hud-deck hud-deck-search cyber-panel">
+                    <div class="deck-title"><span class="pulse-dot" style="background-color: #00f2fe; box-shadow: 0 0 8px #00f2fe;"></span> SEARCH & REPOSITORY CONTROLS</div>
+                    <div class="search-deck-controls">
+                        <div class="search-input-wrapper">
+                            <span class="material-icons search-icon">search</span>
+                            <input type="text" class="form-input search-box font-mono" id="searchBox" placeholder="번역 데이터 검색 (원문, 번역문, 제목)...">
+                        </div>
+                        <select id="folderFilterDropdown" class="form-select cyber-select" title="소설/작품별 필터">
+                            <option value="">📁 모든 폴더</option>
+                        </select>
+                        <div class="folder-create-box">
+                            <input type="text" id="newFolderNameInput" placeholder="새 폴더 이름..." class="form-input">
+                            <button id="createFolderButton" class="btn btn-cyber-primary"><span class="btn-icon">➕</span> 폴더 생성</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right Deck: AI & Diagnostic Workflow Hub -->
+                <div class="hud-deck hud-deck-tools cyber-panel">
+                    <div class="deck-title"><span class="pulse-dot" style="background-color: #ffb703; box-shadow: 0 0 8px #ffb703;"></span> DIAGNOSTIC & WORKFLOW HUB</div>
+                    <div class="tools-btn-group">
+                        <button id="findEmptyBtn" class="btn btn-cyber-tool" title="미번역 또는 번역 누락된 단락 탐색"><span class="btn-icon">🔍</span> 이상번역 찾기</button>
+                        <button id="cleanupQueueBtn" class="btn btn-cyber-tool" title="원문 그대로 반환되거나 변형된 항목 정리"><span class="btn-icon">🧹</span> 원문 복제·변형 정리</button>
+                        <button id="openGlobalFindReplaceBtn" class="btn btn-cyber-tool" title="전체 소설 단락 문자열 일괄 치환"><span class="btn-icon">🔄</span> 전체 찾아 바꾸기</button>
+                        <button id="openRestoreCenterBtn" class="btn btn-cyber-tool btn-restore-center" title="삭제된 기록 및 휴지통 복원 센터">
+                            <span class="btn-icon">🔔</span> 알림 및 복원 센터 <span id="notifBadge" class="badge-count" style="display: none;">0</span>
+                        </button>
+                        <button id="openUnclassifiedDrawerBtn" class="btn btn-cyber-tool" title="미분류 소설 보관함 열기/닫기">
+                            <span class="btn-icon">📦</span> 미분류 보관함 <span id="unclassifiedHudBadge" class="badge-count" style="display: none; background: #00f2fe; color: #090a0f; font-weight: 800; border-radius: 10px; padding: 1px 6px; font-size: 10.5px; margin-left: 4px;">0</span>
+                        </button>
+                        <button id="openNtfySettingsBtn" class="btn btn-cyber-tool" title="모바일 푸시 알림 ntfy 연동"><span class="btn-icon">📲</span> Ntfy 알림 설정</button>
+                        <a href="/logs" class="btn btn-cyber-tool" title="실시간 서버 로그 뷰어"><span class="btn-icon">📜</span> 로그 뷰어</a>
+                        <button id="openAppReleaseModalBtn" class="btn btn-cyber-tool" title="안드로이드 앱 릴리즈 버전 및 APK 배포 관리"><span class="btn-icon">📱</span> 앱 릴리즈</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 3. System Utilities & Maintenance -->
+            <div class="hud-deck hud-deck-system cyber-panel">
+                <div class="system-left">
+                    <label class="checkbox-container cyber-checkbox">
+                        <input type="checkbox" id="autoStartCheckbox">
+                        <span class="checkmark"></span>
+                        <span class="check-label font-mono">컴퓨터 시작 시 자동 실행</span>
+                    </label>
+                </div>
+                <div class="system-right">
+                    <button class="btn btn-cyber-ghost" id="clearCacheBtn" title="작품 제목 캐시 데이터 초기화"><span class="btn-icon">⚡</span> 제목 캐시 초기화</button>
+                </div>
             </div>
 
             <!-- 이상번역 서브 필터 툴바 -->
@@ -1147,8 +1155,8 @@
     </div>
 
     <!-- <script type="module" src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.esm.js"></script> -->
-    <script src="/static/admin-fx.js?v=3.2"></script>
-    <script type="module" src="/static/admin.js?v=2.8"></script>
+    <script src="/static/admin-fx.js?v=3.3"></script>
+    <script type="module" src="/static/admin.js?v=3.0"></script>
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {

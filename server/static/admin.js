@@ -41,6 +41,7 @@ document.addEventListener('DOMContentLoaded', () => {
     loadDarkModePreference();
     loadAndRenderGrouped();
     loadNotificationsAndBadge();
+    checkAndLoadUnclassifiedNovels();
 });
 
 function cacheDOMElements() {
@@ -4190,13 +4191,15 @@ let currentSelectedUnclassifiedNovel = null;
 
 function initUnclassifiedDrawer() {
     const toggleBar = document.getElementById('unclassifiedToggleBar');
+    const hudBtn = document.getElementById('openUnclassifiedDrawerBtn');
     const closeBtn = document.getElementById('closeUnclassifiedDrawerBtn');
     const overlay = document.getElementById('unclassifiedDrawerOverlay');
     const refreshBtn = document.getElementById('refreshUnclassifiedBtn');
     const searchInput = document.getElementById('unclassifiedNovelSearchInput');
     const epListContainer = document.getElementById('unclassifiedEpisodeListContainer');
 
-    if (toggleBar) toggleBar.addEventListener('click', openUnclassifiedDrawer);
+    if (toggleBar) toggleBar.addEventListener('click', toggleUnclassifiedDrawer);
+    if (hudBtn) hudBtn.addEventListener('click', toggleUnclassifiedDrawer);
     if (closeBtn) closeBtn.addEventListener('click', closeUnclassifiedDrawer);
     if (overlay) {
         overlay.addEventListener('click', (e) => {
@@ -4205,6 +4208,17 @@ function initUnclassifiedDrawer() {
             }
         });
     }
+
+    // Escape 키로 드로어 닫기
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            const currentOverlay = document.getElementById('unclassifiedDrawerOverlay');
+            if (currentOverlay && (currentOverlay.classList.contains('active') || currentOverlay.style.display === 'block')) {
+                closeUnclassifiedDrawer();
+            }
+        }
+    });
+
     if (refreshBtn) {
         refreshBtn.addEventListener('click', async () => {
             await checkAndLoadUnclassifiedNovels();
@@ -4357,18 +4371,25 @@ async function checkAndLoadUnclassifiedNovels() {
         const toggleBar = document.getElementById('unclassifiedToggleBar');
         const badge = document.getElementById('unclassifiedToggleBadge');
         const headerBadge = document.getElementById('unclassifiedHeaderStatsBadge');
+        const hudBadge = document.getElementById('unclassifiedHudBadge');
         
         const totalParas = unclassifiedData.total_unclassified_paragraphs || 0;
         const totalNovels = unclassifiedData.total_unclassified_novels || 0;
         
-        // 미분류 데이터가 존재할 때만 우측에 플로팅 토글바 표시
+        // 미분류 데이터가 존재할 때 우측 플로팅 토글바 및 상단 HUD 배지 표시
         if (totalParas > 0) {
             if (toggleBar) toggleBar.style.display = 'flex';
             if (badge) badge.textContent = totalParas.toLocaleString();
             if (headerBadge) headerBadge.textContent = `${totalNovels}개 작품 / ${totalParas.toLocaleString()}개 문장`;
+            if (hudBadge) {
+                hudBadge.textContent = totalNovels.toLocaleString();
+                hudBadge.style.display = 'inline-block';
+                hudBadge.title = `${totalNovels}개 작품 (${totalParas.toLocaleString()}개 문장)`;
+            }
         } else {
             if (toggleBar) toggleBar.style.display = 'none';
             if (headerBadge) headerBadge.textContent = `0개 작품 / 0개 문장`;
+            if (hudBadge) hudBadge.style.display = 'none';
             closeUnclassifiedDrawer();
         }
 
@@ -4394,14 +4415,38 @@ async function checkAndLoadUnclassifiedNovels() {
     }
 }
 
+function toggleUnclassifiedDrawer() {
+    const overlay = document.getElementById('unclassifiedDrawerOverlay');
+    const isOpen = overlay && (overlay.classList.contains('active') || overlay.style.display === 'block');
+    if (isOpen) {
+        closeUnclassifiedDrawer();
+    } else {
+        openUnclassifiedDrawer();
+    }
+}
+
 function openUnclassifiedDrawer() {
     const overlay = document.getElementById('unclassifiedDrawerOverlay');
     const panel = document.getElementById('unclassifiedDrawerPanel');
+    const toggleBar = document.getElementById('unclassifiedToggleBar');
+    const hudBtn = document.getElementById('openUnclassifiedDrawerBtn');
+    const arrow = toggleBar ? toggleBar.querySelector('.unclassified-toggle-arrow') : null;
+
     if (overlay && panel) {
         overlay.style.display = 'block';
         void overlay.offsetWidth; // Force layout
         overlay.classList.add('active');
         panel.classList.add('active');
+
+        if (toggleBar) {
+            toggleBar.classList.add('drawer-open');
+            toggleBar.title = '미분류 소설 보관함 닫기';
+            if (arrow) arrow.textContent = 'chevron_right';
+        }
+        if (hudBtn) {
+            hudBtn.classList.add('active');
+        }
+        if (window.soundFX) window.soundFX.playModalOpen();
         renderUnclassifiedNovelList();
     }
 }
@@ -4409,9 +4454,24 @@ function openUnclassifiedDrawer() {
 function closeUnclassifiedDrawer() {
     const overlay = document.getElementById('unclassifiedDrawerOverlay');
     const panel = document.getElementById('unclassifiedDrawerPanel');
+    const toggleBar = document.getElementById('unclassifiedToggleBar');
+    const hudBtn = document.getElementById('openUnclassifiedDrawerBtn');
+    const arrow = toggleBar ? toggleBar.querySelector('.unclassified-toggle-arrow') : null;
+
     if (overlay && panel) {
         overlay.classList.remove('active');
         panel.classList.remove('active');
+
+        if (toggleBar) {
+            toggleBar.classList.remove('drawer-open');
+            toggleBar.title = '미분류 소설 보관함 열기';
+            if (arrow) arrow.textContent = 'chevron_left';
+        }
+        if (hudBtn) {
+            hudBtn.classList.remove('active');
+        }
+        if (window.soundFX) window.soundFX.playModalClose();
+
         setTimeout(() => {
             if (!overlay.classList.contains('active')) {
                 overlay.style.display = 'none';
@@ -4580,7 +4640,7 @@ function renderUnclassifiedEpisodes(novel) {
                     <button type="button" class="btn btn-secondary btn-sm btn-apply ${isApplied ? 'applied' : ''}" data-url="${escapeHtml(ep.url)}">${isApplied ? '적용 해제' : '적용'}</button>
                 </div>
             </div>
-            <div class="unclassified-episode-content list-group-content">
+            <div class="unclassified-episode-content list-group-content collapsed">
                 <!-- 아코디언 오픈 시 단락 테이블 로딩 -->
             </div>
         `;
@@ -4597,14 +4657,17 @@ function renderUnclassifiedEpisodes(novel) {
 
             e.stopPropagation(); // 상위 이벤트 위임 핸들러로의 버블링 방지
 
-            const isOpen = content.classList.contains('open');
-            if (isOpen) {
+            const isCurrentlyOpen = content.classList.contains('open') && !content.classList.contains('collapsed');
+            if (isCurrentlyOpen) {
                 content.classList.remove('open');
+                content.classList.add('collapsed');
                 icon.textContent = 'expand_more';
+                if (window.soundFX) window.soundFX.playAccordion();
             } else {
                 content.classList.remove('collapsed');
                 content.classList.add('open');
                 icon.textContent = 'expand_less';
+                if (window.soundFX) window.soundFX.playAccordion();
 
                 // 아직 단락 테이블이 렌더링되지 않았으면 렌더링 수행
                 if (!content.querySelector('.history-table')) {
