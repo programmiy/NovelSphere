@@ -613,6 +613,141 @@ function checkSeparatorMatch(text, separators) {
     return null;
 }
 
+/**
+ * 전체 문단 대비 위치 비율(%) 및 위치를 분석하여 상단 머리말 구분선과 하단 후기 구분선을 스마트하게 분류합니다.
+ * @param {Array<{element: HTMLElement, text: string, pid: string}>} validParagraphs - 텍스트가 있는 실제 문단 목록
+ * @param {Array<string>} separators - 활성화된 구분선 패턴 목록
+ * @returns {{
+ *   prefacePids: Set<string>,
+ *   afterwordPids: Set<string>,
+ *   separatorPids: Set<string>,
+ *   excludedPidMap: Map<string, {matchedSep: string, isSubsequent: boolean, isPreface: boolean}>,
+ *   topSeparator: {index: number, sep: string, pid: string}|null,
+ *   bottomSeparator: {index: number, sep: string, pid: string}|null
+ * }}
+ */
+function analyzeSeparatorSections(validParagraphs, separators) {
+    const result = {
+        prefacePids: new Set(),
+        afterwordPids: new Set(),
+        separatorPids: new Set(),
+        excludedPidMap: new Map(),
+        topSeparator: null,
+        bottomSeparator: null
+    };
+
+    if (!validParagraphs || validParagraphs.length === 0 || !separators || separators.length === 0) {
+        return result;
+    }
+
+    const N = validParagraphs.length;
+    const separatorHits = [];
+    for (let i = 0; i < N; i++) {
+        const item = validParagraphs[i];
+        const matchedSep = checkSeparatorMatch(item.text, separators);
+        if (matchedSep) {
+            separatorHits.push({ index: i, item: item, sep: matchedSep });
+        }
+    }
+
+    if (separatorHits.length === 0) {
+        return result;
+    }
+
+    const firstHit = separatorHits[0];
+    const firstIndex = firstHit.index;
+
+    // 상단 머리말 구분선 판정:
+    // 1) 전체 문단 수 대비 앞쪽 15~20% 이내 (최대 15문단 상한선 Cap 적용)
+    // 2) 잔여 본문 단락 수가 5개 이상이고, 머리말 문단 수보다 본문이 더 길 것
+    const maxPrefaceCount = Math.max(5, Math.min(15, Math.floor(N * 0.20)));
+    const remainingAfterFirst = N - 1 - firstIndex;
+    const isTopSeparator = (firstIndex <= maxPrefaceCount) && (remainingAfterFirst >= 5) && (remainingAfterFirst > firstIndex);
+
+    if (isTopSeparator) {
+        result.topSeparator = { index: firstIndex, sep: firstHit.sep, pid: firstHit.item.pid };
+        result.separatorPids.add(firstHit.item.pid);
+
+        // 상단 구분선 이전 단락들 (머리말/잡글)
+        for (let i = 0; i < firstIndex; i++) {
+            const pItem = validParagraphs[i];
+            result.prefacePids.add(pItem.pid);
+            result.excludedPidMap.set(pItem.pid, {
+                matchedSep: firstHit.sep,
+                isSubsequent: false,
+                isPreface: true
+            });
+        }
+
+        // 상단 구분선 단락 자체
+        result.excludedPidMap.set(firstHit.item.pid, {
+            matchedSep: firstHit.sep,
+            isSubsequent: false,
+            isPreface: false
+        });
+
+        // 상단 구분선 이후에 또 다른 구분선이 존재하는지 확인 (하단 후기 구분선)
+        const remainingHits = separatorHits.slice(1);
+        if (remainingHits.length > 0) {
+            const lastHit = remainingHits[remainingHits.length - 1];
+            const lastIndex = lastHit.index;
+            const remainingAfterLast = N - 1 - lastIndex;
+            const maxAfterwordCount = Math.max(5, Math.min(25, Math.floor(N * 0.25)));
+
+            // 마지막 구분선이 후반부(끝에서 25% 이내 또는 25문단 이내)에 위치하는 경우 하단 후기로 판정
+            if (remainingAfterLast <= maxAfterwordCount && lastIndex > firstIndex) {
+                result.bottomSeparator = { index: lastIndex, sep: lastHit.sep, pid: lastHit.item.pid };
+                result.separatorPids.add(lastHit.item.pid);
+
+                // 하단 구분선 단락 자체
+                result.excludedPidMap.set(lastHit.item.pid, {
+                    matchedSep: lastHit.sep,
+                    isSubsequent: false,
+                    isPreface: false
+                });
+
+                // 하단 구분선 이후 단락들 (후기/작가의 말)
+                for (let j = lastIndex + 1; j < N; j++) {
+                    const nextItem = validParagraphs[j];
+                    result.afterwordPids.add(nextItem.pid);
+                    result.excludedPidMap.set(nextItem.pid, {
+                        matchedSep: lastHit.sep,
+                        isSubsequent: true,
+                        isPreface: false
+                    });
+                }
+            }
+        }
+    } else {
+        // 첫 번째 구분선이 상단이 아닌 경우 -> 하단 후기 시작선으로 취급 (기존 동작과 동일)
+        const lastIndex = firstHit.index;
+        result.bottomSeparator = { index: lastIndex, sep: firstHit.sep, pid: firstHit.item.pid };
+        result.separatorPids.add(firstHit.item.pid);
+
+        // 하단 구분선 단락 자체
+        result.excludedPidMap.set(firstHit.item.pid, {
+            matchedSep: firstHit.sep,
+            isSubsequent: false,
+            isPreface: false
+        });
+
+        // 첫 번째 유효 단락(lastIndex === 0)이 아닐 때만 그 이후의 모든 단락들을 같이 제외 대상에 포함
+        if (lastIndex > 0) {
+            for (let j = lastIndex + 1; j < N; j++) {
+                const nextItem = validParagraphs[j];
+                result.afterwordPids.add(nextItem.pid);
+                result.excludedPidMap.set(nextItem.pid, {
+                    matchedSep: firstHit.sep,
+                    isSubsequent: true,
+                    isPreface: false
+                });
+            }
+        }
+    }
+
+    return result;
+}
+
 function updateNovelTitleUI(title) {
     const displayElem = document.getElementById('current-novel-title-display');
     if (displayElem) {
@@ -831,31 +966,9 @@ async function checkAndExcludeSeparatorTranslations(translationsList) {
         }
     });
 
-    // 구분선 단락 및 그 다음 단락들 pid 매핑 (pid -> { matchedSep, isSubsequent: boolean })
-    const excludedPidMap = new Map();
-
-    for (let i = 0; i < validParagraphs.length; i++) {
-        const item = validParagraphs[i];
-        const matchedSep = checkSeparatorMatch(item.text, activeSeparators);
-        if (matchedSep) {
-            // 해당 구분선 단락 등록
-            if (!excludedPidMap.has(item.pid)) {
-                excludedPidMap.set(item.pid, { matchedSep: matchedSep, isSubsequent: false });
-            }
-
-            // 조건: "이 단락이 첫번째에 있지않는 이상, 그 다음단락들도 같이 제외되어야해"
-            // 첫 번째 유효 단락(i === 0)이 아닐 때만 그 이후의 모든 단락들을 같이 제외 대상에 포함
-            if (i > 0) {
-                for (let j = i + 1; j < validParagraphs.length; j++) {
-                    const nextItem = validParagraphs[j];
-                    if (!excludedPidMap.has(nextItem.pid)) {
-                        excludedPidMap.set(nextItem.pid, { matchedSep: matchedSep, isSubsequent: true });
-                    }
-                }
-                break; // 이후 단락들을 모두 제외 집합에 넣었으므로 루프 종료
-            }
-        }
-    }
+    // 상단 15~20% 비율 기반 스마트 구분선 섹션 분석
+    const sepAnalysis = analyzeSeparatorSections(validParagraphs, activeSeparators);
+    const excludedPidMap = sepAnalysis.excludedPidMap;
 
     const targetsToExclude = [];
     const targetIds = [];
@@ -866,18 +979,18 @@ async function checkAndExcludeSeparatorTranslations(translationsList) {
 
         let matchInfo = null;
 
-        // 1. 본문 순서 기반 제외 맵에서 pid 확인 (구분선 및 그 다음 단락들)
+        // 1. 본문 순서 기반 제외 맵에서 pid 확인 (상단 잡글, 구분선 및 하단 후기 단락들)
         if (t.pid && excludedPidMap.has(t.pid)) {
             matchInfo = excludedPidMap.get(t.pid);
         } else if (t.original) {
             // 2. DOM에 매핑되지 않은 경우라도 원문 텍스트가 구분선에 직접 일치하는 경우
             const sep = checkSeparatorMatch(t.original.trim(), activeSeparators);
             if (sep) {
-                matchInfo = { matchedSep: sep, isSubsequent: false };
+                matchInfo = { matchedSep: sep, isSubsequent: false, isPreface: false };
             }
         }
 
-        // 구분선 또는 구분선 이후 단락에 해당하고 유효한 번역문이 존재하는 경우 제외 대상 선정
+        // 구분선 또는 상단 잡글 / 하단 후기 단락에 해당하고 유효한 번역문이 존재하는 경우 제외 대상 선정
         if (matchInfo && t.translated && t.translated.trim()) {
             targetsToExclude.push({
                 id: t.id,
@@ -885,7 +998,8 @@ async function checkAndExcludeSeparatorTranslations(translationsList) {
                 original: t.original,
                 translated: t.translated,
                 matchedSep: matchInfo.matchedSep,
-                isSubsequent: matchInfo.isSubsequent
+                isSubsequent: matchInfo.isSubsequent,
+                isPreface: matchInfo.isPreface || false
             });
             targetIds.push(t.id);
         }
@@ -993,9 +1107,14 @@ function renderSeparatorExcludePanel(items) {
         </div>
         <div class="separator-exclude-body" id="separator-exclude-cards">
             ${items.map(item => {
-                const matchBadge = item.isSubsequent 
-                    ? `(구분선 '${escapeHtml(item.matchedSep || '')}' 이후 단락)` 
-                    : `(구분선: "${escapeHtml(item.matchedSep || '')}")`;
+                let matchBadge = '';
+                if (item.isPreface) {
+                    matchBadge = `(상단 잡글 - 구분선 '${escapeHtml(item.matchedSep || '')}' 이전)`;
+                } else if (item.isSubsequent) {
+                    matchBadge = `(하단 후기 - 구분선 '${escapeHtml(item.matchedSep || '')}' 이후)`;
+                } else {
+                    matchBadge = `(구분선: "${escapeHtml(item.matchedSep || '')}")`;
+                }
                 const transPreview = item.translated && item.translated.trim() 
                     ? escapeHtml(item.translated) 
                     : '(보관된 번역 없음)';
@@ -1228,22 +1347,30 @@ async function ensureTranslationsLoaded() {
 }
 
 function hasUntranslatedParagraphs() {
-    const paragraphs = getTargetParagraphs();
-    for (const p of paragraphs) {
-        if (p.id === 'tagCount' || /^(la|lp)\d+$/i.test(p.id)) continue;
+    const allParagraphs = getTargetParagraphs();
+    const validParagraphs = [];
+    allParagraphs.forEach(p => {
+        if (!p || p.id === 'tagCount' || /^(la|lp)\d+$/i.test(p.id)) return;
         const text = p.innerHTML.replace(/<br\s*\/?>/gi, " ").replace(/<[^>]*>/g, "").trim();
-        if (!text) continue;
+        if (text) {
+            validParagraphs.push({ element: p, text: text, pid: p.id });
+        }
+    });
 
-        const matchedSep = checkSeparatorMatch(text, activeSeparators);
-        if (matchedSep) break; // 구분선 이후는 번역 대상 아님
+    const sepAnalysis = analyzeSeparatorSections(validParagraphs, activeSeparators);
+
+    for (const item of validParagraphs) {
+        if (sepAnalysis.prefacePids.has(item.pid)) continue;
+        if (sepAnalysis.afterwordPids.has(item.pid)) continue;
+        if (sepAnalysis.separatorPids.has(item.pid)) continue;
 
         // 이미 유효한 번역이 캐시에 있으면 스킵
-        const cached = translationCache.get(p.id);
+        const cached = translationCache.get(item.pid);
         if (cached && cached.translated && cached.translated.trim()) {
             continue;
         }
 
-        const cleanedText = text.replace(/([あアいイうウえエおオ])\1{2,}/g, '$1ー');
+        const cleanedText = item.text.replace(/([あアいイうウえエおオ])\1{2,}/g, '$1ー');
         if (exclusionSet.has(cleanedText)) continue;
 
         if (isTranslatableText(cleanedText)) {
@@ -2721,35 +2848,45 @@ async function translateAllPTags(isRetranslation = false) {
         await ensureTranslationsLoaded();
     }
 
-    const paragraphs = getTargetParagraphs();
+    const allParagraphs = getTargetParagraphs();
+    const validParagraphs = [];
+    allParagraphs.forEach(p => {
+        if (!p || p.id === 'tagCount' || /^(la|lp)\d+$/i.test(p.id)) return;
+        const text = p.innerHTML.replace(/<br\s*\/?>/gi, " ").replace(/<[^>]*>/g, "").trim();
+        if (text) {
+            validParagraphs.push({ element: p, text: text, pid: p.id });
+        }
+    });
+
+    const sepAnalysis = analyzeSeparatorSections(validParagraphs, activeSeparators);
+    if (sepAnalysis.topSeparator) {
+        logToSidebar(`[상단 구분선 감지] '${sepAnalysis.topSeparator.sep}' 이전 잡글 ${sepAnalysis.prefacePids.size}개 문단(구분선 포함)을 번역에서 자동 제외합니다.`);
+    }
+    if (sepAnalysis.bottomSeparator) {
+        logToSidebar(`[하단 구분선 감지] '${sepAnalysis.bottomSeparator.sep}' 이후 후기 ${sepAnalysis.afterwordPids.size}개 문단(구분선 포함)을 번역에서 자동 제외합니다.`);
+    }
+
     const textsToTranslate = [];
     const instantPunctuationItems = [];
-    let skipTranslation = false;
 
-    paragraphs.forEach(p => {
-        const text = p.innerHTML.replace(/<br\s*\/?>/gi, " ").replace(/<[^>]*>/g, "").trim();
+    validParagraphs.forEach(item => {
+        const text = item.text;
 
-        if (p.id === 'tagCount') {
-            return; 
+        // 1. 상단 잡글/머리말 영역 또는 구분선 단락이면 스킵
+        if (sepAnalysis.prefacePids.has(item.pid)) {
+            return;
         }
-
-        if (skipTranslation) {
+        // 2. 하단 후기 영역이면 스킵
+        if (sepAnalysis.afterwordPids.has(item.pid)) {
+            return;
+        }
+        // 3. 구분선 단락 자체이면 스킵
+        if (sepAnalysis.separatorPids.has(item.pid)) {
             return;
         }
 
-        const matchedSep = checkSeparatorMatch(text, activeSeparators);
-        if (matchedSep) {
-            skipTranslation = true;
-            logToSidebar(`구분선 '${matchedSep}'을(를) 만나 이후의 번역을 중단합니다.`);
-            return;
-        }
-
-        const cached = translationCache.get(p.id);
+        const cached = translationCache.get(item.pid);
         if (cached && cached.translated && cached.translated.trim()) {
-            return;
-        }
-
-        if (/^(la|lp)\d+$/i.test(p.id)) {
             return;
         }
 
@@ -2762,9 +2899,9 @@ async function translateAllPTags(isRetranslation = false) {
         if (cleanedText && isTranslatableText(cleanedText)) {
             // [Fast-Path] 문자가 없고 순수 문장부호/기호만 있는 문장(「……」, 「……？」, …… 등)은 API 호출 없이 즉시 원문 그대로 대입
             if (isPurePunctuationOnly(cleanedText)) {
-                instantPunctuationItems.push({ id: p.id, original: cleanedText, translated: cleanedText });
+                instantPunctuationItems.push({ id: item.pid, original: cleanedText, translated: cleanedText });
             } else {
-                textsToTranslate.push({ id: p.id, text: cleanedText });
+                textsToTranslate.push({ id: item.pid, text: cleanedText });
             }
         }
     });
