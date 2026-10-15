@@ -140,8 +140,10 @@ else esbuild.build(options);
 
 ---
 
-## 6. 추가 핫픽스 (2026-10-15)
-* **사이드바 CSS 누락 핫픽스**:
-  * 기존 `content.js` 동적 주입 `<style>` 태그에 포함되어 있던 `#jp-translator-sidebar` 및 `#jp-translator-toggle-btn`의 `position: fixed`, `z-index: 9999`, `transform: translateX(100%)` 레이아웃 규칙이 리팩토링 과정에서 누락되어 소설 원문 최하단에 렌더링되던 회귀 버그 해결.
-  * `extension/content.css`에 핵심 레이아웃 스타일 519줄을 추가하고, `src/ui/sidebar.ts`의 `injectSidebar()`에서도 `injectSidebarStyles()`를 동적 주입하도록 이중 안전화 완료.
+## 6. 레거시 즉시 롤백 완료 (2026-10-15)
+* **사유**: 사용자 사전 지침("잘못되면 바로 레거시로 돌리자") 및 리팩토링 후 체감 동작 불일치 발생.
+  1. **번역 주기 변형**: 레거시의 일반 모드 묶음 간 대기(5초) 및 회차 간 대기(60초) RPM 보호 지연이 단축 변형됨.
+  2. **알림 메시지 축약**: 레거시의 상세 묶음/글자수/카운트다운 메시지가 간소화됨.
+  3. **스크롤바 및 알림 추적 불일치**: 알림 콘솔의 최신 로그 즉시 노출(`prepend`) 및 회차 완료 후 페이지 최하단 부드러운 스크롤(`window.scrollTo`) 동작 차이.
+* **조치**: 리팩토링 시작 직전 커밋(`bc45e16~1`) 기준으로 확장 프로그램 런타임 파일 6종(`content.js`, `background.js`, `manifest.json`, `remote.js`, `remote_content.js`, `content.css`)을 **100% 바이트 단위로 동일하게 완전 롤백** 완료.
 
