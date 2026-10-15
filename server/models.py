@@ -1,5 +1,6 @@
 
-from sqlalchemy import (Column, Integer, Text, 
+from datetime import datetime
+from sqlalchemy import (Column, Integer, Text, String, DateTime,
                         ForeignKey, UniqueConstraint, Index, BigInteger)
 from sqlalchemy.orm import declarative_base
 
@@ -173,3 +174,24 @@ class AiReviewQueue(Base):
     __table_args__ = (
         Index('ix_ai_review_status', 'status'),
     )
+
+
+class SystemTask(Base):
+    __tablename__ = 'system_tasks'
+
+    id = Column(String(64), primary_key=True)
+    task_type = Column(String(64), nullable=False)
+    status = Column(String(32), default="PENDING")  # PENDING, RUNNING, DONE, FAILED, CANCELLED, INTERRUPTED
+    progress = Column(Integer, default=0)
+    total_items = Column(Integer, default=0)
+    processed_items = Column(Integer, default=0)
+    result_data = Column(Text, nullable=True)
+    error_message = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        Index('ix_system_tasks_status', 'status'),
+        Index('ix_system_tasks_created_at', 'created_at'),
+    )
+

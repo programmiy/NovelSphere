@@ -172,43 +172,73 @@ async def lifespan(app: FastAPI):
             connection.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_folder_title ON translations (folderName, title)")
             connection.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_translations_folder_url ON translations (folderName, url)")
 
-            connection.exec_driver_sql("""
-                CREATE VIRTUAL TABLE IF NOT EXISTS translations_fts USING fts5(
-                    original,
-                    translated,
-                    content='translations',
-                    content_rowid='id',
-                    tokenize='unicode61'
-                );
-            """)
-            connection.exec_driver_sql("""
-                CREATE TRIGGER IF NOT EXISTS translations_ai AFTER INSERT ON translations BEGIN
-                    INSERT INTO translations_fts(rowid, original, translated) VALUES (new.id, new.original, new.translated);
-                END;
-            """)
-            connection.exec_driver_sql("""
-                CREATE TRIGGER IF NOT EXISTS translations_ad AFTER DELETE ON translations BEGIN
-                    INSERT INTO translations_fts(translations_fts, rowid, original, translated) VALUES('delete', old.id, old.original, old.translated);
-                END;
-            """)
-            connection.exec_driver_sql("""
-                CREATE TRIGGER IF NOT EXISTS translations_au AFTER UPDATE ON translations BEGIN
-                    INSERT INTO translations_fts(translations_fts, rowid, original, translated) VALUES('delete', old.id, old.original, old.translated);
-                    INSERT INTO translations_fts(rowid, original, translated) VALUES (new.id, new.original, new.translated);
-                END;
-            """)
+            row = connection.exec_driver_sql("SELECT sql FROM sqlite_master WHERE type='table' AND name='translations_fts'").fetchone()
+            need_recreate = True
+            if row and row[0] and "trigram" in row[0].lower():
+                need_recreate = False
 
-            fts_count = connection.exec_driver_sql("SELECT COUNT(*) FROM translations_fts").scalar()
-            if fts_count == 0:
-                connection.exec_driver_sql("INSERT INTO translations_fts(translations_fts) VALUES('rebuild')")
-                logger.info("Built translations_fts search index successfully.")
+            if need_recreate:
+                logger.info("Migrating translations_fts to Trigram tokenizer...")
+                connection.exec_driver_sql("DROP TABLE IF EXISTS translations_fts;")
+                connection.exec_driver_sql("""
+                    CREATE VIRTUAL TABLE translations_fts USING fts5(
+                        original,
+                        translated,
+                        content='translations',
+                        content_rowid='id',
+                        tokenize='trigram'
+                    );
+                """)
+                connection.exec_driver_sql("""
+                    CREATE TRIGGER IF NOT EXISTS translations_ai AFTER INSERT ON translations BEGIN
+                        INSERT INTO translations_fts(rowid, original, translated) VALUES (new.id, new.original, new.translated);
+                    END;
+                """)
+                connection.exec_driver_sql("""
+                    CREATE TRIGGER IF NOT EXISTS translations_ad AFTER DELETE ON translations BEGIN
+                        INSERT INTO translations_fts(translations_fts, rowid, original, translated) VALUES('delete', old.id, old.original, old.translated);
+                    END;
+                """)
+                connection.exec_driver_sql("""
+                    CREATE TRIGGER IF NOT EXISTS translations_au AFTER UPDATE ON translations BEGIN
+                        INSERT INTO translations_fts(translations_fts, rowid, original, translated) VALUES('delete', old.id, old.original, old.translated);
+                        INSERT INTO translations_fts(rowid, original, translated) VALUES (new.id, new.original, new.translated);
+                    END;
+                """)
+                connection.exec_driver_sql("INSERT INTO translations_fts(translations_fts) VALUES('rebuild');")
+                logger.info("Rebuilt translations_fts search index with Trigram successfully.")
+            else:
+                connection.exec_driver_sql("""
+                    CREATE TRIGGER IF NOT EXISTS translations_ai AFTER INSERT ON translations BEGIN
+                        INSERT INTO translations_fts(rowid, original, translated) VALUES (new.id, new.original, new.translated);
+                    END;
+                """)
+                connection.exec_driver_sql("""
+                    CREATE TRIGGER IF NOT EXISTS translations_ad AFTER DELETE ON translations BEGIN
+                        INSERT INTO translations_fts(translations_fts, rowid, original, translated) VALUES('delete', old.id, old.original, old.translated);
+                    END;
+                """)
+                connection.exec_driver_sql("""
+                    CREATE TRIGGER IF NOT EXISTS translations_au AFTER UPDATE ON translations BEGIN
+                        INSERT INTO translations_fts(translations_fts, rowid, original, translated) VALUES('delete', old.id, old.original, old.translated);
+                        INSERT INTO translations_fts(rowid, original, translated) VALUES (new.id, new.original, new.translated);
+                    END;
+                """)
+                fts_count = connection.exec_driver_sql("SELECT COUNT(*) FROM translations_fts").scalar()
+                if fts_count == 0:
+                    connection.exec_driver_sql("INSERT INTO translations_fts(translations_fts) VALUES('rebuild');")
+                    logger.info("Built translations_fts search index successfully.")
     except Exception as e:
         logger.error(f"Error initializing indexes and FTS5: {e}")
     
-    logger.info("Server startup complete. Runtime tracking and backup task started.")
+    from server.services.task_manager import task_manager
+    await task_manager.startup()
+
+    logger.info("Server startup complete. Runtime tracking, TaskManager and backup task started.")
     yield
     
     # Graceful shutdown: cancel background tasks
+    await task_manager.shutdown()
     backup_task.cancel()
     bracket_task.cancel()
     remote_alert_task.cancel()

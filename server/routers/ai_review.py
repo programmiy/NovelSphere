@@ -3,7 +3,7 @@ import asyncio
 import json
 import logging
 from typing import List, Optional, Dict, Any, Tuple
-from fastapi import APIRouter, Depends, HTTPException, Request, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -14,6 +14,7 @@ from server.settings import settings
 from server.services.abnormal_service import get_abnormal_translations_data
 from server.services.similarity_service import get_cause_reference_data, get_cause_keywords
 from server.routers.translation import call_gemini_api
+from server.services.task_manager import task_manager
 import re
 
 logger = logging.getLogger(__name__)
@@ -182,7 +183,7 @@ async def get_ai_review_stats(folderName: Optional[str] = None, db: Session = De
         "rejected_count": rejected_count
     }
 
-async def process_initial_translation_bg(items_to_translate: list):
+async def process_initial_translation_bg(items_to_translate: list, task_id: Optional[str] = None):
     db = SessionLocal()
     try:
         model = getattr(settings, "gemini_retranslation_model", "gemini-3.8-flash") or "gemini-3.8-flash"
@@ -197,7 +198,12 @@ async def process_initial_translation_bg(items_to_translate: list):
             if not exists:
                 valid_items.append(item)
                 
-        for i in range(0, len(valid_items), batch_size):
+        total_valid = len(valid_items)
+        for i in range(0, total_valid, batch_size):
+            if task_id and task_manager.is_cancelled(task_id):
+                logger.info(f"[ai_review] Initial translation task {task_id} was cancelled.")
+                break
+
             batch = valid_items[i:i+batch_size]
             
             originals = [item['original'] for item in batch]
@@ -251,6 +257,14 @@ async def process_initial_translation_bg(items_to_translate: list):
                     db.add(new_queue)
                     
                 db.commit()
+                if task_id:
+                    processed = min(i + len(batch), total_valid)
+                    task_manager.report_progress(
+                        task_id=task_id,
+                        current=processed,
+                        total=total_valid,
+                        status_text=f"Translating {processed}/{total_valid}"
+                    )
                 await asyncio.sleep(2) # Delay between batches
             except Exception as e:
                 print(f"Error in initial bg translation batch: {e}")
@@ -259,7 +273,7 @@ async def process_initial_translation_bg(items_to_translate: list):
         db.close()
 
 @router.post("/api/ai_review/trigger_initial")
-async def trigger_initial_retranslate(background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+async def trigger_initial_retranslate(db: Session = Depends(get_db)):
     data = get_abnormal_translations_data(None, db)
     items_to_translate = []
     
@@ -272,17 +286,34 @@ async def trigger_initial_retranslate(background_tasks: BackgroundTasks, db: Ses
     if not items_to_translate:
         return {"message": "발견된 이상번역이 없습니다."}
         
-    background_tasks.add_task(process_initial_translation_bg, items_to_translate)
-    return {"message": f"총 {len(items_to_translate)}건의 1차 일괄 번역이 묶음(배치) 단위로 시작되었습니다."}
+    task_id = task_manager.enqueue(
+        task_type="initial_retranslate",
+        func=process_initial_translation_bg,
+        items_to_translate=items_to_translate,
+        total_items=len(items_to_translate),
+        pass_task_id=True
+    )
+    return {
+        "message": f"총 {len(items_to_translate)}건의 1차 일괄 번역이 묶음(배치) 단위로 시작되었습니다.",
+        "task_id": task_id
+    }
 
 @router.post("/api/ai_review/trigger_reretranslate")
-async def trigger_manual_reretranslate(background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+async def trigger_manual_reretranslate(db: Session = Depends(get_db)):
     count = db.query(AiReviewQueue).filter(AiReviewQueue.status == 'pending_reretranslate').count()
     if count == 0:
         return {"message": "거절(재재번역 대기)된 항목이 없습니다."}
     
-    background_tasks.add_task(process_batch_reretranslation_bg)
-    return {"message": f"총 {count}건의 문장에 대해 통계 기반 다중 모델(3.5~3.8) 재재번역 작업이 백그라운드에서 시작되었습니다."}
+    task_id = task_manager.enqueue(
+        task_type="reretranslate_batch",
+        func=process_batch_reretranslation_bg,
+        total_items=count,
+        pass_task_id=True
+    )
+    return {
+        "message": f"총 {count}건의 문장에 대해 통계 기반 다중 모델(3.5~3.8) 재재번역 작업이 백그라운드에서 시작되었습니다.",
+        "task_id": task_id
+    }
 
 @router.get("/api/ai_review/reretranslate/queue")
 async def get_reretranslate_queue(folderName: Optional[str] = None, db: Session = Depends(get_db)):
@@ -373,19 +404,34 @@ class RunReretranslateReq(BaseModel):
     model: str
 
 @router.post("/api/ai_review/reretranslate/run")
-async def run_reretranslate_specific(req: RunReretranslateReq, background_tasks: BackgroundTasks):
-    background_tasks.add_task(process_specific_reretranslation_bg, req.queue_ids, req.model)
-    return {"message": f"선택한 {len(req.queue_ids)}개 문장을 {req.model} 모델로 재재번역합니다."}
+async def run_reretranslate_specific(req: RunReretranslateReq):
+    task_id = task_manager.enqueue(
+        task_type="reretranslate_specific",
+        func=process_specific_reretranslation_bg,
+        queue_ids=req.queue_ids,
+        model=req.model,
+        total_items=len(req.queue_ids),
+        pass_task_id=True
+    )
+    return {
+        "message": f"선택한 {len(req.queue_ids)}개 문장을 {req.model} 모델로 재재번역합니다.",
+        "task_id": task_id
+    }
 
-async def process_specific_reretranslation_bg(queue_ids: List[int], model: str):
+async def process_specific_reretranslation_bg(queue_ids: List[int], model: str, task_id: Optional[str] = None):
     db = SessionLocal()
     try:
         items = db.query(AiReviewQueue).filter(AiReviewQueue.id.in_(queue_ids)).all()
         if not items: return
         
         batch_size = 20
+        total_items_len = len(items)
         
-        for i in range(0, len(items), batch_size):
+        for i in range(0, total_items_len, batch_size):
+            if task_id and task_manager.is_cancelled(task_id):
+                logger.info(f"[ai_review] Specific re-retranslation task {task_id} was cancelled.")
+                break
+
             batch = items[i:i+batch_size]
             items_by_id = {str(item.id): item for item in batch}
             input_list = [{"id": str(item.id), "text": item.original_text} for item in batch]
@@ -439,6 +485,14 @@ async def process_specific_reretranslation_bg(queue_ids: List[int], model: str):
                                 item.updated_at = int(time.time())
                                 
                 db.commit()
+                if task_id:
+                    processed = min(i + len(batch), total_items_len)
+                    task_manager.report_progress(
+                        task_id=task_id,
+                        current=processed,
+                        total=total_items_len,
+                        status_text=f"Re-retranslating {processed}/{total_items_len}"
+                    )
                 await asyncio.sleep(1)
             except Exception as e:
                 logger.error(f"Error re-retranslating specific batch with {model}: {e}", exc_info=True)
@@ -446,7 +500,7 @@ async def process_specific_reretranslation_bg(queue_ids: List[int], model: str):
     finally:
         db.close()
 
-async def process_batch_reretranslation_bg():
+async def process_batch_reretranslation_bg(task_id: Optional[str] = None):
     db = SessionLocal()
     try:
         items = db.query(AiReviewQueue).filter(AiReviewQueue.status == 'pending_reretranslate').all()
@@ -481,12 +535,19 @@ async def process_batch_reretranslation_bg():
             else: model = 'gemini-3.8-flash'
             model_batches[model].append(item)
             
+        total_items_count = sum(len(b) for b in model_batches.values())
+        processed_count = 0
+
         for model, batch_items in model_batches.items():
             if not batch_items: continue
             
             batch_size = 20
             
             for i in range(0, len(batch_items), batch_size):
+                if task_id and task_manager.is_cancelled(task_id):
+                    logger.info(f"[ai_review] Batch re-retranslation task {task_id} was cancelled.")
+                    return
+
                 batch = batch_items[i:i+batch_size]
                 items_by_id = {str(item.id): item for item in batch}
                 input_list = [{"id": str(item.id), "text": item.original_text} for item in batch]
@@ -541,6 +602,14 @@ async def process_batch_reretranslation_bg():
                                     item.updated_at = int(time.time())
                                 
                     db.commit()
+                    processed_count += len(batch)
+                    if task_id:
+                        task_manager.report_progress(
+                            task_id=task_id,
+                            current=processed_count,
+                            total=total_items_count,
+                            status_text=f"Re-retranslating {processed_count}/{total_items_count}"
+                        )
                     await asyncio.sleep(1)
                 except Exception as e:
                     logger.error(f"Error re-retranslating batch with {model}: {e}", exc_info=True)
@@ -742,7 +811,7 @@ async def approve_review(req: ApproveRejectReq, db: Session = Depends(get_db)):
     return {"status": "success"}
 
 @router.post("/api/ai_review/reject")
-async def reject_review(req: ApproveRejectReq, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+async def reject_review(req: ApproveRejectReq, db: Session = Depends(get_db)):
     item = db.query(AiReviewQueue).filter(AiReviewQueue.id == req.queue_id).first()
     if not item: raise HTTPException(404)
     
@@ -751,10 +820,16 @@ async def reject_review(req: ApproveRejectReq, background_tasks: BackgroundTasks
     db.commit()
     
     count = db.query(AiReviewQueue).filter(AiReviewQueue.status == 'pending_reretranslate').count()
+    task_id = None
     if count >= 10: 
-        background_tasks.add_task(process_batch_reretranslation_bg)
+        task_id = task_manager.enqueue(
+            task_type="reretranslate_batch",
+            func=process_batch_reretranslation_bg,
+            total_items=count,
+            pass_task_id=True
+        )
         
-    return {"status": "success", "queued_for_reretranslate": count}
+    return {"status": "success", "queued_for_reretranslate": count, "task_id": task_id}
 
 @router.post("/api/ai_review/undo")
 async def undo_review(req: UndoReq, db: Session = Depends(get_db)):

@@ -387,7 +387,7 @@ def notify_task_event(
     status: str = "SUCCESS",
     click_url: Optional[str] = None
 ):
-    """Celery / 백그라운드 태스크 완료 알림"""
+    """TaskManager 백그라운드 태스크 완료 알림"""
     is_success = status.upper() == "SUCCESS"
     title = f"✅ [{task_name}] 완료" if is_success else f"⚠️ [{task_name}] 실패"
     

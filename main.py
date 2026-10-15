@@ -4,7 +4,6 @@ import os
 import webview
 import sys
 import platform
-import json
 from PIL import Image
 import pystray
 import subprocess
@@ -17,7 +16,6 @@ APP_ROOT = os.path.dirname(os.path.abspath(__file__))
 
 window = None
 server_process = None
-celery_process = None
 
 def enable_autostart():
     """Enables the application to start automatically on system startup."""
@@ -30,9 +28,9 @@ def enable_autostart():
         try:
             vbs_path = os.path.join(os.getenv("APPDATA"), r"Microsoft\Windows\Start Menu\Programs\Startup", f"{app_name}.vbs")
             with open(vbs_path, "w") as vbs_file:
-                vbs_file.write(f'Set WshShell = CreateObject("WScript.Shell")\n')
+                vbs_file.write('Set WshShell = CreateObject("WScript.Shell")\n')
                 vbs_file.write(f'WshShell.Run chr(34) & "{app_path}" & chr(34) & " -minimized", 0\n')
-                vbs_file.write(f'Set WshShell = Nothing\n')
+                vbs_file.write('Set WshShell = Nothing\n')
             print(f"Windows autostart enabled: {vbs_path}")
         except Exception as e:
             print(f"Error enabling Windows autostart: {e}")
@@ -78,19 +76,6 @@ def start_server():
         
     server_process = subprocess.Popen(command)
 
-def start_celery_worker():
-    """Function to run the Celery worker as a subprocess."""
-    global celery_process
-    os.chdir(APP_ROOT)
-    command = [
-        sys.executable,
-        "-m", "celery",
-        "-A", "server.celery_app",
-        "worker",
-        "--loglevel=info"
-    ]
-    celery_process = subprocess.Popen(command)
-
 def stop_process(proc, name="Process"):
     """Safely terminates a subprocess with timeout and fallback to kill."""
     if proc and proc.poll() is None:
@@ -105,13 +90,12 @@ def stop_process(proc, name="Process"):
 
 def on_tray_menu_select(icon, item):
     """Function to handle tray menu selections."""
-    global window, server_process, celery_process
+    global window, server_process
     if str(item) == "Open Library":
         if window:
             window.show()
     elif str(item) == "Exit":
         stop_process(server_process, "Server")
-        stop_process(celery_process, "Celery")
         if window:
             window.destroy()
         icon.stop()
@@ -161,7 +145,6 @@ if __name__ == "__main__":
         disable_autostart()
 
     start_server()
-    start_celery_worker()
 
     image = Image.new('RGB', (64, 64), 'white')
     menu = (pystray.MenuItem('Open Library', on_tray_menu_select), pystray.MenuItem('Exit', on_tray_menu_select))
@@ -173,5 +156,4 @@ if __name__ == "__main__":
     start_webview()
 
     stop_process(server_process, "Server")
-    stop_process(celery_process, "Celery")
     sys.exit(0)

@@ -15,7 +15,6 @@ beautifulsoup4
 selenium
 webdriver-manager
 pydantic-settings
-celery
 python-dotenv
 jinja2
 rapidfuzz

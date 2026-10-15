@@ -1,189 +1,199 @@
-import pytest
+import time
+from unittest.mock import patch
+
 from fastapi.testclient import TestClient
-from unittest.mock import patch, MagicMock
-import sqlite3
-import os
-from urllib.parse import urlparse
-from celery.result import AsyncResult
 
-# server.server에서 app을 import하기 전에 settings를 오버라이드해야 합니다.
-# 이를 위해 pytest fixture를 사용합니다.
-@pytest.fixture(scope="module", autouse=True)
-def override_settings():
-    # 테스트용 데이터베이스 경로 설정
-    test_db_path = "test_translations.db"
-    
-    # 환경 변수 오버라이드
-    os.environ["DATABASE_URL"] = f"sqlite:///{test_db_path}"
-    os.environ["CELERY_ALWAYS_EAGER"] = "True" # Celery 작업을 즉시 실행하도록 설정
-
-    # settings 모듈을 다시 로드하여 변경된 환경 변수를 적용
-    # 이 방법은 모듈이 이미 로드된 경우 작동하지 않을 수 있으므로,
-    # 테스트 시작 전에 환경 변수를 설정하는 것이 가장 안전합니다.
-    # 여기서는 pytest의 autouse fixture를 사용하여 모듈 로드 전에 실행되도록 합니다.
-    from server.settings import settings
-    settings.database_url = f"sqlite:///{test_db_path}"
-    settings.celery_always_eager = True
-
-    # celery_app이 settings를 로드하기 전에 eager 모드가 설정되도록 합니다.
-    from server.celery_app import celery_app
-    celery_app.conf.task_always_eager = True
-    celery_app.conf.broker_url = "memory://" # Redis 연결 시도를 막기 위해 memory 브로커 사용
-    celery_app.conf.result_backend = "cache+memory://" # Redis 연결 시도를 막기 위해 memory 백엔드 사용
-    celery_app.conf.task_store_eager_result = True # eager 모드에서 결과 저장 활성화
-
-    # 테스트용 DB 파일이 존재하면 삭제
-    if os.path.exists(test_db_path):
-        os.remove(test_db_path)
-
-    # 테스트용 DB 초기화 (스키마 생성)
-    conn = sqlite3.connect(test_db_path)
-    cursor = conn.cursor()
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS translations (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            url TEXT NOT NULL,
-            pid TEXT,
-            original TEXT NOT NULL,
-            translated TEXT NOT NULL,
-            timestamp INTEGER NOT NULL,
-            folderName TEXT,
-            title TEXT,
-            toc_sort_order INTEGER,
-            UNIQUE(url, pid)
-        );
-    """)
-    conn.commit()
-    conn.close()
-
-    yield # 테스트 실행
-
-    # 테스트 완료 후 DB 파일 삭제
-    if os.path.exists(test_db_path):
-        os.remove(test_db_path)
-    
-    # 환경 변수 정리
-    del os.environ["DATABASE_URL"]
-    del os.environ["CELERY_ALWAYS_EAGER"]
-
-# settings 오버라이드 후 app import
 from server.server import app
+from server.services.task_manager import task_manager
+from server.models import SystemTask
+from server.database import SessionLocal
+
 client = TestClient(app)
 
-def get_db_path_for_test():
-    parsed_url = urlparse(os.environ["DATABASE_URL"])
-    path = parsed_url.path
-    if os.name == 'nt' and path.startswith('/'):
-        path = path[1:]
-    return path
 
-@pytest.fixture
-def setup_db_data():
-    conn = sqlite3.connect(get_db_path_for_test())
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM translations") # 기존 데이터 삭제
-    cursor.execute("INSERT INTO translations (url, pid, original, translated, timestamp, folderName, title) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                   ("http://example.com/1", "p1", "original 1", "translated 1", 1678886400, "FolderA", None))
-    cursor.execute("INSERT INTO translations (url, pid, original, translated, timestamp, folderName, title) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                   ("http://example.com/2", "p1", "original 2", "translated 2", 1678886401, "FolderA", "Existing Title"))
-    cursor.execute("INSERT INTO translations (url, pid, original, translated, timestamp, folderName, title) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                   ("http://example.com/3", "p1", "original 3", "translated 3", 1678886402, "FolderB", "年齢確認")) # Invalid title
-    conn.commit()
-    conn.close() # DB 연결 닫기
-    yield
-    conn = sqlite3.connect(get_db_path_for_test())
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM translations")
-    conn.commit()
-    conn.close()
+def test_task_manager_enqueue_and_get_status():
+    """TaskManager에 작업을 등록하고 즉시 인메모리 상태를 0ms로 조회할 수 있는지 검증"""
+    def dummy_task(n: int, task_id: str):
+        for i in range(n):
+            task_manager.report_progress(task_id, i + 1, n)
+        return {"done": True}
 
-@patch('server.routers.tasks.notify_task_event')
-@patch('server.routers.tasks._fetch_and_update_title_worker')
-@patch('server.routers.tasks.process_urls_in_background_task.update_state') # update_state 모의
-def test_process_urls_in_background_task_success(mock_update_state, mock_worker, mock_notify):
-    urls = ["http://test.com/url1", "http://test.com/url2"]
-    
-    from server.routers.tasks import process_urls_in_background_task
-    result = process_urls_in_background_task(urls)
-    
-    assert mock_worker.call_count == len(urls)
-    assert mock_update_state.call_count == len(urls)
-    mock_notify.assert_called_once()
+    task_id = task_manager.enqueue(
+        task_type="test_dummy",
+        func=dummy_task,
+        n=5,
+        total_items=5,
+        pass_task_id=True
+    )
 
-@patch('server.routers.tasks.notify_task_event')
-@patch('server.routers.tasks._fetch_and_update_title_worker')
-@patch('server.routers.tasks.process_urls_in_background_task.update_state') # update_state 모의
-def test_process_urls_in_background_task_failure(mock_update_state, mock_worker, mock_notify):
-    mock_worker.side_effect = [True, False] # 첫 번째는 성공, 두 번째는 실패
-    urls = ["http://test.com/url1", "http://test.com/url2"]
-    
-    from server.routers.tasks import process_urls_in_background_task
-    result = process_urls_in_background_task(urls)
-    
-    assert mock_worker.call_count == len(urls)
-    assert mock_update_state.call_count == len(urls)
-    assert result['status'] == 'Completed' # Celery eager mode에서는 실패해도 Completed로 반환될 수 있음
-    assert result['percentage'] == 100
-    mock_notify.assert_called_once()
+    status = task_manager.get_status(task_id)
+    assert status["task_id"] == task_id
+    assert status["state"] in ("PENDING", "PROGRESS", "SUCCESS")
+    assert "meta" in status
+    assert status["meta"]["total"] == 5
 
-@patch('server.routers.tasks.process_urls_in_background_task') # process_urls_in_background_task 자체를 모의
-@patch('server.routers.tasks._fetch_and_update_title_worker')
-def test_fetch_missing_titles_endpoint_success(mock_worker, mock_process_task, setup_db_data):
-    # mock_process_task가 AsyncResult 객체를 반환하도록 설정
-    mock_task_result = MagicMock(spec=AsyncResult)
-    mock_task_result.id = "mock_task_id_123"
-    mock_process_task.apply_async.return_value = mock_task_result
+
+def test_task_manager_throttled_db_commit():
+    """20건 또는 5초 쓰로틀링 커밋이 의도대로 동작하는지 검증"""
+    task_id = task_manager.enqueue(
+        task_type="throttling_test",
+        func=lambda: None,
+        total_items=50
+    )
+
+    # 5건 진행 시 (20건 미만이므로 DB 즉시 커밋되지 않음)
+    task_manager.report_progress(task_id, current=5, total=50)
+    in_mem = task_manager.get_status(task_id)
+    assert in_mem["meta"]["current"] == 5
+    assert in_mem["meta"]["percentage"] == 10
+
+    # 25건 진행 시 (20건 도달하여 DB 커밋 트리거)
+    task_manager.report_progress(task_id, current=25, total=50)
+    in_mem = task_manager.get_status(task_id)
+    assert in_mem["meta"]["current"] == 25
+    assert in_mem["meta"]["percentage"] == 50
+
+    db = SessionLocal()
+    try:
+        row = db.query(SystemTask).filter(SystemTask.id == task_id).first()
+        assert row is not None
+        assert row.processed_items == 25
+        assert row.progress == 50
+    finally:
+        db.close()
+
+
+def test_task_manager_cancellation():
+    """작업 취소 플래그 및 CANCELLED 상태 전이 검증"""
+    task_id = task_manager.enqueue(
+        task_type="cancel_test",
+        func=lambda: None,
+        total_items=10
+    )
+
+    assert not task_manager.is_cancelled(task_id)
+    cancelled = task_manager.cancel(task_id)
+    assert cancelled is True
+    assert task_manager.is_cancelled(task_id) is True
+
+    status = task_manager.get_status(task_id)
+    assert status["meta"]["raw_status"] == "CANCELLED"
+
+
+def test_task_manager_interrupted_recovery():
+    """서버 비정상 종료 시 RUNNING으로 남은 작업을 INTERRUPTED로 자동 복구하는지 검증"""
+    orphan_id = f"orphan-{int(time.time())}"
+    db = SessionLocal()
+    try:
+        orphan_task = SystemTask(
+            id=orphan_id,
+            task_type="crashed_task",
+            status="RUNNING",
+            progress=40,
+            total_items=100,
+            processed_items=40
+        )
+        db.add(orphan_task)
+        db.commit()
+    finally:
+        db.close()
+
+    task_manager.recover_interrupted_tasks()
+
+    db = SessionLocal()
+    try:
+        updated = db.query(SystemTask).filter(SystemTask.id == orphan_id).first()
+        assert updated is not None
+        assert updated.status == "INTERRUPTED"
+        assert "Process terminated" in updated.error_message
+    finally:
+        db.close()
+
+
+@patch('server.routers.tasks.get_sqlite_conn')
+@patch('server.routers.tasks._run_fetch_missing_titles')
+def test_fetch_missing_titles_endpoint_success(mock_run, mock_get_conn):
+    """POST /fetch_missing_titles가 TaskManager를 통해 정상적으로 작업을 등록하는지 검증"""
+    mock_run.return_value = {"processed": 2, "total": 2, "status": "Completed"}
+    mock_conn = mock_get_conn.return_value
+    mock_cursor = mock_conn.cursor.return_value
+    mock_cursor.execute.return_value.fetchall.return_value = [("http://example.com/1",), ("http://example.com/2",)]
 
     response = client.post("/fetch_missing_titles")
     assert response.status_code == 200
-    assert "Started fetching titles" in response.json()["message"]
-    assert response.json()["task_id"] == "mock_task_id_123"
+    data = response.json()
+    assert "Started fetching titles" in data["message"]
+    assert "task_id" in data
 
-    # process_urls_in_background_task가 호출되었는지 확인
-    mock_process_task.apply_async.assert_called_once()
-    # _fetch_and_update_title_worker는 process_urls_in_background_task 내부에서 호출되므로,
-    # process_urls_in_background_task를 모의하면 _fetch_and_update_title_worker는 호출되지 않습니다.
-    # 따라서 이 assert는 제거하거나, mock_process_task의 내부 동작을 모의해야 합니다.
-    # 여기서는 mock_process_task가 호출되었는지 확인하는 것으로 충분합니다.
-    # assert mock_worker.call_count > 0 # 이 부분은 제거합니다.
+    task_id = data["task_id"]
+    status_res = client.get(f"/task_status/{task_id}")
+    assert status_res.status_code == 200
+    status_data = status_res.json()
+    assert status_data["task_id"] == task_id
+    assert status_data["state"] in ("PENDING", "PROGRESS", "SUCCESS")
+    assert "meta" in status_data
+    assert "percentage" in status_data["meta"]
 
-def test_fetch_missing_titles_endpoint_no_missing_titles(setup_db_data):
-    # 모든 제목을 미리 업데이트하여 누락된 제목이 없도록 설정
-    conn = sqlite3.connect(get_db_path_for_test())
-    cursor = conn.cursor()
-    cursor.execute("UPDATE translations SET title = 'Updated Title' WHERE title IS NULL OR title = '年齢確認'")
-    conn.commit()
-    conn.close()
+
+@patch('time.sleep', return_value=None)
+@patch('server.routers.tasks.notify_task_event')
+@patch('server.routers.tasks._fetch_and_update_title_worker')
+def test_run_fetch_missing_titles_worker_logic(mock_worker, mock_notify, mock_sleep):
+    """_run_fetch_missing_titles 워커 함수의 진행률 보고 및 알림 로직 검증"""
+    from server.routers.tasks import _run_fetch_missing_titles
+    mock_worker.return_value = True
+    urls = ["http://example.com/test1", "http://example.com/test2"]
+    res = _run_fetch_missing_titles(urls, task_id="mock-worker-task")
+    assert res["status"] == "Completed"
+    assert res["processed"] == 2
+    mock_notify.assert_called_once()
+
+
+@patch('server.routers.tasks.get_sqlite_conn')
+def test_fetch_missing_titles_endpoint_no_missing_titles(mock_get_conn):
+    """누락된 제목이 없을 때 적절한 응답을 반환하는지 검증"""
+    mock_conn = mock_get_conn.return_value
+    mock_cursor = mock_conn.cursor.return_value
+    mock_cursor.execute.return_value.fetchall.return_value = []
 
     response = client.post("/fetch_missing_titles")
     assert response.status_code == 200
     assert "No missing titles to fetch." in response.json()["message"]
 
-def test_get_task_status_eager_mode():
-    # eager mode에서는 작업이 즉시 완료되므로 PENDING 상태는 발생하지 않습니다.
-    # 따라서 항상 SUCCESS 또는 FAILURE 상태를 반환해야 합니다.
-    # 여기서는 가상의 task_id를 사용하여 AsyncResult가 어떻게 동작하는지 확인합니다.
-    # 실제 Celery 백엔드에 연결하지 않으므로, AsyncResult는 기본 상태를 반환합니다.
-    from server.celery_app import celery_app
-    
-    # 가상의 성공 작업 결과 생성
-    mock_success_task_id = "mock_success_task_id"
-    celery_app.backend.mark_as_done(mock_success_task_id, {'current': 1, 'total': 1, 'percentage': 100, 'status': 'Completed'})
-    response = client.get(f"/task_status/{mock_success_task_id}")
-    assert response.status_code == 200
-    assert response.json()["state"] == "SUCCESS"
-    assert response.json()["meta"]["status"] == "Completed"
 
-    # 가상의 실패 작업 결과 생성
-    mock_failure_task_id = "mock_failure_task_id"
-    celery_app.backend.mark_as_failure(mock_failure_task_id, Exception("Mocked error"))
-    response = client.get(f"/task_status/{mock_failure_task_id}")
-    assert response.status_code == 200
-    assert response.json()["state"] == "FAILURE"
-    assert "Mocked error" in response.json()["status"]
+def test_get_task_status_compat_and_rest():
+    """GET /task_status/{task_id} 및 GET /tasks/{task_id} 엔드포인트 호환성 검증"""
+    task_id = task_manager.enqueue(
+        task_type="status_check",
+        func=lambda: None,
+        total_items=10
+    )
 
-    # 존재하지 않는 task_id (PENDING으로 간주)
-    response = client.get("/task_status/non_existent_task_id")
-    assert response.status_code == 200
-    assert response.json()["state"] == "PENDING"
-    assert response.json()["status"] == "Pending..."
+    res_compat = client.get(f"/task_status/{task_id}")
+    assert res_compat.status_code == 200
+    assert res_compat.json()["task_id"] == task_id
+
+    res_rest = client.get(f"/tasks/{task_id}")
+    assert res_rest.status_code == 200
+    assert res_rest.json()["task_id"] == task_id
+
+
+def test_cancel_task_endpoint():
+    """POST /tasks/{task_id}/cancel 엔드포인트 동작 검증"""
+    task_id = task_manager.enqueue(
+        task_type="cancel_endpoint_test",
+        func=lambda: None,
+        total_items=5
+    )
+
+    res = client.post(f"/tasks/{task_id}/cancel")
+    assert res.status_code == 200
+    assert res.json()["task_id"] == task_id
+    assert res.json()["cancelled"] is True
+
+
+def test_list_tasks_endpoint():
+    """GET /tasks 엔드포인트를 통한 최근 작업 목록 조회 검증"""
+    res = client.get("/tasks")
+    assert res.status_code == 200
+    assert isinstance(res.json(), list)
