@@ -38,8 +38,7 @@ export function showSidebar(): void {
   const sidebar = document.getElementById('jp-translator-sidebar');
   if (sidebar) {
     sidebar.classList.add('visible');
-    const toggleBtn = document.getElementById('jp-translator-toggle-btn');
-    if (toggleBtn) toggleBtn.style.display = 'none';
+    updateEmptyState();
     state.broadcastStatus();
   }
 }
@@ -48,8 +47,6 @@ export function hideSidebar(): void {
   const sidebar = document.getElementById('jp-translator-sidebar');
   if (sidebar) {
     sidebar.classList.remove('visible');
-    const toggleBtn = document.getElementById('jp-translator-toggle-btn');
-    if (toggleBtn) toggleBtn.style.display = 'block';
   }
 }
 
@@ -60,6 +57,54 @@ export function toggleSidebar(): void {
   } else {
     showSidebar();
   }
+}
+
+export function injectSidebarStyles(): void {
+  if (document.getElementById('lanovel-sidebar-style')) return;
+  const style = document.createElement('style');
+  style.id = 'lanovel-sidebar-style';
+  style.textContent = `
+    #jp-translator-sidebar {
+      position: fixed !important;
+      top: 0 !important;
+      right: 0 !important;
+      width: 460px !important;
+      max-width: 90vw !important;
+      min-width: 320px !important;
+      height: 100% !important;
+      background-color: #f8f9fa !important;
+      border-left: 1px solid #dee2e6 !important;
+      box-shadow: -2px 0 8px rgba(0,0,0,0.1) !important;
+      z-index: 9999 !important;
+      transform: translateX(100%) !important;
+      transition: transform 0.3s ease-in-out !important;
+      display: flex !important;
+      flex-direction: column !important;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+      box-sizing: border-box !important;
+    }
+    #jp-translator-sidebar.visible {
+      transform: translateX(0) !important;
+    }
+    #jp-translator-toggle-btn {
+      position: fixed !important;
+      top: 50% !important;
+      left: 0 !important;
+      transform: translateY(-50%) !important;
+      background-color: #667eea !important;
+      color: white !important;
+      border: none !important;
+      border-top-right-radius: 5px !important;
+      border-bottom-right-radius: 5px !important;
+      padding: 10px 5px !important;
+      cursor: pointer !important;
+      z-index: 9998 !important;
+      font-size: 18px !important;
+      writing-mode: vertical-rl !important;
+      box-sizing: border-box !important;
+    }
+  `;
+  document.head.appendChild(style);
 }
 
 export function updateEmptyState(): void {
@@ -439,6 +484,7 @@ export function updateSidebarWithCancelled(): void {
 
 export function injectSidebar(): void {
   if (document.getElementById('jp-translator-sidebar')) return;
+  injectSidebarStyles();
   const sidebar = document.createElement('div');
   sidebar.id = 'jp-translator-sidebar';
   sidebar.innerHTML = `
@@ -520,6 +566,7 @@ export function injectSidebar(): void {
       </button>
     </div>
     <div id="review-target-panel" class="review-target-panel" style="display: none;"></div>
+    <div id="separator-exclude-panel" class="separator-exclude-panel" style="display: none;"></div>
     <div class="sidebar-content">
       <table id="translation-table">
         <thead>

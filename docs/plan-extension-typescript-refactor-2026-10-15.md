@@ -138,3 +138,10 @@ else esbuild.build(options);
 * 기존 파일 5종(`content.js`, `remote_content.js`, `background.js`, `remote.js`, `manifest.json`)이 `extension/legacy_backup/` 폴더에 원형 보존되어 있습니다.
 * 필요 시 언제든지 `npm run rollback` 명령어로 1초 만에 기존 레거시 상태로 100% 즉시 복구 가능합니다.
 
+---
+
+## 6. 추가 핫픽스 (2026-10-15)
+* **사이드바 CSS 누락 핫픽스**:
+  * 기존 `content.js` 동적 주입 `<style>` 태그에 포함되어 있던 `#jp-translator-sidebar` 및 `#jp-translator-toggle-btn`의 `position: fixed`, `z-index: 9999`, `transform: translateX(100%)` 레이아웃 규칙이 리팩토링 과정에서 누락되어 소설 원문 최하단에 렌더링되던 회귀 버그 해결.
+  * `extension/content.css`에 핵심 레이아웃 스타일 519줄을 추가하고, `src/ui/sidebar.ts`의 `injectSidebar()`에서도 `injectSidebarStyles()`를 동적 주입하도록 이중 안전화 완료.
+
