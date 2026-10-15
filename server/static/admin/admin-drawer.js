@@ -434,8 +434,8 @@ async function checkAndLoadUnclassifiedNovels() {
         try {
             const summaryRes = await fetch(`/api/notifications/summary?t=${Date.now()}`);
             if (summaryRes.ok) {
-                latestQuotaSummary = await summaryRes.json();
-                updateStatistics(groupedTranslations);
+                state.latestQuotaSummary = await summaryRes.json();
+                window.dispatchEvent(new CustomEvent('lanovel:update-stats'));
             }
         } catch (e) {
             // silent
@@ -698,7 +698,7 @@ function renderUnclassifiedEpisodes(novel) {
         epEl.dataset.url = ep.url;
         epEl.dataset.folderName = '미분류';
 
-        const isApplied = appliedUrlsSet.has(ep.url.split('#')[0].replace(/\/$/, ''));
+        const isApplied = Boolean(state.appliedUrlsSet && state.appliedUrlsSet.has(ep.url.split('#')[0].replace(/\/$/, '')));
 
         epEl.innerHTML = `
             <div class="unclassified-episode-header list-group-header">

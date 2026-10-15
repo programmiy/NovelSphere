@@ -5,6 +5,7 @@
 
 import { state, dom, escapeHtml, showToast, showCyberLoader, hideCyberLoader } from './admin-state.js';
 import { renderGroupedHistory, loadAndRenderGrouped, updateBulkActionPanel } from './admin-tree.js';
+import { closeRecommendPanel } from './admin-dock.js';
 
 // Event listeners for cross-module decoupled refreshes
 window.addEventListener('lanovel:refresh-abnormal', () => {
@@ -13,6 +14,10 @@ window.addEventListener('lanovel:refresh-abnormal', () => {
 
 window.addEventListener('lanovel:refresh-cleanup', () => {
     loadAndRenderCleanupQueue();
+});
+
+window.addEventListener('lanovel:refresh-notifications', () => {
+    loadNotificationsAndBadge();
 });
 
 async function loadAndRenderAbnormal() {
@@ -74,8 +79,8 @@ function setAbnormalFilter(filterType) {
 function toggleFindEmpty() {
     state.isFindingEmpty = !state.isFindingEmpty;
     dom.findEmptyBtn.classList.toggle('active', state.isFindingEmpty);
-    searchBox.value = '';
-    currentSearch = '';
+    if (dom.searchBox) dom.searchBox.value = '';
+    state.currentSearch = '';
 
     if (state.isFindingEmpty) {
         if (state.isCleanupQueue) {
@@ -95,8 +100,8 @@ function toggleFindEmpty() {
 function toggleCleanupQueue() {
     state.isCleanupQueue = !state.isCleanupQueue;
     dom.cleanupQueueBtn.classList.toggle('active', state.isCleanupQueue);
-    searchBox.value = '';
-    currentSearch = '';
+    if (dom.searchBox) dom.searchBox.value = '';
+    state.currentSearch = '';
 
     if (state.isCleanupQueue) {
         if (state.isFindingEmpty) {

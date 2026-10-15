@@ -249,8 +249,8 @@ function renderGroupedHistory(dataToRender, selectedFolder = '') {
                     (t.translated && t.translated.toLowerCase().includes(state.currentSearch));
                 if (!matchesSearch) return false;
 
-                if (state.isFindingEmpty && currentAbnormalFilter !== 'all') {
-                    return t.category === currentAbnormalFilter;
+                if (state.isFindingEmpty && state.currentAbnormalFilter !== 'all') {
+                    return t.category === state.currentAbnormalFilter;
                 }
                 return true;
             });
@@ -355,8 +355,8 @@ function renderUrlGroupContent(listGroupEl) {
             (t.translated && t.translated.toLowerCase().includes(state.currentSearch))
         );
     }
-    if (state.isFindingEmpty && currentAbnormalFilter !== 'all') {
-        items = items.filter(t => t.category === currentAbnormalFilter);
+    if (state.isFindingEmpty && state.currentAbnormalFilter !== 'all') {
+        items = items.filter(t => t.category === state.currentAbnormalFilter);
     }
     items.sort((a, b) => (a.pid || '').localeCompare(b.pid || '', undefined, { numeric: true, sensitivity: 'base' }));
 
@@ -696,7 +696,7 @@ async function handleHistoryClick(e) {
                 itemRow.style.transform = 'translateX(20px)';
                 setTimeout(() => itemRow.remove(), 250);
                 showToast('해당 단락이 이상번역 검사에서 제외되었습니다.', 'success');
-                loadNotificationsAndBadge();
+                window.dispatchEvent(new CustomEvent('lanovel:refresh-notifications'));
             } catch (err) {
                 console.error('이상번역 제외 실패:', err);
                 showToast(`이상번역 제외 실패: ${err.message}`, 'error');
