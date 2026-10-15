@@ -47,6 +47,7 @@ scripts/*_raw.json
 scripts/*_translations.json
 scripts/unreviewed_temp.json
 scripts/maid_summary.txt
+scripts/novel_inspector/output/
 search_*.txt
 calc_lengths.py
 check_db*.py

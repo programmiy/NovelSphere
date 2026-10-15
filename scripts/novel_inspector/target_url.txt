@@ -1,0 +1,3 @@
+# C:\LANOVEL\scripts\novel_inspector\target_url.txt
+# 여기에 분석하고 싶은 소설 URL을 입력하세요.
+https://kakuyomu.jp/works/16818093073317257284
