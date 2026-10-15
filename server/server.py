@@ -1,6 +1,8 @@
 import json
 import time
 import os
+# Ensure server process has production database write authorization
+os.environ["ALLOW_PROD_DB_WRITE"] = "1"
 import asyncio
 import subprocess
 import logging
@@ -97,14 +99,14 @@ async def backup_check_task():
         await asyncio.sleep(600)
 
         try:
-            # Check and perform unified 3-day backup in thread pool
+            # Check and perform unified smart backup in thread pool (1 hour cooldown)
             result = await asyncio.to_thread(
                 create_unified_backup,
                 src_db_path=get_db_path(),
                 backup_dir=settings.backup_dir,
                 force=False,
-                cooldown_days=3.0,
-                max_backups=3
+                cooldown_hours=1.0,
+                max_backups=5
             )
             if result.get("created"):
                 logger.info(f"[Periodic Backup] Successfully created automated backup: {result['backup_file']}")

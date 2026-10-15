@@ -74,6 +74,8 @@ class _NotificationCenterSheetState extends State<NotificationCenterSheet> {
 
   IconData _getIconForType(String type) {
     switch (type) {
+      case 'db_alert':
+        return Icons.warning_amber_rounded;
       case 'complete':
         return Icons.celebration_rounded;
       case 'progress':
@@ -92,6 +94,8 @@ class _NotificationCenterSheetState extends State<NotificationCenterSheet> {
 
   Color _getColorForType(String type, ReaderThemeData theme) {
     switch (type) {
+      case 'db_alert':
+        return Colors.red;
       case 'complete':
         return Colors.green;
       case 'progress':

@@ -436,6 +436,8 @@ def delete_unclassified_novel(req: DeleteNovelRequest):
         deleted_count = cursor.rowcount
 
         conn.commit()
+        from server.backup_utils import record_legitimate_deletion
+        record_legitimate_deletion(deleted_count, reason=f"unclassified_delete_{req.work_id}")
         return {
             "success": True,
             "message": f"{deleted_count}개 미분류 번역 단락이 삭제되었습니다.",

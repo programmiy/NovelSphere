@@ -572,6 +572,8 @@ def exclude_translations(req: ExcludeRequest, db: Session = Depends(get_db)):
             db.delete(translation_to_exclude)
             excluded_count += 1
     db.commit()
+    from server.backup_utils import record_legitimate_deletion
+    record_legitimate_deletion(excluded_count, reason="exclude_translation")
     return {"message": f"{excluded_count}개의 항목이 제외 목록 및 휴지통에 안전하게 보관되었습니다."}
 
 

@@ -405,4 +405,103 @@ class SyncService {
       (m) => '${m[1]},',
     );
   }
+
+  /// [모바일 -> PC 긴급 역복구]
+  /// 모바일 앱 로컬 SQLite의 모든 챕터 데이터를 PC 서버로 전송하여,
+  /// PC DB에 이미 있는 데이터는 100% 보존하고, PC에 없는 유실분만 안전하게 INSERT 추가합니다.
+  static Future<Map<String, dynamic>> rescueUploadToPc({
+    Function(String statusMessage, double progress)? onProgress,
+  }) async {
+    final isAlive = await pingServer();
+    if (!isAlive) {
+      return {
+        'success': false,
+        'message': 'PC 서버에 연결할 수 없습니다. PC 서버가 켜져 있는지 확인하세요.',
+      };
+    }
+
+    final db = await LocalDbService.database;
+    final chapters = await db.query('chapters');
+
+    if (chapters.isEmpty) {
+      return {
+        'success': false,
+        'message': '모바일 앱 로컬 DB에 보관된 챕터가 없습니다.',
+      };
+    }
+
+    if (onProgress != null) {
+      onProgress('모바일 챕터 데이터 준비 중 (${chapters.length}개)...', 0.1);
+    }
+
+    List<Map<String, dynamic>> chapPayloadList = [];
+    for (int i = 0; i < chapters.length; i++) {
+      final c = chapters[i];
+      final blob = c['compressed_content'];
+      if (blob == null) continue;
+
+      String base64Content;
+      if (blob is List<int>) {
+        base64Content = base64Encode(blob);
+      } else {
+        continue;
+      }
+
+      chapPayloadList.add({
+        'book_name': c['book_name'],
+        'title': c['title'],
+        'url': c['url'],
+        'sort_order': c['sort_order'] ?? 0,
+        'sentence_count': c['sentence_count'] ?? 0,
+        'compressed_content': base64Content,
+      });
+
+      if (onProgress != null && i % 20 == 0) {
+        final pct = 0.1 + (0.4 * (i / chapters.length));
+        onProgress('챕터 데이터 인코딩 중 ($i/${chapters.length})...', pct);
+      }
+    }
+
+    final serverUrl = PreferencesService.normalizeServerUrl(PreferencesService.serverUrl);
+    final uri = Uri.parse('$serverUrl/api/sync/rescue-from-mobile');
+
+    final payload = {
+      'client_id': 'mobile_rescue',
+      'chapters': chapPayloadList,
+    };
+
+    if (onProgress != null) {
+      onProgress('Gzip 압축 및 PC 서버로 안전 전송 중...', 0.6);
+    }
+
+    final rawJsonBytes = utf8.encode(jsonEncode(payload));
+    final compressedGzipBytes = GZipEncoder().encode(rawJsonBytes);
+
+    if (onProgress != null) {
+      onProgress('PC 서버에서 유실 데이터 계산 및 복원 중...', 0.8);
+    }
+
+    final res = await http.post(
+      uri,
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Encoding': 'gzip',
+        ...PreferencesService.authHeaders,
+      },
+      body: compressedGzipBytes,
+    ).timeout(const Duration(minutes: 5));
+
+    if (res.statusCode == 200) {
+      final resData = jsonDecode(utf8.decode(res.bodyBytes));
+      return {
+        'success': true,
+        ...resData,
+      };
+    } else {
+      return {
+        'success': false,
+        'message': '서버 복구 실패 (HTTP ${res.statusCode}): ${res.body}',
+      };
+    }
+  }
 }

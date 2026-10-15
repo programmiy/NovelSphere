@@ -34,6 +34,7 @@ from server.rule_classifier import (
     restore_brackets,
 )
 from server.utils import natural_sort_key, get_url_variants
+from server.services.search_helper import search_translation_ids
 
 # --- Sub-Services Re-exports for High Cohesion & Backward Compatibility ---
 from server.services.chapter_service import clean_chapter_title
@@ -122,29 +123,18 @@ def get_translations(
             params.append(folder)
 
     if search:
-        use_fts = False
-        try:
-            clean_search = '"' + search.replace('"', '""') + '"'
-            fts_rows = cursor.execute(
-                "SELECT rowid FROM translations_fts WHERE translations_fts MATCH ? LIMIT 1000",
-                (clean_search,)
-            ).fetchall()
-            matched_ids = [
-                row['id'] if isinstance(row, dict) and 'id' in row
-                else (row['rowid'] if isinstance(row, dict) and 'rowid' in row else row[0])
-                for row in fts_rows
-            ]
-            if matched_ids:
-                placeholders = ', '.join('?' * len(matched_ids))
-                conditions.append(f"id IN ({placeholders})")
-                params.extend(matched_ids)
-                use_fts = True
-        except Exception:
-            use_fts = False
-
-        if not use_fts:
-            conditions.append("(original LIKE ? OR translated LIKE ?)")
-            params.extend([f'%{search}%', f'%{search}%'])
+        matched_ids = search_translation_ids(
+            conn,
+            query=search,
+            limit=1000,
+            folder=folder if folder != 'unclassified' else None
+        )
+        if matched_ids:
+            placeholders = ', '.join('?' * len(matched_ids))
+            conditions.append(f"id IN ({placeholders})")
+            params.extend(matched_ids)
+        else:
+            conditions.append("1 = 0")
 
     if url:
         url_list = get_url_variants(url)
@@ -377,6 +367,8 @@ def delete_translations(req: DeleteRequest):
             deleted_count += cursor.rowcount
             cursor.execute(f"DELETE FROM cleanup_queued_items WHERE translation_id IN ({placeholders})", chunk)
         conn.commit()
+        from server.backup_utils import record_legitimate_deletion
+        record_legitimate_deletion(deleted_count, reason="data_crud_delete_translations")
     finally:
         conn.close()
 
@@ -454,11 +446,17 @@ def get_translations_by_folder(
         query = query.filter(Translation.folderName.isnot(None)).filter(Translation.folderName != '')
 
     if search:
-        query = query.filter(
-            (Translation.original.contains(search)) |
-            (Translation.translated.contains(search)) |
-            (Translation.title.contains(search))
-        )
+        matched_ids = search_translation_ids(db, query=search, limit=1000, folder=folder)
+        # Also check title matches (index-assisted)
+        title_q = db.query(Translation.id).filter(Translation.title.contains(search))
+        if folder:
+            title_q = title_q.filter(Translation.folderName == folder)
+        title_ids = [r[0] for r in title_q.limit(500).all()]
+        all_ids = set(matched_ids).union(title_ids)
+        if all_ids:
+            query = query.filter(Translation.id.in_(all_ids))
+        else:
+            query = query.filter(Translation.id == -1)
 
     all_translations = query.all()
 

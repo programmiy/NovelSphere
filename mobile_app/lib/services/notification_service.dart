@@ -104,16 +104,38 @@ class NotificationService {
                     // 서버로부터 새 버전 빌드 완료 SSE 신호 수신 시 즉시 무설치 자동 업데이트 가동
                     AppUpdateService.checkForUpdate(silent: true);
                   } else {
+                    final itemType = data['type'] as String? ?? 'server';
+                    final itemTitle = data['title'] as String? ?? 'LANOVEL 작업 알림';
+                    final itemMsg = data['message'] as String? ?? '';
+                    final itemPriority = data['priority'] as String? ?? 'default';
+
                     _processNotificationItem(
                       id: data['id']?.toString() ?? 'loc_${DateTime.now().millisecondsSinceEpoch}',
-                      title: data['title'] as String? ?? 'LANOVEL 작업 알림',
-                      message: data['message'] as String? ?? '',
+                      title: itemTitle,
+                      message: itemMsg,
                       bookTitle: data['book_title'] as String?,
                       chapterTitle: data['chapter_title'] as String?,
                       clickUrl: data['click_url'] as String?,
-                      type: data['type'] as String? ?? 'server',
+                      type: itemType,
                       timestamp: (data['timestamp'] as num?)?.toInt(),
                     );
+
+                    // 🚨 긴급 DB 경보 또는 urgent 우선순위 알림일 경우 상단바 시스템 푸시 알림 즉시 팝업
+                    if (itemType == 'db_alert' || itemPriority == 'urgent') {
+                      try {
+                        LocalNotificationService.showNotification(
+                          id: 7777,
+                          title: itemTitle,
+                          body: itemMsg,
+                          payload: jsonEncode({
+                            'type': itemType,
+                            'book_title': data['book_title'],
+                            'chapter_title': data['chapter_title'],
+                          }),
+                        );
+                      } catch (_) {}
+                    }
+
                     // 이벤트 수신 시 대시보드 상태도 즉시 갱신
                     StatusDashboardService.syncStatus();
                   }

@@ -3,6 +3,7 @@ import gzip
 import zlib
 import json
 import time
+import base64
 import sqlite3
 import logging
 from collections import defaultdict
@@ -58,6 +59,18 @@ class PushPayload(BaseModel):
     activities: Optional[List[ActivitySyncItem]] = []
     reading_logs: Optional[List[ReadingLogItem]] = []
     glossary_rules: Optional[List[Dict[str, Any]]] = []
+
+class RescueChapterItem(BaseModel):
+    book_name: str
+    title: str
+    url: str
+    sort_order: Optional[int] = 0
+    sentence_count: Optional[int] = 0
+    compressed_content: str  # Base64-encoded zlib compressed JSON
+
+class RescuePayload(BaseModel):
+    client_id: Optional[str] = "mobile_rescue"
+    chapters: List[RescueChapterItem] = []
 
 @router.get("/ping")
 def ping_sync_server():
@@ -624,6 +637,152 @@ async def push_changes_to_pc(request: Request, db: Session = Depends(get_db)):
         conn.rollback()
         logger.error(f"Error executing push sync: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"서버 동기화 반영 중 오류: {e}")
+    finally:
+        conn.close()
+
+
+@router.post("/rescue-from-mobile")
+async def rescue_from_mobile(request: Request):
+    """
+    [모바일 -> PC 비파괴적 긴급 복구]
+    모바일 앱 로컬 DB에 존재하는 챕터 데이터를 수신하여,
+    PC DB에 이미 존재하는 데이터는 1글자도 변경/삭제하지 않고(100% 보존),
+    PC DB에 없는 순수 유실된 문장/챕터만 계산하여 안전하게 추가(INSERT OR IGNORE)합니다.
+    """
+    try:
+        body_bytes = await request.body()
+        content_encoding = request.headers.get("content-encoding", "").lower()
+        if content_encoding == "gzip" or body_bytes[:2] == b'\x1f\x8b':
+            decompressed = gzip.decompress(body_bytes)
+            data_dict = json.loads(decompressed.decode('utf-8'))
+        else:
+            data_dict = json.loads(body_bytes.decode('utf-8'))
+
+        payload = RescuePayload(**data_dict)
+    except Exception as e:
+        logger.error(f"[Rescue] Payload parse error: {e}")
+        raise HTTPException(status_code=400, detail=f"데이터 포맷 오류: {e}")
+
+    conn = get_sqlite_conn()
+    cursor = conn.cursor()
+
+    rescued_sentences_count = 0
+    rescued_chapters_count = 0
+    skipped_chapters_count = 0
+    rescued_details = []
+
+    try:
+        now_ts = int(time.time())
+
+        for chap in payload.chapters:
+            try:
+                blob_bytes = base64.b64decode(chap.compressed_content)
+                raw_json = zlib.decompress(blob_bytes)
+                sentences = json.loads(raw_json.decode('utf-8'))
+            except Exception as dec_err:
+                logger.warning(f"[Rescue] Failed to decompress chapter {chap.title}: {dec_err}")
+                continue
+
+            if not sentences:
+                continue
+
+            c_url = chap.url.strip()
+            # PC DB의 해당 URL에 이미 존재하는 (pid, original) 목록 조회
+            cursor.execute("SELECT pid, original FROM translations WHERE url = ?", (c_url,))
+            existing_items = set((row[0], row[1]) for row in cursor.fetchall())
+
+            missing_sentences = []
+            for s in sentences:
+                if isinstance(s, dict):
+                    s_pid = s.get('pid')
+                    s_orig = s.get('original')
+                elif isinstance(s, (list, tuple)) and len(s) >= 4:
+                    s_pid = s[2]
+                    s_orig = s[3]
+                else:
+                    continue
+
+                if (s_pid, s_orig) not in existing_items:
+                    missing_sentences.append(s)
+
+            if not missing_sentences:
+                skipped_chapters_count += 1
+                continue
+
+            # PC에 없는 문장들만 안전하게 INSERT OR IGNORE
+            for s in missing_sentences:
+                if isinstance(s, dict):
+                    s_pid = s.get('pid')
+                    s_orig = s.get('original')
+                    s_trans = s.get('translated')
+                    s_time = s.get('timestamp') or now_ts
+                    s_folder = s.get('folderName') or chap.book_name
+                    s_title = s.get('title') or chap.title
+                    s_toc = s.get('toc_sort_order') if s.get('toc_sort_order') is not None else chap.sort_order
+                else:
+                    s_pid = s[2]
+                    s_orig = s[3]
+                    s_trans = s[4] if len(s) > 4 else None
+                    s_time = s[5] if len(s) > 5 and s[5] else now_ts
+                    s_folder = (s[6] if len(s) > 6 and s[6] else chap.book_name)
+                    s_title = (s[7] if len(s) > 7 and s[7] else chap.title)
+                    s_toc = s[8] if len(s) > 8 and s[8] is not None else chap.sort_order
+
+                cursor.execute("""
+                    INSERT OR IGNORE INTO translations 
+                    (url, pid, original, translated, timestamp, folderName, title, toc_sort_order)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """, (c_url, s_pid, s_orig, s_trans, s_time, s_folder, s_title, s_toc))
+                if cursor.rowcount > 0:
+                    rescued_sentences_count += 1
+
+            # applied_urls 등록
+            cursor.execute("""
+                INSERT OR IGNORE INTO applied_urls (url)
+                VALUES (?)
+            """, (c_url,))
+
+            # url_metadata 등록
+            cursor.execute("""
+                INSERT OR IGNORE INTO url_metadata (url, sort_order, first_accessed_at)
+                VALUES (?, ?, ?)
+            """, (c_url, chap.sort_order, now_ts))
+
+            rescued_chapters_count += 1
+            rescued_details.append({
+                "book": chap.book_name,
+                "chapter": chap.title,
+                "url": c_url,
+                "rescued_count": len(missing_sentences)
+            })
+
+        conn.commit()
+
+        # FTS5 가상 검색 인덱스 rebuild 1회 수행 (복원된 번역문 검색 색인 반영)
+        try:
+            cursor.execute("INSERT INTO translations_fts(translations_fts) VALUES('rebuild');")
+            conn.commit()
+            logger.info("[Rescue] translations_fts search index rebuilt successfully.")
+        except Exception as fts_err:
+            logger.warning(f"[Rescue] FTS rebuild warning: {fts_err}")
+
+        logger.info(
+            f"[Rescue Complete] Rescued {rescued_chapters_count} chapters, "
+            f"{rescued_sentences_count} sentences. Skipped {skipped_chapters_count} existing chapters."
+        )
+
+        return {
+            "status": "success",
+            "message": f"복구 완료! {rescued_chapters_count}개 챕터 ({rescued_sentences_count}건 문장) 복원 완료 (기존 {skipped_chapters_count}개 챕터 보존)",
+            "rescued_chapters": rescued_chapters_count,
+            "rescued_sentences": rescued_sentences_count,
+            "skipped_chapters": skipped_chapters_count,
+            "details": rescued_details
+        }
+    except Exception as e:
+        conn.rollback()
+        logger.error(f"Error in rescue_from_mobile: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"복구 중 서버 오류: {e}")
     finally:
         conn.close()
 

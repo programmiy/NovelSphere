@@ -386,6 +386,135 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  Future<void> _confirmRescueToPc() async {
+    final theme = ReaderThemes.getTheme(PreferencesService.theme);
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: theme.surfaceColor,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            const Icon(Icons.settings_backup_restore_rounded, color: Colors.amber, size: 28),
+            const SizedBox(width: 8),
+            Text('모바일 ➔ PC 유실 복원', style: TextStyle(color: theme.textColor, fontSize: 17, fontWeight: FontWeight.bold)),
+          ],
+        ),
+        content: Text(
+          '모바일 앱 로컬 DB에 보관된 챕터 데이터를 PC 서버로 전송합니다.\n\n'
+          '🛡️ 비파괴 원칙:\n'
+          '• PC DB에 이미 존재하는 데이터는 단 1글자도 변경되지 않고 100% 보존됩니다.\n'
+          '• PC DB에 없는 유실된 챕터와 문장만 계산하여 안전하게 추가합니다.\n\n'
+          '지금 복원을 진행하시겠습니까?',
+          style: TextStyle(color: theme.subTextColor, fontSize: 13, height: 1.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('취소', style: TextStyle(color: theme.subTextColor)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.amber.shade900,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('복원 시작'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && mounted) {
+      setState(() {
+        _isSyncing = true;
+        _syncProgress = 0.0;
+        _syncStatusMessage = '모바일 로컬 챕터 수집 및 준비 중...';
+      });
+
+      try {
+        final result = await SyncService.rescueUploadToPc(
+          onProgress: (status, progress) {
+            if (mounted) {
+              setState(() {
+                _syncStatusMessage = status;
+                _syncProgress = progress;
+              });
+            }
+          },
+        );
+
+        setState(() {
+          _isSyncing = false;
+        });
+
+        if (!mounted) return;
+
+        if (result['success'] == true) {
+          final rescuedChaps = result['rescued_chapters'] ?? 0;
+          final rescuedSents = result['rescued_sentences'] ?? 0;
+          final skippedChaps = result['skipped_chapters'] ?? 0;
+
+          showDialog(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              backgroundColor: theme.surfaceColor,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              title: Row(
+                children: [
+                  const Icon(Icons.check_circle_rounded, color: Colors.green, size: 28),
+                  const SizedBox(width: 8),
+                  Text('복원 완료!', style: TextStyle(color: theme.textColor, fontSize: 17, fontWeight: FontWeight.bold)),
+                ],
+              ),
+              content: Text(
+                '🎉 PC DB 유실 데이터 복원이 성공적으로 완료되었습니다!\n\n'
+                '• 새로 복구된 챕터: $rescuedChaps개\n'
+                '• 복구된 번역 문장: $rescuedSents건\n'
+                '• 스킵된 기존 챕터: $skippedChaps개 (PC 원본 100% 보존)',
+                style: TextStyle(color: theme.textColor, fontSize: 13, height: 1.6),
+              ),
+              actions: [
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: theme.accentColor,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('확인'),
+                ),
+              ],
+            ),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(result['message'] ?? '복원 실패'),
+              backgroundColor: Colors.redAccent,
+              duration: const Duration(seconds: 4),
+            ),
+          );
+        }
+      } catch (e) {
+        setState(() {
+          _isSyncing = false;
+          _syncStatusMessage = '복원 중 오류 발생: $e';
+        });
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('복원 중 오류: $e'),
+              backgroundColor: Colors.redAccent,
+            ),
+          );
+        }
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = ReaderThemes.getTheme(PreferencesService.theme);
@@ -486,6 +615,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   onPressed: _isSyncing ? null : _runFullSeedDownload,
                   icon: const Icon(Icons.cloud_download_outlined),
                   label: const Text('전체 서재 시드 다운로드 (최초 1회, 약 26MB)'),
+                ),
+                const SizedBox(height: 12),
+                ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.amber.shade900,
+                    foregroundColor: Colors.white,
+                    minimumSize: const Size(double.infinity, 44),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                  onPressed: _isSyncing ? null : _confirmRescueToPc,
+                  icon: const Icon(Icons.settings_backup_restore_rounded, color: Colors.white),
+                  label: const Text('🚨 모바일 ➔ PC 유실 데이터 비파괴 복원'),
                 ),
                 const SizedBox(height: 12),
                 OutlinedButton.icon(

@@ -129,3 +129,6 @@ extension/
 | **"키보드로 다음화 넘어가게 해줘" / "단축키로 다음화 이동"** | `extension/src/ui/key_nav.ts`<br>`extension/src/ui/hud.ts` | `]` 또는 `L` 누르면 세션 플래그 설정 후 다음 화로 이동 -> 새 페이지 로드 즉시 자동 번역 시작 + 플로팅 HUD 안내. |
 | **"목차에서 안 읽은(미번역) 화만 골라서 보고 싶어"** | `extension/src/ui/toc_quick_jump.ts`<br>`server/routers/books.py` | 목차 페이지 감지 시 에피소드 링크별 번역 여부 배지 부착, 우측 하단 `[⚡ 미번역 N화]` 퀵 점프 드로어 제공, `N`키 순차 탐색 및 `Enter` 진입. |
 | **"소설 플랫폼 파싱 안 돼" / "새로운 소설 사이트 지원해줘"** | `extension/src/scrapers/` (`base.ts`, `*.ts`) | `PlatformScraper` 인터페이스를 구현하여 새 사이트 추가. 소설명, 에피소드명, 다음화/이전화 링크 셀렉터 캡슐화. |
+| **"DB 보호해줘" / "데이터 유실 방지" / "스마트 백업"** | `server/database.py`<br>`server/backup_utils.py`<br>`server/server.py` | SQLite C-Authorizer(`DROP TABLE` 차단), SQLAlchemy `before_cursor_execute`(전건 DELETE 차단), 비서버 스크립트 `query_only=ON`, 1시간 주기 스마트 스킵 및 음수 역전 시 백업 중단 & 모바일 비상 경보(`db_alert`). |
+| **"모바일에서 유실 데이터 복구"** | `server/routers/sync.py`<br>`mobile_app/lib/services/sync_service.dart` | `POST /api/sync/rescue-from-mobile`: 모바일에 캐시된 압축 챕터 중 PC DB에 없는 누락 회차(비파괴 INSERT OR IGNORE)만을 안전 복원. |
+
