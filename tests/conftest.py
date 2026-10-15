@@ -43,8 +43,24 @@ with sdb.engine.begin() as conn:
                 translated,
                 content='translations',
                 content_rowid='id',
-                tokenize='unicode61'
+                tokenize='trigram'
             );
+        """)
+        conn.exec_driver_sql("""
+            CREATE TRIGGER IF NOT EXISTS translations_ai AFTER INSERT ON translations BEGIN
+                INSERT INTO translations_fts(rowid, original, translated) VALUES (new.id, new.original, new.translated);
+            END;
+        """)
+        conn.exec_driver_sql("""
+            CREATE TRIGGER IF NOT EXISTS translations_ad AFTER DELETE ON translations BEGIN
+                INSERT INTO translations_fts(translations_fts, rowid, original, translated) VALUES('delete', old.id, old.original, old.translated);
+            END;
+        """)
+        conn.exec_driver_sql("""
+            CREATE TRIGGER IF NOT EXISTS translations_au AFTER UPDATE ON translations BEGIN
+                INSERT INTO translations_fts(translations_fts, rowid, original, translated) VALUES('delete', old.id, old.original, old.translated);
+                INSERT INTO translations_fts(rowid, original, translated) VALUES (new.id, new.original, new.translated);
+            END;
         """)
     except Exception:
         pass

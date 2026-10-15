@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from server.models import Translation
 from server.rule_classifier import extract_untranslated_keywords
+from server.services.search_helper import search_translation_ids
 
 # 한국어 불용어 (일반적인 문법 어휘, 보조 용언, 대명사, 서술어 등)
 STOPWORDS = {
@@ -99,15 +100,16 @@ def get_top5_expressions(
     if not kw:
         return []
 
-    # 1. 원문에 키워드가 포함되거나 번역문에 키워드가 포함된 문장 조회
-    # (번역문에 가나가 잔존하지 않는 양질의 한국어 문장 우선)
-    query = db.query(Translation).filter(
-        (Translation.original.contains(kw)) | (Translation.translated.contains(kw)),
+    # 1. search_translation_ids를 통한 1~2ms 초고속 후보 ID 추출 (LIKE 풀 스캔 제거)
+    matched_ids = search_translation_ids(db, query=kw, limit=max_scan)
+    if not matched_ids:
+        return []
+
+    candidates = db.query(Translation).filter(
+        Translation.id.in_(matched_ids),
         Translation.translated.isnot(None),
         Translation.translated != ""
-    )
-    
-    candidates = query.order_by(Translation.timestamp.desc()).limit(max_scan).all()
+    ).all()
     if not candidates:
         return []
 
@@ -142,15 +144,18 @@ def get_similar_examples_data(
     if not kw:
         return {"keyword": "", "examples": [], "top5_expressions": []}
 
-    query = db.query(Translation).filter(
-        (Translation.original.contains(kw)) | (Translation.translated.contains(kw))
+    # 1. 현재 폴더(소설) 내 우선 검색 (search_translation_ids 활용)
+    matched_ids = search_translation_ids(
+        db,
+        query=kw,
+        limit=limit * 4,
+        folder=folder,
+        exclude_id=exclude_id
     )
-    if exclude_id:
-        query = query.filter(Translation.id != exclude_id)
-    if folder:
-        query = query.filter(Translation.folderName == folder)
-
-    candidates = query.order_by(Translation.timestamp.desc()).limit(limit * 4).all()
+    candidates = (
+        db.query(Translation).filter(Translation.id.in_(matched_ids)).order_by(Translation.id.desc()).all()
+        if matched_ids else []
+    )
 
     valid_examples = []
     seen_ids = set()
@@ -174,33 +179,39 @@ def get_similar_examples_data(
         if len(valid_examples) >= limit:
             break
 
+    # 2. 타 폴더 / 전체 확장 검색
     if len(valid_examples) < limit and folder:
-        query_all = db.query(Translation).filter(
-            (Translation.original.contains(kw)) | (Translation.translated.contains(kw)),
-            Translation.folderName != folder
+        other_ids = search_translation_ids(
+            db,
+            query=kw,
+            limit=(limit - len(valid_examples)) * 4,
+            exclude_id=exclude_id
         )
-        if exclude_id:
-            query_all = query_all.filter(Translation.id != exclude_id)
-        query_all = query_all.order_by(Translation.timestamp.desc()).limit((limit - len(valid_examples)) * 4).all()
+        other_ids = [oid for oid in other_ids if oid not in seen_ids]
+        if other_ids:
+            query_all = db.query(Translation).filter(
+                Translation.id.in_(other_ids),
+                Translation.folderName != folder
+            ).order_by(Translation.id.desc()).all()
 
-        for item in query_all:
-            if not item.translated or not item.translated.strip() or item.id in seen_ids:
-                continue
-            if KANA_FILTER_REGEX.search(item.translated):
-                continue
+            for item in query_all:
+                if not item.translated or not item.translated.strip() or item.id in seen_ids:
+                    continue
+                if KANA_FILTER_REGEX.search(item.translated):
+                    continue
 
-            seen_ids.add(item.id)
-            valid_examples.append({
-                "id": item.id,
-                "original": item.original,
-                "translated": item.translated,
-                "title": item.title,
-                "folderName": item.folderName,
-                "pid": item.pid,
-                "url": item.url
-            })
-            if len(valid_examples) >= limit:
-                break
+                seen_ids.add(item.id)
+                valid_examples.append({
+                    "id": item.id,
+                    "original": item.original,
+                    "translated": item.translated,
+                    "title": item.title,
+                    "folderName": item.folderName,
+                    "pid": item.pid,
+                    "url": item.url
+                })
+                if len(valid_examples) >= limit:
+                    break
 
     top5 = get_top5_expressions(kw, folder, db) if include_top5 else []
 

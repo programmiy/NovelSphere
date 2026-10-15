@@ -91,30 +91,64 @@ def synthesize_translation(
                 "matched_phrases": []
             }
 
-        # 2. Fuzzy template candidate retrieval (length within +/- 35%)
-        min_l = max(2, int(orig_len * 0.65))
-        max_l = int(orig_len * 1.35)
-        
+        # 2. Fuzzy template candidate retrieval (FTS5 Trigram accelerated with length fallback)
         candidates = []
-        if folder_name:
-            cand_query_folder = """
-                SELECT original, translated, ja_clean, folder_name, frequency
-                FROM corpus_templates
-                WHERE folder_name = ? AND length(ja_clean) BETWEEN ? AND ?
-                ORDER BY frequency DESC LIMIT 100
-            """
-            cursor.execute(cand_query_folder, [folder_name, min_l, max_l])
-            candidates = cursor.fetchall()
+        if len(clean_orig) >= 3:
+            try:
+                # 3글자 이상 의미 어휘(가타카나, 한자, 어절 등) 추출
+                chunks = [t for t in JA_TOKEN_RE.findall(clean_orig) if len(t) >= 3]
+                if not chunks and len(clean_orig) >= 3:
+                    chunks = [clean_orig[i:i+3] for i in range(0, min(len(clean_orig)-2, 9), 3)]
 
+                if chunks:
+                    fts_clause = " OR ".join(['"' + c.replace('"', '""') + '"' for c in chunks[:3]])
+                    if folder_name:
+                        cand_query_fts = """
+                            SELECT c.original, c.translated, c.ja_clean, c.folder_name, c.frequency
+                            FROM corpus_templates_fts f
+                            JOIN corpus_templates c ON f.rowid = c.id
+                            WHERE corpus_templates_fts MATCH ? AND c.folder_name = ?
+                            ORDER BY rank, c.frequency DESC LIMIT 50
+                        """
+                        cursor.execute(cand_query_fts, [fts_clause, folder_name])
+                        candidates = cursor.fetchall()
+
+                    if not candidates:
+                        cand_query_fts = """
+                            SELECT c.original, c.translated, c.ja_clean, c.folder_name, c.frequency
+                            FROM corpus_templates_fts f
+                            JOIN corpus_templates c ON f.rowid = c.id
+                            WHERE corpus_templates_fts MATCH ?
+                            ORDER BY rank, c.frequency DESC LIMIT 50
+                        """
+                        cursor.execute(cand_query_fts, [fts_clause])
+                        candidates = cursor.fetchall()
+            except Exception:
+                candidates = []
+
+        # FTS 후보가 없거나 3자 미만인 경우 기존 길이 기반 쿼리로 안전하게 폴백
         if not candidates:
-            cand_query = """
-                SELECT original, translated, ja_clean, folder_name, frequency
-                FROM corpus_templates
-                WHERE length(ja_clean) BETWEEN ? AND ?
-                ORDER BY length(ja_clean), frequency DESC LIMIT 100
-            """
-            cursor.execute(cand_query, [min_l, max_l])
-            candidates = cursor.fetchall()
+            min_l = max(2, int(orig_len * 0.65))
+            max_l = int(orig_len * 1.35)
+            if folder_name:
+                cand_query_folder = """
+                    SELECT original, translated, ja_clean, folder_name, frequency
+                    FROM corpus_templates
+                    WHERE folder_name = ? AND length(ja_clean) BETWEEN ? AND ?
+                    ORDER BY frequency DESC LIMIT 100
+                """
+                cursor.execute(cand_query_folder, [folder_name, min_l, max_l])
+                candidates = cursor.fetchall()
+
+            if not candidates:
+                cand_query = """
+                    SELECT original, translated, ja_clean, folder_name, frequency
+                    FROM corpus_templates
+                    WHERE length(ja_clean) BETWEEN ? AND ?
+                    ORDER BY length(ja_clean), frequency DESC LIMIT 100
+                """
+                cursor.execute(cand_query, [min_l, max_l])
+                candidates = cursor.fetchall()
 
         best_cand = None
         best_ratio = 0.0

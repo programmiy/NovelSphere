@@ -83,6 +83,34 @@ def setup_db_data():
     Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
 
+    with engine.begin() as conn_init:
+        conn_init.exec_driver_sql("DROP TABLE IF EXISTS translations_fts;")
+        conn_init.exec_driver_sql("""
+            CREATE VIRTUAL TABLE translations_fts USING fts5(
+                original,
+                translated,
+                content='translations',
+                content_rowid='id',
+                tokenize='trigram'
+            );
+        """)
+        conn_init.exec_driver_sql("""
+            CREATE TRIGGER IF NOT EXISTS translations_ai AFTER INSERT ON translations BEGIN
+                INSERT INTO translations_fts(rowid, original, translated) VALUES (new.id, new.original, new.translated);
+            END;
+        """)
+        conn_init.exec_driver_sql("""
+            CREATE TRIGGER IF NOT EXISTS translations_ad AFTER DELETE ON translations BEGIN
+                INSERT INTO translations_fts(translations_fts, rowid, original, translated) VALUES('delete', old.id, old.original, old.translated);
+            END;
+        """)
+        conn_init.exec_driver_sql("""
+            CREATE TRIGGER IF NOT EXISTS translations_au AFTER UPDATE ON translations BEGIN
+                INSERT INTO translations_fts(translations_fts, rowid, original, translated) VALUES('delete', old.id, old.original, old.translated);
+                INSERT INTO translations_fts(rowid, original, translated) VALUES (new.id, new.original, new.translated);
+            END;
+        """)
+
     db = SessionLocal()
     
     # 테스트 데이터 삽입 (고정된 timestamp 사용)

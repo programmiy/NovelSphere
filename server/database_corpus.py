@@ -41,6 +41,7 @@ def get_corpus_conn(as_dict: bool = False, timeout: float = 15.0) -> sqlite3.Con
     cursor = conn.cursor()
     cursor.execute("PRAGMA journal_mode=WAL")
     cursor.execute("PRAGMA synchronous=NORMAL")
+    cursor.execute("PRAGMA mmap_size=268435456")  # 256MB OS memory map
     cursor.execute("PRAGMA busy_timeout=5000")
     cursor.execute("PRAGMA cache_size=10000")
     cursor.close()
@@ -64,7 +65,7 @@ def corpus_db_connection(as_dict: bool = False, timeout: float = 15.0):
 def init_corpus_db(conn: Optional[sqlite3.Connection] = None):
     """
     Initializes the schema for corpus_ai.db.
-    Creates templates, phrase alignments, tone stats, and meta tables with indexes.
+    Creates templates, phrase alignments, tone stats, meta tables, and FTS5 Trigram index.
     """
     should_close = False
     if conn is None:
@@ -90,6 +91,61 @@ def init_corpus_db(conn: Optional[sqlite3.Connection] = None):
         cursor.execute("CREATE INDEX IF NOT EXISTS ix_templates_folder ON corpus_templates(folder_name);")
         cursor.execute("CREATE INDEX IF NOT EXISTS ix_templates_len_freq ON corpus_templates(length(ja_clean), frequency DESC);")
         cursor.execute("CREATE INDEX IF NOT EXISTS ix_templates_trans ON corpus_templates(translated);")
+
+        # 1-1. Corpus Templates FTS5 (Trigram)
+        row = cursor.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='corpus_templates_fts'").fetchone()
+        need_recreate = True
+        if row and row[0] and "trigram" in row[0].lower():
+            need_recreate = False
+
+        if need_recreate:
+            cursor.execute("DROP TABLE IF EXISTS corpus_templates_fts;")
+            cursor.execute("""
+                CREATE VIRTUAL TABLE corpus_templates_fts USING fts5(
+                    ja_clean,
+                    translated,
+                    content='corpus_templates',
+                    content_rowid='id',
+                    tokenize='trigram'
+                );
+            """)
+            cursor.execute("""
+                CREATE TRIGGER IF NOT EXISTS corpus_templates_ai AFTER INSERT ON corpus_templates BEGIN
+                    INSERT INTO corpus_templates_fts(rowid, ja_clean, translated) VALUES (new.id, new.ja_clean, new.translated);
+                END;
+            """)
+            cursor.execute("""
+                CREATE TRIGGER IF NOT EXISTS corpus_templates_ad AFTER DELETE ON corpus_templates BEGIN
+                    INSERT INTO corpus_templates_fts(corpus_templates_fts, rowid, ja_clean, translated) VALUES('delete', old.id, old.ja_clean, old.translated);
+                END;
+            """)
+            cursor.execute("""
+                CREATE TRIGGER IF NOT EXISTS corpus_templates_au AFTER UPDATE ON corpus_templates BEGIN
+                    INSERT INTO corpus_templates_fts(corpus_templates_fts, rowid, ja_clean, translated) VALUES('delete', old.id, old.ja_clean, old.translated);
+                    INSERT INTO corpus_templates_fts(rowid, ja_clean, translated) VALUES (new.id, new.ja_clean, new.translated);
+                END;
+            """)
+            cursor.execute("INSERT INTO corpus_templates_fts(corpus_templates_fts) VALUES('rebuild');")
+        else:
+            cursor.execute("""
+                CREATE TRIGGER IF NOT EXISTS corpus_templates_ai AFTER INSERT ON corpus_templates BEGIN
+                    INSERT INTO corpus_templates_fts(rowid, ja_clean, translated) VALUES (new.id, new.ja_clean, new.translated);
+                END;
+            """)
+            cursor.execute("""
+                CREATE TRIGGER IF NOT EXISTS corpus_templates_ad AFTER DELETE ON corpus_templates BEGIN
+                    INSERT INTO corpus_templates_fts(corpus_templates_fts, rowid, ja_clean, translated) VALUES('delete', old.id, old.ja_clean, old.translated);
+                END;
+            """)
+            cursor.execute("""
+                CREATE TRIGGER IF NOT EXISTS corpus_templates_au AFTER UPDATE ON corpus_templates BEGIN
+                    INSERT INTO corpus_templates_fts(corpus_templates_fts, rowid, ja_clean, translated) VALUES('delete', old.id, old.ja_clean, old.translated);
+                    INSERT INTO corpus_templates_fts(rowid, ja_clean, translated) VALUES (new.id, new.ja_clean, new.translated);
+                END;
+            """)
+            fts_count = cursor.execute("SELECT COUNT(*) FROM corpus_templates_fts").fetchone()
+            if fts_count and fts_count[0] == 0:
+                cursor.execute("INSERT INTO corpus_templates_fts(corpus_templates_fts) VALUES('rebuild');")
 
         # 2. Phrase Alignments (Tier 2 EBMT & Autocomplete)
         cursor.execute("""

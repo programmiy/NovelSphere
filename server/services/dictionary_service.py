@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 
 from server.models import Translation
+from server.services.search_helper import search_translation_ids, count_translation_occurrences
 
 logger = logging.getLogger(__name__)
 
@@ -206,67 +207,69 @@ def search_dictionary_corpus(
 
     # 현재 보고 있는 소설(folder) 내 검색 우선
     if folder:
-        query_current = db.query(Translation).filter(
-            Translation.folderName == folder,
-            (Translation.original.contains(kw)) | (Translation.translated.contains(kw))
+        current_ids = search_translation_ids(
+            db,
+            query=kw,
+            limit=limit * 2,
+            folder=folder,
+            exclude_id=exclude_id
         )
-        if exclude_id:
-            query_current = query_current.filter(Translation.id != exclude_id)
-
-        current_candidates = query_current.order_by(Translation.timestamp.desc()).limit(limit * 2).all()
-        for item in current_candidates:
-            if not item.translated or not item.translated.strip() or item.id in seen_ids:
-                continue
-            seen_ids.add(item.id)
-            valid_examples.append({
-                "id": item.id,
-                "original": item.original,
-                "translated": item.translated,
-                "title": item.title,
-                "folderName": item.folderName,
-                "pid": item.pid,
-                "url": item.url
-            })
-            if len(valid_examples) >= limit:
-                break
+        if current_ids:
+            current_candidates = (
+                db.query(Translation)
+                .filter(Translation.id.in_(current_ids))
+                .order_by(Translation.id.desc())
+                .all()
+            )
+            for item in current_candidates:
+                if not item.translated or not item.translated.strip() or item.id in seen_ids:
+                    continue
+                seen_ids.add(item.id)
+                valid_examples.append({
+                    "id": item.id,
+                    "original": item.original,
+                    "translated": item.translated,
+                    "title": item.title,
+                    "folderName": item.folderName,
+                    "pid": item.pid,
+                    "url": item.url
+                })
+                if len(valid_examples) >= limit:
+                    break
 
     # 타 소설 / 전체 소설 확장 검색
     if len(valid_examples) < limit:
-        query_other = db.query(Translation).filter(
-            (Translation.original.contains(kw)) | (Translation.translated.contains(kw))
+        other_limit = (limit - len(valid_examples)) * 3
+        other_ids = search_translation_ids(
+            db,
+            query=kw,
+            limit=other_limit,
+            exclude_id=exclude_id
         )
-        if folder:
-            query_other = query_other.filter(Translation.folderName != folder)
-        if exclude_id:
-            query_other = query_other.filter(Translation.id != exclude_id)
+        other_ids = [oid for oid in other_ids if oid not in seen_ids]
+        if other_ids:
+            other_query = db.query(Translation).filter(Translation.id.in_(other_ids))
+            if folder:
+                other_query = other_query.filter(Translation.folderName != folder)
+            other_candidates = other_query.order_by(Translation.id.desc()).all()
+            for item in other_candidates:
+                if not item.translated or not item.translated.strip() or item.id in seen_ids:
+                    continue
+                seen_ids.add(item.id)
+                valid_examples.append({
+                    "id": item.id,
+                    "original": item.original,
+                    "translated": item.translated,
+                    "title": item.title,
+                    "folderName": item.folderName,
+                    "pid": item.pid,
+                    "url": item.url
+                })
+                if len(valid_examples) >= limit:
+                    break
 
-        other_candidates = query_other.order_by(Translation.timestamp.desc()).limit((limit - len(valid_examples)) * 3).all()
-        for item in other_candidates:
-            if not item.translated or not item.translated.strip() or item.id in seen_ids:
-                continue
-            seen_ids.add(item.id)
-            valid_examples.append({
-                "id": item.id,
-                "original": item.original,
-                "translated": item.translated,
-                "title": item.title,
-                "folderName": item.folderName,
-                "pid": item.pid,
-                "url": item.url
-            })
-            if len(valid_examples) >= limit:
-                break
-
-    # 2. 통계: 누적 DB 전체 등장 횟수 및 관련 소설 수 계산 (빠른 COUNT 쿼리)
-    total_count_query = db.query(func.count(Translation.id)).filter(
-        (Translation.original.contains(kw)) | (Translation.translated.contains(kw))
-    )
-    total_occurrences = total_count_query.scalar() or 0
-
-    novel_count_query = db.query(func.count(func.distinct(Translation.folderName))).filter(
-        (Translation.original.contains(kw)) | (Translation.translated.contains(kw))
-    )
-    novel_count = novel_count_query.scalar() or 0
+    # 2. 통계: 누적 DB 전체 등장 횟수 및 관련 소설 수 계산 (Trigram FTS5 & LIKE 하이브리드)
+    total_occurrences, novel_count = count_translation_occurrences(db, kw)
 
     # 3. 학습 빈도 등급 판정
     if total_occurrences >= 50:
@@ -467,18 +470,28 @@ def get_sentence_word_breakdown(
 
         # 구두점이나 단순 조사는 코퍼스 무거운 검색 생략
         if is_word and db:
-            query = db.query(Translation.translated).filter(
-                Translation.original.contains(t_text)
+            sample_ids = search_translation_ids(
+                db,
+                query=t_text,
+                limit=15,
+                folder=folder,
+                column="original"
             )
-            if folder:
-                query = query.filter(Translation.folderName == folder)
-
-            sample_rows = query.order_by(Translation.timestamp.desc()).limit(15).all()
-            if not sample_rows and folder:
+            if not sample_ids and folder:
                 # 폴더에 없으면 전체 DB에서 10개 조회
-                sample_rows = db.query(Translation.translated).filter(
-                    Translation.original.contains(t_text)
-                ).order_by(Translation.timestamp.desc()).limit(10).all()
+                sample_ids = search_translation_ids(
+                    db,
+                    query=t_text,
+                    limit=10,
+                    column="original"
+                )
+
+            sample_rows = (
+                db.query(Translation.translated)
+                .filter(Translation.id.in_(sample_ids))
+                .all()
+                if sample_ids else []
+            )
 
             # 한국어 단어 빈도 카운팅 (Kiwi 형태소 분석기 우선 활용)
             korean_counter: Counter = Counter()
@@ -532,7 +545,11 @@ def generate_duo_study_quiz(
     if keyword:
         kw = keyword.strip()
         if kw:
-            query = query.filter(Translation.original.contains(kw))
+            kw_ids = search_translation_ids(db, query=kw, limit=60, folder=folder, column="original")
+            if kw_ids:
+                query = query.filter(Translation.id.in_(kw_ids))
+            else:
+                return {"items": [], "total_count": 0, "xp_reward": 0}
 
     # 최근 문장 중 최대 30개 샘플링
     candidates = query.order_by(Translation.timestamp.desc()).limit(30).all()
