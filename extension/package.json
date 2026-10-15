@@ -1,0 +1,17 @@
+{
+  "name": "lanovel-extension",
+  "version": "1.1.0",
+  "private": true,
+  "description": "LANOVEL Chrome Extension - TypeScript & esbuild Modularized",
+  "scripts": {
+    "build": "node build.js",
+    "watch": "node build.js --watch",
+    "typecheck": "tsc --noEmit",
+    "rollback": "node -e \"const fs=require('fs'); ['background.js','content.js','manifest.json','remote.js','remote_content.js'].forEach(f => { if(fs.existsSync('legacy_backup/'+f)) fs.copyFileSync('legacy_backup/'+f, f); }); console.log('Successfully rolled back to legacy extension files.');\""
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.0.280",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.7.0"
+  }
+}

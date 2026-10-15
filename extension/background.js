@@ -1,278 +1,451 @@
-// 원격 제어(모바일 앱 → 서버 → 확장) 모듈 로드
-importScripts('remote.js');
-
-// =================================================================================
-// One-time migration script for quote style
-// =================================================================================
-async function migrateQuotes() {
-    const migrationStatus = await chrome.storage.local.get('quote_migration_v2');
-    if (migrationStatus.quote_migration_v2) {
-        // Migration has already been performed.
-        return;
+"use strict";
+(() => {
+  // src/background/remote_ws.ts
+  var REMOTE_BASE_HTTP = "http://127.0.0.1:8001";
+  var REMOTE_BASE_WS = "ws://127.0.0.1:8001";
+  var REMOTE_POLL_INTERVAL_MS = 5e3;
+  var REMOTE_WS_RETRY_MS = 1e4;
+  var REMOTE_PING_INTERVAL_MS = 2e4;
+  var REMOTE_CONTENT_TIMEOUT_MS = 5e3;
+  var remoteWs = null;
+  var remotePollTimer = null;
+  var remotePingTimer = null;
+  var remoteRetryTimer = null;
+  var remoteConnecting = false;
+  var remoteReports = /* @__PURE__ */ new Map();
+  var remoteTargetTabId = null;
+  function remoteFetch(path, options = {}) {
+    return fetch(`${REMOTE_BASE_HTTP}/api/remote${path}`, {
+      ...options,
+      headers: { "Content-Type": "application/json", ...options.headers || {} }
+    });
+  }
+  function remotePickTarget() {
+    let best = null;
+    for (const [tabId, r] of remoteReports) {
+      if (!best || r.activeAt > best.r.activeAt || r.activeAt === best.r.activeAt && r.at > best.r.at) {
+        best = { tabId, r };
+      }
     }
+    remoteTargetTabId = best ? best.tabId : null;
+    return best;
+  }
+  function remoteCurrentStatusPayload() {
+    const best = remotePickTarget();
+    if (!best) return { phase: "idle", text: "\uBC88\uC5ED \uC911\uC778 \uD0ED\uC774 \uC5C6\uC2B5\uB2C8\uB2E4", url: "", book_title: "", chapter_title: "", percentage: 0, delay_remaining_sec: 0, next_scheduled: false, turbo: false };
+    return { ...best.r.data, tab_id: best.tabId };
+  }
+  function remoteSendStatus() {
+    const payload = remoteCurrentStatusPayload();
+    if (remoteWs && remoteWs.readyState === WebSocket.OPEN) {
+      remoteWs.send(JSON.stringify({ type: "status", data: payload }));
+    }
+  }
+  function remoteWithTimeout(promise, ms) {
+    return Promise.race([
+      promise,
+      new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), ms))
+    ]);
+  }
+  async function remoteSetAutoTranslateFlag(tabId) {
+    try {
+      await remoteWithTimeout(
+        chrome.scripting.executeScript({
+          target: { tabId },
+          func: () => {
+            try {
+              sessionStorage.setItem("lanovel_auto_translate_next", "1");
+            } catch (e) {
+            }
+          }
+        }),
+        3e3
+      );
+    } catch (e) {
+      console.warn("[remote] \uC790\uB3D9 \uBC88\uC5ED \uD50C\uB798\uADF8 \uC124\uC815 \uC2E4\uD328(\uBB34\uC2DC):", e.message);
+    }
+  }
+  async function remoteExecute(cmd) {
+    const tabId = remoteTargetTabId ?? (remotePickTarget() || {}).tabId;
+    if (tabId == null) return { ok: false, message: "\uC870\uC885\uD560 \uBC88\uC5ED \uD0ED\uC744 \uCC3E\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4." };
+    if (cmd.type === "reload") {
+      await remoteSetAutoTranslateFlag(tabId);
+      await chrome.tabs.reload(tabId);
+      return { ok: true, message: "\uBC88\uC5ED \uD0ED\uC744 \uC0C8\uB85C\uACE0\uCE68\uD588\uC2B5\uB2C8\uB2E4." };
+    }
+    if (cmd.type === "goto") {
+      const url = cmd.params && cmd.params.url;
+      if (!url || !/^https?:\/\//.test(url)) return { ok: false, message: "\uC62C\uBC14\uB974\uC9C0 \uC54A\uC740 URL" };
+      await remoteSetAutoTranslateFlag(tabId);
+      await chrome.tabs.update(tabId, { url });
+      return { ok: true, message: `\uC774\uB3D9: ${url}` };
+    }
+    try {
+      const res = await remoteWithTimeout(
+        chrome.tabs.sendMessage(tabId, { action: "remoteCommand", type: cmd.type, params: cmd.params || {} }),
+        REMOTE_CONTENT_TIMEOUT_MS
+      );
+      return res || { ok: false, message: "\uD0ED\uC5D0\uC11C \uC751\uB2F5\uC774 \uC5C6\uC2B5\uB2C8\uB2E4." };
+    } catch (e) {
+      return { ok: false, message: `\uD0ED\uC774 \uC751\uB2F5\uD558\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4 (${e.message}). \uC0C8\uB85C\uACE0\uCE68\uC744 \uC2DC\uB3C4\uD574 \uBCF4\uC138\uC694.` };
+    }
+  }
+  async function remoteAck(id, result) {
+    if (!id) return;
+    if (remoteWs && remoteWs.readyState === WebSocket.OPEN) {
+      remoteWs.send(JSON.stringify({ type: "ack", id, ok: !!result.ok, message: result.message || "" }));
+      return;
+    }
+    try {
+      await remoteFetch("/ack", { method: "POST", body: JSON.stringify({ id, ok: !!result.ok, message: result.message || "" }) });
+    } catch (e) {
+    }
+  }
+  async function remoteHandleCommands(commands) {
+    for (const cmd of commands || []) {
+      let result;
+      try {
+        result = await remoteExecute(cmd);
+      } catch (e) {
+        result = { ok: false, message: String(e && e.message || e) };
+      }
+      await remoteAck(cmd.id, result);
+    }
+  }
+  function remoteStartPolling() {
+    if (remotePollTimer) return;
+    const tick = async () => {
+      try {
+        const payload = remoteCurrentStatusPayload();
+        await remoteFetch("/report", { method: "POST", body: JSON.stringify(payload) });
+        const res = await remoteFetch("/poll");
+        if (res.ok) {
+          const json = await res.json();
+          await remoteHandleCommands(json.commands);
+        }
+      } catch (e) {
+      }
+    };
+    tick();
+    remotePollTimer = setInterval(tick, REMOTE_POLL_INTERVAL_MS);
+  }
+  function remoteStopPolling() {
+    if (remotePollTimer) {
+      clearInterval(remotePollTimer);
+      remotePollTimer = null;
+    }
+  }
+  function remoteScheduleReconnect() {
+    if (remoteRetryTimer) return;
+    remoteRetryTimer = setTimeout(() => {
+      remoteRetryTimer = null;
+      remoteConnect();
+    }, REMOTE_WS_RETRY_MS);
+  }
+  async function remoteConnect() {
+    if (remoteConnecting) return;
+    if (remoteWs && (remoteWs.readyState === WebSocket.OPEN || remoteWs.readyState === WebSocket.CONNECTING)) return;
+    remoteConnecting = true;
+    try {
+      const ws = new WebSocket(`${REMOTE_BASE_WS}/api/remote/ws`);
+      remoteWs = ws;
+      ws.onopen = () => {
+        remoteStopPolling();
+        remoteSendStatus();
+        if (remotePingTimer) clearInterval(remotePingTimer);
+        remotePingTimer = setInterval(() => {
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: "ping" }));
+            remoteSendStatus();
+          }
+        }, REMOTE_PING_INTERVAL_MS);
+        console.log("[LANOVEL Remote] WebSocket connected to server.");
+      };
+      ws.onmessage = (ev) => {
+        try {
+          const msg = JSON.parse(ev.data);
+          if (msg.type === "commands") {
+            remoteHandleCommands(msg.commands);
+          }
+        } catch (e) {
+          console.warn("[remote] \uC798\uBABB\uB41C WS \uBA54\uC2DC\uC9C0", e);
+        }
+      };
+      ws.onclose = () => {
+        if (remotePingTimer) {
+          clearInterval(remotePingTimer);
+          remotePingTimer = null;
+        }
+        if (remoteWs === ws) remoteWs = null;
+        remoteStartPolling();
+        remoteScheduleReconnect();
+      };
+      ws.onerror = () => {
+      };
+    } finally {
+      remoteConnecting = false;
+    }
+  }
+  function initRemoteControl() {
+    chrome.runtime.onMessage.addListener((request, sender) => {
+      if (request && request.action === "remoteStatus" && sender.tab && sender.tab.id != null) {
+        const now = Date.now();
+        const prev = remoteReports.get(sender.tab.id);
+        const activePhases = ["translating", "censor_split", "delay_wait"];
+        const isActive = activePhases.includes(request.data.phase);
+        remoteReports.set(sender.tab.id, {
+          data: request.data,
+          at: now,
+          activeAt: isActive ? now : prev ? prev.activeAt : 0
+        });
+        remoteSendStatus();
+      }
+      return false;
+    });
+    chrome.tabs.onRemoved.addListener((tabId) => {
+      if (remoteReports.delete(tabId)) {
+        remoteSendStatus();
+      }
+    });
+    chrome.alarms.create("remote-keepalive", { periodInMinutes: 0.5 });
+    chrome.alarms.onAlarm.addListener((alarm) => {
+      if (alarm.name === "remote-keepalive") {
+        remoteConnect();
+      }
+    });
+    remoteConnect();
+  }
 
+  // src/background/index.ts
+  initRemoteControl();
+  async function migrateQuotes() {
+    const migrationStatus = await chrome.storage.local.get("quote_migration_v2");
+    if (migrationStatus.quote_migration_v2) {
+      return;
+    }
     const allData = await chrome.storage.local.get(null);
     let updatedCount = 0;
-    let urlsUpdated = new Set();
-
+    const urlsUpdated = /* @__PURE__ */ new Set();
     for (const key in allData) {
-        // Skip non-translation data
-        if (key.startsWith('status-') || key === 'apiKey' || key === 'error_log' || key === 'excluded_sentences' || key.startsWith('quote_migration_')) {
-            continue;
-        }
-
-        const translations = allData[key];
-        if (Array.isArray(translations)) {
-            let wasUpdated = false;
-            const updatedTranslations = translations.map(t => {
-                if (t.original && t.translated && t.translated.startsWith('"') && t.translated.endsWith('"')) {
-                    const innerText = t.translated.substring(1, t.translated.length - 1);
-                    if (t.original.includes('「') && t.original.includes('」')) {
-                        t.translated = `「${innerText}」`;
-                        updatedCount++;
-                        wasUpdated = true;
-                    } else if (t.original.includes('『') && t.original.includes('』')) {
-                        t.translated = `『${innerText}』`;
-                        updatedCount++;
-                        wasUpdated = true;
-                    }
-                }
-                return t;
-            });
-
-            if (wasUpdated) {
-                await chrome.storage.local.set({ [key]: updatedTranslations });
-                urlsUpdated.add(key);
+      if (key.startsWith("status-") || key === "apiKey" || key === "error_log" || key === "excluded_sentences" || key.startsWith("quote_migration_")) {
+        continue;
+      }
+      const translations = allData[key];
+      if (Array.isArray(translations)) {
+        let wasUpdated = false;
+        const updatedTranslations = translations.map((t) => {
+          if (t.original && t.translated && t.translated.startsWith('"') && t.translated.endsWith('"')) {
+            const innerText = t.translated.substring(1, t.translated.length - 1);
+            if (t.original.includes("\u300C") && t.original.includes("\u300D")) {
+              t.translated = `\u300C${innerText}\u300D`;
+              updatedCount++;
+              wasUpdated = true;
+            } else if (t.original.includes("\u300E") && t.original.includes("\u300F")) {
+              t.translated = `\u300E${innerText}\u300F`;
+              updatedCount++;
+              wasUpdated = true;
             }
-        }
-    }
-
-    if (updatedCount > 0) {
-        console.log(`Quote migration v2 complete. Updated ${updatedCount} translations across ${urlsUpdated.size} URLs.`);
-    } else {
-        console.log("No translations found that required quote migration v2.");
-    }
-
-    // Set flag to prevent running the migration again
-    await chrome.storage.local.set({ 'quote_migration_v2': true });
-}
-
-// Run the migration script when the extension starts
-migrateQuotes();
-// ==================================================================================
-// DEBUG: Check for granted permissions
-chrome.permissions.getAll(permissions => {
-  console.log("Permissions granted to the extension:", permissions);
-});
-
-// 확장 프로그램 설치/업데이트 시 초기 설정
-chrome.runtime.onInstalled.addListener((details) => {
-    if (chrome.contextMenus) {
-        chrome.contextMenus.create({
-            id: 'translateJapanese',
-            title: '일본어 번역하기',
-            contexts: ['selection']
+          }
+          return t;
         });
-    } else {
-        console.warn("Context Menus API is not available.");
-    }
-});
-
-// 컨텍스트 메뉴 클릭 처리
-if (chrome.contextMenus) {
-    chrome.contextMenus.onClicked.addListener(async (info, tab) => {
-        switch (info.menuItemId) {
-            case 'translateJapanese':
-                break;
+        if (wasUpdated) {
+          await chrome.storage.local.set({ [key]: updatedTranslations });
+          urlsUpdated.add(key);
         }
+      }
+    }
+    if (updatedCount > 0) {
+      console.log(`Quote migration v2 complete. Updated ${updatedCount} translations across ${urlsUpdated.size} URLs.`);
+    } else {
+      console.log("No translations found that required quote migration v2.");
+    }
+    await chrome.storage.local.set({ quote_migration_v2: true });
+  }
+  migrateQuotes();
+  chrome.permissions.getAll((permissions) => {
+    console.log("Permissions granted to the extension:", permissions);
+  });
+  chrome.runtime.onInstalled.addListener(() => {
+    if (chrome.contextMenus) {
+      chrome.contextMenus.create({
+        id: "translateJapanese",
+        title: "\uC77C\uBCF8\uC5B4 \uBC88\uC5ED\uD558\uAE30",
+        contexts: ["selection"]
+      });
+    } else {
+      console.warn("Context Menus API is not available.");
+    }
+  });
+  if (chrome.contextMenus) {
+    chrome.contextMenus.onClicked.addListener(async (info) => {
+      switch (info.menuItemId) {
+        case "translateJapanese":
+          break;
+      }
     });
-}
-
-// 메시지 처리 (콘텐츠 스크립트에서 오는 요청들)
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  }
+  chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     const channelClosedMessage = "The message channel closed before a response was received.";
-
-    if (request.action === 'batchTranslate') {
-        (async () => {
-            try {
-                const rawUrl = sender.tab?.url || '';
-                const cleanTabUrl = rawUrl.split('#')[0].trim();
-                const result = await handleBatchTranslate(
-                    request.items, 
-                    cleanTabUrl, 
-                    request.isRetranslation || false, 
-                    request.model || null
-                );
-                try {
-                    sendResponse({
-                        translations: result.translations,
-                        recommended_turbo_delay_ms: result.recommended_turbo_delay_ms
-                    });
-                } catch (e) {
-                    if (e.message.includes(channelClosedMessage)) {
-                        console.log("Failed to send translation success response: Channel was closed by the client.");
-                    } else {
-                        console.error("Error sending translation success response:", e);
-                    }
-                }
-            } catch (error) {
-                console.error("Error in background script, sending error response:", error.message);
-                try {
-                    if (error.status === 429) {
-                        // Special handling for API rate limit
-                        sendResponse({ 
-                            notification: "API 요청 한도를 초과했습니다. 번역을 중지합니다.", 
-                            stop: true 
-                        });
-                    } else if (error.status === 503 && (error.message.includes("초기화 시간") || error.message.includes("자동 번역을 중지"))) {
-                        // 503 쿼터 초기화(16시/17시) 정각 도달 중지
-                        sendResponse({
-                            notification: error.message,
-                            stop: true,
-                            isQuotaResetStop: true
-                        });
-                    } else if (error.message && (error.message.includes("Failed to fetch") || error.message.includes("NetworkError") || error.message.includes("network error"))) {
-                        // PC 로컬 번역 서버(http://127.0.0.1:8001) 미실행 또는 네트워크 연결 불가 (Fast-Fail)
-                        sendResponse({
-                            notification: "❌ PC 번역 서버(http://127.0.0.1:8001)에 연결할 수 없습니다. main.py(서버)가 실행 중인지 확인해주세요.",
-                            stop: true,
-                            isServerOffline: true
-                        });
-                    } else {
-                        // Generic error for other issues
-                        sendResponse({ error: error.message, status: error.status });
-                    }
-                } catch (e) {
-                    if (e.message.includes(channelClosedMessage)) {
-                        console.log("Failed to send error response: Channel was closed by the client.");
-                    } else {
-                        console.error("Error sending error response:", e);
-                    }
-                }
+    if (request.action === "batchTranslate") {
+      (async () => {
+        try {
+          const rawUrl = sender.tab?.url || "";
+          const cleanTabUrl = rawUrl.split("#")[0].trim();
+          const result = await handleBatchTranslate(
+            request.items,
+            cleanTabUrl,
+            request.isRetranslation || false,
+            request.model || null
+          );
+          try {
+            sendResponse({
+              translations: result.translations,
+              recommended_turbo_delay_ms: result.recommended_turbo_delay_ms
+            });
+          } catch (e) {
+            if (e.message && e.message.includes(channelClosedMessage)) {
+              console.log("Failed to send translation success response: Channel was closed by the client.");
+            } else {
+              console.error("Error sending translation success response:", e);
             }
-        })();
-        return true; // 비동기 응답을 위해 true 반환
-    } else if (request.action === 'fetchTitle') {
-        (async () => {
-            try {
-                const title = await fetchPageTitle(request.url);
-                try {
-                    sendResponse({ title });
-                } catch (e) {
-                    if (e.message.includes(channelClosedMessage)) {
-                        console.log("Failed to send title success response: Channel was closed by the client.");
-                    } else {
-                        console.error("Error sending title success response:", e);
-                    }
-                }
-            } catch (error) {
-                // 제목 가져오기 실패 시 오류 로그 저장
-                saveErrorLog([], error, request.url);
-                try {
-                    sendResponse({ title: request.url, error: error.message });
-                } catch (e) {
-                    if (e.message.includes(channelClosedMessage)) {
-                        console.log("Failed to send title error response: Channel was closed by the client.");
-                    } else {
-                        console.error("Error sending title error response:", e);
-                    }
-                }
+          }
+        } catch (error) {
+          console.error("Error in background script, sending error response:", error.message);
+          try {
+            if (error.status === 429) {
+              sendResponse({
+                notification: "API \uC694\uCCAD \uD55C\uB3C4\uB97C \uCD08\uACFC\uD588\uC2B5\uB2C8\uB2E4. \uBC88\uC5ED\uC744 \uC911\uC9C0\uD569\uB2C8\uB2E4.",
+                stop: true
+              });
+            } else if (error.status === 503 && (error.message.includes("\uCD08\uAE30\uD654 \uC2DC\uAC04") || error.message.includes("\uC790\uB3D9 \uBC88\uC5ED\uC744 \uC911\uC9C0"))) {
+              sendResponse({
+                notification: error.message,
+                stop: true,
+                isQuotaResetStop: true
+              });
+            } else if (error.message && (error.message.includes("Failed to fetch") || error.message.includes("NetworkError") || error.message.includes("network error"))) {
+              sendResponse({
+                notification: "\u274C PC \uBC88\uC5ED \uC11C\uBC84(http://127.0.0.1:8001)\uC5D0 \uC5F0\uACB0\uD560 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4. main.py(\uC11C\uBC84)\uAC00 \uC2E4\uD589 \uC911\uC778\uC9C0 \uD655\uC778\uD574\uC8FC\uC138\uC694.",
+                stop: true,
+                isServerOffline: true
+              });
+            } else {
+              sendResponse({ error: error.message, status: error.status });
             }
-        })();
-        return true; // 비동기 응답을 위해 true 반환
+          } catch (e) {
+            if (e.message && e.message.includes(channelClosedMessage)) {
+              console.log("Failed to send error response: Channel was closed by the client.");
+            } else {
+              console.error("Error sending error response:", e);
+            }
+          }
+        }
+      })();
+      return true;
+    } else if (request.action === "fetchTitle") {
+      (async () => {
+        try {
+          const title = await fetchPageTitle(request.url);
+          try {
+            sendResponse({ title });
+          } catch (e) {
+            if (e.message && e.message.includes(channelClosedMessage)) {
+              console.log("Failed to send title success response: Channel was closed by the client.");
+            } else {
+              console.error("Error sending title success response:", e);
+            }
+          }
+        } catch (error) {
+          saveErrorLog([], error, request.url);
+          try {
+            sendResponse({ title: request.url, error: error.message });
+          } catch (e) {
+            if (e.message && e.message.includes(channelClosedMessage)) {
+              console.log("Failed to send title error response: Channel was closed by the client.");
+            } else {
+              console.error("Error sending title error response:", e);
+            }
+          }
+        }
+      })();
+      return true;
     }
     return false;
-});
-
-async function fetchPageTitle(url) {
+  });
+  async function fetchPageTitle(url) {
     try {
-        const response = await fetch(url, { credentials: 'include' }); // 인증 쿠키 포함
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status} for URL: ${url}`);
-        }
-        const text = await response.text();
-        const titleMatch = text.match(/<title>(.*?)<\/title>/i);
-        return titleMatch ? titleMatch[1].trim() : url;
+      const response = await fetch(url, { credentials: "include" });
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status} for URL: ${url}`);
+      }
+      const text = await response.text();
+      const titleMatch = text.match(/<title>(.*?)<\/title>/i);
+      return titleMatch ? titleMatch[1].trim() : url;
     } catch (e) {
-        console.error(`Failed to fetch title for ${url}:`, e);
-        // 오류를 다시 던져서 onMessage 리스너에서 잡을 수 있도록 함
-        throw new Error(`제목 가져오기 실패: ${e.message}`);
+      console.error(`Failed to fetch title for ${url}:`, e);
+      throw new Error(`\uC81C\uBAA9 \uAC00\uC838\uC624\uAE30 \uC2E4\uD328: ${e.message}`);
     }
-}
-
-async function handleBatchTranslate(items, sourceUrl, isRetranslation = false, model = null) {
+  }
+  async function handleBatchTranslate(items, sourceUrl, isRetranslation = false, model = null) {
     try {
-        const cleanSourceUrl = (sourceUrl || '').split('#')[0].trim();
-        const bodyPayload = { items: items, url: cleanSourceUrl };
-        if (isRetranslation) {
-            bodyPayload.is_retranslation = true;
+      const cleanSourceUrl = (sourceUrl || "").split("#")[0].trim();
+      const bodyPayload = { items, url: cleanSourceUrl };
+      if (isRetranslation) {
+        bodyPayload.is_retranslation = true;
+      }
+      if (model) {
+        bodyPayload.model = model;
+      }
+      const response = await fetch("http://127.0.0.1:8001/translate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(bodyPayload)
+      });
+      if (!response.ok) {
+        if (response.status === 429) {
+          const apiLimitError = new Error("API rate limit exceeded.");
+          apiLimitError.status = 429;
+          throw apiLimitError;
         }
-        if (model) {
-            bodyPayload.model = model;
-        }
-
-        const response = await fetch('http://127.0.0.1:8001/translate', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(bodyPayload)
-        });
-
-        if (!response.ok) {
-            if (response.status === 429) {
-                const apiLimitError = new Error("API rate limit exceeded.");
-                apiLimitError.status = 429;
-                throw apiLimitError;
-            }
-            // 다른 오류들은 서버에서 온 상세 메시지를 사용
-            const errorData = await response.json().catch(() => ({ detail: `Server error: ${response.status}` }));
-            const customError = new Error(errorData.detail || `Server error: ${response.status}`);
-            customError.status = response.status;
-            throw customError;
-        }
-
-        const data = await response.json();
-        
-        // The server now returns the final array of objects, so we just validate and return it.
-        if (!data.translations || data.translations.length !== items.length) {
-            console.error("Mismatched response length from server", data);
-            throw new Error('Received invalid translation data from server.');
-        }
-
-        // The server response is already in the format [{id, original, translated}, ...],
-        // so we can just return it directly along with the recommended turbo pacing delay.
-        return {
-            translations: data.translations,
-            recommended_turbo_delay_ms: data.recommended_turbo_delay_ms || 2000
-        };
-
+        const errorData = await response.json().catch(() => ({ detail: `Server error: ${response.status}` }));
+        const customError = new Error(errorData.detail || `Server error: ${response.status}`);
+        customError.status = response.status;
+        throw customError;
+      }
+      const data = await response.json();
+      if (!data.translations || data.translations.length !== items.length) {
+        console.error("Mismatched response length from server", data);
+        throw new Error("Received invalid translation data from server.");
+      }
+      return {
+        translations: data.translations,
+        recommended_turbo_delay_ms: data.recommended_turbo_delay_ms || 2e3
+      };
     } catch (error) {
-        console.error('Translation request to local server failed:', error);
-        // Re-throw the error to be handled by the onMessage listener,
-        // which will create a per-item error response.
-        throw error;
+      console.error("Translation request to local server failed:", error);
+      throw error;
     }
-}
-
-async function saveErrorLog(items, error, url) {
+  }
+  async function saveErrorLog(items, error, url) {
     const logEntry = {
-        timestamp: Date.now(),
-        reason: error.message || '알 수 없는 오류',
-        url: url || "알 수 없는 URL",
-        texts: items.map(item => item.text),
-        stack: error.stack || null
+      timestamp: Date.now(),
+      reason: error.message || "\uC54C \uC218 \uC5C6\uB294 \uC624\uB958",
+      url: url || "\uC54C \uC218 \uC5C6\uB294 URL",
+      texts: items.map((item) => item.text),
+      stack: error.stack || null
     };
-
     try {
-        const result = await chrome.storage.local.get('error_log');
-        const existingLogs = result.error_log || [];
-        existingLogs.unshift(logEntry); // 최신 로그를 맨 위에 추가
-        // 로그는 최대 20개까지만 저장
-        if (existingLogs.length > 20) {
-            existingLogs.length = 20;
-        }
-        await chrome.storage.local.set({ 'error_log': existingLogs });
-        console.log("오류 로그를 저장했습니다.");
+      const result = await chrome.storage.local.get("error_log");
+      const existingLogs = result.error_log || [];
+      existingLogs.unshift(logEntry);
+      if (existingLogs.length > 20) {
+        existingLogs.length = 20;
+      }
+      await chrome.storage.local.set({ error_log: existingLogs });
+      console.log("\uC624\uB958 \uB85C\uADF8\uB97C \uC800\uC7A5\uD588\uC2B5\uB2C8\uB2E4.");
     } catch (e) {
-        console.error("오류 로그 저장 실패:", e);
+      console.error("\uC624\uB958 \uB85C\uADF8 \uC800\uC7A5 \uC2E4\uD328:", e);
     }
-}
+  }
+})();
+//# sourceMappingURL=background.js.map

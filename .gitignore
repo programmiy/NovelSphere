@@ -67,3 +67,7 @@ key.properties
 .idea/
 Thumbs.db
 desktop.ini
+
+# Chrome Extension build & backup
+extension/node_modules/
+extension/legacy_backup/

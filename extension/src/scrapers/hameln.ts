@@ -1,0 +1,75 @@
+// hameln.ts: 하멜른(syosetu.org) DOM 스크래퍼
+import { PlatformScraper, TocEpisodeItem } from './base';
+
+export class HamelnScraper implements PlatformScraper {
+  readonly name = 'hameln';
+
+  matches(_url: string, host: string): boolean {
+    return host.includes('syosetu.org');
+  }
+
+  detectNovelTitle(): string | null {
+    const titleLink = document.querySelector<HTMLAnchorElement>('a[href*="/novel/"][style*="font-weight:bold"], span.novel_title a');
+    if (titleLink && titleLink.textContent && titleLink.textContent.trim()) {
+      return titleLink.textContent.trim();
+    }
+    const parts = document.title.split(/\s*-\s*/);
+    if (parts.length > 1) {
+      return parts[parts.length - 1].trim();
+    }
+    return null;
+  }
+
+  extractEpisodeTitle(): string {
+    const epEl = document.querySelector('span[style*="font-size:120%"], h2, .ss');
+    if (epEl && epEl.textContent && epEl.textContent.trim()) {
+      return epEl.textContent.trim();
+    }
+    const parts = document.title.split(/\s*-\s*/);
+    if (parts.length > 0 && parts[0].trim()) {
+      return parts[0].trim();
+    }
+    return '';
+  }
+
+  getWorkKey(url: string): string | null {
+    const match = url.match(/\/novel\/(\d+)/);
+    return match ? `hameln_${match[1]}` : null;
+  }
+
+  isTocPage(_url: string, path: string): boolean {
+    return (
+      /\/novel\/\d+\/?$/.test(path) ||
+      (!path.endsWith('.html') && document.querySelectorAll('table a[href*="/novel/"]').length > 3)
+    );
+  }
+
+  findNextEpisodeLink(): HTMLAnchorElement | null {
+    const links = Array.from(document.querySelectorAll<HTMLAnchorElement>('a'));
+    return links.find((a) => (a.textContent || '').trim() === '次へ' && a.href) || null;
+  }
+
+  findPrevEpisodeLink(): HTMLAnchorElement | null {
+    const links = Array.from(document.querySelectorAll<HTMLAnchorElement>('a'));
+    return links.find((a) => (a.textContent || '').trim() === '前へ' && a.href) || null;
+  }
+
+  findTocLink(): HTMLAnchorElement | null {
+    const links = Array.from(document.querySelectorAll<HTMLAnchorElement>('a'));
+    return (
+      links.find((a) => {
+        const txt = (a.textContent || '').trim();
+        return (txt === '目次' || txt === 'TOP') && a.href;
+      }) || null
+    );
+  }
+
+  getTocEpisodes(): TocEpisodeItem[] {
+    const elements = Array.from(document.querySelectorAll<HTMLAnchorElement>('table a[href*="/novel/"]'));
+    return elements.map((el) => ({
+      element: el,
+      url: el.href.split('#')[0],
+      title: (el.textContent || '').trim(),
+    }));
+  }
+}
