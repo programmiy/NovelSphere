@@ -27,8 +27,17 @@ export function logToSidebar(message: string, level: 'log' | 'log-error' | 'info
   if (level === 'log-error') p.className = 'log-error';
   p.innerHTML = `<span class="log-time">[${timeStr}]</span>${escapeHtml(message)}`;
 
+  // 진행 순서대로 하단에 누적 스택 (오래된 순 -> 최신 순)
   consoleEl.appendChild(p);
-  consoleEl.scrollTop = consoleEl.scrollHeight;
+
+  // 최대 80개 보관, 초과 시 상단 오래된 로그 제거
+  if (consoleEl.children.length > 80) {
+    consoleEl.removeChild(consoleEl.firstChild!);
+  }
+
+  // 스크롤을 가진 상위 컨테이너(.sidebar-footer)를 항상 최신 위치(최하단)로 자동 스크롤
+  const scrollContainer = (consoleEl.closest('.sidebar-footer') || consoleEl) as HTMLElement;
+  scrollContainer.scrollTop = scrollContainer.scrollHeight;
 
   // 상태 머신에 기록 (검열감지, 지연시간 추출 및 원격 제어 자동 디스패치)
   state.recordLog(message);

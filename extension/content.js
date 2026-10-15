@@ -1183,7 +1183,11 @@
     if (level === "log-error") p.className = "log-error";
     p.innerHTML = `<span class="log-time">[${timeStr}]</span>${escapeHtml(message)}`;
     consoleEl.appendChild(p);
-    consoleEl.scrollTop = consoleEl.scrollHeight;
+    if (consoleEl.children.length > 80) {
+      consoleEl.removeChild(consoleEl.firstChild);
+    }
+    const scrollContainer = consoleEl.closest(".sidebar-footer") || consoleEl;
+    scrollContainer.scrollTop = scrollContainer.scrollHeight;
     state.recordLog(message);
   }
   function showSidebar() {
