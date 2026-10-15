@@ -11,6 +11,7 @@
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
     <link rel="stylesheet" href="/static/admin.css?v=3.3">
     <link rel="manifest" href="/static/manifest.json">
+    <script defer src="/static/vendor/alpine.min.js"></script>
 </head>
 <body>
     <canvas id="cyber-bg-canvas"></canvas>
@@ -297,7 +298,7 @@
         </div>
     </div>
 
-    <div class="edit-modal" id="findReplaceModal">
+    <div class="edit-modal" id="findReplaceModal" x-data="{ open: false }" x-show="open" x-cloak @open-find-replace.window="open = true" @close-find-replace.window="open = false" @keydown.escape.window="open = false">
         <div class="modal-content" style="max-width: 600px;">
             <div class="modal-header">
                 <div class="modal-title">전체 찾아 바꾸기</div>
@@ -374,7 +375,7 @@
     </div>
 
     <!-- 알림 및 복원 센터 통합 팝업 (2개 탭) -->
-    <div class="edit-modal" id="cleanupRestoreModal">
+    <div class="edit-modal" id="cleanupRestoreModal" x-data="{ open: false }" x-show="open" x-cloak @open-restore-center.window="open = true" @close-restore-center.window="open = false" @keydown.escape.window="open = false">
         <div class="modal-content" style="max-width: 960px; width: 95%;">
             <div class="modal-header">
                 <div class="modal-title">알림 및 복원 센터</div>
@@ -500,7 +501,7 @@
     </div>
 
     <!-- 통계 & 품질 심층 분석 대시보드 모달 -->
-    <div class="edit-modal" id="statsAnalyticsModal" style="display: none;">
+    <div class="edit-modal" id="statsAnalyticsModal" x-data="{ open: false }" x-show="open" x-cloak @open-stats-modal.window="open = true" @close-stats-modal.window="open = false" @keydown.escape.window="open = false">
         <div class="modal-content stats-modal-content">
             <div class="modal-header stats-modal-header">
                 <div class="modal-title stats-header-title">
@@ -902,7 +903,7 @@
     </div>
 
     <!-- 앱 릴리즈 관리 모달 -->
-    <div id="appReleaseModal" class="modal" style="display: none;">
+    <div id="appReleaseModal" class="modal" x-data="{ open: false }" x-show="open" x-cloak @open-app-release.window="open = true" @close-app-release.window="open = false" @keydown.escape.window="open = false">
         <div class="modal-content" style="max-width: 620px;">
             <div class="modal-header">
                 <div class="modal-title" style="display: flex; align-items: center; gap: 8px;">
@@ -1108,7 +1109,7 @@
 
     <!-- <script type="module" src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.esm.js"></script> -->
     <script src="/static/admin-fx.js?v=3.3"></script>
-    <script type="module" src="/static/admin.js?v=3.0"></script>
+    <script type="module" src="/static/admin/admin-main.js?v=4.0"></script>
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {

@@ -3,6 +3,8 @@
    Maximum Resource-Intensive Luxury Glassmorphism & Cyberpunk Neon Theme
    ========================================================================== */
 
+[x-cloak] { display: none !important; }
+
 :root {
     /* High-Tech & Luxury Fonts */
     --font-primary: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Noto Sans KR', sans-serif;
@@ -2316,6 +2318,13 @@ body.dark-mode .translated-cell-container {
     align-items: center;
     z-index: 2000;
     animation: modalBackdropFade 0.25s ease;
+}
+
+.edit-modal.is-open,
+.modal.is-open,
+.edit-modal[x-show]:not([style*="display: none"]),
+.modal[x-show]:not([style*="display: none"]) {
+    display: flex;
 }
 
 @keyframes modalBackdropFade {
