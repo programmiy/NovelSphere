@@ -1,9 +1,7 @@
 import json
 import time
 import os
-import hmac
 import asyncio
-import shutil
 import subprocess
 import logging
 import logging.handlers
@@ -13,12 +11,12 @@ from datetime import datetime
 from urllib.parse import urlparse
 
 from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi.responses import ORJSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.responses import RedirectResponse
 
-import sqlite3
 from server.settings import settings
 from server.database import engine
 from server.models import Base
@@ -87,10 +85,7 @@ def _update_runtime_metadata():
         logger.error(f"Error saving metadata: {e}")
 
 from server.backup_utils import (
-    perform_sqlite_backup,
-    rotate_backups,
     create_unified_backup,
-    get_latest_backup_info,
 )
 
 async def backup_check_task():
@@ -235,7 +230,12 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Error disposing database engine: {e}")
 
-app = FastAPI(lifespan=lifespan, title=settings.app_name, debug=settings.debug)
+app = FastAPI(
+    lifespan=lifespan,
+    title=settings.app_name,
+    debug=settings.debug,
+    default_response_class=ORJSONResponse
+)
 
 # --- Middleware ---
 app.add_middleware(

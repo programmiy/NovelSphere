@@ -111,8 +111,6 @@ def admin_restore_brackets():
     description="작품별/전체 번역량, 일별 추이, 24시간 활동 프로필, 품질 건강도, 길이 분포, 규모 환산 데이터를 종합 산출합니다."
 )
 def get_admin_analytics(folder_name: Optional[str] = None):
-    from typing import Optional
-    import datetime
 
     conn = get_sqlite_conn()
     cursor = conn.cursor()
@@ -352,7 +350,7 @@ def get_admin_analytics(folder_name: Optional[str] = None):
         ]
 
         # 데이터 위생 상태
-        trash_where = f"WHERE folderName = ?" if target_folder else ""
+        trash_where = "WHERE folderName = ?" if target_folder else ""
         trash_params = [target_folder] if target_folder else []
         cursor.execute(f"SELECT COUNT(*) FROM translation_trash {trash_where}", trash_params)
         trash_count = cursor.fetchone()[0] or 0

@@ -7,7 +7,6 @@ Library Folder Inspector - 서재 등록 폴더명 목록 및 최근 소설 매�
 
 import sys
 import sqlite3
-import json
 from pathlib import Path
 
 if sys.stdout and hasattr(sys.stdout, 'reconfigure'):

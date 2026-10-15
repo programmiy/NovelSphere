@@ -3961,7 +3961,9 @@ function sortSidebar() {
         return orderedPids.indexOf(pidA) - orderedPids.indexOf(pidB);
     });
 
-    rows.forEach(row => tableBody.appendChild(row));
+    rows.forEach(row => {
+        tableBody.appendChild(row);
+    });
 }
 
 // =================================================================================

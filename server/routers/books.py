@@ -3,18 +3,16 @@ import os
 import json
 import re
 import requests
-import time
 import logging
-from fastapi import APIRouter, HTTPException, BackgroundTasks, Request
+from fastapi import APIRouter, HTTPException, BackgroundTasks
 from fastapi.responses import JSONResponse, HTMLResponse
 from pydantic import BaseModel
 from typing import List, Optional
-from collections import defaultdict
-from urllib.parse import unquote, urlparse
+from urllib.parse import unquote
 from fastapi.templating import Jinja2Templates
 
 from server.settings import settings
-from server.database import get_sqlite_conn, dict_factory, get_db_path
+from server.database import get_sqlite_conn
 from server.utils import natural_sort_key
 from server.security import is_safe_external_url
 

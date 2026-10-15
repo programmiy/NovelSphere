@@ -1,5 +1,4 @@
 import os
-import io
 import gzip
 import zlib
 import json
@@ -11,15 +10,12 @@ from typing import List, Optional, Dict, Any
 from urllib.parse import unquote
 
 from fastapi import APIRouter, HTTPException, Depends, Request, Response, BackgroundTasks
-from fastapi.responses import StreamingResponse, JSONResponse
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
-from sqlalchemy import text
 
 from server.settings import settings
 from server.database import get_db, get_sqlite_conn, dict_factory, get_db_path
-from server.models import Translation, BookActivity, PinnedBook, Tag, BookTag
-from server.routers.translation import FindReplaceRequest, find_replace_all
 
 router = APIRouter(prefix="/api/sync", tags=["Mobile Sync"])
 logger = logging.getLogger(__name__)

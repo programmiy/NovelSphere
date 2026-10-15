@@ -10,38 +10,29 @@ from collections import defaultdict
 from datetime import datetime
 import json
 import logging
-import os
-import re
 import sqlite3
 import time
 from typing import List, Optional
-from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
-from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from server.database import dict_factory, get_db, get_db_path, get_sqlite_conn
+from server.database import get_db, get_sqlite_conn
 from server.models import (
     AppliedUrl,
-    BookActivity,
-    CleanupNotification,
     CleanupQueuedItem,
     Translation,
-    TranslationTrash,
     UrlMetadata,
 )
 from server.notifications import update_translation_status
 from server.routers.translation import handle_verbatim_cleanup_items
 from server.rule_classifier import (
     classify_translation,
-    extract_untranslated_keywords,
     is_verbatim_copy,
     restore_brackets,
 )
-from server.settings import settings
 from server.utils import natural_sort_key, get_url_variants
 
 # --- Sub-Services Re-exports for High Cohesion & Backward Compatibility ---

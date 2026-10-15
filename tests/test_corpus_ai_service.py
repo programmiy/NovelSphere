@@ -15,6 +15,13 @@ from server.services.corpus_ai_service import (
 )
 
 
+@pytest.fixture(autouse=True, scope="module")
+def warmup_engine():
+    # Pre-warm tokenizers and database singletons
+    synthesize_translation("暖機運転テスト")
+    check_style_consistency("「テスト」", "「테스트」")
+
+
 def test_synthesize_translation_tier1():
     t0 = time.time()
     res = synthesize_translation("「くっ……殺せ！」")

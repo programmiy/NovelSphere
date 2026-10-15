@@ -35,8 +35,8 @@ void main() {
         hasApk: true,
       );
 
-      final currentBuild = 2026101401;
-      final currentVersion = '1.5.0';
+      const currentBuild = 2026101401;
+      const currentVersion = '1.5.0';
 
       // SemVer logic
       int compareSemVer(String v1, String v2) {
@@ -70,8 +70,8 @@ void main() {
         hasApk: true,
       );
 
-      final currentBuild = 2026101401;
-      final currentVersion = '1.5.0';
+      const currentBuild = 2026101401;
+      const currentVersion = '1.5.0';
 
       int compareSemVer(String v1, String v2) {
         final p1 = v1.split('.').map((e) => int.tryParse(e) ?? 0).toList();
@@ -102,8 +102,8 @@ void main() {
         hasApk: true,
       );
 
-      final currentBuild = 2026101401;
-      final currentVersion = '1.5.0';
+      const currentBuild = 2026101401;
+      const currentVersion = '1.5.0';
 
       int compareSemVer(String v1, String v2) {
         final p1 = v1.split('.').map((e) => int.tryParse(e) ?? 0).toList();

@@ -18,3 +18,11 @@ pydantic-settings
 celery
 python-dotenv
 jinja2
+rapidfuzz
+orjson
+selectolax
+sudachipy
+sudachidict_core
+kiwipiepy
+pyahocorasick
+ruff

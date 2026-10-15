@@ -7,7 +7,7 @@ import json
 import logging
 import queue
 from typing import Optional
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from server.settings import settings, save_runtime_settings

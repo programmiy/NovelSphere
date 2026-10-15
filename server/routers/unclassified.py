@@ -2,8 +2,8 @@ import re
 import time
 import logging
 import requests
-from typing import Optional, List, Dict, Any
-from bs4 import BeautifulSoup
+from typing import Optional, Dict, Any
+from selectolax.lexbor import LexborHTMLParser
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
@@ -108,51 +108,59 @@ def fetch_novel_title_from_web(platform: str, work_url: str) -> Optional[str]:
         if resp.status_code != 200:
             return None
         resp.encoding = resp.apparent_encoding
-        soup = BeautifulSoup(resp.text, 'html.parser')
+        parser = LexborHTMLParser(resp.text)
 
         title_candidate = None
         if platform == "Kakuyomu":
             title_el = (
-                soup.select_one('#workTitle') or
-                soup.select_one('.widget-toc-main-title') or
-                soup.select_one('#app-main header h1') or
-                soup.select_one('header h1')
+                parser.css_first('#workTitle') or
+                parser.css_first('.widget-toc-main-title') or
+                parser.css_first('#app-main header h1') or
+                parser.css_first('header h1')
             )
-            if title_el and title_el.text.strip():
-                clean_title = title_el.text.strip().replace(' - カクヨム', '').strip()
+            if title_el and title_el.text().strip():
+                clean_title = title_el.text().strip().replace(' - カクヨム', '').strip()
                 title_candidate = re.sub(r'（[^）]+）$', '', clean_title).strip() or clean_title
-            elif soup.title:
-                t = soup.title.text.strip().replace(' - カクヨム', '').strip()
-                t_sub = t.split(' - ')[-1].strip() if ' - ' in t else t
-                title_candidate = re.sub(r'（[^）]+）$', '', t_sub).strip() or t_sub
+            else:
+                title_tag = parser.css_first('title')
+                if title_tag and title_tag.text().strip():
+                    t = title_tag.text().strip().replace(' - カクヨム', '').strip()
+                    t_sub = t.split(' - ')[-1].strip() if ' - ' in t else t
+                    title_candidate = re.sub(r'（[^）]+）$', '', t_sub).strip() or t_sub
 
         elif platform == "Syosetu":
             title_el = (
-                soup.select_one('.novel_title') or
-                soup.select_one('p.novel_title') or
-                soup.select_one('.c-announce a') or
-                soup.select_one('a.margin_r20')
+                parser.css_first('.novel_title') or
+                parser.css_first('p.novel_title') or
+                parser.css_first('.c-announce a') or
+                parser.css_first('a.margin_r20')
             )
-            if title_el and title_el.text.strip():
-                t = title_el.text.strip()
+            if title_el and title_el.text().strip():
+                t = title_el.text().strip()
                 title_candidate = re.sub(r'（[^）]+）$', '', t).strip() or t
-            elif soup.title:
-                t = soup.title.text.strip().split(' - ')[0].strip()
-                title_candidate = re.sub(r'（[^）]+）$', '', t).strip() or t
+            else:
+                title_tag = parser.css_first('title')
+                if title_tag and title_tag.text().strip():
+                    t = title_tag.text().strip().split(' - ')[0].strip()
+                    title_candidate = re.sub(r'（[^）]+）$', '', t).strip() or t
 
         elif platform == "NovelUp":
-            title_el = soup.select_one('.storyTitle') or soup.select_one('.story_title')
-            if title_el and title_el.text.strip():
-                t = title_el.text.strip()
+            title_el = parser.css_first('.storyTitle') or parser.css_first('.story_title')
+            if title_el and title_el.text().strip():
+                t = title_el.text().strip()
                 title_candidate = re.sub(r'（[^）]+）$', '', t).strip() or t
-            elif soup.title:
-                t = soup.title.text.strip().split('|')[0].strip()
-                title_candidate = re.sub(r'（[^）]+）$', '', t).strip() or t
+            else:
+                title_tag = parser.css_first('title')
+                if title_tag and title_tag.text().strip():
+                    t = title_tag.text().strip().split('|')[0].strip()
+                    title_candidate = re.sub(r'（[^）]+）$', '', t).strip() or t
 
         # Generic title
-        if not title_candidate and soup.title and soup.title.text.strip():
-            raw_t = re.split(r'[-|]', soup.title.text.strip())[0].strip()
-            title_candidate = re.sub(r'（[^）]+）$', '', raw_t).strip() or raw_t
+        if not title_candidate:
+            title_tag = parser.css_first('title')
+            if title_tag and title_tag.text().strip():
+                raw_t = re.split(r'[-|]', title_tag.text().strip())[0].strip()
+                title_candidate = re.sub(r'（[^）]+）$', '', raw_t).strip() or raw_t
 
         return title_candidate
 

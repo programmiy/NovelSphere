@@ -1,5 +1,4 @@
 import time
-import math
 import asyncio
 import json
 import logging
@@ -8,9 +7,8 @@ from fastapi import APIRouter, Depends, HTTPException, Request, BackgroundTasks
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
-from sqlalchemy import func
 
-from server.database import get_db, get_sqlite_conn, SessionLocal
+from server.database import get_db, SessionLocal
 from server.models import Translation, AiReviewQueue
 from server.settings import settings
 from server.services.abnormal_service import get_abnormal_translations_data
@@ -188,7 +186,6 @@ async def process_initial_translation_bg(items_to_translate: list):
     db = SessionLocal()
     try:
         model = getattr(settings, "gemini_retranslation_model", "gemini-3.8-flash") or "gemini-3.8-flash"
-        api_url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={settings.gemini_api_key}"
         
         # We will batch 20 items per API call to reduce RPM
         batch_size = 20

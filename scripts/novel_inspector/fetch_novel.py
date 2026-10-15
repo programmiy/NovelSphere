@@ -17,7 +17,7 @@ import json
 import urllib.request
 import urllib.error
 from pathlib import Path
-from bs4 import BeautifulSoup
+from selectolax.lexbor import LexborHTMLParser
 
 # Windows 콘솔 인코딩 대응
 if sys.stdout and hasattr(sys.stdout, 'reconfigure'):
@@ -103,22 +103,22 @@ def parse_kakuyomu(html: str, url: str) -> dict:
                 if tags:
                     info["tags"] = tags
                 return info
-        except Exception as e:
+        except Exception:
             pass
 
     # 2. HTML Fallback 파싱
-    soup = BeautifulSoup(html, 'html.parser')
-    t_tag = soup.find('h1') or soup.find('title')
+    parser = LexborHTMLParser(html)
+    t_tag = parser.css_first('h1, title')
     if t_tag:
-        info["title"] = t_tag.get_text().strip()
+        info["title"] = t_tag.text(deep=True).strip()
     
-    intro_el = soup.find('div', class_=lambda c: c and 'CollapseTextWithKakuyomuLinks_collapseText' in c)
+    intro_el = parser.css_first('div[class*="CollapseTextWithKakuyomuLinks_collapseText"]')
     if intro_el:
-        info["introduction"] = intro_el.get_text('\n').strip()
+        info["introduction"] = intro_el.text(deep=True).strip()
 
-    catch_el = soup.find('div', class_=lambda c: c and 'EyeCatch_catchphrase' in c)
+    catch_el = parser.css_first('div[class*="EyeCatch_catchphrase"]')
     if catch_el:
-        info["catchphrase"] = catch_el.get_text().strip()
+        info["catchphrase"] = catch_el.text(deep=True).strip()
 
     return info
 
@@ -135,39 +135,42 @@ def parse_syosetu(html: str, url: str) -> dict:
         "genre": "",
         "episodes_count": 0
     }
-    soup = BeautifulSoup(html, 'html.parser')
+    parser = LexborHTMLParser(html)
     
-    title_el = soup.select_one('p.novel_title, h1.p-novel__title')
+    title_el = parser.css_first('p.novel_title, h1.p-novel__title')
     if title_el:
-        info["title"] = title_el.get_text().strip()
-    elif soup.title:
-        info["title"] = soup.title.get_text().strip()
+        info["title"] = title_el.text(deep=True).strip()
+    else:
+        title_tag = parser.css_first('title')
+        if title_tag:
+            info["title"] = title_tag.text(deep=True).strip()
 
-    writer_el = soup.select_one('div.novel_writername, div.p-novel__author')
+    writer_el = parser.css_first('div.novel_writername, div.p-novel__author')
     if writer_el:
-        info["author"] = writer_el.get_text().strip()
+        info["author"] = writer_el.text(deep=True).strip()
 
-    ex_el = soup.select_one('#novel_ex, div.p-novel__summary')
+    ex_el = parser.css_first('#novel_ex, div.p-novel__summary')
     if ex_el:
-        info["introduction"] = ex_el.get_text('\n').strip()
+        info["introduction"] = ex_el.text(deep=True).strip()
 
     return info
 
 def parse_generic(html: str, url: str) -> dict:
     """일반 사이트 Fallback 파싱"""
-    soup = BeautifulSoup(html, 'html.parser')
+    parser = LexborHTMLParser(html)
+    title_tag = parser.css_first('title')
     info = {
         "site": "Generic",
         "url": url,
-        "title": soup.title.get_text().strip() if soup.title else "",
+        "title": title_tag.text(deep=True).strip() if title_tag else "",
         "author": "",
         "catchphrase": "",
         "introduction": "",
         "tags": []
     }
-    desc = soup.find('meta', attrs={'name': 'description'}) or soup.find('meta', attrs={'property': 'og:description'})
-    if desc and desc.get('content'):
-        info["introduction"] = desc.get('content').strip()
+    desc = parser.css_first('meta[name="description"], meta[property="og:description"]')
+    if desc and desc.attributes.get('content'):
+        info["introduction"] = desc.attributes.get('content', '').strip()
     return info
 
 def extract_novel_info(url_or_path: str) -> dict:
@@ -240,7 +243,7 @@ def main():
         f.write(f"URL: {info.get('url')}\n\n")
         f.write(f"Introduction:\n{info.get('introduction')}\n")
 
-    print(f"[*] 결과 저장 완료:")
+    print("[*] 결과 저장 완료:")
     print(f"  - {json_path}")
     print(f"  - {txt_path}")
 

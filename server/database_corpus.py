@@ -8,7 +8,7 @@ import os
 import sqlite3
 from urllib.parse import urlparse
 from contextlib import contextmanager
-from typing import Optional, Dict, Any
+from typing import Optional
 
 from server.settings import settings
 

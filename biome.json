@@ -1,0 +1,47 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.5.15/schema.json",
+  "files": {
+    "ignoreUnknown": true,
+    "includes": ["extension/**", "server/static/**"]
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "preset": "recommended",
+      "correctness": {
+        "noUnusedVariables": "warn",
+        "noUndeclaredVariables": "off"
+      },
+      "complexity": {
+        "noExtraBooleanCast": "warn"
+      },
+      "style": {
+        "useConst": "off"
+      },
+      "suspicious": {
+        "noDoubleEquals": "off"
+      }
+    }
+  },
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 120
+  },
+  "javascript": {
+    "globals": [
+      "chrome",
+      "window",
+      "document",
+      "localStorage",
+      "sessionStorage",
+      "fetch",
+      "console",
+      "setTimeout",
+      "clearTimeout",
+      "setInterval",
+      "clearInterval"
+    ]
+  }
+}

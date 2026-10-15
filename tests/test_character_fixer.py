@@ -511,3 +511,32 @@ def test_method3_placeholder_protection():
     assert "하나부사부사" not in suggested_clean
 
 
+def test_batchim_josa_auto_adjustment():
+    from server.routers.db_editor import generate_smart_suggestion, fix_target_particles
+
+    # 1. Direct fix_target_particles tests
+    assert fix_target_particles("은혁는 갔다.", "은혁") == "은혁은 갔다."
+    assert fix_target_particles("은혁가 왔다.", "은혁") == "은혁이 왔다."
+    assert fix_target_particles("은혁를 만났다.", "은혁") == "은혁을 만났다."
+    assert fix_target_particles("은혁와 함께.", "은혁") == "은혁과 함께."
+    assert fix_target_particles("은혁로 향했다.", "은혁") == "은혁으로 향했다."
+    assert fix_target_particles("하철으로 향했다.", "하철") == "하철로 향했다."
+    assert fix_target_particles("유우은 착하다.", "유우") == "유우는 착하다."
+    assert fix_target_particles("유우이 웃었다.", "유우") == "유우가 웃었다."
+
+    # 2. End-to-end generate_smart_suggestion with batchim target
+    rules = [{
+        "source": "銀赫",
+        "target": "은혁",
+        "enabled": True,
+        "misreadings": ["하루"]
+    }]
+    orig = "銀赫はリンゴを食べ、銀赫が笑った。"
+    trans = "하루는 사과를 먹고, 하루가 웃었다."
+    suggested, reasons, tags = generate_smart_suggestion(orig, trans, rules)
+    assert suggested == "은혁은 사과를 먹고, 은혁이 웃었다."
+    assert "은혁는" not in suggested
+    assert "은혁가" not in suggested
+
+
+

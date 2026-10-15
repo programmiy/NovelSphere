@@ -8,22 +8,24 @@ Usage:
 """
 
 import os
-import sys
 import time
 import re
 import sqlite3
 from datetime import datetime
 from collections import Counter, defaultdict
-from typing import Dict, Tuple, List, Set
 
-from server.settings import settings
 from server.database import get_db_path
 from server.database_corpus import (
     get_corpus_db_path,
     get_corpus_conn,
     init_corpus_db,
 )
-from server.services.dictionary_service import KOREAN_STOPWORDS
+from server.services.dictionary_service import (
+    KOREAN_STOPWORDS,
+    _get_sudachi_tokenizer,
+    _get_kiwi,
+    _extract_korean_nouns,
+)
 
 
 # Japanese Token Extraction Regex
@@ -51,7 +53,7 @@ def build_corpus_index(limit: int = 0, min_co_count: int = 2):
     source_db_path = get_db_path()
     target_db_path = get_corpus_db_path()
 
-    print(f"=== [Corpus AI Indexer] Starting build ===")
+    print("=== [Corpus AI Indexer] Starting build ===")
     print(f"Source DB: {source_db_path}")
     print(f"Target DB: {target_db_path}")
 
@@ -84,6 +86,16 @@ def build_corpus_index(limit: int = 0, min_co_count: int = 2):
     batch_size = 50000
     last_log_time = time.time()
 
+    sudachi_tok = _get_sudachi_tokenizer()
+    kiwi = _get_kiwi()
+    split_mode_c = None
+    if sudachi_tok:
+        try:
+            from sudachipy import tokenizer
+            split_mode_c = tokenizer.Tokenizer.SplitMode.C
+        except Exception:
+            split_mode_c = None
+
     while True:
         rows = source_cur.fetchmany(batch_size)
         if not rows:
@@ -114,11 +126,29 @@ def build_corpus_index(limit: int = 0, min_co_count: int = 2):
                     template_data[key][0] += 1
 
             # --- C. Phrase Alignments ---
-            ja_tokens = set(JA_TOKEN_RE.findall(orig))
-            ko_words = set(KO_WORD_RE.findall(trans))
+            ja_tokens = set()
+            if sudachi_tok and split_mode_c:
+                try:
+                    morphemes = sudachi_tok.tokenize(orig, split_mode_c)
+                    for mor in morphemes:
+                        pos = mor.part_of_speech()[0]
+                        if pos in ("名詞", "動詞", "形容詞"):
+                            surf = mor.surface()
+                            lemma = mor.dictionary_form()
+                            if len(surf) >= 2:
+                                ja_tokens.add(surf)
+                            if len(lemma) >= 2:
+                                ja_tokens.add(lemma)
+                except Exception:
+                    ja_tokens = set(JA_TOKEN_RE.findall(orig))
+            else:
+                ja_tokens = set(JA_TOKEN_RE.findall(orig))
 
-            # Filter stopwords from Korean candidates to maximize precision
-            valid_ko = [kw for kw in ko_words if kw not in KOREAN_STOPWORDS]
+            if kiwi:
+                valid_ko = _extract_korean_nouns(trans, kiwi)
+            else:
+                ko_words = set(KO_WORD_RE.findall(trans))
+                valid_ko = [kw for kw in ko_words if kw not in KOREAN_STOPWORDS]
 
             for jt in ja_tokens:
                 if len(jt) >= 2:

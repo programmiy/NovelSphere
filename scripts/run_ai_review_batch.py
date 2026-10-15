@@ -12,7 +12,6 @@ import os
 import time
 import json
 import argparse
-from datetime import datetime
 
 # Windows 콘솔 인코딩 대응
 if sys.platform == 'win32':
@@ -28,7 +27,7 @@ if APP_ROOT not in sys.path:
     sys.path.insert(0, APP_ROOT)
 
 from server.database import SessionLocal
-from server.models import AiReviewQueue, Translation
+from server.models import AiReviewQueue
 from server.services.abnormal_service import get_abnormal_translations_data
 from server.routers.ai_review import clean_ai_translation
 from server.services.translation_engine import call_gemini_api
@@ -225,7 +224,7 @@ def main():
         print(f" * 총 적재 문장 수 : {processed_count}건")
         print(f" * 성공 배치      : {success_batches}개 / 실패: {failed_batches}개")
         print(f" * 총 소요 시간    : {int(total_time // 60)}분 {int(total_time % 60)}초")
-        print(f" * 웹 UI 검수 주소 : http://localhost:8001/ai_review")
+        print(" * 웹 UI 검수 주소 : http://localhost:8001/ai_review")
         print("=" * 65)
 
     finally:

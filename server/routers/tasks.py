@@ -2,10 +2,9 @@
 import re
 import requests
 import time
-import os
 import uuid
 import logging
-from fastapi import APIRouter, HTTPException, BackgroundTasks
+from fastapi import APIRouter, BackgroundTasks
 from typing import List
 from server.celery_app import celery_app
 from celery.result import AsyncResult

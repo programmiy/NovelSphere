@@ -11,7 +11,6 @@ import re
 import threading
 import time
 from typing import List, Optional
-from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -26,36 +25,30 @@ from server.quota import (
     is_us_dst,
     get_quota_reset_hour,
     get_current_quota_window_start_ts,
-    get_today_start_ts,
-    get_quota_summary,
-    record_api_call,
 )
 from server.rule_classifier import (
     classify_translation,
     is_pure_punctuation_only,
     is_verbatim_copy,
-    normalize_text,
     restore_brackets,
 )
 from server.settings import settings
 
 # --- Modularized Services Re-exports for Backward Compatibility ---
 from server.services.rpm_manager import (
-    _CALL_TIMESTAMPS,
-    _EPISODE_RECORDS,
-    _RPM_LOCK,
-    _record_call_timestamp,
+    _CALL_TIMESTAMPS,  # noqa: F401
+    _EPISODE_RECORDS,  # noqa: F401
+    _RPM_LOCK,  # noqa: F401
+    _record_call_timestamp,  # noqa: F401
     calculate_episode_adaptive_delay,
     get_current_rpm,
-    get_gemini_session,
     get_recent_episode_count,
-    proactive_rpm_rest,
+    proactive_rpm_rest,  # noqa: F401
+    recycle_gemini_session,  # noqa: F401
     record_episode_translation,
-    recycle_gemini_session,
 )
 from server.services.translation_engine import (
-    TRANSLATION_RESPONSE_SCHEMA,
-    TRANSLATION_SYSTEM_INSTRUCTION,
+    TRANSLATION_SYSTEM_INSTRUCTION,  # noqa: F401
     TranslationItemInput,
     _build_translation_prompt,
     call_gemini_api,
@@ -855,7 +848,6 @@ def get_translation_session_count(
     novel_title: Optional[str] = None,
     db: Session = Depends(get_db)
 ):
-    today_start_ts = get_today_start_ts()
     window_start_ts = get_current_quota_window_start_ts()
     cutoff_hour = get_quota_reset_hour()
 

@@ -7,7 +7,7 @@ import json
 import logging
 import re
 import time
-from typing import List, Optional, Set, Tuple, Dict, Any
+from typing import List, Optional, Set, Tuple, Dict
 import requests
 from fastapi import HTTPException
 from sqlalchemy.orm import Session

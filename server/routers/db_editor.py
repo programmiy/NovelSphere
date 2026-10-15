@@ -1,21 +1,21 @@
 import os
 import json
 import re
-import sqlite3
 import logging
+import ahocorasick
 from datetime import datetime
 from typing import List, Optional, Dict, Any
 from collections import Counter
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Body
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 
 from server.settings import settings
-from server.database import get_db, get_sqlite_conn, get_db_path
+from server.database import get_db, get_db_path
 from server.models import Translation
 from server.backup_utils import create_unified_backup
 
@@ -224,6 +224,107 @@ def check_rule_missing_status(
     return is_missing, needed_target_count
 
 
+def has_korean_batchim(text: str) -> bool:
+    """Returns True if the last Korean character in text has a final consonant (batchim)."""
+    if not text:
+        return False
+    code = ord(text[-1]) - 0xAC00
+    if 0 <= code <= 11171:
+        return (code % 28) > 0
+    return False
+
+
+def fix_target_particles(text: str, target: str) -> str:
+    """
+    Adjusts trailing Korean particles immediately following target based on final consonant (batchim).
+    E.g. target='은혁' (batchim) + '는' -> '은혁은'
+    E.g. target='유우' (no batchim) + '은' -> '유우는'
+    """
+    if not target or not text:
+        return text
+
+    hb = has_korean_batchim(target)
+    rieul = False
+    c = ord(target[-1]) - 0xAC00
+    if 0 <= c <= 11171:
+        rieul = (c % 28) == 8
+
+    josa_pairs = [
+        (("은", "는"), "은" if hb else "는"),
+        (("이", "가"), "이" if hb else "가"),
+        (("을", "를"), "을" if hb else "를"),
+        (("과", "와"), "과" if hb else "와"),
+        (("아", "야"), "아" if hb else "야"),
+    ]
+
+    for (j1, j2), correct in josa_pairs:
+        pattern = re.compile(rf"({re.escape(target)})(?:{j1}|{j2})(?=[^\w]|$)")
+        text = pattern.sub(rf"\1{correct}", text)
+
+    correct_ro = "로" if (not hb or rieul) else "으로"
+    pat_ro = re.compile(rf"({re.escape(target)})(?:으로|로)(?=[^\w]|$)")
+    text = pat_ro.sub(rf"\1{correct_ro}", text)
+
+    return text
+
+
+def replace_misreadings_ahocorasick(
+    text: str,
+    misreadings: List[str],
+    target_token: str
+) -> tuple[str, List[str]]:
+    """
+    Scans text using Aho-Corasick Trie in O(N) to match and replace misreadings without overlap conflicts.
+    """
+    if not text or not misreadings:
+        return text, []
+
+    valid_misreadings = [m.strip() for m in misreadings if m.strip()]
+    if not valid_misreadings:
+        return text, []
+
+    try:
+        A = ahocorasick.Automaton()
+        for idx, m in enumerate(valid_misreadings):
+            A.add_word(m, (idx, m))
+        A.make_automaton()
+
+        matches = []
+        for end_idx, (idx, wrong) in A.iter(text):
+            start_idx = end_idx - len(wrong) + 1
+            matches.append((start_idx, end_idx + 1, wrong, idx))
+
+        if not matches:
+            return text, []
+
+        matches.sort(key=lambda x: (x[0], -(x[1] - x[0])))
+
+        filtered = []
+        last_end = 0
+        matched_wrongs = []
+        for start, end, wrong, _ in matches:
+            if start >= last_end:
+                filtered.append((start, end, wrong))
+                matched_wrongs.append(wrong)
+                last_end = end
+
+        res = []
+        curr = 0
+        for start, end, wrong in filtered:
+            res.append(text[curr:start])
+            res.append(target_token)
+            curr = end
+        res.append(text[curr:])
+        return "".join(res), matched_wrongs
+    except Exception:
+        matched = []
+        for wrong in sorted(valid_misreadings, key=len, reverse=True):
+            if wrong in text:
+                text = text.replace(wrong, target_token)
+                matched.append(wrong)
+        return text, matched
+
+
 def generate_smart_suggestion(
     orig: str,
     trans: str,
@@ -255,94 +356,87 @@ def generate_smart_suggestion(
 
         # --- Method 3: 3-Step Placeholder Protection Engine ---
         # Step 1 (Protect): Mask existing target occurrences in 'after' to prevent substring corruptions
-        # (e.g. if target is '하나부사' and misreading is '하나', existing '하나부사' won't become '하나부사부사')
         target_token = f"__TOKEN_TARGET_{idx}_{abs(hash(target)) % 100000}__"
         after = after.replace(target, target_token)
 
-        # Step 2 (Replace): Replace misreadings (sorted by length descending for greedy match)
-        # Replacing with target_token protects newly replaced targets from subsequent shorter misreadings
-        sorted_misreadings = sorted(
-            [m.strip() for m in misreadings if m.strip()],
-            key=len,
-            reverse=True
-        )
-        for wrong in sorted_misreadings:
-            if wrong in after:
-                after = after.replace(wrong, target_token)
-                reasons.append(f"{wrong} ➔ {target}")
-                tags.add(wrong)
+        # Step 2 (Replace): O(N) Aho-Corasick multi-pattern replacement
+        after, matched_wrongs = replace_misreadings_ahocorasick(after, misreadings, target_token)
+        for wrong in matched_wrongs:
+            reasons.append(f"{wrong} ➔ {target}")
+            tags.add(wrong)
 
-            # 2. Domain-specific heuristics for known Japanese novel patterns
-            # Heuristics for '悠' -> '유우'
-            if source == "悠" and target == "유우":
-                # '유카' (유카는, 유카가 등)
-                if "유카" in after:
-                    pat_yuka = re.compile(
-                        r'(?<![가-힣])유카(?=(?:는|가|를|의|에게|한테|와|과|도|만|뿐|보다|로|랑|였|군|\s+군|\s+씨|\s+녀석|\s+자식|\s+입장|\s+자신|다웠|라고|란|이지만|\s|[.,!?\'"』」\)]|$))'
-                    )
-                    if pat_yuka.search(after):
-                        after = pat_yuka.sub('유우', after)
-                        reasons.append("유카 ➔ 유우")
-                        tags.add("유카")
-
-                # '유리' (有利가 원문에 없고 유리카가 아닐 때)
-                if "有利" not in orig:
-                    pattern_yuri = re.compile(
-                        r'(?<![가-힣])유리(?![카])(?=(?:가|는|를|의|에게|한테|와|과|도|만|뿐|보다|로|랑|였|군|\s+군|\s+씨|\s+녀석|\s+자식|\s+입장|\s+자신|마저|다웠|라고|란|이지만|\s|[.,!?\'"』」\)]|$))'
-                    )
-                    if pattern_yuri.search(after):
-                        after = pattern_yuri.sub('유우', after)
-                        reasons.append("유리 ➔ 유우")
-                        tags.add("유리")
-
-                # '하루' (Protect '하루 종일', '하루종일', '하루의 피로' when 一日 is present)
-                protected_placeholders = {}
-                if "一日" in orig or "1日" in orig:
-                    for phrase in ["하루 종일", "하루종일", "하루의 피로"]:
-                        if phrase in after:
-                            ph_key = f"__PROTECTED_{len(protected_placeholders)}__"
-                            protected_placeholders[ph_key] = phrase
-                            after = after.replace(phrase, ph_key)
-
-                if not any(k in orig for k in ["春", "晴"]) and (not any(k in orig for k in ["一日", "1日"]) or protected_placeholders):
-                    pattern_haru = re.compile(
-                        r'(?<![가-힣])하루(?=(?:가|는|를|의|에게|한테|와|과|도|만|뿐|보다|로|랑|였|군|\s+군|\s+씨|\s+녀석|\s+자신|다웠|라고|란|이지만|라는|\s|[.,!?\'"』」\)]|$))'
-                    )
-                    if pattern_haru.search(after):
-                        after = pattern_haru.sub('유우', after)
-                        reasons.append("하루 ➔ 유우")
-                        tags.add("하루")
-
-                for ph_key, orig_phrase in protected_placeholders.items():
-                    after = after.replace(ph_key, orig_phrase)
-
-                # '유' + 한국어 조사/접미사/호칭/구두점
-                reg_yu = re.compile(
-                    r'(?<![가-힣])유(?![유우])(?=(?:가|는|를|의|에게|한테|와|과|도|만|뿐|보다|로|랑|였|군|\s+군|\s+씨|\s+녀석|\s+자식|\s+입장|\s+덕분|\s+말야|\s+자신|다웠|라고|란|이지만|라면|네|입니다|뿐|조차|마저|님|\s*[!?,.~…』」"\'\)]|\s+|$))'
+        # 2. Domain-specific heuristics for known Japanese novel patterns
+        # Heuristics for '悠' -> '유우'
+        if source == "悠" and target == "유우":
+            # '유카' (유카는, 유카가 등)
+            if "유카" in after:
+                pat_yuka = re.compile(
+                    r'(?<![가-힣])유카(?=(?:는|가|를|의|에게|한테|와|과|도|만|뿐|보다|로|랑|였|군|\s+군|\s+씨|\s+녀석|\s+자식|\s+입장|\s+자신|다웠|라고|란|이지만|\s|[.,!?\'"』」\)]|$))'
                 )
-                if reg_yu.search(after):
-                    after = reg_yu.sub('유우', after)
-                    reasons.append("유+조사 ➔ 유우")
+                if pat_yuka.search(after):
+                    after = pat_yuka.sub('유우', after)
+                    reasons.append("유카 ➔ 유우")
+                    tags.add("유카")
+
+            # '유리' (有利가 원문에 없고 유리카가 아닐 때)
+            if "有利" not in orig:
+                pattern_yuri = re.compile(
+                    r'(?<![가-힣])유리(?![카])(?=(?:가|는|를|의|에게|한테|와|과|도|만|뿐|보다|로|랑|였|군|\s+군|\s+씨|\s+녀석|\s+자식|\s+입장|\s+자신|마저|다웠|라고|란|이지만|\s|[.,!?\'"』」\)]|$))'
+                )
+                if pattern_yuri.search(after):
+                    after = pattern_yuri.sub('유우', after)
+                    reasons.append("유리 ➔ 유우")
+                    tags.add("유리")
+
+            # '하루' (Protect '하루 종일', '하루종일', '하루의 피로' when 一日 is present)
+            protected_placeholders = {}
+            if "一日" in orig or "1日" in orig:
+                for phrase in ["하루 종일", "하루종일", "하루의 피로"]:
+                    if phrase in after:
+                        ph_key = f"__PROTECTED_{len(protected_placeholders)}__"
+                        protected_placeholders[ph_key] = phrase
+                        after = after.replace(phrase, ph_key)
+
+            if not any(k in orig for k in ["春", "晴"]) and (not any(k in orig for k in ["一日", "1日"]) or protected_placeholders):
+                pattern_haru = re.compile(
+                    r'(?<![가-힣])하루(?=(?:가|는|를|의|에게|한테|와|과|도|만|뿐|보다|로|랑|였|군|\s+군|\s+씨|\s+녀석|\s+자신|다웠|라고|란|이지만|라는|\s|[.,!?\'"』」\)]|$))'
+                )
+                if pattern_haru.search(after):
+                    after = pattern_haru.sub('유우', after)
+                    reasons.append("하루 ➔ 유우")
+                    tags.add("하루")
+
+            for ph_key, orig_phrase in protected_placeholders.items():
+                after = after.replace(ph_key, orig_phrase)
+
+            # '유' + 한국어 조사/접미사/호칭/구두점
+            reg_yu = re.compile(
+                r'(?<![가-힣])유(?![유우])(?=(?:가|는|를|의|에게|한테|와|과|도|만|뿐|보다|로|랑|였|군|\s+군|\s+씨|\s+녀석|\s+자식|\s+입장|\s+덕분|\s+말야|\s+자신|다웠|라고|란|이지만|라면|네|입니다|뿐|조차|마저|님|\s*[!?,.~…』」"\'\)]|\s+|$))'
+            )
+            if reg_yu.search(after):
+                after = reg_yu.sub('유우', after)
+                reasons.append("유+조사 ➔ 유우")
+                tags.add("유+조사")
+
+            # 인용부호 단독 이름: 『유』, 「유」, "유", '유'
+            for q_open, q_close in [('『', '』'), ('「', '」'), ('"', '"'), ("'", "'")]:
+                q_target = f"{q_open}유{q_close}"
+                if q_target in after:
+                    after = after.replace(q_target, f"{q_open}유우{q_close}")
+                    reasons.append("유 ➔ 유우")
                     tags.add("유+조사")
 
-                # 인용부호 단독 이름: 『유』, 「유」, "유", '유'
-                for q_open, q_close in [('『', '』'), ('「', '」'), ('"', '"'), ("'", "'")]:
-                    q_target = f"{q_open}유{q_close}"
-                    if q_target in after:
-                        after = after.replace(q_target, f"{q_open}유우{q_close}")
-                        reasons.append("유 ➔ 유우")
-                        tags.add("유+조사")
-
-            # Heuristics for '百合華' -> '유리카'
-            elif source == "百合華" and target == "유리카":
-                for wrong in ["유리리카", "유리화", "유리하"]:
-                    if wrong in after:
-                        after = after.replace(wrong, "유리카")
-                        reasons.append(f"{wrong} ➔ 유리카")
-                        tags.add("유리카")
+        # Heuristics for '百合華' -> '유리카'
+        elif source == "百合華" and target == "유리카":
+            for wrong in ["유리리카", "유리화", "유리하"]:
+                if wrong in after:
+                    after = after.replace(wrong, "유리카")
+                    reasons.append(f"{wrong} ➔ 유리카")
+                    tags.add("유리카")
 
         # Step 3 (Restore): Restore all protected target placeholders back to the genuine target
         after = after.replace(target_token, target)
+        after = fix_target_particles(after, target)
 
     # If target is still missing after applying rules
     for rule in active_rules:

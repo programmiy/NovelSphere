@@ -6,7 +6,7 @@ style/tone consistency checking, and corpus index metadata.
 """
 
 from typing import Optional, List, Dict, Any
-from fastapi import APIRouter, Query, BackgroundTasks, HTTPException
+from fastapi import APIRouter, Query, BackgroundTasks
 from pydantic import BaseModel, Field
 
 from server.services.corpus_ai_service import (

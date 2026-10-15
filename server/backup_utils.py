@@ -3,7 +3,7 @@ import time
 import sqlite3
 import logging
 from datetime import datetime
-from typing import Optional, Tuple, Dict, Any, List
+from typing import Optional, Tuple, Dict, Any
 
 logger = logging.getLogger(__name__)
 

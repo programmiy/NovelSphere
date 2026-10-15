@@ -111,7 +111,7 @@
 
 /* 사이드바 테이블 행 하이라이트 애니메이션 */
 @keyframes lanovelRowPulse {
-    0% { background-color: #fef08a !important; }
+    0% { background-color: #fef08a; }
     100% { background-color: transparent; }
 }
 

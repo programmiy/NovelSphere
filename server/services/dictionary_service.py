@@ -5,6 +5,7 @@ alongside real-world novel translation examples from the accumulated database.
 STRICTLY NO AI (100% deterministic, rule-based & SQLite queries).
 """
 
+import logging
 import re
 import random
 from typing import Optional, Dict, Any, List
@@ -15,9 +16,13 @@ from sqlalchemy import func
 
 from server.models import Translation
 
+logger = logging.getLogger(__name__)
+
+KO_WORD_RE = re.compile(r'[가-힣]{2,}')
+
 # Common Korean stop words to exclude from candidate term extraction
 KOREAN_STOPWORDS = {
-    "이", "그", "저", "것", "수", "등", "들", "및", "더", "또", "을", "를", "이", "가",
+    "이", "그", "저", "것", "수", "등", "들", "및", "더", "또", "을", "를", "가",
     "은", "는", "에", "의", "로", "으로", "에서", "에게", "과", "와", "도", "만", "하다",
     "했다", "하고", "하면", "하는", "이다", "있다", "없다", "되어", "되고", "된다", "않다",
     "같다", "때문", "자신", "그녀", "사람", "하나", "어떤", "지금", "다시", "매우", "너무",
@@ -51,23 +56,106 @@ def get_dictionary_links(keyword: str) -> Dict[str, str]:
     }
 
 
+_SUDACHI_TOKENIZER = None
+_KIWI = None
+
+
+def _get_sudachi_tokenizer():
+    global _SUDACHI_TOKENIZER
+    if _SUDACHI_TOKENIZER is None:
+        try:
+            from sudachipy import dictionary
+            _SUDACHI_TOKENIZER = dictionary.Dictionary().tokenizer()
+        except Exception:
+            _SUDACHI_TOKENIZER = False
+    return _SUDACHI_TOKENIZER if _SUDACHI_TOKENIZER is not False else None
+
+
+def _get_kiwi():
+    global _KIWI
+    if _KIWI is None:
+        try:
+            from kiwipiepy import Kiwi
+            _KIWI = Kiwi()
+        except Exception:
+            _KIWI = False
+    return _KIWI if _KIWI is not False else None
+
+
+def _extract_korean_nouns(text: str, kiwi=None) -> List[str]:
+    """
+    Kiwi 형태소 분석기를 사용하여 한국어 텍스트에서 명사/체언을 추출합니다.
+    공백 없이 연속된 복합 명사(예: 마도 + 사 -> 마도사)를 우선 병합하고, 개별 명사도 함께 추출합니다.
+    """
+    if not text:
+        return []
+
+    if kiwi is None:
+        kiwi = _get_kiwi()
+
+    if not kiwi:
+        return [w for w in KO_WORD_RE.findall(text) if w not in KOREAN_STOPWORDS]
+
+    try:
+        tokens = kiwi.tokenize(text)
+        words: List[str] = []
+        curr: List[Any] = []
+
+        for t in tokens:
+            if t.tag.startswith(('NN', 'XR', 'XSN')):
+                if curr and (curr[-1].start + curr[-1].len != t.start):
+                    if len(curr) > 1:
+                        compound = ''.join(x.form for x in curr)
+                        if compound not in KOREAN_STOPWORDS and len(compound) >= 2:
+                            words.append(compound)
+                    for x in curr:
+                        if len(x.form) >= 2 and x.form not in KOREAN_STOPWORDS:
+                            words.append(x.form)
+                    curr = []
+                curr.append(t)
+            else:
+                if curr:
+                    if len(curr) > 1:
+                        compound = ''.join(x.form for x in curr)
+                        if compound not in KOREAN_STOPWORDS and len(compound) >= 2:
+                            words.append(compound)
+                    for x in curr:
+                        if len(x.form) >= 2 and x.form not in KOREAN_STOPWORDS:
+                            words.append(x.form)
+                    curr = []
+
+        if curr:
+            if len(curr) > 1:
+                compound = ''.join(x.form for x in curr)
+                if compound not in KOREAN_STOPWORDS and len(compound) >= 2:
+                    words.append(compound)
+            for x in curr:
+                if len(x.form) >= 2 and x.form not in KOREAN_STOPWORDS:
+                    words.append(x.form)
+
+        return words
+    except Exception:
+        return [w for w in KO_WORD_RE.findall(text) if w not in KOREAN_STOPWORDS]
+
+
 def extract_korean_candidate_terms(examples: List[Dict[str, Any]], keyword: str) -> List[str]:
     """
     검색된 번역문들 속에서 자주 함께 등장하는 핵심 한국어 어휘 후보(최대 5개)를 통계적으로 추출합니다.
-    수동 번역 교정 시 대응되는 한국어 번역어를 빠르게 파악할 수 있도록 돕습니다.
+    kiwipiepy 형태소 분석기로 조사/어미를 분리하여 순수 체언 어휘를 정밀하게 집계합니다.
     (100% 룰베이스 통계, No AI)
     """
     if not examples:
         return []
 
     word_counts = Counter()
-    korean_word_regex = re.compile(r'[가-힣]{2,}')
+    kiwi = _get_kiwi()
 
     for ex in examples:
         trans = ex.get("translated", "")
         if not trans:
             continue
-        words = korean_word_regex.findall(trans)
+
+        words = _extract_korean_nouns(trans, kiwi)
         for w in words:
             if w not in KOREAN_STOPWORDS and w != keyword:
                 word_counts[w] += 1
@@ -206,23 +294,91 @@ def search_dictionary_corpus(
 
 def tokenize_japanese_sentence(sentence: str) -> List[Dict[str, Any]]:
     """
-    일본어 문장을 순수 룰베이스로 정교하게 토큰화합니다. (외부 라이브러리/MeCab 불필요)
-    - 한자 덩어리 + 옥리가나 (예: 見つめた, 食べた, 魔法, 約束)
-    - 가타카나 덩어리 (예: スライム, レベル, ナイフ)
-    - 히라가나 어휘 (2자 이상) 및 단일 조사 (は, が, を, に, で, と, の, も)
-    - 구두점 및 기호
+    일본어 문장을 형태소 분석기(SudachiPy, SplitMode.C)로 정교하게 토큰화하고 기본형(lemma)을 추출합니다.
+    SudachiPy 로드 불가 시 정규식 기반 룰베이스로 안전하게 폴백합니다.
     """
     if not sentence:
         return []
 
-    tokens: List[Dict[str, Any]] = []
-    
-    # 1. 토큰 정규식: 한자+옥리가나, 가타카나, 한자단독, 히라가나단어, 조사, 영숫자, 구두점
+    sudachi_tok = _get_sudachi_tokenizer()
+    if sudachi_tok:
+        try:
+            from sudachipy import tokenizer
+            mode = tokenizer.Tokenizer.SplitMode.C
+            morphemes = sudachi_tok.tokenize(sentence, mode)
+
+            # 명사 + 접미사(예: 魔導 + 士 -> 魔導士) 병합
+            merged: List[Dict[str, Any]] = []
+            for mor in morphemes:
+                surf = mor.surface()
+                if not surf or surf.isspace():
+                    continue
+                pos = mor.part_of_speech()[0]
+                subpos = mor.part_of_speech()[1] if len(mor.part_of_speech()) > 1 else ""
+                lemma = mor.dictionary_form()
+                start = mor.begin()
+                end = mor.end()
+
+                if merged and pos == "接尾辞" and merged[-1]["pos"] == "名詞":
+                    merged[-1]["text"] += surf
+                    merged[-1]["lemma"] += surf
+                    merged[-1]["end"] = end
+                else:
+                    merged.append({
+                        "text": surf,
+                        "pos": pos,
+                        "subpos": subpos,
+                        "lemma": lemma,
+                        "start": start,
+                        "end": end
+                    })
+
+            tokens: List[Dict[str, Any]] = []
+            for m in merged:
+                text = m["text"]
+                pos = m["pos"]
+                lemma = m["lemma"]
+
+                # token_type 매핑
+                if pos == "助詞":
+                    token_type = "particle"
+                elif re.match(r'^[ァ-ヴー]+$', text):
+                    token_type = "katakana"
+                elif re.match(r'^[一-龯々]+[ぁ-ん]*$', text):
+                    token_type = "kanji"
+                elif pos == "補助記号":
+                    token_type = "punct"
+                elif re.match(r'^[ぁ-ん]+$', text):
+                    token_type = "hiragana"
+                elif re.match(r'^[a-zA-Z0-9]+$', text):
+                    token_type = "alphanumeric"
+                else:
+                    token_type = "unknown"
+
+                is_word = (
+                    pos in ("名詞", "動詞", "形容詞") or
+                    (token_type in ("kanji", "katakana", "hiragana") and len(text) >= 2 and token_type != "particle")
+                )
+
+                tokens.append({
+                    "text": text,
+                    "lemma": lemma,
+                    "pos": pos,
+                    "type": token_type,
+                    "start": m["start"],
+                    "end": m["end"],
+                    "is_word": is_word
+                })
+            return tokens
+        except Exception as e:
+            logger.warning(f"Sudachi tokenization failed, falling back to regex: {e}")
+
+    # Fallback: 정규식 기반 토큰화
+    tokens = []
     pattern = re.compile(
         r'([一-龯々]+[ぁ-ん]*)|([ァ-ヴー]+)|([一-龯々]+)|([ぁ-ん]{2,})|([ぁ-ん])|([a-zA-Z0-9]+)|([「」『』（）()！？!?…―.,\s]+)'
     )
-
-    PARTICLES = {"は", "が", "を", "に", "で", "と", "の", "も", "へ", "や", "か", "ね", "よ", "ぞ", "ぜ", "な", "さ"}
+    PARTICLES = {"は", "가", "を", "に", "で", "と", "の", "も", "へ", "や", "か", "ね", "よ", "ぞ", "ぜ", "な", "さ"}
 
     for match in pattern.finditer(sentence):
         text = match.group(0)
@@ -230,10 +386,6 @@ def tokenize_japanese_sentence(sentence: str) -> List[Dict[str, Any]]:
             continue
 
         token_type = "unknown"
-        
-        # Split trailing particle if a noun is immediately followed by a particle
-        # e.g. "魔導士の" -> "魔導士", "の"
-        # "炸裂した" -> "炸裂した" (kept together since "した" is not in PARTICLES)
         split_particle = None
         if re.match(r'^[一-龯々]+[ぁ-ん]+$', text):
             m = re.match(r'^([一-龯々]+)([ぁ-ん]+)$', text)
@@ -258,15 +410,17 @@ def tokenize_japanese_sentence(sentence: str) -> List[Dict[str, Any]]:
 
         tokens.append({
             "text": text,
+            "lemma": text,
             "type": token_type,
             "start": match.start(),
             "end": match.start() + len(text),
             "is_word": token_type in ("kanji", "katakana", "hiragana") and len(text) >= 2
         })
-        
+
         if split_particle:
             tokens.append({
                 "text": split_particle,
+                "lemma": split_particle,
                 "type": "particle",
                 "start": match.start() + len(text),
                 "end": match.end(),
@@ -292,19 +446,23 @@ def get_sentence_word_breakdown(
 
     results: List[Dict[str, Any]] = []
     k_text_clean = k_text or ""
+    kiwi = _get_kiwi()
 
     for item in tokens:
         t_text = item["text"]
+        lemma = item.get("lemma") or t_text
         t_type = item["type"]
         is_word = item["is_word"]
 
+        lookup_key = lemma if is_word else t_text
         entry = {
             "token": t_text,
+            "lemma": lemma,
             "type": t_type,
             "is_word": is_word,
             "candidate_terms": [],
             "matched_term": "",
-            "dict_links": get_dictionary_links(t_text) if is_word or t_type in ("kanji", "katakana") else {}
+            "dict_links": get_dictionary_links(lookup_key) if is_word or t_type in ("kanji", "katakana") else {}
         }
 
         # 구두점이나 단순 조사는 코퍼스 무거운 검색 생략
@@ -322,14 +480,13 @@ def get_sentence_word_breakdown(
                     Translation.original.contains(t_text)
                 ).order_by(Translation.timestamp.desc()).limit(10).all()
 
-            # 한국어 단어 빈도 카운팅
-            korean_counter = Counter()
-            ko_words_regex = re.compile(r'[가-힣]{2,}')
+            # 한국어 단어 빈도 카운팅 (Kiwi 형태소 분석기 우선 활용)
+            korean_counter: Counter = Counter()
             for row in sample_rows:
                 if row[0]:
-                    for kw in ko_words_regex.findall(row[0]):
-                        if kw not in KOREAN_STOPWORDS:
-                            korean_counter[kw] += 1
+                    nouns = _extract_korean_nouns(row[0], kiwi)
+                    for n in nouns:
+                        korean_counter[n] += 1
 
             candidates = [w for w, _ in korean_counter.most_common(4)]
             entry["candidate_terms"] = candidates

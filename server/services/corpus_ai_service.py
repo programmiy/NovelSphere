@@ -6,12 +6,11 @@ real-time contextual autocomplete, and style/tone consistency checking.
 """
 
 import re
-import difflib
-from typing import Optional, Dict, Any, List, Tuple
-from collections import Counter
+from rapidfuzz import fuzz
+from typing import Optional, Dict, Any
 
 from server.database_corpus import corpus_db_connection
-from server.services.dictionary_service import KOREAN_STOPWORDS
+from server.services.dictionary_service import _get_sudachi_tokenizer
 
 # Tokenizer patterns
 JA_TOKEN_RE = re.compile(
@@ -102,7 +101,7 @@ def synthesize_translation(
                 SELECT original, translated, ja_clean, folder_name, frequency
                 FROM corpus_templates
                 WHERE folder_name = ? AND length(ja_clean) BETWEEN ? AND ?
-                ORDER BY frequency DESC LIMIT 30
+                ORDER BY frequency DESC LIMIT 100
             """
             cursor.execute(cand_query_folder, [folder_name, min_l, max_l])
             candidates = cursor.fetchall()
@@ -112,7 +111,7 @@ def synthesize_translation(
                 SELECT original, translated, ja_clean, folder_name, frequency
                 FROM corpus_templates
                 WHERE length(ja_clean) BETWEEN ? AND ?
-                ORDER BY length(ja_clean), frequency DESC LIMIT 30
+                ORDER BY length(ja_clean), frequency DESC LIMIT 100
             """
             cursor.execute(cand_query, [min_l, max_l])
             candidates = cursor.fetchall()
@@ -122,7 +121,7 @@ def synthesize_translation(
 
         for cand in candidates:
             cand_ja = cand["ja_clean"]
-            ratio = difflib.SequenceMatcher(None, clean_orig, cand_ja).ratio()
+            ratio = fuzz.ratio(clean_orig, cand_ja) / 100.0
             if ratio > best_ratio:
                 best_ratio = ratio
                 best_cand = cand
@@ -148,9 +147,30 @@ def synthesize_translation(
         # =====================================================================
         # Tier 2: Phrase Alignment Stitching Fallback
         # =====================================================================
-        # Extract Japanese tokens from original text
-        raw_tokens = JA_TOKEN_RE.findall(raw_orig)
-        tokens = [t for t in raw_tokens if len(t) >= 2]
+        # Extract Japanese tokens (morphological lemma + surface, plus legacy regex tokens)
+        tokens = []
+        sudachi_tok = _get_sudachi_tokenizer()
+        if sudachi_tok:
+            try:
+                from sudachipy import tokenizer
+                mode = tokenizer.Tokenizer.SplitMode.C
+                morphemes = sudachi_tok.tokenize(raw_orig, mode)
+                for mor in morphemes:
+                    pos = mor.part_of_speech()[0]
+                    if pos in ("名詞", "動詞", "形容詞"):
+                        surf = mor.surface()
+                        if len(surf) >= 2 and surf not in tokens:
+                            tokens.append(surf)
+                        lemma = mor.dictionary_form()
+                        if len(lemma) >= 2 and lemma not in tokens:
+                            tokens.append(lemma)
+            except Exception:
+                pass
+
+        # Also add regex tokens for backwards compatibility
+        for rt in JA_TOKEN_RE.findall(raw_orig):
+            if len(rt) >= 2 and rt not in tokens:
+                tokens.append(rt)
 
         if not tokens:
             return {
@@ -237,7 +257,6 @@ def suggest_next_phrase(
     Maps typed prefix and Japanese original keywords to high-probability Korean continuation.
     """
     prefix_clean = (prefix or "").strip()
-    orig_clean = (original or "").strip()
 
     if not prefix_clean:
         return {"prefix": prefix, "suggestion": "", "confidence": 0.0}
@@ -374,8 +393,13 @@ def check_style_consistency(
         }
 
     # Find probability of current ko_ending
+    clean_trans = trans.rstrip('」』！？.… ')
     matched_stat = next((s for s in stats if s["ko_ending"] == ko_e), None)
+    if not matched_stat:
+        matched_stat = next((s for s in stats if clean_trans.endswith(s["ko_ending"])), None)
+
     top_stat = stats[0]
+    display_ko_e = matched_stat["ko_ending"] if matched_stat else ko_e
 
     if matched_stat and matched_stat["probability"] >= 0.5:
         return {
@@ -383,7 +407,7 @@ def check_style_consistency(
             "color": "green",
             "score": matched_stat["probability"],
             "detected_ja_ending": ja_e,
-            "current_ko_ending": ko_e,
+            "current_ko_ending": display_ko_e,
             "recommended_ko_ending": matched_stat["ko_ending"],
             "reason": f"소설 내 표준 어투와 {int(matched_stat['probability'] * 100)}% 일치합니다."
         }
@@ -393,7 +417,7 @@ def check_style_consistency(
             "color": "yellow",
             "score": matched_stat["probability"],
             "detected_ja_ending": ja_e,
-            "current_ko_ending": ko_e,
+            "current_ko_ending": display_ko_e,
             "recommended_ko_ending": top_stat["ko_ending"],
             "reason": f"사용 가능한 어미이나, '{top_stat['ko_ending']}'({int(top_stat['probability'] * 100)}%)가 더 빈번합니다."
         }
@@ -404,7 +428,7 @@ def check_style_consistency(
             "color": "red",
             "score": 0.2,
             "detected_ja_ending": ja_e,
-            "current_ko_ending": ko_e,
+            "current_ko_ending": display_ko_e,
             "recommended_ko_ending": top_stat["ko_ending"],
             "reason": f"소설 내 어투와 상이합니다. 추천 종결 어미: '~{top_stat['ko_ending']}' ({int(top_stat['probability'] * 100)}%)"
         }

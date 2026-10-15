@@ -4,9 +4,7 @@ LANOVEL 실시간 알림 매니저 모듈.
 웹 브라우저 및 데스크톱으로 실시간 작업 알림을 브로드캐스트합니다.
 """
 
-import json
 import logging
-import os
 import threading
 import time
 from collections import deque
@@ -392,7 +390,6 @@ def notify_task_event(
     """Celery / 백그라운드 태스크 완료 알림"""
     is_success = status.upper() == "SUCCESS"
     title = f"✅ [{task_name}] 완료" if is_success else f"⚠️ [{task_name}] 실패"
-    tags = ["white_check_mark"] if is_success else ["x"]
     
     record_notification(
         title=title,

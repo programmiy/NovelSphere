@@ -6,12 +6,10 @@
 모든 엔드포인트는 REMOTE_TOKEN 검사 (헤더 X-Remote-Token 또는 쿼리 token).
 """
 
-import asyncio
-import hmac
 import logging
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 
 from server.remote_control import hub

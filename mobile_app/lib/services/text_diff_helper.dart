@@ -61,33 +61,74 @@ class TextDiffHelper {
     final n = tokensA.length;
     final m = tokensB.length;
 
-    final dp = List.generate(n + 1, (_) => List<int>.filled(m + 1, 0));
-    for (int i = 0; i < n; i++) {
-      for (int j = 0; j < m; j++) {
-        if (tokensA[i] == tokensB[j]) {
-          dp[i + 1][j + 1] = dp[i][j] + 1;
-        } else {
-          dp[i + 1][j + 1] = math.max(dp[i + 1][j], dp[i][j + 1]);
+    // 1. Fast path: Trim identical prefix tokens
+    int prefixLen = 0;
+    while (prefixLen < n && prefixLen < m && tokensA[prefixLen] == tokensB[prefixLen]) {
+      prefixLen++;
+    }
+
+    // 2. Fast path: Trim identical suffix tokens
+    int suffixLen = 0;
+    while (suffixLen < (n - prefixLen) &&
+        suffixLen < (m - prefixLen) &&
+        tokensA[n - 1 - suffixLen] == tokensB[m - 1 - suffixLen]) {
+      suffixLen++;
+    }
+
+    final subA = tokensA.sublist(prefixLen, n - suffixLen);
+    final subB = tokensB.sublist(prefixLen, m - suffixLen);
+    final subN = subA.length;
+    final subM = subB.length;
+
+    final middleOps = <DiffOp>[];
+    if (subN > 0 && subM > 0) {
+      final dp = List.generate(subN + 1, (_) => List<int>.filled(subM + 1, 0));
+      for (int i = 0; i < subN; i++) {
+        for (int j = 0; j < subM; j++) {
+          if (subA[i] == subB[j]) {
+            dp[i + 1][j + 1] = dp[i][j] + 1;
+          } else {
+            dp[i + 1][j + 1] = math.max(dp[i + 1][j], dp[i][j + 1]);
+          }
         }
+      }
+
+      int i = subN, j = subM;
+      while (i > 0 || j > 0) {
+        if (i > 0 && j > 0 && subA[i - 1] == subB[j - 1]) {
+          middleOps.add(DiffOp(type: DiffType.equal, text: subA[i - 1]));
+          i--;
+          j--;
+        } else if (j > 0 && (i == 0 || dp[i][j - 1] >= dp[i - 1][j])) {
+          middleOps.add(DiffOp(type: DiffType.insert, text: subB[j - 1]));
+          j--;
+        } else {
+          middleOps.add(DiffOp(type: DiffType.delete, text: subA[i - 1]));
+          i--;
+        }
+      }
+    } else if (subN > 0) {
+      for (int i = subN - 1; i >= 0; i--) {
+        middleOps.add(DiffOp(type: DiffType.delete, text: subA[i]));
+      }
+    } else if (subM > 0) {
+      for (int j = subM - 1; j >= 0; j--) {
+        middleOps.add(DiffOp(type: DiffType.insert, text: subB[j]));
       }
     }
 
     final rawOps = <DiffOp>[];
-    int i = n, j = m;
-    while (i > 0 || j > 0) {
-      if (i > 0 && j > 0 && tokensA[i - 1] == tokensB[j - 1]) {
-        rawOps.add(DiffOp(type: DiffType.equal, text: tokensA[i - 1]));
-        i--;
-        j--;
-      } else if (j > 0 && (i == 0 || dp[i][j - 1] >= dp[i - 1][j])) {
-        rawOps.add(DiffOp(type: DiffType.insert, text: tokensB[j - 1]));
-        j--;
-      } else {
-        rawOps.add(DiffOp(type: DiffType.delete, text: tokensA[i - 1]));
-        i--;
-      }
+    // Prepend common prefix
+    for (int p = 0; p < prefixLen; p++) {
+      rawOps.add(DiffOp(type: DiffType.equal, text: tokensA[p]));
     }
-    final reversed = rawOps.reversed.toList();
+    // Append reversed middle ops
+    rawOps.addAll(middleOps.reversed);
+    // Append common suffix
+    for (int s = n - suffixLen; s < n; s++) {
+      rawOps.add(DiffOp(type: DiffType.equal, text: tokensA[s]));
+    }
+    final reversed = rawOps;
 
     final refined = <DiffOp>[];
     final changes = <DiffChange>[];

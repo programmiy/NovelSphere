@@ -1,5 +1,5 @@
 
-from sqlalchemy import (create_engine, Column, Integer, Text, 
+from sqlalchemy import (Column, Integer, Text, 
                         ForeignKey, UniqueConstraint, Index, BigInteger)
 from sqlalchemy.orm import declarative_base
 

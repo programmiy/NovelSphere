@@ -1,4 +1,3 @@
-import sqlite3
 from typing import List, Dict, Any
 from collections import defaultdict
 from server.database import get_sqlite_conn
