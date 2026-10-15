@@ -207,5 +207,136 @@
         "英語"
       ]
     }
+  ],
+  "오잉 메이드의 상태가? 축하합니다! 메이드는 왕녀였다!": [
+    {
+      "id": "rule-2cmaf25",
+      "source": "フェリシアーナ",
+      "target": "펠리시아나",
+      "enabled": true,
+      "description": "",
+      "misreadings": [
+        "페리시아나",
+        "페리시안으",
+        "페리시어나",
+        "펠리시아",
+        "페리시안나",
+        "페리시안",
+        "페리시애나",
+        "페리시하나",
+        "펠리시어나"
+      ],
+      "exceptions": []
+    },
+    {
+      "id": "rule-oxyoeno",
+      "source": "シアナ",
+      "target": "시아나",
+      "enabled": true,
+      "description": "",
+      "misreadings": [
+        "시안느",
+        "시안",
+        "시아",
+        "시어나",
+        "시안이",
+        "시안으",
+        "시아하",
+        "시아레",
+        "시아사",
+        "샤나",
+        "시안아",
+        "시아마",
+        "시이나",
+        "시애나"
+      ],
+      "exceptions": []
+    },
+    {
+      "id": "rule-bwn07x4",
+      "source": "バイオレット",
+      "target": "바이올렛",
+      "enabled": true,
+      "description": "",
+      "misreadings": [
+        "바이오렛",
+        "바이오렐",
+        "바이오レット"
+      ],
+      "exceptions": []
+    },
+    {
+      "id": "rule-k6t70jk",
+      "source": "ルクス",
+      "target": "룩스",
+      "enabled": true,
+      "description": "",
+      "misreadings": [
+        "럭스",
+        "루크스",
+        "루쿠스",
+        "루크",
+        "룩"
+      ],
+      "exceptions": []
+    },
+    {
+      "id": "rule-w8p9cvx",
+      "source": "レザミリアーナ",
+      "target": "레자밀리아나",
+      "enabled": true,
+      "description": "",
+      "misreadings": [
+        "레자미리아",
+        "레자밀리아하"
+      ],
+      "exceptions": []
+    },
+    {
+      "id": "rule-gr0dq7s",
+      "source": "エリザリーナ",
+      "target": "엘리자리나",
+      "enabled": true,
+      "description": "",
+      "misreadings": [
+        "에리자리나",
+        "엘리자니라",
+        "엘자리나",
+        "엘리자리사",
+        "자리나",
+        "엘리자리",
+        "엘리사리나",
+        "엘리자리서",
+        "엘리자리하",
+        "エリザリーナ",
+        "엘리자베리나"
+      ],
+      "exceptions": []
+    },
+    {
+      "id": "rule-02npfpm",
+      "source": "フローレンス",
+      "target": "플로렌스",
+      "enabled": true,
+      "description": "",
+      "misreadings": [],
+      "exceptions": []
+    },
+    {
+      "id": "rule-30zcfpy",
+      "source": "ロッドエル",
+      "target": "로드엘",
+      "enabled": true,
+      "description": "",
+      "misreadings": [
+        "롯델",
+        "롯드엘",
+        "록드엘",
+        "로들 엘",
+        "롯도엘",
+        "로델"
+      ],
+      "exceptions": []
+    }
   ]
 }

@@ -167,32 +167,33 @@ def check_rule_missing_status(
     orig: str,
     trans: str,
     rule: Dict[str, Any]
-) -> tuple[bool, int]:
+) -> tuple[bool, int, int]:
     """
     Checks whether the rule's target is genuinely missing from the translation,
     accounting for source characters that may be used in non-name exception words (e.g. 英国, 英語 for 英).
 
     Returns:
-        (is_missing: bool, needed_target_count: int)
+        (is_missing: bool, needed_target_count: int, target_count: int)
     """
     source = rule.get("source", "").strip()
     target = rule.get("target", "").strip()
     if not source or not target:
-        return False, 0
+        return False, 0, 0
 
     orig_str = orig or ""
     trans_str = trans or ""
 
     total_src_count = orig_str.count(source)
     if total_src_count == 0:
-        return False, 0
+        return False, 0, 0
+
+    target_count = trans_str.count(target)
 
     # Extract all exception words
     exceptions = get_rule_exceptions(rule)
     if not exceptions:
-        target_count = trans_str.count(target)
         is_missing = (target_count < total_src_count)
-        return is_missing, total_src_count
+        return is_missing, total_src_count, target_count
 
     # 1. Mask exception words in original (JP)
     masked_orig = orig_str
@@ -215,13 +216,12 @@ def check_rule_missing_status(
 
     # If all occurrences of source were consumed by exception words, no character name was present!
     if pure_src_count == 0 or needed_target_count == 0:
-        return False, 0
+        return False, 0, target_count
 
     # 3. Check if target is genuinely missing in translation
-    target_count = trans_str.count(target)
     is_missing = (target_count < needed_target_count)
 
-    return is_missing, needed_target_count
+    return is_missing, needed_target_count, target_count
 
 
 def has_korean_batchim(text: str) -> bool:
@@ -348,7 +348,7 @@ def generate_smart_suggestion(
             continue
 
         # Only perform replacement if target is in a genuinely missing state
-        is_missing, _ = check_rule_missing_status(orig, after, rule)
+        is_missing, *_ = check_rule_missing_status(orig, after, rule)
         if not is_missing:
             continue
 
@@ -446,9 +446,9 @@ def generate_smart_suggestion(
         tgt = rule.get("target", "").strip()
         if not src or not tgt:
             continue
-        is_missing, _ = check_rule_missing_status(orig, after, rule)
+        is_missing, needed_cnt, tgt_cnt = check_rule_missing_status(orig, after, rule)
         if is_missing:
-            reason_text = f"{src} ➔ {tgt} 누락"
+            reason_text = f"{src} ➔ {tgt} 누락 (원문 {needed_cnt}회 / 번역 {tgt_cnt}회)"
             if reason_text not in reasons:
                 reasons.append(reason_text)
             tags.add(f"{tgt} 누락")
@@ -670,7 +670,7 @@ async def scan_sentences(req: ScanRequest, db: Session = Depends(get_db)):
         # distinguishing between character name usages and non-name exception words
         matching_rules = []
         for rule in active_rules:
-            is_missing, _ = check_rule_missing_status(orig_str, trans_str, rule)
+            is_missing, *_ = check_rule_missing_status(orig_str, trans_str, rule)
             if is_missing:
                 matching_rules.append(rule)
 
@@ -683,6 +683,19 @@ async def scan_sentences(req: ScanRequest, db: Session = Depends(get_db)):
         for tag in tags:
             tag_counts[tag] = tag_counts.get(tag, 0) + 1
 
+        matching_sources = [r["source"] for r in matching_rules if r.get("source")]
+
+        missing_rules_info = []
+        for rule in matching_rules:
+            is_miss, needed_cnt, cur_cnt = check_rule_missing_status(orig_str, suggested, rule)
+            if is_miss:
+                missing_rules_info.append({
+                    "source": rule.get("source", "").strip(),
+                    "target": rule.get("target", "").strip(),
+                    "needed_count": needed_cnt,
+                    "current_count": cur_cnt
+                })
+
         items.append({
             "id": _id,
             "title": title or "제목 없음",
@@ -692,7 +705,9 @@ async def scan_sentences(req: ScanRequest, db: Session = Depends(get_db)):
             "translated": trans_str,
             "suggested": suggested,
             "reasons": reasons,
-            "tags": tags
+            "tags": tags,
+            "sources": matching_sources,
+            "missing_rules": missing_rules_info
         })
 
     return {

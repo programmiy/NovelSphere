@@ -355,12 +355,82 @@
             background: #fff1f2;
             color: #e11d48;
             border: 1px solid #fecdd3;
+            transition: all 0.2s ease;
         }
 
         body.dark-mode .reason-badge {
             background: rgba(225, 29, 72, 0.15);
             color: #fb7185;
             border-color: rgba(225, 29, 72, 0.3);
+        }
+
+        .reason-badge.badge-satisfied {
+            background: #ecfdf5;
+            color: #059669;
+            border-color: #a7f3d0;
+        }
+
+        body.dark-mode .reason-badge.badge-satisfied {
+            background: rgba(16, 185, 129, 0.2);
+            color: #34d399;
+            border-color: rgba(16, 185, 129, 0.35);
+        }
+
+        .reason-badge.badge-warning {
+            background: #fffbeb;
+            color: #d97706;
+            border-color: #fde68a;
+        }
+
+        body.dark-mode .reason-badge.badge-warning {
+            background: rgba(245, 158, 11, 0.2);
+            color: #fbbf24;
+            border-color: rgba(245, 158, 11, 0.35);
+        }
+
+        /* Live Count Feedback Wrap & Chips */
+        .card-live-count-wrap {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin: 6px 0 2px 0;
+            align-items: center;
+        }
+
+        .live-count-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 12px;
+            font-weight: 600;
+            padding: 3px 10px;
+            border-radius: 14px;
+            transition: all 0.2s ease;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+        }
+
+        .live-count-chip.insufficient {
+            background: #fef2f2;
+            color: #dc2626;
+            border: 1px solid #fecaca;
+        }
+
+        body.dark-mode .live-count-chip.insufficient {
+            background: rgba(239, 68, 68, 0.2);
+            color: #f87171;
+            border-color: rgba(239, 68, 68, 0.4);
+        }
+
+        .live-count-chip.satisfied {
+            background: #ecfdf5;
+            color: #059669;
+            border: 1px solid #6ee7b7;
+        }
+
+        body.dark-mode .live-count-chip.satisfied {
+            background: rgba(16, 185, 129, 0.22);
+            color: #34d399;
+            border-color: rgba(16, 185, 129, 0.4);
         }
 
         .card-body {
@@ -432,6 +502,24 @@
         body.dark-mode .err-mark {
             background-color: rgba(239, 68, 68, 0.3);
             color: #fca5a5;
+        }
+
+        /* Japanese Original Highlight (Fluorescent Pen Style) */
+        .orig-highlight {
+            background-color: #fef08a;
+            color: #854d0e;
+            font-weight: 700;
+            padding: 1px 4px;
+            border-radius: 3px;
+            border-bottom: 2px solid #eab308;
+            box-shadow: 0 1px 2px rgba(234, 179, 8, 0.2);
+        }
+
+        body.dark-mode .orig-highlight {
+            background-color: rgba(234, 179, 8, 0.35);
+            color: #fef08a;
+            border-bottom: 2px solid #eab308;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
         }
 
         /* Visual Diff Highlighting */
@@ -1100,6 +1188,7 @@
                                 </button>
                             </div>
                             <div class="card-diff-preview-box" id="cardDiffPreview"></div>
+                            <div class="card-live-count-wrap" id="cardLiveCountWrap" style="display:none;"></div>
                             <textarea class="card-after-textarea" id="cardAfterInput" rows="3" placeholder="교정 번역문 입력..."></textarea>
                         </div>
                     </div>
@@ -1254,6 +1343,7 @@
         const cardAfterInput = document.getElementById("cardAfterInput");
         const cardDiffPreview = document.getElementById("cardDiffPreview");
         const cardDiffChips = document.getElementById("cardDiffChips");
+        const cardLiveCountWrap = document.getElementById("cardLiveCountWrap");
         const btnApproveCard = document.getElementById("btnApproveCard");
         const btnSkipCard = document.getElementById("btnSkipCard");
         const btnPrevCard = document.getElementById("btnPrevCard");
@@ -1928,6 +2018,214 @@
             return html;
         }
 
+        function escapeRegex(string) {
+            return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        }
+
+        function renderOriginalWithHighlight(text, item) {
+            if (!text) return "";
+            if (!item) return escapeHtml(text);
+
+            const sources = new Set(item.sources || []);
+
+            // 보조 추출: item.reasons 중 화살표(➔) 형태에서 원문 source 파싱
+            (item.reasons || []).forEach(r => {
+                if (typeof r === "string" && r.includes("➔")) {
+                    const parts = r.split("➔");
+                    const src = parts[0].trim();
+                    if (src && text.includes(src)) {
+                        sources.add(src);
+                    }
+                }
+            });
+
+            // 보조 추출: 활성 rules 중 원문에 포함된 source 추가
+            if (sources.size === 0 && state.rules && Array.isArray(state.rules)) {
+                state.rules.forEach(rule => {
+                    if (rule.enabled && rule.source && text.includes(rule.source)) {
+                        sources.add(rule.source);
+                    }
+                });
+            }
+
+            const sortedSources = Array.from(sources).sort((a, b) => b.length - a.length);
+            if (sortedSources.length === 0) {
+                return escapeHtml(text);
+            }
+
+            // 3단계 안전 치환: 토큰 마스킹 -> escapeHtml -> <mark> 복원
+            let processed = text;
+            const placeholders = [];
+            sortedSources.forEach((src, idx) => {
+                if (!src) return;
+                const token = `__ORIG_HL_${idx}_${Math.random().toString(36).substring(2, 6)}__`;
+                const regex = new RegExp(escapeRegex(src), "g");
+                if (regex.test(processed)) {
+                    processed = processed.replace(regex, token);
+                    placeholders.push({ token, word: src });
+                }
+            });
+
+            let html = escapeHtml(processed);
+            placeholders.forEach(({ token, word }) => {
+                const highlightHtml = `<mark class="orig-highlight" title="교정 대상 인명/용어 (원문)">${escapeHtml(word)}</mark>`;
+                html = html.split(token).join(highlightHtml);
+            });
+
+            return html;
+        }
+
+        function evaluateMissingRules(afterText, item) {
+            if (!item) return [];
+            const missingRules = item.missing_rules || [];
+            const rulesToCheck = [];
+
+            if (missingRules.length > 0) {
+                missingRules.forEach(r => rulesToCheck.push({ ...r }));
+            } else if (item.reasons) {
+                item.reasons.forEach(r => {
+                    const m = r.match(/^(.*?)\s*➔\s*(.*?)\s*누락\s*\(원문\s*(\d+)회/);
+                    if (m) {
+                        rulesToCheck.push({
+                            source: m[1].trim(),
+                            target: m[2].trim(),
+                            needed_count: parseInt(m[3], 10),
+                            current_count: 0
+                        });
+                    }
+                });
+            }
+
+            const text = afterText || "";
+            return rulesToCheck.map(rule => {
+                const target = rule.target || "";
+                let curCount = 0;
+                if (target) {
+                    const regex = new RegExp(escapeRegex(target), "g");
+                    const matches = text.match(regex);
+                    curCount = matches ? matches.length : 0;
+                }
+                const neededCount = rule.needed_count || 1;
+                const isSatisfied = curCount >= neededCount;
+
+                return {
+                    source: rule.source,
+                    target: rule.target,
+                    needed_count: neededCount,
+                    current_count: curCount,
+                    is_satisfied: isSatisfied
+                };
+            });
+        }
+
+        function generateReasonsHtml(item, currentText) {
+            if (!item || !item.reasons) return "";
+            const evaluated = evaluateMissingRules(currentText, item);
+            const evalMap = new Map();
+            evaluated.forEach(ev => evalMap.set(ev.target, ev));
+
+            return item.reasons.map(r => {
+                let matched = null;
+                for (const [tgt, ev] of evalMap.entries()) {
+                    if (r.includes(tgt) && r.includes("누락")) {
+                        matched = ev;
+                        break;
+                    }
+                }
+
+                if (matched) {
+                    const cur = matched.current_count;
+                    const need = matched.needed_count;
+                    if (matched.is_satisfied) {
+                        return `<span class="reason-badge badge-satisfied" style="font-size:10.5px; padding:1px 6px; margin:1px;">${escapeHtml(matched.source)} ➔ ${escapeHtml(matched.target)} 충족 완료! (${need}/${cur}회 ✓)</span>`;
+                    } else {
+                        const diff = need - cur;
+                        return `<span class="reason-badge badge-warning" style="font-size:10.5px; padding:1px 6px; margin:1px;">${escapeHtml(matched.source)} ➔ ${escapeHtml(matched.target)} 누락 (${cur}/${need}회 ⚠️ ${diff}회 부족)</span>`;
+                    }
+                }
+
+                return `<span class="reason-badge" style="font-size:10.5px; padding:1px 5px; margin:1px;">${escapeHtml(r)}</span>`;
+            }).join(" ");
+        }
+
+        function renderCardBadges(item, currentText) {
+            if (!cardBadgesWrap) return;
+            cardBadgesWrap.innerHTML = "";
+            if (!item) return;
+
+            const evaluated = evaluateMissingRules(currentText, item);
+            const evalMap = new Map();
+            evaluated.forEach(ev => evalMap.set(ev.target, ev));
+
+            (item.reasons || []).forEach(r => {
+                const b = document.createElement("span");
+                b.className = "reason-badge";
+
+                let matched = null;
+                for (const [tgt, ev] of evalMap.entries()) {
+                    if (r.includes(tgt) && r.includes("누락")) {
+                        matched = ev;
+                        break;
+                    }
+                }
+
+                if (matched) {
+                    const cur = matched.current_count;
+                    const need = matched.needed_count;
+                    if (matched.is_satisfied) {
+                        b.className = "reason-badge badge-satisfied";
+                        b.textContent = `${matched.source} ➔ ${matched.target} 입력 충족 완료! (원문 ${need}회 / 현재 입력 ${cur}회 ✓)`;
+                    } else {
+                        const diff = need - cur;
+                        b.className = "reason-badge badge-warning";
+                        b.textContent = `${matched.source} ➔ ${matched.target} 누락 (원문 ${need}회 / 현재 입력 ${cur}회 ⚠️ - ${diff}회 더 필요)`;
+                    }
+                } else {
+                    b.textContent = r;
+                }
+
+                cardBadgesWrap.appendChild(b);
+            });
+        }
+
+        function renderLiveCountPills(container, evaluatedRules) {
+            if (!container) return;
+            if (!evaluatedRules || evaluatedRules.length === 0) {
+                container.style.display = "none";
+                container.innerHTML = "";
+                return;
+            }
+
+            container.style.display = "flex";
+            container.innerHTML = evaluatedRules.map(ev => {
+                const satisfied = ev.is_satisfied;
+                const cls = satisfied ? "live-count-chip satisfied" : "live-count-chip insufficient";
+                const icon = satisfied ? "check_circle" : "error_outline";
+                const diff = ev.needed_count - ev.current_count;
+                const statusText = satisfied
+                    ? `입력 충족 완료! (원문 ${ev.needed_count}회 / 현재 ${ev.current_count}회 ✓)`
+                    : `누락: ${diff}회 더 입력 필요 (원문 ${ev.needed_count}회 / 현재 ${ev.current_count}회)`;
+
+                return `
+                    <span class="${cls}" title="클릭 시 '${escapeHtml(ev.target)}' 복사" data-target="${escapeHtml(ev.target)}" style="cursor:pointer;">
+                        <span class="material-icons" style="font-size:14px;">${icon}</span>
+                        <span>[${escapeHtml(ev.target)}]</span> ${statusText}
+                        <span style="font-size:10.5px; opacity:0.8; margin-left:4px;">(클릭 시 복사)</span>
+                    </span>
+                `;
+            }).join("");
+
+            container.querySelectorAll(".live-count-chip").forEach(chip => {
+                chip.addEventListener("click", (e) => {
+                    const tgt = chip.dataset.target;
+                    if (tgt) {
+                        navigator.clipboard.writeText(tgt);
+                        showToast(`'${tgt}' 가 클립보드에 복사되었습니다! 원하는 위치에 Ctrl+V 하세요.`);
+                    }
+                });
+            });
+        }
+
         function updateCardDiffView(beforeText, afterText) {
             const item = state.filteredItems[state.currentIndex];
             const { ops, changes } = computeDiff(beforeText, afterText);
@@ -1935,6 +2233,14 @@
 
             cardDiffChips.innerHTML = renderChipsHtml(changes, isUnchanged);
             cardDiffPreview.innerHTML = renderDiffPreviewHtml(ops, changes, item, afterText);
+
+            // 실시간 인명 출현 횟수 검증 및 피드백 업데이트
+            if (item) {
+                const evaluated = evaluateMissingRules(afterText, item);
+                renderCardBadges(item, afterText);
+                renderLiveCountPills(cardLiveCountWrap, evaluated);
+                cardBeforeText.innerHTML = renderBeforeWithDiff(ops, item);
+            }
 
             // Bind any copy target buttons inside preview
             cardDiffPreview.querySelectorAll(".btn-copy-target").forEach(btn => {
@@ -1945,10 +2251,6 @@
                     showToast(`'${tgt}' 가 클립보드에 복사되었습니다! (Ctrl+V로 원하는 위치에 붙여넣으세요)`);
                 });
             });
-
-            if (item) {
-                cardBeforeText.innerHTML = renderBeforeWithDiff(ops, item);
-            }
 
             // Visual feedback on After input & Approve button
             if (isUnchanged) {
@@ -1996,17 +2298,8 @@
             const percent = ((current / total) * 100).toFixed(1);
             cardProgressBar.style.width = `${percent}%`;
 
-            // Badges
-            cardBadgesWrap.innerHTML = "";
-            (item.reasons || []).forEach(r => {
-                const b = document.createElement("span");
-                b.className = "reason-badge";
-                b.textContent = r;
-                cardBadgesWrap.appendChild(b);
-            });
-
             // Texts & Live Diff
-            cardOrigText.textContent = item.original || "";
+            cardOrigText.innerHTML = renderOriginalWithHighlight(item.original || "", item);
             const currentVal = item.suggested || item.translated || "";
             cardAfterInput.value = currentVal;
             updateCardDiffView(item.translated || "", currentVal);
@@ -2229,7 +2522,7 @@
                 const tr = document.createElement("tr");
                 tr.dataset.id = item.id;
 
-                const reasonsHtml = (item.reasons || []).map(r => `<span class="reason-badge" style="font-size:10.5px; padding:1px 5px; margin:1px;">${r}</span>`).join(" ");
+                const reasonsHtml = generateReasonsHtml(item, currentSuggested);
 
                 const currentSuggested = item.suggested || item.translated || '';
                 const { ops, changes } = computeDiff(item.translated || '', currentSuggested);
@@ -2244,10 +2537,10 @@
                     </td>
                     <td>
                         <div style="font-weight:600; font-size:12.5px; margin-bottom:4px;">${escapeHtml(item.title || '회차')}</div>
-                        <div style="display:flex; flex-wrap:wrap; gap:2px;">${reasonsHtml}</div>
+                        <div class="row-reasons-wrap" style="display:flex; flex-wrap:wrap; gap:2px;">${reasonsHtml}</div>
                     </td>
                     <td class="list-cell-orig">
-                        <div>${escapeHtml(item.original || '')}</div>
+                        <div>${renderOriginalWithHighlight(item.original || '', item)}</div>
                     </td>
                     <td class="list-cell-before">
                         <div class="row-before-text">${beforeHtml}</div>
@@ -2267,6 +2560,7 @@
                 const rowChipsWrap = tr.querySelector(".list-diff-chips-wrap");
                 const rowDiffBox = tr.querySelector(".list-diff-preview-box");
                 const rowBeforeDiv = tr.querySelector(".row-before-text");
+                const rowReasonsWrap = tr.querySelector(".row-reasons-wrap");
 
                 rowTextarea.addEventListener("input", () => {
                     const newSuggested = rowTextarea.value;
@@ -2275,6 +2569,9 @@
                     rowBeforeDiv.innerHTML = renderBeforeWithDiff(res.ops, item);
                     rowChipsWrap.innerHTML = renderChipsHtml(res.changes, rowUnchanged);
                     rowDiffBox.innerHTML = renderDiffPreviewHtml(res.ops, res.changes, item, newSuggested);
+                    if (rowReasonsWrap) {
+                        rowReasonsWrap.innerHTML = generateReasonsHtml(item, newSuggested);
+                    }
                 });
 
                 // Single Row Save
