@@ -93,11 +93,22 @@ def rotate_backups(backup_dir: str, max_backups: int = 5):
             files_to_delete = backup_files_with_time[max_backups:]
             for file_name, _ in files_to_delete:
                 file_path = os.path.join(backup_dir, file_name)
+                for suffix in ("", "-shm", "-wal"):
+                    target_file = file_path + suffix
+                    if os.path.exists(target_file):
+                        try:
+                            os.remove(target_file)
+                        except Exception as del_err:
+                            logger.warning(f"[Backup Rotation] Failed to delete {target_file}: {del_err}")
+                logger.info(f"[Backup Rotation] Deleted old backup: {file_name}")
+
+        # 잔여 임시 파일(.tmp, .tmp-shm, .tmp-wal) 자동 정리
+        for f in os.listdir(backup_dir):
+            if ".tmp" in f:
                 try:
-                    os.remove(file_path)
-                    logger.info(f"[Backup Rotation] Deleted old backup: {file_name}")
-                except Exception as del_err:
-                    logger.warning(f"[Backup Rotation] Failed to delete old backup {file_name}: {del_err}")
+                    os.remove(os.path.join(backup_dir, f))
+                except Exception:
+                    pass
     except Exception as e:
         logger.error(f"[Backup Rotation] Error during backup rotation: {e}")
 
