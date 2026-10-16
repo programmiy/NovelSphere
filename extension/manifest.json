@@ -18,7 +18,9 @@
     "*://*.syosetu.com/*",
     "*://*.novelup.plus/*",
     "*://*.syosetu.org/*",
-    "*://*.alphapolis.co.jp/*"
+    "*://*.alphapolis.co.jp/*",
+    "http://127.0.0.1/*",
+    "http://localhost/*"
   ],
   "action": {
     "default_title": "일본어 번역기"

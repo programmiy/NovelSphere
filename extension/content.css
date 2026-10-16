@@ -675,6 +675,23 @@ tr.review-target-row:hover {
     box-shadow: 0 0 6px rgba(245, 158, 11, 0.6);
 }
 
+.lanovel-toc-badge.untranslated {
+    cursor: pointer;
+}
+
+.lanovel-toc-badge.excluded {
+    background: rgba(148, 163, 184, 0.15);
+    color: #94a3b8;
+    border: 1px solid rgba(148, 163, 184, 0.35);
+    cursor: pointer;
+    text-decoration: line-through;
+}
+
+.lanovel-toc-badge.excluded .badge-dot {
+    background: #94a3b8;
+    box-shadow: 0 0 6px rgba(148, 163, 184, 0.5);
+}
+
 /* 3. 목차 미번역 퀵 점프 패널 */
 #lanovel-quick-jump-container {
     position: fixed;
@@ -851,7 +868,58 @@ tr.review-target-row:hover {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    max-width: 230px;
+    flex: 1;
+    min-width: 0;
+    margin-right: 8px;
+}
+
+.quick-jump-item.is-excluded {
+    opacity: 0.52;
+    background: rgba(15, 23, 42, 0.4);
+}
+
+.quick-jump-item .item-title.is-excluded {
+    text-decoration: line-through;
+    color: #94a3b8;
+}
+
+.quick-jump-item .item-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+.quick-jump-exclude-btn {
+    padding: 2px 7px;
+    font-size: 11px;
+    font-weight: 500;
+    color: #f87171;
+    background: rgba(239, 68, 68, 0.12);
+    border: 1px solid rgba(239, 68, 68, 0.32);
+    border-radius: 4px;
+    cursor: pointer;
+    line-height: 1.2;
+    transition: all 0.15s ease;
+    user-select: none;
+}
+
+.quick-jump-exclude-btn:hover {
+    background: rgba(239, 68, 68, 0.28);
+    border-color: rgba(239, 68, 68, 0.65);
+    color: #fca5a5;
+    transform: scale(1.05);
+}
+
+.quick-jump-exclude-btn.is-excluded {
+    color: #94a3b8;
+    background: rgba(148, 163, 184, 0.12);
+    border-color: rgba(148, 163, 184, 0.32);
+}
+
+.quick-jump-exclude-btn.is-excluded:hover {
+    background: rgba(148, 163, 184, 0.25);
+    color: #e2e8f0;
 }
 
 .quick-jump-item .item-action-hint {

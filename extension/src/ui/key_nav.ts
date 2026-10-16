@@ -38,7 +38,7 @@ export function setupLanovelKeyboardNavigation(
           window.location.href = nextLink.href;
         }, 150);
       } else {
-        showLanovelHud('다음 화가 없습니다 (마지막 회차)', '🏁');
+        showLanovelHud('다음 화가 없습니다 (마지막 페이지입니다)', '🏁');
       }
       return;
     }
@@ -95,6 +95,10 @@ export function setupLanovelKeyboardNavigation(
             e.preventDefault();
             const targetEp = untranslatedEpisodesCache[quickJumpFocusedIndex];
             if (targetEp && targetEp.url) {
+              if (targetEp.isExcluded) {
+                showLanovelHud(`'${targetEp.title}'은(는) 제외된 회차입니다.`, '⚠️', 2000);
+                return;
+              }
               sessionStorage.setItem('lanovel_auto_translate_next', '1');
               showLanovelHud(`'${targetEp.title}' 진입 및 자동 번역...`, '⚡');
               setTimeout(() => {

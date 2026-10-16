@@ -210,7 +210,7 @@
   ],
   "오잉 메이드의 상태가? 축하합니다! 메이드는 왕녀였다!": [
     {
-      "id": "rule-2cmaf25",
+      "id": "rule-g1msbu3",
       "source": "フェリシアーナ",
       "target": "펠리시아나",
       "enabled": true,
@@ -229,7 +229,7 @@
       "exceptions": []
     },
     {
-      "id": "rule-oxyoeno",
+      "id": "rule-l2499b2",
       "source": "シアナ",
       "target": "시아나",
       "enabled": true,
@@ -253,7 +253,7 @@
       "exceptions": []
     },
     {
-      "id": "rule-bwn07x4",
+      "id": "rule-bhp7393",
       "source": "バイオレット",
       "target": "바이올렛",
       "enabled": true,
@@ -266,7 +266,7 @@
       "exceptions": []
     },
     {
-      "id": "rule-k6t70jk",
+      "id": "rule-7m4jj55",
       "source": "ルクス",
       "target": "룩스",
       "enabled": true,
@@ -281,19 +281,20 @@
       "exceptions": []
     },
     {
-      "id": "rule-w8p9cvx",
+      "id": "rule-0ccnc3n",
       "source": "レザミリアーナ",
       "target": "레자밀리아나",
       "enabled": true,
       "description": "",
       "misreadings": [
         "레자미리아",
-        "레자밀리아하"
+        "레자밀리아하",
+        "레자미리아나"
       ],
       "exceptions": []
     },
     {
-      "id": "rule-gr0dq7s",
+      "id": "rule-gr1uqrl",
       "source": "エリザリーナ",
       "target": "엘리자리나",
       "enabled": true,
@@ -314,7 +315,7 @@
       "exceptions": []
     },
     {
-      "id": "rule-02npfpm",
+      "id": "rule-zcsko5j",
       "source": "フローレンス",
       "target": "플로렌스",
       "enabled": true,
@@ -323,7 +324,7 @@
       "exceptions": []
     },
     {
-      "id": "rule-30zcfpy",
+      "id": "rule-96e02jb",
       "source": "ロッドエル",
       "target": "로드엘",
       "enabled": true,
@@ -335,6 +336,20 @@
         "로들 엘",
         "롯도엘",
         "로델"
+      ],
+      "exceptions": []
+    },
+    {
+      "id": "rule-b7obykx",
+      "source": "玉座の間",
+      "target": "왕좌의 방",
+      "enabled": true,
+      "description": "",
+      "misreadings": [
+        "옥좌",
+        "옥좌의 간",
+        "옥좌의 방",
+        "옥좌의 사이"
       ],
       "exceptions": []
     }

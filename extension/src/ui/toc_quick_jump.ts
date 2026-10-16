@@ -2,9 +2,59 @@
 import { PlatformScraper, TocEpisodeItem } from '../scrapers/base';
 import { showLanovelHud } from './hud';
 
-interface UntranslatedEpisode extends TocEpisodeItem {
+export interface UntranslatedEpisode extends TocEpisodeItem {
   index: number;
   tocIndex: number;
+  badgeElement?: HTMLElement;
+  isExcluded?: boolean;
+}
+
+export const EXCLUDED_EPISODES_STORAGE_KEY = 'lanovel_excluded_urls';
+
+export function normalizeUrlKey(url: string): string {
+  if (!url) return '';
+  return url.split('#')[0].split('?')[0].replace(/\/$/, '');
+}
+
+export async function getExcludedEpisodeUrls(): Promise<string[]> {
+  try {
+    const stored = await chrome.storage.local.get(EXCLUDED_EPISODES_STORAGE_KEY);
+    if (Array.isArray(stored[EXCLUDED_EPISODES_STORAGE_KEY])) {
+      return stored[EXCLUDED_EPISODES_STORAGE_KEY];
+    }
+  } catch (e) {
+    console.warn('[LANOVEL] 제외 회차 목록 조회 실패:', e);
+  }
+  return [];
+}
+
+export async function isEpisodeUrlExcluded(targetUrl: string): Promise<boolean> {
+  if (!targetUrl) return false;
+  const clean = normalizeUrlKey(targetUrl);
+  const list = await getExcludedEpisodeUrls();
+  const set = new Set(list.map(normalizeUrlKey));
+  return set.has(clean);
+}
+
+export async function toggleEpisodeUrlExcluded(targetUrl: string): Promise<boolean> {
+  if (!targetUrl) return false;
+  const clean = normalizeUrlKey(targetUrl);
+  const list = await getExcludedEpisodeUrls();
+  const set = new Set(list.map(normalizeUrlKey));
+  let isNowExcluded = false;
+  if (set.has(clean)) {
+    set.delete(clean);
+    isNowExcluded = false;
+  } else {
+    set.add(clean);
+    isNowExcluded = true;
+  }
+  try {
+    await chrome.storage.local.set({ [EXCLUDED_EPISODES_STORAGE_KEY]: Array.from(set) });
+  } catch (e) {
+    console.warn('[LANOVEL] 제외 회차 목록 저장 실패:', e);
+  }
+  return isNowExcluded;
 }
 
 export let quickJumpFocusedIndex = -1;
@@ -30,7 +80,17 @@ export async function initTocPageFeatures(scraper: PlatformScraper): Promise<voi
     episodeItems = scraper.getTocEpisodes();
   }
 
-  if (!episodeItems.length) return;
+  if (!episodeItems.length) {
+    await new Promise((r) => setTimeout(r, 250));
+    if (scraper.getTocEpisodes) {
+      episodeItems = scraper.getTocEpisodes();
+    }
+  }
+
+  if (!episodeItems.length) {
+    console.log('[LANOVEL] 목차 페이지이나 회차 링크 요소를 발견하지 못했습니다.');
+    return;
+  }
 
   // URL 중복 제거
   const episodeDataList: TocEpisodeItem[] = [];
@@ -70,15 +130,30 @@ export async function initTocPageFeatures(scraper: PlatformScraper): Promise<voi
     console.warn('[LANOVEL] 서버 번역 URL 확인 중 오류 발생:', e);
   }
 
+  // 제외 회차 목록 조회
+  const excludedUrls = await getExcludedEpisodeUrls();
+  const excludedSet = new Set(excludedUrls.map(normalizeUrlKey));
+
   // 배지 주입 및 미번역 목록 수집
   untranslatedEpisodesCache = [];
   episodeDataList.forEach((item, index) => {
-    const cleanNoSlash = item.url.replace(/\/$/, '');
+    const cleanNoSlash = normalizeUrlKey(item.url);
     const isTranslated = translatedSet.has(cleanNoSlash) || translatedSet.has(cleanNoSlash + '/');
+    const isExcluded = excludedSet.has(cleanNoSlash);
 
     const badge = document.createElement('span');
-    badge.className = `lanovel-toc-badge ${isTranslated ? 'translated' : 'untranslated'}`;
-    badge.innerHTML = `<span class="badge-dot"></span>${isTranslated ? '완료' : '미번역'}`;
+    badge.className = `lanovel-toc-badge ${isTranslated ? 'translated' : isExcluded ? 'excluded' : 'untranslated'}`;
+    badge.innerHTML = `<span class="badge-dot"></span>${isTranslated ? '완료' : isExcluded ? '제외' : '미번역'}`;
+    badge.title = isTranslated ? '번역 완료' : isExcluded ? '번역 제외됨 (클릭하여 해제)' : '미번역 (클릭하여 번역 제외)';
+
+    if (!isTranslated) {
+      badge.style.cursor = 'pointer';
+      badge.addEventListener('click', async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        await toggleExclusionForItem(item.url, item.title);
+      });
+    }
 
     if (item.element.parentNode) {
       const existingBadge = item.element.parentNode.querySelector('.lanovel-toc-badge');
@@ -94,6 +169,8 @@ export async function initTocPageFeatures(scraper: PlatformScraper): Promise<voi
         title: item.title,
         url: item.url,
         element: item.element,
+        badgeElement: badge,
+        isExcluded: isExcluded,
       });
     }
   });
@@ -108,23 +185,29 @@ export function renderQuickJumpPanel(untranslatedList: UntranslatedEpisode[]): v
   container = document.createElement('div');
   container.id = 'lanovel-quick-jump-container';
 
-  const count = untranslatedList.length;
+  const activeCount = untranslatedList.filter((ep) => !ep.isExcluded).length;
+  const count = activeCount;
   const triggerHtml = `
     <div id="lanovel-quick-jump-trigger" title="클릭하거나 'N' 키를 눌러 미번역 회차 목록 보기">
       <span class="trigger-icon">⚡</span>
-      <span>미번역 <strong>${count}</strong>화</span>
+      <span>미번역 <strong id="lanovel-trigger-count">${count}</strong>화</span>
       <span class="trigger-keyhint">N</span>
     </div>
   `;
 
   const itemsHtml =
-    count > 0
+    untranslatedList.length > 0
       ? untranslatedList
           .map(
             (ep, idx) => `
-      <li class="quick-jump-item" data-jump-index="${idx}" title="${escapeHtml(ep.title)}">
-        <span class="item-title">${escapeHtml(ep.title)}</span>
-        <span class="item-action-hint">Enter 이동</span>
+      <li class="quick-jump-item ${ep.isExcluded ? 'is-excluded' : ''}" data-jump-index="${idx}" data-url="${escapeHtml(ep.url)}" title="${escapeHtml(ep.title)}">
+        <span class="item-title ${ep.isExcluded ? 'is-excluded' : ''}">${escapeHtml(ep.title)}</span>
+        <div class="item-actions">
+          <button type="button" class="quick-jump-exclude-btn ${ep.isExcluded ? 'is-excluded' : ''}" data-url="${escapeHtml(ep.url)}" title="${ep.isExcluded ? '번역 제외 취소' : '이 회차 번역 제외'}">
+            ${ep.isExcluded ? '제외됨' : '제외'}
+          </button>
+          <span class="item-action-hint">Enter 이동</span>
+        </div>
       </li>
     `
           )
@@ -141,7 +224,7 @@ export function renderQuickJumpPanel(untranslatedList: UntranslatedEpisode[]): v
         <div class="title-wrap">
           <span style="color: #f59e0b; font-size: 14px;">⚡</span>
           <h4>미번역 회차 목록</h4>
-          <span class="count-badge">${count}</span>
+          <span class="count-badge" id="lanovel-header-count">${count}</span>
         </div>
         <button class="close-btn" id="lanovel-quick-jump-close" title="닫기 (ESC)">✕</button>
       </div>
@@ -174,11 +257,28 @@ export function renderQuickJumpPanel(untranslatedList: UntranslatedEpisode[]): v
 
   const listEl = document.getElementById('lanovel-quick-jump-list');
   if (listEl) {
+    listEl.querySelectorAll('.quick-jump-exclude-btn').forEach((btn) => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        const url = btn.getAttribute('data-url');
+        if (!url) return;
+        const targetEp = untranslatedList.find((it) => it.url === url);
+        await toggleExclusionForItem(url, targetEp ? targetEp.title : '');
+      });
+    });
+
     listEl.querySelectorAll('.quick-jump-item').forEach((item) => {
-      item.addEventListener('click', () => {
+      item.addEventListener('click', (e) => {
+        if ((e.target as HTMLElement).closest('.quick-jump-exclude-btn')) return;
+
         const idx = parseInt(item.getAttribute('data-jump-index') || '-1', 10);
         if (!isNaN(idx) && untranslatedList[idx]) {
           const ep = untranslatedList[idx];
+          if (ep.isExcluded) {
+            showLanovelHud(`'${ep.title}'은(는) 제외된 회차입니다.`, '⚠️', 2000);
+            return;
+          }
           sessionStorage.setItem('lanovel_auto_translate_next', '1');
           showLanovelHud(`'${ep.title}' 진입 및 자동 번역...`, '⚡');
           setTimeout(() => {
@@ -187,6 +287,48 @@ export function renderQuickJumpPanel(untranslatedList: UntranslatedEpisode[]): v
         }
       });
     });
+  }
+}
+
+export async function toggleExclusionForItem(url: string, title?: string): Promise<void> {
+  if (!url) return;
+  const targetEp = untranslatedEpisodesCache.find((it) => normalizeUrlKey(it.url) === normalizeUrlKey(url));
+  const nowExcluded = await toggleEpisodeUrlExcluded(url);
+  if (targetEp) {
+    targetEp.isExcluded = nowExcluded;
+    if (targetEp.badgeElement) {
+      targetEp.badgeElement.className = `lanovel-toc-badge ${nowExcluded ? 'excluded' : 'untranslated'}`;
+      targetEp.badgeElement.innerHTML = `<span class="badge-dot"></span>${nowExcluded ? '제외' : '미번역'}`;
+      targetEp.badgeElement.title = nowExcluded ? '번역 제외됨 (클릭하여 해제)' : '미번역 (클릭하여 번역 제외)';
+    }
+  }
+
+  const listEl = document.getElementById('lanovel-quick-jump-list');
+  if (listEl) {
+    const itemEl = listEl.querySelector(`.quick-jump-item[data-url="${escapeHtml(url)}"]`);
+    if (itemEl) {
+      itemEl.classList.toggle('is-excluded', nowExcluded);
+      const titleEl = itemEl.querySelector('.item-title');
+      if (titleEl) titleEl.classList.toggle('is-excluded', nowExcluded);
+      const btnEl = itemEl.querySelector('.quick-jump-exclude-btn');
+      if (btnEl) {
+        btnEl.classList.toggle('is-excluded', nowExcluded);
+        btnEl.textContent = nowExcluded ? '제외됨' : '제외';
+        btnEl.setAttribute('title', nowExcluded ? '번역 제외 취소' : '이 회차 번역 제외');
+      }
+    }
+  }
+
+  const activeCount = untranslatedEpisodesCache.filter((ep) => !ep.isExcluded).length;
+  const headerCount = document.getElementById('lanovel-header-count');
+  if (headerCount) headerCount.textContent = String(activeCount);
+  const triggerCount = document.getElementById('lanovel-trigger-count');
+  if (triggerCount) triggerCount.textContent = String(activeCount);
+
+  if (nowExcluded) {
+    showLanovelHud(`'${title || '회차'}' 번역 목록에서 제외되었습니다.`, '🚫', 2200);
+  } else {
+    showLanovelHud(`'${title || '회차'}' 번역 목록에 다시 포함되었습니다.`, '⚡', 2200);
   }
 }
 
@@ -205,8 +347,12 @@ export function toggleQuickJumpDrawer(open?: boolean): void {
 }
 
 export function handleQuickJumpNKey(): void {
-  if (!untranslatedEpisodesCache.length) {
-    showLanovelHud('모든 회차가 이미 번역 완료되었습니다!', '🎉');
+  const activeEpisodes = untranslatedEpisodesCache
+    .map((ep, idx) => ({ ep, idx }))
+    .filter((item) => !item.ep.isExcluded);
+
+  if (!activeEpisodes.length) {
+    showLanovelHud('모든 회차가 이미 번역 완료 또는 제외되었습니다!', '🎉');
     return;
   }
   const drawer = document.getElementById('lanovel-quick-jump-drawer');
@@ -214,9 +360,11 @@ export function handleQuickJumpNKey(): void {
 
   if (!drawer.classList.contains('open')) {
     drawer.classList.add('open');
-    quickJumpFocusedIndex = 0;
+    quickJumpFocusedIndex = activeEpisodes[0].idx;
   } else {
-    quickJumpFocusedIndex = (quickJumpFocusedIndex + 1) % untranslatedEpisodesCache.length;
+    const currentPos = activeEpisodes.findIndex((item) => item.idx === quickJumpFocusedIndex);
+    const nextPos = (currentPos + 1) % activeEpisodes.length;
+    quickJumpFocusedIndex = activeEpisodes[nextPos].idx;
   }
 
   updateQuickJumpFocusUI();

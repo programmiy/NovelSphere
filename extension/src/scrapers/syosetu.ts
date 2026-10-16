@@ -52,7 +52,10 @@ export class SyosetuScraper implements PlatformScraper {
   }
 
   isTocPage(_url: string, path: string): boolean {
-    return (/\/n[a-z0-9]+\/?$/i.test(path) && !/\/\d+\/?$/.test(path)) || !!document.querySelector('.p-eplist');
+    if (document.querySelector('.p-novel__body, #novel_honbun, .p-novel__text')) {
+      return false;
+    }
+    return (/\/n[a-z0-9]+\/?$/i.test(path) && !/\/\d+\/?$/.test(path)) || !!document.querySelector('.p-eplist, .index_box');
   }
 
   findNextEpisodeLink(): HTMLAnchorElement | null {
@@ -83,15 +86,22 @@ export class SyosetuScraper implements PlatformScraper {
   findTocLink(): HTMLAnchorElement | null {
     const direct =
       document.querySelector<HTMLAnchorElement>('.c-announce a[href*="/n"]') ||
-      document.querySelector<HTMLAnchorElement>('.p-novel__series-link') ||
+      document.querySelector<HTMLAnchorElement>('.p-novel__series-link a') ||
+      document.querySelector<HTMLAnchorElement>('a.p-novel__series-link') ||
       document.querySelector<HTMLAnchorElement>('.novel_title a');
     return (direct && direct.href) ? direct : null;
   }
 
   getTocEpisodes(): TocEpisodeItem[] {
     const elements = Array.from(
-      document.querySelectorAll<HTMLAnchorElement>('.p-eplist__sublist .p-eplist__subtitle a, .subtitle a')
-    );
+      document.querySelectorAll<HTMLAnchorElement>(
+        'a.p-eplist__subtitle, .p-eplist a.p-eplist__subtitle, .p-eplist__sublist a, .p-eplist a, .index_box .subtitle a, .subtitle a'
+      )
+    ).filter((el) => {
+      const rawHref = el.getAttribute('href') || '';
+      const cleanHref = rawHref.split('#')[0].split('?')[0];
+      return /\/\d+\/?$/.test(cleanHref);
+    });
     return elements.map((el) => ({
       element: el,
       url: el.href.split('#')[0],

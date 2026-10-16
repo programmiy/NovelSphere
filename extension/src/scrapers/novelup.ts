@@ -51,7 +51,13 @@ export class NovelUpScraper implements PlatformScraper {
   }
 
   isTocPage(_url: string, path: string): boolean {
-    return (/\/story\/\d+\/?$/.test(path) && !/\/\d+\/\d+/.test(path)) || !!document.querySelector('.storyList');
+    if (document.getElementById('episode_content')) {
+      return false;
+    }
+    return (
+      (/\/story\/\d+\/?$/.test(path) && !/\/\d+\/\d+/.test(path)) ||
+      !!document.querySelector('#section_episode, .episodeListItem, a.episodeTitle, .storyList')
+    );
   }
 
   findNextEpisodeLink(): HTMLAnchorElement | null {
@@ -86,14 +92,32 @@ export class NovelUpScraper implements PlatformScraper {
       document.querySelector<HTMLAnchorElement>('.episodeNavi .prevEpisode a') ||
       document.querySelector<HTMLAnchorElement>('.btn_prev') ||
       document.querySelector<HTMLAnchorElement>('.episode_navigation .prev a');
-    return (direct && direct.href) ? direct : null;
+    if (direct && direct.href) return direct;
+
+    const allLinks = Array.from(document.querySelectorAll<HTMLAnchorElement>('a'));
+    const contextual = allLinks.find(
+      (a) =>
+        (a.closest('.episodeHeaderPager') || a.closest('#section_episode') || a.closest('.storyIndexFooter')) &&
+        (a.textContent || '').includes('前へ') &&
+        a.href &&
+        !(a.textContent || '').includes('次へ')
+    );
+    return contextual || null;
   }
 
   findTocLink(): HTMLAnchorElement | null {
     const direct =
       document.querySelector<HTMLAnchorElement>('.episodeHeader .storyTitle a') ||
-      document.querySelector<HTMLAnchorElement>('.storyTitle a');
-    return (direct && direct.href) ? direct : null;
+      document.querySelector<HTMLAnchorElement>('.storyTitle a') ||
+      document.querySelector<HTMLAnchorElement>('.story_title a') ||
+      document.querySelector<HTMLAnchorElement>('a.storyTitle');
+    if (direct && direct.href) return direct;
+
+    const candidates = Array.from(document.querySelectorAll<HTMLAnchorElement>('a[href*="/story/"]'));
+    const found = candidates.find((a) =>
+      /\/story\/\d+\/?$/.test((a.getAttribute('href') || '').split('?')[0].split('#')[0])
+    );
+    return (found && found.href) ? found : null;
   }
 
   prepareContent(): void {
@@ -136,9 +160,24 @@ export class NovelUpScraper implements PlatformScraper {
   }
 
   getTocEpisodes(): TocEpisodeItem[] {
-    const elements = Array.from(
-      document.querySelectorAll<HTMLAnchorElement>('.storyList .episode a, .episode_list a, .storyList a[href*="/story/"]')
-    );
+    let elements = Array.from(
+      document.querySelectorAll<HTMLAnchorElement>(
+        '.episodeListItem a.episodeTitle, #section_episode a.episodeTitle, .episodeListItem a, a.episodeTitle, .storyList .episode a, .episode_list a, .storyList a[href*="/story/"]'
+      )
+    ).filter((el) => {
+      const rawHref = el.getAttribute('href') || '';
+      const cleanHref = rawHref.split('#')[0].split('?')[0];
+      return /\/story\/\d+\/\d+\/?$/.test(cleanHref);
+    });
+
+    if (!elements.length) {
+      elements = Array.from(document.querySelectorAll<HTMLAnchorElement>('a[href*="/story/"]')).filter((el) => {
+        const rawHref = el.getAttribute('href') || '';
+        const cleanHref = rawHref.split('#')[0].split('?')[0];
+        return /\/story\/\d+\/\d+\/?$/.test(cleanHref);
+      });
+    }
+
     return elements.map((el) => ({
       element: el,
       url: el.href.split('#')[0],

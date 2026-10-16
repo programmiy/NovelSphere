@@ -112,6 +112,58 @@ function getCleanUrl() {
 }
 
 // =================================================================================
+// 🚫 회차 번역 제외 (Exclude Episodes) 관리
+// =================================================================================
+const EXCLUDED_EPISODES_STORAGE_KEY = 'lanovel_excluded_urls';
+
+function normalizeUrlKey(url) {
+    if (!url) return '';
+    return url.split('#')[0].split('?')[0].replace(/\/$/, '');
+}
+
+async function getExcludedEpisodeUrls() {
+    try {
+        const stored = await chrome.storage.local.get(EXCLUDED_EPISODES_STORAGE_KEY);
+        if (Array.isArray(stored[EXCLUDED_EPISODES_STORAGE_KEY])) {
+            return stored[EXCLUDED_EPISODES_STORAGE_KEY];
+        }
+    } catch (e) {
+        console.warn('[LANOVEL] 제외 회차 목록 조회 실패:', e);
+    }
+    return [];
+}
+
+async function isEpisodeUrlExcluded(targetUrl) {
+    if (!targetUrl) return false;
+    const clean = normalizeUrlKey(targetUrl);
+    const list = await getExcludedEpisodeUrls();
+    const set = new Set(list.map(normalizeUrlKey));
+    return set.has(clean);
+}
+
+async function toggleEpisodeUrlExcluded(targetUrl) {
+    if (!targetUrl) return false;
+    const clean = normalizeUrlKey(targetUrl);
+    const list = await getExcludedEpisodeUrls();
+    const set = new Set(list.map(normalizeUrlKey));
+    let isNowExcluded = false;
+    if (set.has(clean)) {
+        set.delete(clean);
+        isNowExcluded = false;
+    } else {
+        set.add(clean);
+        isNowExcluded = true;
+    }
+    const updated = Array.from(set);
+    try {
+        await chrome.storage.local.set({ [EXCLUDED_EPISODES_STORAGE_KEY]: updated });
+    } catch (e) {
+        console.warn('[LANOVEL] 제외 회차 목록 저장 실패:', e);
+    }
+    return isNowExcluded;
+}
+
+// =================================================================================
 // ⚡ 쾌속모드 (Turbo Mode) 상태 관리 및 정각 도달 감지
 // =================================================================================
 let isTurboMode = false;
@@ -1422,6 +1474,19 @@ function prepareNovelUpContent() {
     console.log(`[LANOVEL] NovelUp content transformed into ${lines.length} paragraphs for translation.`);
 }
 
+const DEFAULT_ALLOWED_DOMAINS = [
+    'kakuyomu.jp',
+    'syosetu.com',
+    'novel18.syosetu.com',
+    'ncode.syosetu.com',
+    'noc.syosetu.com',
+    'mid.syosetu.com',
+    'mnlt.syosetu.com',
+    'novelup.plus',
+    'syosetu.org',
+    'alphapolis.co.jp'
+];
+
 async function init() {
     try {
         // 0. 로컬 서버(관리페이지, 뷰어 등)에서는 번역 확장 프로그램 절대 비활성화
@@ -1431,14 +1496,30 @@ async function init() {
         }
 
         // 0. Check if the current origin is allowed
-        const response = await fetch('http://127.0.0.1:8001/api/allowed_origins');
-        if (!response.ok) {
-            console.warn('Could not fetch allowed origins from server. Stopping initialization.');
-            return;
-        }
-        const allowedOrigins = await response.json();
         const currentUrl = window.location.href;
-        const isAllowed = allowedOrigins.some(origin => currentUrl.startsWith(origin));
+        let isAllowed = false;
+        try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 1200);
+            const response = await fetch('http://127.0.0.1:8001/api/allowed_origins', { signal: controller.signal });
+            clearTimeout(timeoutId);
+            if (response.ok) {
+                const allowedOrigins = await response.json();
+                isAllowed = allowedOrigins.some(origin => currentUrl.startsWith(origin));
+            }
+        } catch (fetchErr) {
+            console.warn('[LANOVEL] 로컬 서버 allowed_origins 조회 실패(기본 도메인 목록으로 폴백):', fetchErr);
+        }
+
+        // 서버 조회 실패 또는 미응답 시 기본 지원 도메인으로 허용 여부 판별
+        if (!isAllowed) {
+            const isDefaultDomain = DEFAULT_ALLOWED_DOMAINS.some(domain => 
+                hostname === domain || hostname.endsWith('.' + domain)
+            );
+            if (isDefaultDomain) {
+                isAllowed = true;
+            }
+        }
 
         if (!isAllowed) {
             console.log(`Translator extension disabled: Current URL (${currentUrl}) is not in the allowed origins list.`);
@@ -1447,6 +1528,12 @@ async function init() {
 
         console.log("Translator extension initializing...");
 
+        // 녹턴노벨즈 / 문라이트 (Syosetu R18) 연령 확인 화면 감지 시 사용자 안내
+        if (hostname.includes('syosetu.com') && document.querySelector('a#enter, a[href*="over18=yes"]')) {
+            showLanovelHud('녹턴 연령 확인(18세 이상)을 먼저 진행해주세요.', '🔞', 5000);
+            return;
+        }
+
         // 노벨업 본문 DOM 구조 정규화 (문단별 p[id]화)
         prepareNovelUpContent();
 
@@ -1454,8 +1541,60 @@ async function init() {
         setupEventListeners();
         setupLanovelKeyboardNavigation();
 
+        // 0.1. ⚡ 목차(TOC) 페이지인 경우: 목차 기능(배지 및 미번역 퀵 점프 서랍) 즉시 초기화 후 조기 복귀
+        if (isTocPage()) {
+            console.log('[LANOVEL] 목차(TOC) 페이지 감지: 목차 기능(배지 및 퀵 점프 서랍)을 즉시 초기화합니다.');
+            try {
+                currentNovelTitle = await detectNovelTitle();
+                updateNovelTitleUI(currentNovelTitle);
+            } catch (_) {}
+            await initTocPageFeatures();
+            return;
+        }
+
         // 0.2. ⚡ 쾌속모드 상태 로드 및 정각 도달 여부 확인
         await loadTurboModeState();
+
+        // 0.3. 🚫 제외 회차 감지 시 번역 생략 및 다음 회차 자동 건너뛰기 / 마지막 페이지 판별
+        const currentCleanUrl = getCleanUrl();
+        const isExcluded = await isEpisodeUrlExcluded(currentCleanUrl);
+            if (isExcluded) {
+                console.log(`[LANOVEL] 제외된 회차 감지: ${currentCleanUrl} - 번역을 수행하지 않습니다.`);
+
+                // DOM 렌더링 완료 대기 (최대 300ms)
+                let nextLink = findNextEpisodeLink();
+                if (!nextLink) {
+                    await new Promise(r => setTimeout(r, 300));
+                    nextLink = findNextEpisodeLink();
+                }
+
+                if (nextLink && nextLink.href) {
+                    showLanovelHud('번역 제외 회차입니다. 다음 페이지로 이동합니다...', '⏭️', 2000);
+                    sessionStorage.setItem('lanovel_auto_translate_next', '1');
+                    setTimeout(() => {
+                        window.location.href = nextLink.href;
+                    }, 600);
+                    return;
+                } else {
+                    sessionStorage.removeItem('lanovel_auto_translate_next');
+                    showLanovelHud('마지막 페이지입니다. (소설 연속 번역 종료)', '🏁', 5000);
+                    if (document.getElementById('jp-translator-sidebar')) {
+                        logToSidebar("다음 페이지 버튼을 찾을 수 없습니다. (마지막 페이지입니다)");
+                    }
+                    try {
+                        const novelTitle = currentNovelTitle || await detectNovelTitle();
+                        sendCompleteNotification(
+                            novelTitle,
+                            extractEpisodeTitle() || document.title || '마지막 회차',
+                            0,
+                            currentCleanUrl,
+                            0
+                        );
+                    } catch (_) {}
+                    return;
+                }
+            }
+
         checkAutoTranslateNextTrigger();
 
         // 0.5. 소설 제목 감지 및 해당 소설의 구분선 설정 로드
@@ -4066,6 +4205,8 @@ function findNextEpisodeLink() {
     // 쇼세츠 / 녹턴 / 미드나이트
     if (host.includes('syosetu.com')) {
         const direct = document.querySelector('.c-pager__item--next') ||
+                       document.querySelector('a.c-pager__item.c-pager__item--next') ||
+                       document.querySelector('a.novelview_pager-next') ||
                        document.querySelector('a.novel_bn_next') ||
                        document.querySelector('.novel_bn a.c-pager__item--next');
         if (direct && direct.href) return direct;
@@ -4079,6 +4220,23 @@ function findNextEpisodeLink() {
                        document.querySelector('.btn_next') ||
                        document.querySelector('.episode_navigation .next a');
         if (direct && direct.href) return direct;
+        const allLinks = Array.from(document.querySelectorAll('a'));
+        const contextual = allLinks.find(
+            (a) =>
+                (a.closest('.episodeHeaderPager') || a.closest('#section_episode') || a.closest('.storyIndexFooter')) &&
+                (a.textContent || '').includes('次へ') &&
+                a.href &&
+                !(a.textContent || '').includes('前へ')
+        );
+        if (contextual && contextual.href) return contextual;
+        const storyLink = allLinks.find(
+            (a) =>
+                (a.textContent || '').includes('次へ') &&
+                a.href &&
+                a.href.includes('/story/') &&
+                !(a.textContent || '').includes('前へ')
+        );
+        if (storyLink && storyLink.href) return storyLink;
     }
     // 하멜른
     if (host.includes('syosetu.org')) {
@@ -4122,6 +4280,15 @@ function findPrevEpisodeLink() {
                        document.querySelector('.btn_prev') ||
                        document.querySelector('.episode_navigation .prev a');
         if (direct && direct.href) return direct;
+        const allLinks = Array.from(document.querySelectorAll('a'));
+        const contextual = allLinks.find(
+            (a) =>
+                (a.closest('.episodeHeaderPager') || a.closest('#section_episode') || a.closest('.storyIndexFooter')) &&
+                (a.textContent || '').includes('前へ') &&
+                a.href &&
+                !(a.textContent || '').includes('次へ')
+        );
+        if (contextual && contextual.href) return contextual;
     }
     // 하멜른
     if (host.includes('syosetu.org')) {
@@ -4150,15 +4317,21 @@ function findTocLink() {
     // 쇼세츠
     if (host.includes('syosetu.com')) {
         const direct = document.querySelector('.c-announce a[href*="/n"]') ||
-                       document.querySelector('.p-novel__series-link') ||
+                       document.querySelector('.p-novel__series-link a') ||
+                       document.querySelector('a.p-novel__series-link') ||
                        document.querySelector('.novel_title a');
         if (direct && direct.href) return direct;
     }
     // 노벨업
     if (host.includes('novelup.plus')) {
         const direct = document.querySelector('.episodeHeader .storyTitle a') ||
-                       document.querySelector('.storyTitle a');
+                       document.querySelector('.storyTitle a') ||
+                       document.querySelector('.story_title a') ||
+                       document.querySelector('a.storyTitle');
         if (direct && direct.href) return direct;
+        const candidates = Array.from(document.querySelectorAll('a[href*="/story/"]'));
+        const found = candidates.find(a => /\/story\/\d+\/?$/.test((a.getAttribute('href') || '').split('?')[0].split('#')[0]));
+        if (found && found.href) return found;
     }
     // 하멜른
     if (host.includes('syosetu.org')) {
@@ -4187,10 +4360,17 @@ function isTocPage() {
         return /\/works\/\d+\/?$/.test(pathname) || !!document.querySelector('.widget-toc-episode');
     }
     if (host.includes('syosetu.com')) {
-        return (/\/n[a-z0-9]+\/?$/i.test(pathname) && !/\/\d+\/?$/.test(pathname)) || !!document.querySelector('.p-eplist');
+        if (document.querySelector('.p-novel__body, #novel_honbun, .p-novel__text')) {
+            return false;
+        }
+        return (/\/n[a-z0-9]+\/?$/i.test(pathname) && !/\/\d+\/?$/.test(pathname)) || !!document.querySelector('.p-eplist, .index_box');
     }
     if (host.includes('novelup.plus')) {
-        return (/\/story\/\d+\/?$/.test(pathname) && !/\/\d+\/\d+/.test(pathname)) || !!document.querySelector('.storyList');
+        if (document.getElementById('episode_content')) {
+            return false;
+        }
+        return (/\/story\/\d+\/?$/.test(pathname) && !/\/\d+\/\d+/.test(pathname)) ||
+               !!document.querySelector('#section_episode, .episodeListItem, a.episodeTitle, .storyList');
     }
     if (host.includes('syosetu.org')) {
         return /\/novel\/\d+\/?$/.test(pathname) || (!pathname.endsWith('.html') && document.querySelectorAll('table a[href*="/novel/"]').length > 3);
@@ -4225,7 +4405,7 @@ function setupLanovelKeyboardNavigation() {
                     window.location.href = nextLink.href;
                 }, 150);
             } else {
-                showLanovelHud('다음 화가 없습니다 (마지막 회차)', '🏁');
+                showLanovelHud('다음 화가 없습니다 (마지막 페이지입니다)', '🏁');
             }
             return;
         }
@@ -4282,6 +4462,10 @@ function setupLanovelKeyboardNavigation() {
                         e.preventDefault();
                         const targetEp = untranslatedEpisodesCache[quickJumpFocusedIndex];
                         if (targetEp && targetEp.url) {
+                            if (targetEp.isExcluded) {
+                                showLanovelHud(`'${targetEp.title}'은(는) 제외된 회차입니다.`, '⚠️', 2000);
+                                return;
+                            }
                             sessionStorage.setItem('lanovel_auto_translate_next', '1');
                             showLanovelHud(`'${targetEp.title}' 진입 및 자동 번역...`, '⚡');
                             setTimeout(() => {
@@ -4321,19 +4505,49 @@ async function initTocPageFeatures() {
     console.log('[LANOVEL] 목차 페이지 감지: 회차별 번역 상태 배지 및 퀵 점프 패널을 초기화합니다.');
 
     const host = window.location.hostname;
-    let episodeElements = [];
-
-    if (host.includes('kakuyomu.jp')) {
-        episodeElements = Array.from(document.querySelectorAll('.widget-toc-episode a, a.widget-toc-episode-episodeTitle'));
-    } else if (host.includes('syosetu.com')) {
-        episodeElements = Array.from(document.querySelectorAll('.p-eplist__sublist .p-eplist__subtitle a, .subtitle a'));
-    } else if (host.includes('novelup.plus')) {
-        episodeElements = Array.from(document.querySelectorAll('.storyList .episode a, .episode_list a, .storyList a[href*="/story/"]'));
-    } else if (host.includes('syosetu.org')) {
-        episodeElements = Array.from(document.querySelectorAll('table a[href*="/novel/"]'));
+    function queryEpisodeElements() {
+        if (host.includes('kakuyomu.jp')) {
+            return Array.from(document.querySelectorAll('.widget-toc-episode a, a.widget-toc-episode-episodeTitle'));
+        } else if (host.includes('syosetu.com')) {
+            return Array.from(document.querySelectorAll(
+                'a.p-eplist__subtitle, .p-eplist a.p-eplist__subtitle, .p-eplist__sublist a, .p-eplist a, .index_box .subtitle a, .subtitle a'
+            )).filter(el => {
+                const rawHref = el.getAttribute('href') || '';
+                const cleanHref = rawHref.split('#')[0].split('?')[0];
+                return /\/\d+\/?$/.test(cleanHref);
+            });
+        } else if (host.includes('novelup.plus')) {
+            let els = Array.from(document.querySelectorAll(
+                '.episodeListItem a.episodeTitle, #section_episode a.episodeTitle, .episodeListItem a, a.episodeTitle, .storyList .episode a, .episode_list a, .storyList a[href*="/story/"]'
+            )).filter(el => {
+                const rawHref = el.getAttribute('href') || '';
+                const cleanHref = rawHref.split('#')[0].split('?')[0];
+                return /\/story\/\d+\/\d+\/?$/.test(cleanHref);
+            });
+            if (!els.length) {
+                els = Array.from(document.querySelectorAll('a[href*="/story/"]')).filter(el => {
+                    const rawHref = el.getAttribute('href') || '';
+                    const cleanHref = rawHref.split('#')[0].split('?')[0];
+                    return /\/story\/\d+\/\d+\/?$/.test(cleanHref);
+                });
+            }
+            return els;
+        } else if (host.includes('syosetu.org')) {
+            return Array.from(document.querySelectorAll('table a[href*="/novel/"]'));
+        }
+        return [];
     }
 
-    if (!episodeElements.length) return;
+    let episodeElements = queryEpisodeElements();
+    if (!episodeElements.length) {
+        await new Promise(r => setTimeout(r, 250));
+        episodeElements = queryEpisodeElements();
+    }
+
+    if (!episodeElements.length) {
+        console.log('[LANOVEL] 목차 페이지이나 회차 링크 요소를 발견하지 못했습니다.');
+        return;
+    }
 
     // URL 중복 제거 및 리스트 구성
     const episodeDataList = [];
@@ -4375,21 +4589,37 @@ async function initTocPageFeatures() {
         console.warn('[LANOVEL] 서버 번역 URL 확인 중 오류 발생:', e);
     }
 
+    // 제외 회차 목록 조회
+    const excludedUrls = await getExcludedEpisodeUrls();
+    const excludedSet = new Set(excludedUrls.map(normalizeUrlKey));
+
     // 배지 주입 및 미번역 목록 수집
     untranslatedEpisodesCache = [];
     episodeDataList.forEach((item, index) => {
-        const cleanNoSlash = item.url.replace(/\/$/, '');
+        const cleanNoSlash = normalizeUrlKey(item.url);
         const isTranslated = translatedSet.has(cleanNoSlash) || translatedSet.has(cleanNoSlash + '/');
+        const isExcluded = excludedSet.has(cleanNoSlash);
         
         // 배지 엘리먼트 생성
         const badge = document.createElement('span');
-        badge.className = `lanovel-toc-badge ${isTranslated ? 'translated' : 'untranslated'}`;
-        badge.innerHTML = `<span class="badge-dot"></span>${isTranslated ? '완료' : '미번역'}`;
+        badge.className = `lanovel-toc-badge ${isTranslated ? 'translated' : (isExcluded ? 'excluded' : 'untranslated')}`;
+        badge.innerHTML = `<span class="badge-dot"></span>${isTranslated ? '완료' : (isExcluded ? '제외' : '미번역')}`;
+        badge.title = isTranslated ? '번역 완료' : (isExcluded ? '번역 제외됨 (클릭하여 해제)' : '미번역 (클릭하여 번역 제외)');
         
+        // 배지 클릭 시 제외 토글 지원
+        if (!isTranslated) {
+            badge.style.cursor = 'pointer';
+            badge.addEventListener('click', async (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                await toggleExclusionForItem(item.url, item.title);
+            });
+        }
+
         // 중복 추가 방지
         const existingBadge = item.element.parentNode.querySelector('.lanovel-toc-badge');
         if (!existingBadge) {
-            item.element.parentNode.appendChild(badge);
+            item.element.insertAdjacentElement('afterend', badge);
         }
 
         if (!isTranslated) {
@@ -4398,7 +4628,9 @@ async function initTocPageFeatures() {
                 tocIndex: index,
                 title: item.title,
                 url: item.url,
-                element: item.element
+                element: item.element,
+                badgeElement: badge,
+                isExcluded: isExcluded
             });
         }
     });
@@ -4413,19 +4645,25 @@ function renderQuickJumpPanel(untranslatedList) {
     container = document.createElement('div');
     container.id = 'lanovel-quick-jump-container';
 
-    const count = untranslatedList.length;
+    const activeCount = untranslatedList.filter(ep => !ep.isExcluded).length;
+    const count = activeCount;
     const triggerHtml = `
         <div id="lanovel-quick-jump-trigger" title="클릭하거나 'N' 키를 눌러 미번역 회차 목록 보기">
             <span class="trigger-icon">⚡</span>
-            <span>미번역 <strong>${count}</strong>화</span>
+            <span>미번역 <strong id="lanovel-trigger-count">${count}</strong>화</span>
             <span class="trigger-keyhint">N</span>
         </div>
     `;
 
-    const itemsHtml = count > 0 ? untranslatedList.map((ep, idx) => `
-        <li class="quick-jump-item" data-jump-index="${idx}" title="${escapeHtml(ep.title)}">
-            <span class="item-title">${escapeHtml(ep.title)}</span>
-            <span class="item-action-hint">Enter 이동</span>
+    const itemsHtml = untranslatedList.length > 0 ? untranslatedList.map((ep, idx) => `
+        <li class="quick-jump-item ${ep.isExcluded ? 'is-excluded' : ''}" data-jump-index="${idx}" data-url="${escapeHtml(ep.url)}" title="${escapeHtml(ep.title)}">
+            <span class="item-title ${ep.isExcluded ? 'is-excluded' : ''}">${escapeHtml(ep.title)}</span>
+            <div class="item-actions">
+                <button type="button" class="quick-jump-exclude-btn ${ep.isExcluded ? 'is-excluded' : ''}" data-url="${escapeHtml(ep.url)}" title="${ep.isExcluded ? '번역 제외 취소' : '이 회차 번역 제외'}">
+                    ${ep.isExcluded ? '제외됨' : '제외'}
+                </button>
+                <span class="item-action-hint">Enter 이동</span>
+            </div>
         </li>
     `).join('') : `
         <li class="quick-jump-item" style="justify-content: center; color: #10b981; cursor: default;">
@@ -4439,7 +4677,7 @@ function renderQuickJumpPanel(untranslatedList) {
                 <div class="title-wrap">
                     <span style="color: #f59e0b; font-size: 14px;">⚡</span>
                     <h4>미번역 회차 목록</h4>
-                    <span class="count-badge">${count}</span>
+                    <span class="count-badge" id="lanovel-header-count">${count}</span>
                 </div>
                 <button class="close-btn" id="lanovel-quick-jump-close" title="닫기 (ESC)">✕</button>
             </div>
@@ -4458,29 +4696,97 @@ function renderQuickJumpPanel(untranslatedList) {
 
     // 이벤트 리스너 연결
     const trigger = document.getElementById('lanovel-quick-jump-trigger');
-    trigger.addEventListener('click', () => {
-        toggleQuickJumpDrawer();
-    });
+    if (trigger) {
+        trigger.addEventListener('click', () => {
+            toggleQuickJumpDrawer();
+        });
+    }
 
     const closeBtn = document.getElementById('lanovel-quick-jump-close');
-    closeBtn.addEventListener('click', () => {
-        toggleQuickJumpDrawer(false);
-    });
+    if (closeBtn) {
+        closeBtn.addEventListener('click', () => {
+            toggleQuickJumpDrawer(false);
+        });
+    }
 
     const listEl = document.getElementById('lanovel-quick-jump-list');
-    listEl.querySelectorAll('.quick-jump-item').forEach(item => {
-        item.addEventListener('click', () => {
-            const idx = parseInt(item.getAttribute('data-jump-index'), 10);
-            if (!isNaN(idx) && untranslatedList[idx]) {
-                const ep = untranslatedList[idx];
-                sessionStorage.setItem('lanovel_auto_translate_next', '1');
-                showLanovelHud(`'${ep.title}' 진입 및 자동 번역...`, '⚡');
-                setTimeout(() => {
-                    window.location.href = ep.url;
-                }, 150);
-            }
+    if (listEl) {
+        // 제외 버튼 클릭 이벤트
+        listEl.querySelectorAll('.quick-jump-exclude-btn').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                const url = btn.getAttribute('data-url');
+                const targetEp = untranslatedList.find(it => it.url === url);
+                await toggleExclusionForItem(url, targetEp ? targetEp.title : '');
+            });
         });
-    });
+
+        // 항목 클릭 이벤트 (이동)
+        listEl.querySelectorAll('.quick-jump-item').forEach(item => {
+            item.addEventListener('click', (e) => {
+                if (e.target.closest('.quick-jump-exclude-btn')) return;
+
+                const idx = parseInt(item.getAttribute('data-jump-index'), 10);
+                if (!isNaN(idx) && untranslatedList[idx]) {
+                    const ep = untranslatedList[idx];
+                    if (ep.isExcluded) {
+                        showLanovelHud(`'${ep.title}'은(는) 제외된 회차입니다.`, '⚠️', 2000);
+                        return;
+                    }
+                    sessionStorage.setItem('lanovel_auto_translate_next', '1');
+                    showLanovelHud(`'${ep.title}' 진입 및 자동 번역...`, '⚡');
+                    setTimeout(() => {
+                        window.location.href = ep.url;
+                    }, 150);
+                }
+            });
+        });
+    }
+}
+
+async function toggleExclusionForItem(url, title) {
+    if (!url) return;
+    const targetEp = untranslatedEpisodesCache.find(it => normalizeUrlKey(it.url) === normalizeUrlKey(url));
+    const nowExcluded = await toggleEpisodeUrlExcluded(url);
+    if (targetEp) {
+        targetEp.isExcluded = nowExcluded;
+        if (targetEp.badgeElement) {
+            targetEp.badgeElement.className = `lanovel-toc-badge ${nowExcluded ? 'excluded' : 'untranslated'}`;
+            targetEp.badgeElement.innerHTML = `<span class="badge-dot"></span>${nowExcluded ? '제외' : '미번역'}`;
+            targetEp.badgeElement.title = nowExcluded ? '번역 제외됨 (클릭하여 해제)' : '미번역 (클릭하여 번역 제외)';
+        }
+    }
+
+    // 드로어 내 항목 UI 갱신
+    const listEl = document.getElementById('lanovel-quick-jump-list');
+    if (listEl) {
+        const itemEl = listEl.querySelector(`.quick-jump-item[data-url="${escapeHtml(url)}"]`);
+        if (itemEl) {
+            itemEl.classList.toggle('is-excluded', nowExcluded);
+            const titleEl = itemEl.querySelector('.item-title');
+            if (titleEl) titleEl.classList.toggle('is-excluded', nowExcluded);
+            const btnEl = itemEl.querySelector('.quick-jump-exclude-btn');
+            if (btnEl) {
+                btnEl.classList.toggle('is-excluded', nowExcluded);
+                btnEl.textContent = nowExcluded ? '제외됨' : '제외';
+                btnEl.title = nowExcluded ? '번역 제외 취소' : '이 회차 번역 제외';
+            }
+        }
+    }
+
+    // 헤더 및 트리거 카운트 갱신
+    const activeCount = untranslatedEpisodesCache.filter(ep => !ep.isExcluded).length;
+    const headerCount = document.getElementById('lanovel-header-count');
+    if (headerCount) headerCount.textContent = activeCount;
+    const triggerCount = document.getElementById('lanovel-trigger-count');
+    if (triggerCount) triggerCount.textContent = activeCount;
+
+    if (nowExcluded) {
+        showLanovelHud(`'${title || '회차'}' 번역 목록에서 제외되었습니다.`, '🚫', 2200);
+    } else {
+        showLanovelHud(`'${title || '회차'}' 번역 목록에 다시 포함되었습니다.`, '⚡', 2200);
+    }
 }
 
 function toggleQuickJumpDrawer(open) {
@@ -4498,8 +4804,12 @@ function toggleQuickJumpDrawer(open) {
 }
 
 function handleQuickJumpNKey() {
-    if (!untranslatedEpisodesCache.length) {
-        showLanovelHud('모든 회차가 이미 번역 완료되었습니다!', '🎉');
+    const activeEpisodes = untranslatedEpisodesCache
+        .map((ep, idx) => ({ ep, idx }))
+        .filter(item => !item.ep.isExcluded);
+
+    if (!activeEpisodes.length) {
+        showLanovelHud('모든 회차가 이미 번역 완료 또는 제외되었습니다!', '🎉');
         return;
     }
     const drawer = document.getElementById('lanovel-quick-jump-drawer');
@@ -4507,9 +4817,11 @@ function handleQuickJumpNKey() {
 
     if (!drawer.classList.contains('open')) {
         drawer.classList.add('open');
-        quickJumpFocusedIndex = 0;
+        quickJumpFocusedIndex = activeEpisodes[0].idx;
     } else {
-        quickJumpFocusedIndex = (quickJumpFocusedIndex + 1) % untranslatedEpisodesCache.length;
+        const currentPos = activeEpisodes.findIndex(item => item.idx === quickJumpFocusedIndex);
+        const nextPos = (currentPos + 1) % activeEpisodes.length;
+        quickJumpFocusedIndex = activeEpisodes[nextPos].idx;
     }
 
     updateQuickJumpFocusUI();

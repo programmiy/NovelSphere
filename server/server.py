@@ -315,13 +315,19 @@ async def lanovel_security_middleware(request: Request, call_next):
                 content='{"detail": "Cross-Origin CSRF request blocked"}',
                 media_type="application/json"
             )
-        return await call_next(request)
+        response = await call_next(request)
+        if "origin" in request.headers or request.headers.get("access-control-request-private-network") == "true":
+            response.headers["Access-Control-Allow-Private-Network"] = "true"
+        return response
 
     # 2. 외부 LAN(공유기 Wi-Fi 등) 접근 제어
     path = request.url.path
     # 읽기 전용 정적 에셋, 랜딩 페이지, 헬스체크, 앱 다운로드/버전 확인, 핑 확인은 허용
     if path.startswith("/static") or path in ("/download", "/favicon.ico", "/service-worker.js", "/service-worker", "/health", "/api/app/version", "/api/app/download", "/api/sync/ping"):
-        return await call_next(request)
+        response = await call_next(request)
+        if "origin" in request.headers or request.headers.get("access-control-request-private-network") == "true":
+            response.headers["Access-Control-Allow-Private-Network"] = "true"
+        return response
 
     # 토큰이 설정되어 있는 경우 암호화 해시와 상수 시간 비교 검증
     if stored_credential:
@@ -338,7 +344,10 @@ async def lanovel_security_middleware(request: Request, call_next):
                 media_type="application/json"
             )
 
-    return await call_next(request)
+    response = await call_next(request)
+    if "origin" in request.headers or request.headers.get("access-control-request-private-network") == "true":
+        response.headers["Access-Control-Allow-Private-Network"] = "true"
+    return response
 
 
 

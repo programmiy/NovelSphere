@@ -29,8 +29,21 @@ import {
   logToSidebar,
 } from './ui/sidebar';
 import { setupLanovelKeyboardNavigation, checkAutoTranslateNextTrigger } from './ui/key_nav';
-import { initTocPageFeatures } from './ui/toc_quick_jump';
+import { initTocPageFeatures, isEpisodeUrlExcluded } from './ui/toc_quick_jump';
 import { showLanovelHud } from './ui/hud';
+
+const DEFAULT_ALLOWED_DOMAINS = [
+  'kakuyomu.jp',
+  'syosetu.com',
+  'novel18.syosetu.com',
+  'ncode.syosetu.com',
+  'noc.syosetu.com',
+  'mid.syosetu.com',
+  'mnlt.syosetu.com',
+  'novelup.plus',
+  'syosetu.org',
+  'alphapolis.co.jp',
+];
 
 async function init(): Promise<void> {
   try {
@@ -40,19 +53,33 @@ async function init(): Promise<void> {
     }
 
     // 허용 도메인 확인
+    const currentUrl = window.location.href;
+    let isAllowed = false;
     try {
-      const response = await fetch('http://127.0.0.1:8001/api/allowed_origins');
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 1200);
+      const response = await fetch('http://127.0.0.1:8001/api/allowed_origins', { signal: controller.signal });
+      clearTimeout(timeoutId);
       if (response.ok) {
         const allowedOrigins: string[] = await response.json();
-        const currentUrl = window.location.href;
-        const isAllowed = allowedOrigins.some((origin) => currentUrl.startsWith(origin));
-        if (!isAllowed) {
-          console.log(`[LANOVEL] 현재 URL(${currentUrl})이 허용 목록에 없어 확장을 비활성화합니다.`);
-          return;
-        }
+        isAllowed = allowedOrigins.some((origin) => currentUrl.startsWith(origin));
       }
     } catch (e) {
-      console.warn('[LANOVEL] 허용 도메인 목록 조회 실패 (오프라인/기본 진행)');
+      console.warn('[LANOVEL] 허용 도메인 목록 조회 실패 (기본 도메인 목록 폴백 진행)');
+    }
+
+    if (!isAllowed) {
+      const isDefaultDomain = DEFAULT_ALLOWED_DOMAINS.some(
+        (domain) => hostname === domain || hostname.endsWith('.' + domain)
+      );
+      if (isDefaultDomain) {
+        isAllowed = true;
+      }
+    }
+
+    if (!isAllowed) {
+      console.log(`[LANOVEL] 현재 URL(${currentUrl})이 허용 목록에 없어 확장을 비활성화합니다.`);
+      return;
     }
 
     console.log('[LANOVEL] 웹소설 번역 확장 프로그램 초기화 시작...');
@@ -70,8 +97,47 @@ async function init(): Promise<void> {
       translateAllPTags(false);
     });
 
+    // 0.1. 목차(TOC) 페이지 감지 시 배지 및 퀵 점프 서랍 즉시 초기화 후 조기 복귀
+    if (scraper.isTocPage(window.location.href, window.location.pathname)) {
+      console.log('[LANOVEL] 목차(TOC) 페이지 감지: 목차 기능(배지 및 퀵 점프 서랍)을 즉시 초기화합니다.');
+      try {
+        const title = (await scraper.detectNovelTitle()) || '기본 소설';
+        state.currentNovelTitle = title;
+        updateNovelTitleUI(title);
+      } catch (_) {}
+      await initTocPageFeatures(scraper);
+      return;
+    }
+
     // 쾌속모드 상태 및 정각 도달 검사
     await loadTurboModeState();
+
+    // 0.3. 제외 회차 감지 시 번역 생략 및 다음 회차 자동 건너뛰기 / 마지막 페이지 판별
+    const currentCleanUrl = getCleanUrl();
+    const isExcluded = await isEpisodeUrlExcluded(currentCleanUrl);
+    if (isExcluded) {
+      console.log(`[LANOVEL] 제외된 회차 감지: ${currentCleanUrl} - 번역을 수행하지 않습니다.`);
+      let nextLink = scraper.findNextEpisodeLink ? scraper.findNextEpisodeLink() : null;
+      if (!nextLink) {
+        await new Promise((r) => setTimeout(r, 300));
+        nextLink = scraper.findNextEpisodeLink ? scraper.findNextEpisodeLink() : null;
+      }
+
+      if (nextLink && nextLink.href) {
+        showLanovelHud('번역 제외 회차입니다. 다음 페이지로 이동합니다...', '⏭️', 2000);
+        sessionStorage.setItem('lanovel_auto_translate_next', '1');
+        setTimeout(() => {
+          window.location.href = nextLink.href;
+        }, 600);
+        return;
+      } else {
+        sessionStorage.removeItem('lanovel_auto_translate_next');
+        showLanovelHud('마지막 페이지입니다. (소설 연속 번역 종료)', '🏁', 5000);
+        logToSidebar('다음 페이지 버튼을 찾을 수 없습니다. (마지막 페이지입니다)');
+        return;
+      }
+    }
+
     checkAutoTranslateNextTrigger(() => {
       showSidebar();
       translateAllPTags(false);
