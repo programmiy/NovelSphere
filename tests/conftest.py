@@ -15,21 +15,12 @@ from server.settings import settings
 settings.database_url = _test_db_url
 
 import server.database as sdb
-from server.database import register_sqlite_functions
+from server.database import register_sqlite_functions, attach_engine_safety_guards
 from server.models import Base
 
 # 새로운 테스트 엔진 및 세션 생성
 sdb.engine = create_engine(_test_db_url, connect_args={"check_same_thread": False})
-
-@event.listens_for(sdb.engine, "connect")
-def _test_db_connect(dbapi_connection, _connection_record):
-    cursor = dbapi_connection.cursor()
-    cursor.execute("PRAGMA journal_mode=WAL")
-    cursor.execute("PRAGMA synchronous=NORMAL")
-    cursor.execute("PRAGMA busy_timeout=5000")
-    cursor.execute("PRAGMA foreign_keys=ON")
-    cursor.close()
-    register_sqlite_functions(dbapi_connection)
+attach_engine_safety_guards(sdb.engine)
 
 sdb.SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=sdb.engine)
 

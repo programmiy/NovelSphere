@@ -7,6 +7,7 @@
     "build": "node build.js",
     "watch": "node build.js --watch",
     "typecheck": "tsc --noEmit",
+    "test": "node --experimental-strip-types --test tests/core.test.ts",
     "rollback": "node -e \"const fs=require('fs'); ['background.js','content.js','manifest.json','remote.js','remote_content.js'].forEach(f => { if(fs.existsSync('legacy_backup/'+f)) fs.copyFileSync('legacy_backup/'+f, f); }); console.log('Successfully rolled back to legacy extension files.');\""
   },
   "devDependencies": {

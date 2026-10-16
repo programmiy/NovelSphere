@@ -12,11 +12,9 @@ client = TestClient(app)
 @pytest.fixture(autouse=True)
 def setup_test_data():
     db = SessionLocal()
-    # Clean up translations
-    db.query(Translation).delete()
-    
-    # Insert test data for the novel
     folder = "누나가 마 니 선생이라고 느그 좋아하면 안되나?"
+    # Clean up translations for test folder
+    db.query(Translation).filter(Translation.folderName == folder).delete()
     test_rows = [
         Translation(
             url="http://example.com/ch1",

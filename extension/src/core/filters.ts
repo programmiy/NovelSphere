@@ -54,19 +54,13 @@ export function isPurePunctuationOnly(text: string): boolean {
 
 export function hasJapaneseText(text: string): boolean {
   if (!text) return false;
-  const cleaned = text
-    .replace(/[\s\d_〇ー―~～\W\u2000-\u206f\u25a0-\u25ff\u2600-\u26ff\u3000-\u303f\uff00-\uff0f\uff1a-\uff20\uff3b-\uff40\uff5b-\uff65]/g, '')
-    .replace(/^[っッ]+$/, '');
-  if (cleaned.length === 0) return false;
+  if (/^[っッ\s]+$/.test(text)) return false;
   return JAPANESE_REGEX.test(text);
 }
 
 export function isSymbolOrPunctOnly(text: string): boolean {
   if (!text) return true;
-  const cleaned = text
-    .replace(/[\s\d_〇ー―~～\W\u2000-\u206f\u25a0-\u25ff\u2600-\u26ff\u3000-\u303f\uff00-\uff0f\uff1a-\uff20\uff3b-\uff40\uff5b-\uff65]/g, '')
-    .replace(/^[っッ]+$/, '');
-  return cleaned.length === 0;
+  return isPurePunctuationOnly(text);
 }
 
 const SIMPLIFIED_CHINESE_CHARS = new Set(
