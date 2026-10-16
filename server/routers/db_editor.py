@@ -740,6 +740,13 @@ async def approve_single(req: ApproveSingleRequest, db: Session = Depends(get_db
     if not record:
         raise HTTPException(status_code=404, detail="해당 문장을 찾을 수 없습니다.")
 
+    from server.services.reviewed_service import reviewed_service
+    if reviewed_service.is_chapter_reviewed(record.url, record.folderName):
+        raise HTTPException(
+            status_code=403,
+            detail=f"검수 완료된 회차({record.url})의 문장은 수정할 수 없습니다. 수정을 원하시면 먼저 검수완료를 해제해주세요."
+        )
+
     try:
         now_ts = int(datetime.now().timestamp())
         record.translated = req.translated
@@ -769,6 +776,17 @@ async def approve_batch(req: ApproveBatchRequest, db: Session = Depends(get_db))
     """
     if not req.items:
         return {"status": "success", "count": 0, "backup_file": None, "backup_created": False}
+
+    from server.services.reviewed_service import reviewed_service
+    item_ids = [it.id for it in req.items]
+    if item_ids:
+        check_sql = text(f"SELECT url, folderName FROM translations WHERE id IN ({','.join(str(i) for i in item_ids)})")
+        for r in db.execute(check_sql).fetchall():
+            if reviewed_service.is_chapter_reviewed(r[0], r[1]):
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"선택한 항목 중 검수 완료된 회차({r[0]})의 문장이 포함되어 있어 일괄 승인할 수 없습니다."
+                )
 
     backup_res = None
     if req.backup:

@@ -19,6 +19,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     const prevPageBtn = document.getElementById('prev-page-btn');
     const nextPageBtn = document.getElementById('next-page-btn');
 
+    // Review Status Element & State
+    const viewerReviewToggleBtn = document.getElementById('viewer-review-toggle-btn');
+    let isCurrentChapterReviewed = false;
+    let chapterUrlsMeta = [];
+
     // Sidebar Elements (TOC)
     const sidebar = document.getElementById('toc-sidebar');
     const closeSidebarBtn = document.getElementById('close-sidebar-btn');
@@ -320,10 +325,14 @@ document.addEventListener('DOMContentLoaded', async () => {
             const activityRes = await fetch(`/api/books/${encodeURIComponent(bookName)}/activity`);
             const activityData = activityRes.ok ? await activityRes.json() : {};
 
-            // 2. Fetch chapter titles
-            const chaptersRes = await fetch(`/api/books/${encodeURIComponent(bookName)}/chapters?_t=${Date.now()}`, { cache: 'no-store' });
+            // 2. Fetch chapter titles and metadata (including review completed status)
+            const [chaptersRes, urlsRes] = await Promise.all([
+                fetch(`/api/books/${encodeURIComponent(bookName)}/chapters?_t=${Date.now()}`, { cache: 'no-store' }),
+                fetch(`/api/books/${encodeURIComponent(bookName)}/urls?_t=${Date.now()}`, { cache: 'no-store' })
+            ]);
             if (!chaptersRes.ok) throw new Error(`챕터 목록 로딩 실패: ${chaptersRes.status}`);
             chapterTitles = await chaptersRes.json();
+            chapterUrlsMeta = urlsRes.ok ? await urlsRes.json() : [];
 
             if (chapterTitles.length === 0) {
                 contentArea.innerHTML = '<p style="text-align: center; padding: 40px;">표시할 챕터가 없습니다.</p>';
@@ -438,9 +447,15 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             currentChapterItems = await contentRes.json();
             if (currentChapterItems.length === 0) {
+                isCurrentChapterReviewed = false;
+                updateReviewBadgeUI();
                 contentArea.innerHTML = '<p style="text-align: center; padding: 40px;">이 챕터에 번역된 내용이 없습니다.</p>';
                 return;
             }
+
+            // 검수완료 상태 주입 및 헤더 뱃지 갱신
+            isCurrentChapterReviewed = Boolean(currentChapterItems[0]?.is_reviewed);
+            updateReviewBadgeUI();
 
             if (prefs.mode === 'scroll') {
                 renderScrollMode(startPid);
@@ -462,8 +477,89 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         } catch (error) {
             console.error(`Error loading chapter '${chapterTitle}':`, error);
+            isCurrentChapterReviewed = false;
+            updateReviewBadgeUI();
             contentArea.innerHTML = `<p style="color: red; text-align: center; padding: 40px;">챕터 로딩 실패: ${escapeHtml(error.message)}</p>`;
         }
+    }
+
+    // --- Review Status (검수완료) UI & Toggle Management ---
+    function updateReviewBadgeUI() {
+        if (!viewerReviewToggleBtn) return;
+        viewerReviewToggleBtn.style.display = 'inline-flex';
+        const iconEl = viewerReviewToggleBtn.querySelector('.review-badge-icon');
+        const textEl = viewerReviewToggleBtn.querySelector('.review-badge-text');
+
+        if (isCurrentChapterReviewed) {
+            viewerReviewToggleBtn.className = 'viewer-review-badge is-reviewed';
+            viewerReviewToggleBtn.title = '검수 완료 (클릭하여 잠금 해제)';
+            if (iconEl) iconEl.textContent = 'check_circle';
+            if (textEl) textEl.textContent = '검수완료';
+        } else {
+            viewerReviewToggleBtn.className = 'viewer-review-badge is-pending';
+            viewerReviewToggleBtn.title = '검수 대기 (클릭하여 검수 완료 지정 및 잠금)';
+            if (iconEl) iconEl.textContent = 'radio_button_unchecked';
+            if (textEl) textEl.textContent = '검수대기';
+        }
+    }
+
+    if (viewerReviewToggleBtn) {
+        viewerReviewToggleBtn.addEventListener('click', async () => {
+            const currentUrl = currentChapterItems[0]?.url || '';
+            if (!currentUrl) {
+                showToast('회차 정보를 찾을 수 없습니다.');
+                return;
+            }
+
+            const willLock = !isCurrentChapterReviewed;
+            const confirmMsg = willLock
+                ? '이 회차를 [검수완료] 처리하시겠습니까?\n검수완료 시 원문 및 번역문 수정이 잠금 처리됩니다.'
+                : '이 회차의 [검수완료]를 해제하시겠습니까?\n해제하면 다시 번역문 수정이 가능해집니다.';
+
+            if (!confirm(confirmMsg)) return;
+
+            try {
+                const resp = await fetch('/api/chapters/review', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        url: currentUrl,
+                        is_reviewed: willLock,
+                        folder_name: bookName || ''
+                    })
+                });
+                if (!resp.ok) throw new Error('회차 검수 상태 변경 실패');
+                const data = await resp.json();
+
+                isCurrentChapterReviewed = willLock;
+                for (const item of currentChapterItems) {
+                    item.is_reviewed = willLock;
+                }
+                updateReviewBadgeUI();
+
+                // 챕터 메타 목록 동기화
+                const cleanCurrent = currentUrl.replace(/\/+$/, '');
+                const metaItem = chapterUrlsMeta.find(m => m.url === currentUrl || (m.url && m.url.replace(/\/+$/, '') === cleanCurrent));
+                if (metaItem) metaItem.is_reviewed = willLock;
+                renderTocList();
+
+                // 뷰어 본문 재렌더링하여 편집 버튼 토글 반영
+                if (prefs.mode === 'scroll') {
+                    renderScrollMode();
+                } else {
+                    renderPage(currentPageInChapter, false);
+                }
+
+                if (data.book_promoted) {
+                    showToast('🎉 모든 회차가 검수 완료되어 소설 전체가 검수완료 상태로 자동 승격되었습니다!', 4000);
+                } else {
+                    showToast(willLock ? '🔒 회차가 검수완료 처리되었습니다 (수정 잠금).' : '🔓 회차 검수완료가 해제되었습니다 (수정 가능).');
+                }
+            } catch (err) {
+                console.error('Review toggle error:', err);
+                alert(`검수 상태 변경 오류: ${err.message}`);
+            }
+        });
     }
 
     // --- Continuous Scroll Mode Rendering ---
@@ -600,8 +696,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         const dialogueClass = isDialogue ? ' is-dialogue' : '';
         let itemHtml = `<div class="translation-item${dialogueClass}" data-id="${item.id}" data-pid="${item.pid}" data-original="${escapeHtml(item.original)}" data-raw-translated="${escapeHtml(item.translated)}">`;
 
-        // Edit trigger button (PC hover)
-        itemHtml += `<button class="paragraph-edit-btn" title="단락 번역문 수정 (PC: 더블클릭 / 모바일: 길게 누르기)"><span class="material-icons" style="font-size: 16px;">edit</span></button>`;
+        // Edit trigger button (PC hover) - 검수완료 시 수정 버튼 미노출
+        if (!isCurrentChapterReviewed) {
+            itemHtml += `<button class="paragraph-edit-btn" title="단락 번역문 수정 (PC: 더블클릭 / 모바일: 길게 누르기)"><span class="material-icons" style="font-size: 16px;">edit</span></button>`;
+        }
 
         if (prefs.showOriginal && hasOriginal) {
             itemHtml += `<p class="original-text">${escapeHtml(item.original)}</p>`;
@@ -723,10 +821,16 @@ document.addEventListener('DOMContentLoaded', async () => {
         chapterTitles.forEach((title, index) => {
             if (q && !title.toLowerCase().includes(q)) return;
 
+            const meta = chapterUrlsMeta[index] || chapterUrlsMeta.find(m => m.title === title);
+            const isChapReviewed = meta ? Boolean(meta.is_reviewed) : false;
+
             const div = document.createElement('div');
             div.className = `toc-item ${index === currentChapterIndex ? 'active' : ''}`;
             div.dataset.index = index;
-            div.textContent = `${index + 1}. ${title || '(제목 없음)'}`;
+            div.innerHTML = `
+                <span class="toc-item-text">${index + 1}. ${escapeHtml(title || '(제목 없음)')}</span>
+                ${isChapReviewed ? '<span class="toc-item-review-pill font-typewriter" title="검수 완료된 회차">✅ 검수완료</span>' : ''}
+            `;
             div.title = title;
 
             div.addEventListener('click', () => {
@@ -1091,6 +1195,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     let toneDebounceTimer = null;
 
     function enableEditing(translationItem) {
+        if (isCurrentChapterReviewed) {
+            showToast('🔒 검수 완료된 회차입니다. 수정을 원하시면 상단 검수완료 뱃지를 눌러 해제해주세요.', 4000);
+            return;
+        }
+
         // Disable other editing items
         document.querySelectorAll('.editing').forEach(item => {
             if (item !== translationItem) disableEditing(item);

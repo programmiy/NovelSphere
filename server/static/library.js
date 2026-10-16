@@ -54,6 +54,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const countReading = document.getElementById('countReading');
     const countUnread = document.getElementById('countUnread');
     const countCompleted = document.getElementById('countCompleted');
+    const countReviewed = document.getElementById('countReviewed');
     const countHidden = document.getElementById('countHidden');
 
     // Task & Action Elements
@@ -69,6 +70,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const tagModalBookName = document.getElementById('tag-editor-book-name');
     const isVisibleToggle = document.getElementById('book-is-visible-toggle');
     const isCompletedToggle = document.getElementById('book-is-completed-toggle');
+    const isReviewedToggle = document.getElementById('book-is-reviewed-toggle');
+    const completedStatusBadge = document.getElementById('completed-status-badge');
+    const reviewedStatusBadge = document.getElementById('reviewed-status-badge');
+    const visibleStatusBadge = document.getElementById('visible-status-badge');
     const tagCheckboxForm = document.getElementById('tag-checkbox-form');
     const newTagForm = document.getElementById('new-tag-form');
     const newTagNameInput = document.getElementById('new-tag-name');
@@ -197,9 +202,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const total = visibleBooks.length;
         const pinned = visibleBooks.filter(b => b.pinned).length;
-        const unread = visibleBooks.filter(b => !b.activity || (!b.activity.last_read_pid && !b.activity.last_read_chapter_title)).length;
         const completed = visibleBooks.filter(b => b.activity && (b.activity.is_completed === 1 || b.activity.is_completed === true)).length;
-        const reading = visibleBooks.filter(b => b.activity && (b.activity.last_read_pid || b.activity.last_read_chapter_title) && !(b.activity.is_completed === 1 || b.activity.is_completed === true)).length;
+        const reading = visibleBooks.filter(b => !(b.activity && (b.activity.is_completed === 1 || b.activity.is_completed === true)) && (b.activity && (b.activity.last_read_pid || b.activity.last_read_chapter_title))).length;
+        const unread = visibleBooks.filter(b => !(b.activity && (b.activity.is_completed === 1 || b.activity.is_completed === true)) && (!b.activity || (!b.activity.last_read_pid && !b.activity.last_read_chapter_title))).length;
+        const reviewed = visibleBooks.filter(b => b.is_reviewed).length;
 
         if (statTotalBooks) statTotalBooks.textContent = total;
         if (statPinnedBooks) statPinnedBooks.textContent = pinned;
@@ -212,6 +218,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (countReading) countReading.textContent = reading;
         if (countUnread) countUnread.textContent = unread;
         if (countCompleted) countCompleted.textContent = completed;
+        if (countReviewed) countReviewed.textContent = reviewed;
         if (countHidden) countHidden.textContent = hiddenCount;
 
         // Dynamic needle deflection with realistic damping physics
@@ -242,18 +249,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const lastReadPid = activity?.last_read_pid || '';
         const hasHistory = Boolean(lastReadTitle || lastReadPid);
 
-        if (!hasHistory) {
-            return {
-                isUnread: true,
-                isCompleted: false,
-                percentage: 0,
-                currentNum: 0,
-                totalChapters: total,
-                displayChapter: '아직 읽지 않음',
-                rawTitle: ''
-            };
-        }
-
+        // 1. 완결 여부 최우선 판정: 열람 이력 유무와 무관하게 완결작이면 100% 진도 및 완결 표기
         if (isCompleted) {
             return {
                 isUnread: false,
@@ -263,6 +259,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 totalChapters: total,
                 displayChapter: lastReadTitle || (total > 0 ? `제 ${total}화 (완결)` : '완결'),
                 rawTitle: lastReadTitle
+            };
+        }
+
+        // 2. 완결이 아니며 독서 이력이 없는 경우 미열람 처리
+        if (!hasHistory) {
+            return {
+                isUnread: true,
+                isCompleted: false,
+                percentage: 0,
+                currentNum: 0,
+                totalChapters: total,
+                displayChapter: '아직 읽지 않음',
+                rawTitle: ''
             };
         }
 
@@ -434,11 +443,13 @@ document.addEventListener('DOMContentLoaded', () => {
             if (activeStatusFilter === 'pinned') {
                 list = list.filter(b => b.pinned);
             } else if (activeStatusFilter === 'reading') {
-                list = list.filter(b => b.activity && (b.activity.last_read_pid || b.activity.last_read_chapter_title) && !(b.activity.is_completed === 1 || b.activity.is_completed === true));
+                list = list.filter(b => !(b.activity && (b.activity.is_completed === 1 || b.activity.is_completed === true)) && (b.activity && (b.activity.last_read_pid || b.activity.last_read_chapter_title)));
             } else if (activeStatusFilter === 'unread') {
-                list = list.filter(b => !b.activity || (!b.activity.last_read_pid && !b.activity.last_read_chapter_title));
+                list = list.filter(b => !(b.activity && (b.activity.is_completed === 1 || b.activity.is_completed === true)) && (!b.activity || (!b.activity.last_read_pid && !b.activity.last_read_chapter_title)));
             } else if (activeStatusFilter === 'completed') {
                 list = list.filter(b => b.activity && (b.activity.is_completed === 1 || b.activity.is_completed === true));
+            } else if (activeStatusFilter === 'reviewed') {
+                list = list.filter(b => b.is_reviewed);
             }
         }
 
@@ -569,6 +580,7 @@ document.addEventListener('DOMContentLoaded', () => {
             <div class="card-top-bar">
                 <div class="badge-group">
                     <span class="status-badge ${badgeClass}">${badgeText}</span>
+                    ${book.is_reviewed ? `<span class="status-badge reviewed font-typewriter" title="원문 및 번역문 수정 잠금 완료">✅ 검수완료</span>` : ''}
                     <span class="chapter-count-badge font-typewriter">VOL.${chapter_count}</span>
                 </div>
                 <button class="pin-btn ${pinned ? 'pinned' : ''}" data-action="pin" data-book-name="${escapeHtml(name)}" title="${pinned ? '즐겨찾기 해제' : '즐겨찾기 추가'}">
@@ -678,6 +690,7 @@ document.addEventListener('DOMContentLoaded', () => {
             <!-- Status Badge -->
             <div class="book-list-status">
                 <span class="status-badge ${badgeClass}">${badgeText}</span>
+                ${book.is_reviewed ? `<span class="status-badge reviewed font-typewriter" style="margin-left: 4px;" title="원문 및 번역문 수정 잠금 완료">✅ 검수완료</span>` : ''}
             </div>
 
             <!-- Total Chapters -->
@@ -938,6 +951,65 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let allModalTags = [];
 
+    // --- Modal Tab & Status Badge Management ---
+    function updateModalStatusBadges() {
+        if (completedStatusBadge && isCompletedToggle) {
+            if (isCompletedToggle.checked) {
+                completedStatusBadge.textContent = '🏆 완결작';
+                completedStatusBadge.className = 'completed-pill status-completed';
+            } else {
+                completedStatusBadge.textContent = '📖 연재중';
+                completedStatusBadge.className = 'completed-pill status-serializing';
+            }
+        }
+        if (visibleStatusBadge && isVisibleToggle) {
+            if (isVisibleToggle.checked) {
+                visibleStatusBadge.textContent = '👁️ 표시중';
+                visibleStatusBadge.className = 'completed-pill status-visible';
+            } else {
+                visibleStatusBadge.textContent = '🔒 숨김 처리';
+                visibleStatusBadge.className = 'completed-pill status-hidden';
+            }
+        }
+        if (reviewedStatusBadge && isReviewedToggle) {
+            if (isReviewedToggle.checked) {
+                reviewedStatusBadge.textContent = '✅ 검수완료';
+                reviewedStatusBadge.className = 'completed-pill status-reviewed';
+            } else {
+                reviewedStatusBadge.textContent = '⏳ 검수대기';
+                reviewedStatusBadge.className = 'completed-pill status-review-pending';
+            }
+        }
+    }
+
+    if (isCompletedToggle) isCompletedToggle.addEventListener('change', updateModalStatusBadges);
+    if (isVisibleToggle) isVisibleToggle.addEventListener('change', updateModalStatusBadges);
+    if (isReviewedToggle) isReviewedToggle.addEventListener('change', updateModalStatusBadges);
+
+    function switchModalTab(tabKey) {
+        const modalTabBtns = document.querySelectorAll('.modal-tab-btn');
+        const modalTabPanes = document.querySelectorAll('.modal-tab-pane');
+        modalTabBtns.forEach(btn => {
+            const isActive = btn.dataset.tab === tabKey;
+            btn.classList.toggle('active', isActive);
+            btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
+        });
+        modalTabPanes.forEach(pane => {
+            const isTarget = pane.id === `modalTab-${tabKey}`;
+            pane.classList.toggle('active', isTarget);
+            pane.style.display = isTarget ? 'block' : 'none';
+        });
+    }
+
+    // Modal tab click delegation
+    document.addEventListener('click', (e) => {
+        const tabBtn = e.target.closest('.modal-tab-btn');
+        if (tabBtn) {
+            e.preventDefault();
+            switchModalTab(tabBtn.dataset.tab);
+        }
+    });
+
     // --- Tag & Info Editor Modal ---
     async function openEditModal(bookName) {
         currentEditingBook = allBooks.find(b => b.name === bookName);
@@ -945,17 +1017,24 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const { name, tags = [], activity = {} } = currentEditingBook;
 
+        switchModalTab('status'); // 항상 1번 탭(상태 & 서재)으로 초기화
         tagModalBookName.textContent = name;
         tagModalSaveBtn.disabled = false;
-        tagModalSaveBtn.textContent = '저장하기';
+        tagModalSaveBtn.innerHTML = '<span class="material-icons" style="font-size: 16px;">check</span> 변경사항 저장';
 
         // 완결 플래그 또는 '완결' 태그 존재 여부 확인
         const hasCompletedTag = (tags || []).some(t => t.name === '완결');
         const isCompletedFlag = activity?.is_completed === 1 || activity?.is_completed === true;
         isCompletedToggle.checked = isCompletedFlag || hasCompletedTag;
 
+        if (isReviewedToggle) {
+            isReviewedToggle.checked = Boolean(currentEditingBook.is_reviewed);
+        }
+
         const isVisibleFlag = currentEditingBook.is_visible !== 0 && activity?.is_visible !== 0;
         if (isVisibleToggle) isVisibleToggle.checked = isVisibleFlag;
+
+        updateModalStatusBadges();
 
         const currentSummary = activity?.summary || activity?.notes || '';
         const currentSourceUrl = activity?.summary_source_url || '';
@@ -985,6 +1064,7 @@ document.addEventListener('DOMContentLoaded', () => {
             initialModalState = {
                 tags: new Set([...tagCheckboxForm.querySelectorAll('input:checked')].map(cb => parseInt(cb.value))),
                 isCompleted: isCompletedToggle.checked,
+                isReviewed: isReviewedToggle ? isReviewedToggle.checked : false,
                 isVisible: isVisibleToggle ? isVisibleToggle.checked : true,
                 summary: currentSummary,
                 sourceUrl: currentSourceUrl,
@@ -1004,7 +1084,7 @@ document.addEventListener('DOMContentLoaded', () => {
         summarySourceUrlInput.value = '';
         if (bookTocSourceUrlInput) bookTocSourceUrlInput.value = '';
         tagModalSaveBtn.disabled = false;
-        tagModalSaveBtn.textContent = '저장하기';
+        tagModalSaveBtn.innerHTML = '<span class="material-icons" style="font-size: 16px;">check</span> 변경사항 저장';
     }
 
     function requestCloseModal() {
@@ -1012,13 +1092,14 @@ document.addEventListener('DOMContentLoaded', () => {
         const summaryChanged = initialModalState.summary !== notesSummaryTextarea.value;
         const sourceUrlChanged = initialModalState.sourceUrl !== summarySourceUrlInput.value;
         const completedChanged = initialModalState.isCompleted !== isCompletedToggle.checked;
+        const reviewedChanged = isReviewedToggle && (initialModalState.isReviewed !== isReviewedToggle.checked);
         const visibleChanged = isVisibleToggle && (initialModalState.isVisible !== isVisibleToggle.checked);
         const tagsChanged = initialModalState.tags && (
             initialModalState.tags.size !== currentTags.size ||
             [...initialModalState.tags].some(id => !currentTags.has(id))
         );
 
-        if (tagsChanged || summaryChanged || sourceUrlChanged || completedChanged || visibleChanged) {
+        if (tagsChanged || summaryChanged || sourceUrlChanged || completedChanged || reviewedChanged || visibleChanged) {
             if (confirm('저장하지 않은 변경사항이 있습니다. 정말로 닫으시겠습니까?')) {
                 closeEditModal();
             }
@@ -1031,17 +1112,21 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!currentEditingBook) return;
 
         const is_completed = isCompletedToggle.checked;
+        const is_reviewed = isReviewedToggle ? isReviewedToggle.checked : false;
+        const reviewedChanged = isReviewedToggle && (initialModalState.isReviewed !== is_reviewed);
         const is_visible = isVisibleToggle ? isVisibleToggle.checked : true;
         const selectedCheckboxes = [...tagCheckboxForm.querySelectorAll('input[type="checkbox"]:checked')];
-        let selectedTagIds = selectedCheckboxes.map(cb => parseInt(cb.value));
+        let selectedTagIds = selectedCheckboxes.map(cb => parseInt(cb.value)).filter(id => !isNaN(id));
 
         // '완결' 태그와 완결 지정 토글 상태 동기화 보장
-        const completedTagObj = allModalTags.find(t => t.name === '완결');
-        if (completedTagObj) {
-            if (is_completed && !selectedTagIds.includes(completedTagObj.id)) {
-                selectedTagIds.push(completedTagObj.id);
-            } else if (!is_completed && selectedTagIds.includes(completedTagObj.id)) {
-                selectedTagIds = selectedTagIds.filter(id => id !== completedTagObj.id);
+        if (Array.isArray(allModalTags) && allModalTags.length > 0) {
+            const completedTagObj = allModalTags.find(t => t.name === '완결');
+            if (completedTagObj) {
+                if (is_completed && !selectedTagIds.includes(completedTagObj.id)) {
+                    selectedTagIds.push(completedTagObj.id);
+                } else if (!is_completed && selectedTagIds.includes(completedTagObj.id)) {
+                    selectedTagIds = selectedTagIds.filter(id => id !== completedTagObj.id);
+                }
             }
         }
 
@@ -1049,30 +1134,41 @@ document.addEventListener('DOMContentLoaded', () => {
         const summary_source_url = summarySourceUrlInput.value;
 
         tagModalSaveBtn.disabled = true;
-        tagModalSaveBtn.textContent = '저장 중...';
+        tagModalSaveBtn.innerHTML = '<span class="material-icons" style="font-size: 16px;">sync</span> 저장 중...';
 
-        const tagsUpdatePromise = fetch(`/api/books/${encodeURIComponent(currentEditingBook.name)}/tags`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ tag_ids: selectedTagIds }),
-        });
-
-        const activityUpdatePromise = fetch(`/api/books/${encodeURIComponent(currentEditingBook.name)}/activity`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                summary,
-                summary_source_url,
-                notes: summary,
-                is_completed: is_completed,
-                is_visible: is_visible
+        const updatePromises = [
+            fetch(`/api/books/${encodeURIComponent(currentEditingBook.name)}/tags`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ tag_ids: selectedTagIds }),
             }),
-        });
+            fetch(`/api/books/${encodeURIComponent(currentEditingBook.name)}/activity`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    summary,
+                    summary_source_url,
+                    notes: summary,
+                    is_completed: is_completed,
+                    is_visible: is_visible
+                }),
+            })
+        ];
+
+        if (reviewedChanged) {
+            updatePromises.push(
+                fetch(`/api/books/${encodeURIComponent(currentEditingBook.name)}/review`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ is_reviewed: is_reviewed }),
+                })
+            );
+        }
 
         try {
-            const responses = await Promise.all([tagsUpdatePromise, activityUpdatePromise]);
+            const responses = await Promise.all(updatePromises);
             for (const res of responses) {
-                if (!res.ok) throw new Error(`서버 오류: ${res.statusText}`);
+                if (!res.ok) throw new Error(`서버 오류 (${res.status}): ${res.statusText}`);
             }
 
             // 1. Optimistic Update: 즉시 메모리 및 UI 갱신 (0ms 반응)
@@ -1082,14 +1178,16 @@ document.addEventListener('DOMContentLoaded', () => {
             currentEditingBook.activity.is_completed = is_completed ? 1 : 0;
             currentEditingBook.activity.is_visible = is_visible ? 1 : 0;
             currentEditingBook.is_visible = is_visible ? 1 : 0;
-            currentEditingBook.activity.is_completed = is_completed ? 1 : 0;
+            currentEditingBook.is_reviewed = is_reviewed;
             currentEditingBook.activity.summary = summary;
             currentEditingBook.activity.notes = summary;
             currentEditingBook.activity.summary_source_url = summary_source_url;
 
             // 태그 목록 즉시 반영
-            const selectedSet = new Set(selectedTagIds);
-            currentEditingBook.tags = allModalTags.filter(t => selectedSet.has(t.id));
+            if (Array.isArray(allModalTags)) {
+                const selectedSet = new Set(selectedTagIds);
+                currentEditingBook.tags = allModalTags.filter(t => selectedSet.has(t.id));
+            }
 
             // allBooks 내 해당 도서 참조 갱신
             const bookIdx = allBooks.findIndex(b => b.name === currentEditingBook.name);
@@ -1102,7 +1200,7 @@ document.addEventListener('DOMContentLoaded', () => {
             renderTagFilters();
             renderBooks();
 
-            showToast(`'${currentEditingBook.name}' 정보가 저장되었습니다.`);
+            showToast(`'${currentEditingBook.name}' 설정이 저장되었습니다.`);
             closeEditModal();
 
             // 2. 서버 최신 상태 백그라운드 동기화
@@ -1110,7 +1208,7 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (error) {
             console.error('책 정보 저장 실패:', error);
             tagModalSaveBtn.disabled = false;
-            tagModalSaveBtn.textContent = '저장하기';
+            tagModalSaveBtn.innerHTML = '<span class="material-icons" style="font-size: 16px;">check</span> 변경사항 저장';
             alert(`책 정보 저장 실패: ${error.message}`);
         }
     }
@@ -1292,12 +1390,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function renderModalUrls(urls, bookName) {
         const total = modalUrls.length;
+        const reviewedCount = modalUrls.filter(u => u.is_reviewed).length;
+        const reviewPct = total > 0 ? Math.round((reviewedCount / total) * 100) : 0;
         if (urlListStats) {
-            if (urls.length === total) {
-                urlListStats.textContent = `[ 총 ${total}화 수록 ]`;
-            } else {
-                urlListStats.textContent = `[ 색인 ${urls.length} / 총 ${total}화 ]`;
-            }
+            const filterLabel = urls.length === total ? `총 ${total}화` : `색인 ${urls.length} / 총 ${total}화`;
+            urlListStats.innerHTML = `[ ${filterLabel} <span class="toc-stat-sep">&bull;</span> <span class="toc-stat-reviewed">✅ 검수 ${reviewedCount}화 (${reviewPct}%)</span> ]`;
         }
 
         if (urls.length === 0) {
@@ -1381,6 +1478,10 @@ document.addEventListener('DOMContentLoaded', () => {
                                     ${showUrlSub ? `<span class="toc-chapter-sub font-typewriter">${highlightedUrl}</span>` : ''}
                                 </div>
                                 <div class="toc-chapter-meta">
+                                    <button type="button" class="toc-review-chip ${item.is_reviewed ? 'is-reviewed' : ''}" data-url="${escapeHtml(item.url)}" title="${item.is_reviewed ? '검수 완료됨 (클릭하여 검수 해제)' : '검수 대기 (클릭하여 검수 완료 지정)'}">
+                                        <span class="material-icons">${item.is_reviewed ? 'check_circle' : 'radio_button_unchecked'}</span>
+                                        <span class="review-label font-typewriter">${item.is_reviewed ? '검수완료' : '검수대기'}</span>
+                                    </button>
                                     <span class="toc-para-badge font-typewriter" title="번역 단락 수">
                                         <span class="material-icons">article</span> ${item.count || 0} 단락
                                     </span>
@@ -1394,6 +1495,64 @@ document.addEventListener('DOMContentLoaded', () => {
                 }).join('')}
             </ul>
         `;
+    }
+
+    // TOC Modal Review Chip click delegation
+    if (urlListBody) {
+        urlListBody.addEventListener('click', async (e) => {
+            const reviewChip = e.target.closest('.toc-review-chip');
+            if (!reviewChip) return;
+            e.preventDefault();
+            e.stopPropagation();
+
+            const url = reviewChip.dataset.url;
+            if (!url || !currentModalBookName) return;
+
+            const targetItem = modalUrls.find(u => u.url === url);
+            if (!targetItem) return;
+
+            const newReviewedState = !targetItem.is_reviewed;
+            reviewChip.disabled = true;
+
+            try {
+                const resp = await fetch('/api/chapters/review', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        url: url,
+                        is_reviewed: newReviewedState,
+                        folder_name: currentModalBookName
+                    })
+                });
+                if (!resp.ok) throw new Error('회차 검수 상태 변경 실패');
+                const data = await resp.json();
+
+                targetItem.is_reviewed = newReviewedState;
+
+                // 도서 전체 검수 승격 여부 처리
+                if (data.book_promoted) {
+                    showToast(`🎉 모든 회차가 검수 완료되어 '${currentModalBookName}' 소설이 검수완료 상태로 자동 승격되었습니다!`, 4000);
+                    if (currentModalBookData) currentModalBookData.is_reviewed = true;
+                    const bookInList = allBooks.find(b => b.name === currentModalBookName);
+                    if (bookInList) bookInList.is_reviewed = true;
+                    updateStatsBar();
+                    renderBooks();
+                } else if (!newReviewedState && currentModalBookData?.is_reviewed) {
+                    currentModalBookData.is_reviewed = false;
+                    const bookInList = allBooks.find(b => b.name === currentModalBookName);
+                    if (bookInList) bookInList.is_reviewed = false;
+                    updateStatsBar();
+                    renderBooks();
+                }
+
+                renderModalUrls(getFilteredAndSortedUrls(), currentModalBookName);
+                showToast(`회차 ${newReviewedState ? '검수 완료 (잠금)' : '검수 해제'} 처리되었습니다.`);
+            } catch (err) {
+                console.error('Chapter review toggle failed:', err);
+                showToast(`검수 상태 변경 실패: ${err.message}`, 3000);
+                reviewChip.disabled = false;
+            }
+        });
     }
 
     if (urlSearchInput) {
@@ -1824,15 +1983,32 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // 9. Modal close handlers
-        if (target === tomeModalCloseBtn || target === tomeModal) {
-            closeTomeModal();
-        } else if (target === tagModalCloseBtn || target === tagModalCancelBtn) {
-            requestCloseModal();
-        } else if (target === tagModalSaveBtn) {
+        // 9. Modal save / close handlers (closest matching for icon/text click resilience)
+        const clickedSaveBtn = target.closest('#tag-editor-save');
+        if (clickedSaveBtn) {
+            e.preventDefault();
+            e.stopPropagation();
             handleSaveModal();
-        } else if (target === urlListCloseBtn || target === urlListCloseBottomBtn || target === urlListModal) {
+            return;
+        }
+
+        const clickedCancelBtn = target.closest('#tag-editor-cancel');
+        const clickedCloseBtn = target.closest('#tag-editor-close');
+        if (clickedCancelBtn || clickedCloseBtn) {
+            e.preventDefault();
+            e.stopPropagation();
+            requestCloseModal();
+            return;
+        }
+
+        if (target.closest('#tomeModalCloseBtn') || target === tomeModal) {
+            closeTomeModal();
+            return;
+        }
+
+        if (target.closest('#url-list-close') || target.closest('#url-list-close-bottom') || target === urlListModal) {
             closeUrlListModal();
+            return;
         }
     });
 
@@ -1894,13 +2070,20 @@ document.addEventListener('DOMContentLoaded', () => {
     if (fetchMissingTitlesBtn) fetchMissingTitlesBtn.addEventListener('click', handleFetchMissingTitles);
     if (downloadAllBtn) downloadAllBtn.addEventListener('click', handleDownloadAllOffline);
 
-    // Completion Toggle & '#완결' Tag Auto-Sync
+    // Completion & Visibility Toggle Real-Time Sync & Status Badge Updates
     if (isCompletedToggle) {
         isCompletedToggle.addEventListener('change', () => {
+            updateModalStatusBadges();
             const completedCb = tagCheckboxForm.querySelector('input[data-tag-name="완결"]');
             if (completedCb) {
                 completedCb.checked = isCompletedToggle.checked;
             }
+        });
+    }
+
+    if (isVisibleToggle) {
+        isVisibleToggle.addEventListener('change', () => {
+            updateModalStatusBadges();
         });
     }
 
@@ -1909,8 +2092,32 @@ document.addEventListener('DOMContentLoaded', () => {
             if (e.target && e.target.dataset && e.target.dataset.tagName === '완결') {
                 if (isCompletedToggle) {
                     isCompletedToggle.checked = e.target.checked;
+                    updateModalStatusBadges();
                 }
             }
+        });
+    }
+
+    // Modal Action Buttons Direct Click Listeners
+    if (tagModalSaveBtn) {
+        tagModalSaveBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            handleSaveModal();
+        });
+    }
+    if (tagModalCancelBtn) {
+        tagModalCancelBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            requestCloseModal();
+        });
+    }
+    if (tagModalCloseBtn) {
+        tagModalCloseBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            requestCloseModal();
         });
     }
 

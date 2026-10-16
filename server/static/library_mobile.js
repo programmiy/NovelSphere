@@ -163,18 +163,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const lastReadPid = activity?.last_read_pid || '';
         const hasHistory = Boolean(lastReadTitle || lastReadPid);
 
-        if (!hasHistory) {
-            return {
-                isUnread: true,
-                isCompleted: false,
-                percentage: 0,
-                currentNum: 0,
-                totalChapters: total,
-                displayChapter: '미열람',
-                rawTitle: ''
-            };
-        }
-
+        // 1. 완결 여부 최우선 판정: 열람 이력 유무와 무관하게 완결작이면 100% 진도 및 완결 표기
         if (isCompleted) {
             return {
                 isUnread: false,
@@ -184,6 +173,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 totalChapters: total,
                 displayChapter: lastReadTitle || (total > 0 ? `제 ${total}화 (완결)` : '완결'),
                 rawTitle: lastReadTitle
+            };
+        }
+
+        // 2. 완결이 아니며 독서 이력이 없는 경우 미열람 처리
+        if (!hasHistory) {
+            return {
+                isUnread: true,
+                isCompleted: false,
+                percentage: 0,
+                currentNum: 0,
+                totalChapters: total,
+                displayChapter: '미열람',
+                rawTitle: ''
             };
         }
 
@@ -273,9 +275,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const total = visibleBooks.length;
         const pinned = visibleBooks.filter(b => b.pinned).length;
-        const unread = visibleBooks.filter(b => !b.activity || (!b.activity.last_read_pid && !b.activity.last_read_chapter_title)).length;
         const completed = visibleBooks.filter(b => b.activity && (b.activity.is_completed === 1 || b.activity.is_completed === true)).length;
-        const reading = visibleBooks.filter(b => b.activity && (b.activity.last_read_pid || b.activity.last_read_chapter_title) && !(b.activity.is_completed === 1 || b.activity.is_completed === true)).length;
+        const reading = visibleBooks.filter(b => !(b.activity && (b.activity.is_completed === 1 || b.activity.is_completed === true)) && (b.activity && (b.activity.last_read_pid || b.activity.last_read_chapter_title))).length;
+        const unread = visibleBooks.filter(b => !(b.activity && (b.activity.is_completed === 1 || b.activity.is_completed === true)) && (!b.activity || (!b.activity.last_read_pid && !b.activity.last_read_chapter_title))).length;
 
         if (statTotalBooks) statTotalBooks.textContent = total;
         if (statPinnedBooks) statPinnedBooks.textContent = pinned;
@@ -319,9 +321,9 @@ document.addEventListener('DOMContentLoaded', () => {
             if (activeStatusFilter === 'pinned') {
                 list = list.filter(b => b.pinned);
             } else if (activeStatusFilter === 'reading') {
-                list = list.filter(b => b.activity && (b.activity.last_read_pid || b.activity.last_read_chapter_title) && !(b.activity.is_completed === 1 || b.activity.is_completed === true));
+                list = list.filter(b => !(b.activity && (b.activity.is_completed === 1 || b.activity.is_completed === true)) && (b.activity && (b.activity.last_read_pid || b.activity.last_read_chapter_title)));
             } else if (activeStatusFilter === 'unread') {
-                list = list.filter(b => !b.activity || (!b.activity.last_read_pid && !b.activity.last_read_chapter_title));
+                list = list.filter(b => !(b.activity && (b.activity.is_completed === 1 || b.activity.is_completed === true)) && (!b.activity || (!b.activity.last_read_pid && !b.activity.last_read_chapter_title)));
             } else if (activeStatusFilter === 'completed') {
                 list = list.filter(b => b.activity && (b.activity.is_completed === 1 || b.activity.is_completed === true));
             }
@@ -651,12 +653,44 @@ document.addEventListener('DOMContentLoaded', () => {
     if (tagModalCloseBtn) tagModalCloseBtn.addEventListener('click', closeEditModal);
     if (tagModalCancelBtn) tagModalCancelBtn.addEventListener('click', closeEditModal);
 
+    // Completion Toggle & '#완결' Tag Sync
+    if (isCompletedToggle) {
+        isCompletedToggle.addEventListener('change', () => {
+            const completedCb = tagCheckboxForm.querySelector('input[data-tag-name="완결"]');
+            if (completedCb) {
+                completedCb.checked = isCompletedToggle.checked;
+            }
+        });
+    }
+
+    if (tagCheckboxForm) {
+        tagCheckboxForm.addEventListener('change', (e) => {
+            if (e.target && e.target.dataset && e.target.dataset.tagName === '완결') {
+                if (isCompletedToggle) {
+                    isCompletedToggle.checked = e.target.checked;
+                }
+            }
+        });
+    }
+
     async function handleSaveModal() {
         if (!currentEditingBook) return;
 
         const is_completed = isCompletedToggle.checked;
         const is_visible = isVisibleToggle ? isVisibleToggle.checked : true;
-        const selectedTagIds = [...tagCheckboxForm.querySelectorAll('input:checked')].map(cb => parseInt(cb.value));
+        const selectedCheckboxes = [...tagCheckboxForm.querySelectorAll('input[type="checkbox"]:checked')];
+        let selectedTagIds = selectedCheckboxes.map(cb => parseInt(cb.value));
+
+        // '완결' 태그와 완결 지정 토글 상태 동기화 보장
+        const completedTagObj = allModalTags.find(t => t.name === '완결');
+        if (completedTagObj) {
+            if (is_completed && !selectedTagIds.includes(completedTagObj.id)) {
+                selectedTagIds.push(completedTagObj.id);
+            } else if (!is_completed && selectedTagIds.includes(completedTagObj.id)) {
+                selectedTagIds = selectedTagIds.filter(id => id !== completedTagObj.id);
+            }
+        }
+
         const summary = notesSummaryTextarea.value;
 
         tagModalSaveBtn.disabled = true;

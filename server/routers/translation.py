@@ -763,17 +763,46 @@ def find_replace_all(req: FindReplaceRequest, db: Session = Depends(get_db)):
     }
 
     # 특정 ID 목록 타겟팅 (하단 일괄 작업 선택 항목 지원)
+    from server.services.reviewed_service import reviewed_service
     if req.target_ids:
         safe_ids = [int(i) for i in req.target_ids]
         if safe_ids:
+            # 타겟 ID 중 검수완료 항목 검사
+            id_check_sql = text(f"SELECT url, folderName FROM translations WHERE id IN ({','.join(str(i) for i in safe_ids)})")
+            id_rows = db.execute(id_check_sql).fetchall()
+            for r in id_rows:
+                if reviewed_service.is_chapter_reviewed(r[0], r[1]):
+                    raise HTTPException(
+                        status_code=403,
+                        detail=f"선택한 항목 중 검수 완료된 회차({r[0]})의 번역문이 포함되어 있어 일괄 치환을 수행할 수 없습니다."
+                    )
             where_clauses.append(f"id IN ({','.join(str(i) for i in safe_ids)})")
         else:
             return {"message": "0개의 항목에서 내용을 교체했습니다."}
 
     # 폴더 범위 필터링 (인덱스를 탈 수 있도록 앞부분에 배치)
     if req.folder_scope and req.folder_scope != "__all__":
+        if reviewed_service.is_book_reviewed(req.folder_scope):
+            raise HTTPException(
+                status_code=403,
+                detail=f"'{req.folder_scope}' 소설은 검수 완료(잠금)되어 있어 일괄 치환을 수행할 수 없습니다. 수정을 원하시면 먼저 검수완료를 해제해주세요."
+            )
         where_clauses.append("folderName = :folder_scope")
         params["folder_scope"] = req.folder_scope
+    elif not req.target_ids:
+        # 전체 범위 치환 시 검수완료된 도서 및 회차는 자동 보호 (치환 대상에서 완벽 제외)
+        reviewed_books = reviewed_service.get_reviewed_books()
+        reviewed_chapters = reviewed_service.get_reviewed_chapters()
+        if reviewed_books:
+            book_phs = [f":rb_{i}" for i in range(len(reviewed_books))]
+            where_clauses.append(f"(folderName IS NULL OR folderName NOT IN ({','.join(book_phs)}))")
+            for i, b in enumerate(reviewed_books):
+                params[f"rb_{i}"] = b
+        if reviewed_chapters:
+            chap_phs = [f":rc_{i}" for i in range(len(reviewed_chapters))]
+            where_clauses.append(f"(url IS NULL OR url NOT IN ({','.join(chap_phs)}))")
+            for i, c in enumerate(reviewed_chapters):
+                params[f"rc_{i}"] = c
 
     # 원문 조건 필터링
     if req.condition_text:

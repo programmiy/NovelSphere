@@ -48,6 +48,14 @@ class BookActivityUpdate(BaseModel):
 class BookVisibilityUpdate(BaseModel):
     is_visible: bool
 
+class BookReviewUpdate(BaseModel):
+    is_reviewed: bool
+
+class ChapterReviewUpdate(BaseModel):
+    url: str
+    is_reviewed: bool
+    folder_name: Optional[str] = None
+
 class TocUrlItem(BaseModel):
     title: str
     url: str
@@ -59,6 +67,7 @@ class CheckUrlsRequest(BaseModel):
     urls: List[str]
 
 from server.services.book_service import get_all_folders, update_book_toc_order
+from server.services.reviewed_service import reviewed_service
 
 # Endpoints
 @router.put(
@@ -222,6 +231,10 @@ def get_book_urls(folder_name: str):
     urls = cursor.fetchall()
     conn.close()
 
+    # 각 회차의 검수완료(잠금) 여부 주입
+    for u in urls:
+        u['is_reviewed'] = reviewed_service.is_chapter_reviewed(u.get('url'), decoded_folder_name)
+
     # 자연 정렬: toc_sort_order 우선, 없으면 min_id 우선, 그 다음 URL 및 제목 자연 정렬 (001 -> 002 -> 010 -> 100)
     urls.sort(key=lambda x: (
         x.get('toc_sort_order') is None,
@@ -339,6 +352,10 @@ def get_chapter_content(folder_name: str, title: str, url: Optional[str] = None)
     cursor.execute(query, tuple(params))
     content = cursor.fetchall()
     conn.close()
+
+    # 단락 항목들에 해당 회차의 검수완료 여부 주입
+    for item in content:
+        item['is_reviewed'] = reviewed_service.is_chapter_reviewed(item.get('url'), decoded_folder_name)
 
     headers = {
         "Cache-Control": "no-cache, no-store, must-revalidate",
@@ -664,3 +681,63 @@ def check_translated_urls(req: CheckUrlsRequest):
 
     conn.close()
     return {"translated_urls": list(translated_urls)}
+
+
+@router.put(
+    "/api/books/{folder_name}/review",
+    tags=["Books"],
+    summary="도서 전체 검수완료 상태 토글",
+    description="지정된 도서(폴더) 전체의 검수완료(수정 잠금) 상태를 변경하고 모든 회차를 동기화합니다."
+)
+def update_book_review_status(folder_name: str, req: BookReviewUpdate):
+    decoded_folder_name = unquote(folder_name)
+
+    # 안전하게 읽기 전용으로 해당 도서의 모든 회차 URL 목록 수집 (DB 구조 변경 절대 없음)
+    conn = get_sqlite_conn(as_dict=True)
+    cursor = conn.cursor()
+    try:
+        folder_clause = "folderName IS NULL" if decoded_folder_name == "미분류" else "folderName = ?"
+        params = [] if decoded_folder_name == "미분류" else [decoded_folder_name]
+        cursor.execute(f"SELECT DISTINCT url FROM translations WHERE {folder_clause} AND url IS NOT NULL", tuple(params))
+        chapter_urls = [row['url'] for row in cursor.fetchall() if row.get('url')]
+    finally:
+        conn.close()
+
+    reviewed_service.set_book_reviewed(decoded_folder_name, req.is_reviewed, chapter_urls)
+    return {
+        "success": True,
+        "folder_name": decoded_folder_name,
+        "is_reviewed": req.is_reviewed,
+        "chapter_count": len(chapter_urls),
+        "message": f"'{decoded_folder_name}' 검수 상태가 {'검수완료' if req.is_reviewed else '검수대기'}(으)로 변경되었습니다."
+    }
+
+
+@router.put(
+    "/api/chapters/review",
+    tags=["Books"],
+    summary="개별 회차 검수완료 상태 토글",
+    description="지정된 회차 URL의 검수완료(수정 잠금) 상태를 변경합니다. 모든 회차 완료 시 도서도 자동 검수완료됩니다."
+)
+def update_chapter_review_status(req: ChapterReviewUpdate):
+    all_book_urls = None
+    decoded_folder_name = unquote(req.folder_name) if req.folder_name else None
+
+    if decoded_folder_name:
+        conn = get_sqlite_conn(as_dict=True)
+        cursor = conn.cursor()
+        try:
+            folder_clause = "folderName IS NULL" if decoded_folder_name == "미분류" else "folderName = ?"
+            params = [] if decoded_folder_name == "미분류" else [decoded_folder_name]
+            cursor.execute(f"SELECT DISTINCT url FROM translations WHERE {folder_clause} AND url IS NOT NULL", tuple(params))
+            all_book_urls = [row['url'] for row in cursor.fetchall() if row.get('url')]
+        finally:
+            conn.close()
+
+    res = reviewed_service.set_chapter_reviewed(
+        url=req.url,
+        is_reviewed=req.is_reviewed,
+        folder_name=decoded_folder_name,
+        all_book_urls=all_book_urls
+    )
+    return res

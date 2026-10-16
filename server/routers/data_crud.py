@@ -192,6 +192,19 @@ def upsert_translations(items: List[TranslationItem], db: Session = Depends(get_
     existing_translations = db.query(Translation).filter(Translation.url.in_(urls_in_batch)).all()
     existing_map = {(t.url, t.pid): t for t in existing_translations}
 
+    # 검수완료된 회차/도서의 수정/삽입 차단 가드
+    from server.services.reviewed_service import reviewed_service
+    for item in items:
+        if item.url:
+            folder = item.folderName
+            if not folder and (item.url, item.pid) in existing_map:
+                folder = existing_map[(item.url, item.pid)].folderName
+            if reviewed_service.is_chapter_reviewed(item.url, folder):
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"검수 완료된 회차({item.url})는 원문 및 번역문을 수정할 수 없습니다. 수정을 원하시면 먼저 검수완료를 해제해주세요."
+                )
+
     # URL별 기존 제목 맵 및 이번 배치에서 새로 적용할 최신 제목 맵 구성
     url_to_title = {}
     for t in existing_translations:
@@ -359,6 +372,19 @@ def delete_translations(req: DeleteRequest):
     cursor = conn.cursor()
     deleted_count = 0
     try:
+        from server.services.reviewed_service import reviewed_service
+        # 검수완료된 회차/도서 항목 삭제 차단 가드
+        for i in range(0, len(req.ids), CHUNK_SIZE):
+            chunk = req.ids[i:i + CHUNK_SIZE]
+            placeholders = ', '.join('?' * len(chunk))
+            cursor.execute(f"SELECT url, folderName FROM translations WHERE id IN ({placeholders})", chunk)
+            for row in cursor.fetchall():
+                if reviewed_service.is_chapter_reviewed(row[0], row[1]):
+                    raise HTTPException(
+                        status_code=403,
+                        detail=f"검수 완료된 회차({row[0]})의 번역문은 삭제할 수 없습니다. 삭제를 원하시면 먼저 검수완료를 해제해주세요."
+                    )
+
         for i in range(0, len(req.ids), CHUNK_SIZE):
             chunk = req.ids[i:i + CHUNK_SIZE]
             placeholders = ', '.join('?' * len(chunk))

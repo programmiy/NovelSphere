@@ -11,7 +11,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;900&family=Special+Elite&family=Courier+Prime:ital,wght@0,400;0,700;1,400&family=Gowun+Batang:wght@400;700&family=Noto+Serif+KR:wght@400;600;700&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
-    <link rel="stylesheet" href="/static/library.css?v=3.6">
+    <link rel="stylesheet" href="/static/library.css?v=3.8">
 </head>
 <body>
     <div class="library-container">
@@ -256,6 +256,9 @@
                 <button class="status-tab-btn" data-status="completed">
                     🏆 완결작 (<span id="countCompleted">0</span>)
                 </button>
+                <button class="status-tab-btn" data-status="reviewed">
+                    ✅ 검수완료 (<span id="countReviewed">0</span>)
+                </button>
                 <button class="status-tab-btn" data-status="hidden" id="tabHiddenBooks" title="서재에서 숨겨진 소설 목록">
                     👁️ 숨김 (<span id="countHidden">0</span>)
                 </button>
@@ -273,96 +276,153 @@
         </main>
     </div>
 
-    <!-- 책 정보 및 태그 편집 모달 -->
+    <!-- 책 정보 및 태그 편집 모달 (차분기관 정밀 서지 대장) -->
     <div id="tag-editor-modal" class="modal-overlay" style="display: none;">
-        <div class="modal-content">
+        <div class="modal-content tag-modal-content">
             <header class="modal-header">
                 <div class="modal-title-wrap">
-                    <span class="material-icons title-icon">edit_note</span>
-                    <h2 id="tag-editor-title">책 정보 & 태그 설정</h2>
+                    <span class="material-icons title-icon">tune</span>
+                    <h2 id="tag-editor-title">작품 설정 & 정보 관리</h2>
                 </div>
-                <button id="tag-editor-close" class="modal-close-btn">&times;</button>
+                <button id="tag-editor-close" class="modal-close-btn" title="닫기 (ESC)">&times;</button>
             </header>
 
-            <div class="modal-body">
-                <div class="meta-preview-box">
-                    <span class="meta-label">대상 소설:</span>
-                    <span id="tag-editor-book-name" class="meta-book-name"></span>
+            <!-- 대상 소설 이름 배너 -->
+            <div class="meta-preview-box">
+                <span class="meta-label"><span class="material-icons meta-icon">menu_book</span> 대상 작품:</span>
+                <span id="tag-editor-book-name" class="meta-book-name"></span>
+            </div>
+
+            <!-- 스팀펑크 놋쇠 탭 내비게이션 바 -->
+            <div class="modal-tab-bar" role="tablist">
+                <button type="button" class="modal-tab-btn active" data-tab="status" role="tab" aria-selected="true">
+                    <span class="material-icons">toggle_on</span> 상태 & 서재
+                </button>
+                <button type="button" class="modal-tab-btn" data-tab="tags" role="tab" aria-selected="false">
+                    <span class="material-icons">label</span> 분류 태그
+                </button>
+                <button type="button" class="modal-tab-btn" data-tab="synopsis" role="tab" aria-selected="false">
+                    <span class="material-icons">description</span> 줄거리 & 소개
+                </button>
+                <button type="button" class="modal-tab-btn" data-tab="toc" role="tab" aria-selected="false">
+                    <span class="material-icons">alt_route</span> 목차 동기화
+                </button>
+            </div>
+
+            <div class="modal-body custom-brass-scrollbar">
+                <!-- 탭 1: 상태 & 서재 표시 설정 -->
+                <div class="modal-tab-pane active" id="modalTab-status" role="tabpanel">
+                    <!-- 완결 여부 토글 -->
+                    <div class="setting-toggle-row highlight-box">
+                        <div class="toggle-info">
+                            <div class="toggle-title-wrap">
+                                <label for="book-is-completed-toggle" class="toggle-title">완결 작품 지정</label>
+                                <span id="completed-status-badge" class="completed-pill status-serializing">연재중</span>
+                            </div>
+                            <span class="toggle-desc">완결된 소설로 지정하면 서재에 황금 완결 뱃지가 부여되며, 진도율 100% 및 완결작 필터로 분류됩니다.</span>
+                        </div>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="book-is-completed-toggle">
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+
+                    <!-- 검수 완료 (수정 잠금) 토글 -->
+                    <div class="setting-toggle-row highlight-box reviewed-setting-box">
+                        <div class="toggle-info">
+                            <div class="toggle-title-wrap">
+                                <label for="book-is-reviewed-toggle" class="toggle-title">검수 완료 지정 (수정 잠금)</label>
+                                <span id="reviewed-status-badge" class="completed-pill status-review-pending">⏳ 검수대기</span>
+                            </div>
+                            <span class="toggle-desc">검수를 완료하면 원문 및 번역문 수정/삭제가 절대적으로 잠금 처리되며, 초록색 검수완료 뱃지(✅ 검수완료)가 부여됩니다. (언제든 다시 해제할 수 있습니다.)</span>
+                        </div>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="book-is-reviewed-toggle">
+                            <span class="slider slider-green"></span>
+                        </label>
+                    </div>
+
+                    <!-- 서재 표시 / 숨김 토글 -->
+                    <div class="setting-toggle-row">
+                        <div class="toggle-info">
+                            <div class="toggle-title-wrap">
+                                <label for="book-is-visible-toggle" class="toggle-title">서재에 표시</label>
+                                <span id="visible-status-badge" class="completed-pill status-visible">표시중</span>
+                            </div>
+                            <span class="toggle-desc">비활성화하면 서재 메인 화면에서 이 소설이 숨겨집니다. (숨김 필터에서 언제든 다시 표시할 수 있습니다.)</span>
+                        </div>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="book-is-visible-toggle" checked>
+                            <span class="slider"></span>
+                        </label>
+                    </div>
                 </div>
 
-                <!-- 서재 표시 / 숨김 토글 -->
-                <div class="setting-toggle-row">
-                    <div class="toggle-info">
-                        <label for="book-is-visible-toggle" class="toggle-title">서재에 표시</label>
-                        <span class="toggle-desc">비활성화하면 서재 메인 화면에서 이 소설이 숨겨집니다. (테스트용/완독 소설 정리 등)</span>
-                    </div>
-                    <label class="toggle-switch">
-                        <input type="checkbox" id="book-is-visible-toggle" checked>
-                        <span class="slider"></span>
-                    </label>
-                </div>
-
-                <!-- 완결 여부 토글 (Phase 2 스포일러 방지 사전용) -->
-                <div class="setting-toggle-row">
-                    <div class="toggle-info">
-                        <label for="book-is-completed-toggle" class="toggle-title">완결 작품 지정</label>
-                        <span class="toggle-desc">완결된 소설로 지정하면 서재에 완결 뱃지가 부여되며, 향후 스포일러 방지 사전 엔진의 분석 대상이 됩니다.</span>
-                    </div>
-                    <label class="toggle-switch">
-                        <input type="checkbox" id="book-is-completed-toggle">
-                        <span class="slider"></span>
-                    </label>
-                </div>
-
-                <div class="form-section">
-                    <div class="section-header">
-                        <label class="section-title">분류 태그</label>
-                        <span class="section-hint">선택하여 책을 분류하세요.</span>
-                    </div>
-                    <div id="tag-checkbox-form" class="tag-chips-picker">
-                        <!-- 태그 칩 체크박스 목록 -->
-                    </div>
-                    <form id="new-tag-form" class="new-tag-form">
-                        <input type="text" id="new-tag-name" placeholder="새 태그 이름 입력..." class="form-input" required>
-                        <button type="submit" class="btn btn-primary btn-sm">태그 추가</button>
-                    </form>
-                </div>
-
-                <div class="form-section">
-                    <div class="section-header">
-                        <label class="section-title">줄거리 요약 / 개인 메모</label>
-                    </div>
-                    <textarea id="book-notes-summary" rows="4" placeholder="작품의 시놉시스, 등장인물 특징, 개인적인 감상 메모를 자유롭게 입력하세요." class="form-textarea"></textarea>
-                </div>
-
-                <div class="form-section">
-                    <div class="section-header">
-                        <label class="section-title">소설 소개 출처 URL</label>
-                        <span class="section-hint">소설 공식 소개 페이지에서 줄거리를 크롤링해 올 수 있습니다.</span>
-                    </div>
-                    <div class="input-with-button">
-                        <input type="text" id="book-summary-source-url" placeholder="https://kakuyomu.jp/works/... 또는 syosetu.com/... 또는 novelup.plus/story/..." class="form-input">
-                        <button type="button" id="crawl-summary-btn" class="btn btn-outline">소개 가져오기</button>
+                <!-- 탭 2: 분류 태그 -->
+                <div class="modal-tab-pane" id="modalTab-tags" role="tabpanel" style="display: none;">
+                    <div class="form-section">
+                        <div class="section-header">
+                            <label class="section-title">소설 분류 태그</label>
+                            <span class="section-hint">작품에 부착할 태그를 선택하여 서재에서 빠르게 필터링하세요.</span>
+                        </div>
+                        <div id="tag-checkbox-form" class="tag-chips-picker">
+                            <!-- 태그 칩 체크박스 목록 -->
+                        </div>
+                        <form id="new-tag-form" class="new-tag-form">
+                            <input type="text" id="new-tag-name" placeholder="새 태그 이름 입력..." class="form-input" required>
+                            <button type="submit" class="btn btn-primary btn-sm">
+                                <span class="material-icons" style="font-size: 15px;">add</span> 태그 추가
+                            </button>
+                        </form>
                     </div>
                 </div>
 
-                <div class="form-section">
-                    <div class="section-header">
-                        <label class="section-title">소설 원본 목차(TOC) 동기화 URL</label>
-                        <span class="section-hint">소설 공식 목차 페이지 URL을 입력하여 회차 번호와 정렬 순서를 원본과 동기화합니다.</span>
+                <!-- 탭 3: 줄거리 & 소개 -->
+                <div class="modal-tab-pane" id="modalTab-synopsis" role="tabpanel" style="display: none;">
+                    <div class="form-section">
+                        <div class="section-header">
+                            <label class="section-title">소설 공식 소개 URL</label>
+                            <span class="section-hint">소설 공식 소개 페이지에서 줄거리를 크롤링해 옵니다.</span>
+                        </div>
+                        <div class="input-with-button">
+                            <input type="text" id="book-summary-source-url" placeholder="https://kakuyomu.jp/works/... 또는 syosetu.com/..." class="form-input">
+                            <button type="button" id="crawl-summary-btn" class="btn btn-outline">
+                                <span class="material-icons" style="font-size: 16px;">download</span> 소개 가져오기
+                            </button>
+                        </div>
                     </div>
-                    <div class="input-with-button">
-                        <input type="text" id="book-toc-source-url" placeholder="https://kakuyomu.jp/works/... 또는 syosetu.com/... 또는 novelup.plus/story/..." class="form-input">
-                        <button type="button" id="sync-toc-editor-btn" class="btn btn-outline">
-                            <span class="material-icons" style="font-size:16px; vertical-align:middle;">alt_route</span> TOC 목차 동기화
-                        </button>
+
+                    <div class="form-section" style="margin-top: 18px;">
+                        <div class="section-header">
+                            <label class="section-title">줄거리 요약 / 개인 메모</label>
+                            <span class="section-hint">작품의 시놉시스, 주요 설정, 등장인물 특징 또는 개인 감상을 자유롭게 작성하세요.</span>
+                        </div>
+                        <textarea id="book-notes-summary" rows="5" placeholder="작품 시놉시스 및 개인 메모를 자유롭게 입력하세요." class="form-textarea"></textarea>
+                    </div>
+                </div>
+
+                <!-- 탭 4: 원본 목차(TOC) 동기화 -->
+                <div class="modal-tab-pane" id="modalTab-toc" role="tabpanel" style="display: none;">
+                    <div class="form-section">
+                        <div class="section-header">
+                            <label class="section-title">소설 원본 목차(TOC) 동기화 URL</label>
+                            <span class="section-hint">소설 공식 목차 페이지 URL을 입력하여 회차 번호와 정렬 순서를 원본과 동기화합니다.</span>
+                        </div>
+                        <div class="input-with-button">
+                            <input type="text" id="book-toc-source-url" placeholder="https://kakuyomu.jp/works/... 또는 syosetu.com/..." class="form-input">
+                            <button type="button" id="sync-toc-editor-btn" class="btn btn-outline">
+                                <span class="material-icons" style="font-size:16px;">alt_route</span> TOC 목차 동기화
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
 
             <footer class="modal-footer">
-                <button id="tag-editor-cancel" class="btn btn-outline">취소</button>
-                <button id="tag-editor-save" class="btn btn-primary">변경사항 저장</button>
+                <button type="button" id="tag-editor-cancel" class="btn btn-outline">취소</button>
+                <button type="button" id="tag-editor-save" class="btn btn-primary">
+                    <span class="material-icons" style="font-size: 16px;">check</span> 변경사항 저장
+                </button>
             </footer>
         </div>
     </div>
@@ -498,7 +558,7 @@
     </div>
 
     <script src="/static/steampunk-sound.js?v=2.0"></script>
-    <script type="module" src="/static/library.js?v=3.5"></script>
+    <script type="module" src="/static/library.js?v=3.8"></script>
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
