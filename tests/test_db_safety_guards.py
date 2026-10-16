@@ -19,7 +19,8 @@ def test_drop_table_blocked_on_protected_tables():
     """핵심 테이블에 대한 DROP TABLE 명령이 SQLite Authorizer에 의해 원천 거부되는지 검증."""
     conn = sqlite3.connect(":memory:")
     # 모든 보호 대상 테이블 생성
-    for tbl in ("translations", "applied_urls", "glossary", "trash_translations"):
+    test_tables = ("translations", "applied_urls", "glossary", "translation_trash", "trash_translations", "book_activity", "ai_review_queue")
+    for tbl in test_tables:
         conn.execute(f"CREATE TABLE {tbl} (id INT, text TEXT)")
     conn.execute("CREATE TABLE temp_scratch (id INT)")
 
@@ -29,7 +30,7 @@ def test_drop_table_blocked_on_protected_tables():
     conn.execute("DROP TABLE temp_scratch")
 
     # 보호 대상 테이블 드롭 시도 시 반드시 'not authorized' 예외 발생해야 함
-    for tbl in ("translations", "applied_urls", "glossary", "trash_translations"):
+    for tbl in test_tables:
         with pytest.raises(sqlite3.DatabaseError) as exc_info:
             conn.execute(f"DROP TABLE {tbl}")
         assert "not authorized" in str(exc_info.value).lower()

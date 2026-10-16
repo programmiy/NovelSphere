@@ -495,7 +495,10 @@ def pull_changes_from_pc(since: int = 0, last_id: int = 0, limit: int = 10000):
     book_tags = defaultdict(list)
 
     if last_id == 0:
-        cursor.execute("SELECT * FROM book_activity WHERE last_read_timestamp > ? OR 1=1", (since,))
+        if since == 0:
+            cursor.execute("SELECT * FROM book_activity")
+        else:
+            cursor.execute("SELECT * FROM book_activity WHERE last_read_timestamp > ?", (since,))
         activities = cursor.fetchall()
 
         cursor.execute("SELECT folderName FROM pinned_books")
@@ -555,9 +558,27 @@ async def push_changes_to_pc(request: Request, db: Session = Depends(get_db)):
     updated_act_count = 0
 
     try:
-        # 1. 모바일에서 편집한 번역문 Upsert
+        # 1. 모바일에서 편집한 번역문 Upsert (검수완료 챕터 보호)
+        from server.services.reviewed_service import reviewed_service
         if payload.modified_translations:
             for item in payload.modified_translations:
+                chk_url = item.url
+                chk_folder = item.folderName
+                if not chk_url and item.id:
+                    cursor.execute("SELECT url, folderName FROM translations WHERE id = ?", (item.id,))
+                    row = cursor.fetchone()
+                    if row:
+                        chk_url, chk_folder = row['url'] if isinstance(row, dict) else row[0], row['folderName'] if isinstance(row, dict) else row[1]
+                elif chk_url and not chk_folder:
+                    cursor.execute("SELECT folderName FROM translations WHERE url = ? LIMIT 1", (chk_url,))
+                    row = cursor.fetchone()
+                    if row:
+                        chk_folder = row['folderName'] if isinstance(row, dict) else row[0]
+
+                if chk_url and reviewed_service.is_chapter_reviewed(chk_url, chk_folder):
+                    logger.info(f"[Push Sync] Skip locked/reviewed chapter translation: {chk_url}")
+                    continue
+
                 if item.id:
                     cursor.execute("""
                         UPDATE translations 
@@ -599,9 +620,11 @@ async def push_changes_to_pc(request: Request, db: Session = Depends(get_db)):
 
         conn.commit()
 
-        # 3. 모바일에서 실행한 일괄 찾아바꾸기 룰이 있다면 PC 서버 DB에도 동일하게 적용 (사용자 코멘트 반영)
+        # 3. 모바일에서 실행한 일괄 찾아바꾸기 룰이 있다면 PC 서버 DB에도 동일하게 적용 (검수완료 도서/챕터 보호)
         applied_rules_count = 0
         if payload.glossary_rules:
+            reviewed_chapters = list(reviewed_service.get_reviewed_chapters())
+            reviewed_books = list(reviewed_service.get_reviewed_books())
             for rule in payload.glossary_rules:
                 find_txt = rule.get("find_text")
                 repl_txt = rule.get("replace_text", "")
@@ -610,17 +633,37 @@ async def push_changes_to_pc(request: Request, db: Session = Depends(get_db)):
                     continue
 
                 if scope and scope != '__all__':
-                    cursor.execute("""
-                        UPDATE translations 
-                        SET translated = replace(translated, ?, ?) 
-                        WHERE folderName = ? AND instr(translated, ?) > 0
-                    """, (find_txt, repl_txt, scope, find_txt))
+                    if reviewed_service.is_book_reviewed(scope):
+                        logger.info(f"[Push Sync] Skip glossary replace for locked book: {scope}")
+                        continue
+                    if reviewed_chapters:
+                        placeholders = ','.join('?' for _ in reviewed_chapters)
+                        cursor.execute(f"""
+                            UPDATE translations 
+                            SET translated = replace(translated, ?, ?) 
+                            WHERE folderName = ? AND instr(translated, ?) > 0
+                              AND url NOT IN ({placeholders})
+                        """, [find_txt, repl_txt, scope, find_txt] + reviewed_chapters)
+                    else:
+                        cursor.execute("""
+                            UPDATE translations 
+                            SET translated = replace(translated, ?, ?) 
+                            WHERE folderName = ? AND instr(translated, ?) > 0
+                        """, (find_txt, repl_txt, scope, find_txt))
                 else:
-                    cursor.execute("""
-                        UPDATE translations 
-                        SET translated = replace(translated, ?, ?) 
-                        WHERE instr(translated, ?) > 0
-                    """, (find_txt, repl_txt, find_txt))
+                    where_clauses = ["instr(translated, ?) > 0"]
+                    params = [find_txt, repl_txt, find_txt]
+                    if reviewed_books:
+                        placeholders_b = ','.join('?' for _ in reviewed_books)
+                        where_clauses.append(f"folderName NOT IN ({placeholders_b})")
+                        params.extend(reviewed_books)
+                    if reviewed_chapters:
+                        placeholders_c = ','.join('?' for _ in reviewed_chapters)
+                        where_clauses.append(f"url NOT IN ({placeholders_c})")
+                        params.extend(reviewed_chapters)
+
+                    sql = f"UPDATE translations SET translated = replace(translated, ?, ?) WHERE {' AND '.join(where_clauses)}"
+                    cursor.execute(sql, tuple(params))
                 applied_rules_count += 1
             conn.commit()
 

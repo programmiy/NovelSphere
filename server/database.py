@@ -115,12 +115,19 @@ PROTECTED_TABLES = {
     "translations",
     "applied_urls",
     "glossary",
+    "translation_trash",
     "trash_translations",
     "novel_separator_settings",
     "pinned_books",
     "book_tags",
     "cleanup_rules",
-    "replace_rules"
+    "replace_rules",
+    "book_activity",
+    "ai_review_queue",
+    "url_metadata",
+    "tags",
+    "novel_works",
+    "system_tasks",
 }
 
 def is_prod_db_write_allowed() -> bool:

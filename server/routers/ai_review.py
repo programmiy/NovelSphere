@@ -801,6 +801,9 @@ async def approve_review(req: ApproveRejectReq, db: Session = Depends(get_db)):
     
     trans = db.query(Translation).filter(Translation.id == item.translation_id).first()
     if trans:
+        from server.services.reviewed_service import reviewed_service
+        if reviewed_service.is_chapter_reviewed(trans.url, trans.folderName):
+            raise HTTPException(403, f"검수 완료된 회차({trans.url})의 문장은 AI 검수를 승인할 수 없습니다. 수정을 원하시면 먼저 검수완료를 해제해주세요.")
         item.old_translated_text = trans.translated
         final_text = clean_ai_translation(req.translated_text if req.translated_text else item.ai_translated_text)
         trans.translated = final_text
@@ -839,6 +842,9 @@ async def undo_review(req: UndoReq, db: Session = Depends(get_db)):
     if item.status == 'approved':
         trans = db.query(Translation).filter(Translation.id == item.translation_id).first()
         if trans and item.old_translated_text is not None:
+            from server.services.reviewed_service import reviewed_service
+            if reviewed_service.is_chapter_reviewed(trans.url, trans.folderName):
+                raise HTTPException(403, f"검수 완료된 회차({trans.url})의 문장은 되돌릴 수 없습니다. 수정을 원하시면 먼저 검수완료를 해제해주세요.")
             trans.translated = item.old_translated_text
             db.commit()
             
@@ -857,6 +863,9 @@ async def quick_edit_context(req: ContextQuickEditReq, db: Session = Depends(get
     trans = db.query(Translation).filter(Translation.id == req.translation_id).first()
     if not trans:
         raise HTTPException(404, "문장을 찾을 수 없습니다.")
+    from server.services.reviewed_service import reviewed_service
+    if reviewed_service.is_chapter_reviewed(trans.url, trans.folderName):
+        raise HTTPException(403, f"검수 완료된 회차({trans.url})의 문맥 번역은 수정할 수 없습니다. 수정을 원하시면 먼저 검수완료를 해제해주세요.")
     trans.translated = req.translated_text
     trans.timestamp = int(time.time())
     db.commit()

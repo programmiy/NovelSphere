@@ -146,6 +146,14 @@ def test_reviewed_api_endpoints_and_lock_guards():
         assert approve_res.status_code == 403
         assert "검수 완료" in approve_res.json()["detail"]
 
+        # 8-1. Security Guard: AI review quick_edit must be BLOCKED with HTTP 403!
+        quick_edit_res = client.post("/api/ai_review/context/quick_edit", json={
+            "translation_id": test_id,
+            "translated_text": "AI 빠른 수정 시도"
+        })
+        assert quick_edit_res.status_code == 403
+        assert "검수 완료" in quick_edit_res.json()["detail"]
+
         # 9. Unlock chapter via API
         unlock_res = client.put("/api/chapters/review", json={
             "url": test_url,

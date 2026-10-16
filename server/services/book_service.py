@@ -1,6 +1,9 @@
+import logging
 from typing import List, Dict, Any
 from collections import defaultdict
 from server.database import get_sqlite_conn
+
+logger = logging.getLogger(__name__)
 
 def get_all_folders(include_hidden: bool = False) -> List[Dict[str, Any]]:
     """모든 폴더(책) 목록과 활동 정보를 데이터베이스에서 조회합니다."""
@@ -85,11 +88,11 @@ def update_book_toc_order(folder_name: str, urls: List[Dict[str, str]]) -> int:
 
             try:
                 cursor.execute(
-                    "UPDATE url_metadata SET sort_order = ?, title = ? WHERE RTRIM(url, '/') = ? OR url = ?",
-                    (i, item["title"], normalized_url, item["url"])
+                    "UPDATE url_metadata SET sort_order = ? WHERE RTRIM(url, '/') = ? OR url = ?",
+                    (i, normalized_url, item["url"])
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"Failed to update url_metadata sort_order for {item['url']}: {e}")
 
         conn.commit()
     except Exception as e:

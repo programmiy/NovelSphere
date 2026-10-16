@@ -110,6 +110,12 @@ def test_sync_push_and_pull():
     chap_found = any(c["url"] == "http://test.com/1" for c in pull_data["updated_chapters"])
     assert chap_found is True
 
+    # 5. since > 2000 일 때는 과거 활동 정보가 반환되지 않아야 함 (OR 1=1 디버그 잔존 방어 검증)
+    pull_future_res = client.get("/api/sync/pull?since=2500")
+    assert pull_future_res.status_code == 200
+    pull_future_data = json.loads(gzip.decompress(pull_future_res.content).decode('utf-8'))
+    assert len(pull_future_data["activities"]) == 0
+
 def test_sync_glossary_rule():
     """모바일에서 일괄 찾아바꾸기 룰 전송 시 PC DB에도 일괄 치환되는지 검증"""
     conn = get_sqlite_conn()
@@ -147,3 +153,52 @@ def test_sync_glossary_rule():
     row = cursor.fetchone()
     assert "김철수 씨는 걸었다" in row["translated"]
     conn.close()
+
+
+def test_sync_push_skips_reviewed_chapter():
+    """모바일 푸시 동기화 시 검수완료(잠금)된 챕터 및 도서는 수정되지 않아야 함"""
+    from server.services.reviewed_service import reviewed_service
+    conn = get_sqlite_conn()
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO translations (url, pid, original, translated, timestamp, folderName, title)
+        VALUES ('http://test.com/reviewed_push', 'p1', '原文です', '검수된 완벽한 원본', 4000, '잠금소설', '1화')
+    """)
+    trans_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+
+    reviewed_service.set_chapter_reviewed('http://test.com/reviewed_push', True, folder_name='잠금소설')
+
+    try:
+        # 모바일에서 수정을 시도하는 푸시 전송
+        push_payload = {
+            "push_timestamp": 5000,
+            "modified_translations": [
+                {
+                    "id": trans_id,
+                    "url": "http://test.com/reviewed_push",
+                    "pid": "p1",
+                    "original": "原文です",
+                    "translated": "해킹 또는 오염된 번역문",
+                    "timestamp": 5000,
+                    "title": "1화",
+                    "folderName": "잠금소설"
+                }
+            ],
+            "activities": []
+        }
+        res = client.post("/api/sync/push", json=push_payload)
+        assert res.status_code == 200
+        assert res.json()["updated_translations"] == 0
+
+        # DB 원본이 덮어써지지 않고 보존되었는지 검증
+        conn = get_sqlite_conn(as_dict=True)
+        cursor = conn.cursor()
+        cursor.execute("SELECT translated FROM translations WHERE id = ?", (trans_id,))
+        row = cursor.fetchone()
+        assert row["translated"] == "검수된 완벽한 원본"
+        conn.close()
+    finally:
+        reviewed_service.set_chapter_reviewed('http://test.com/reviewed_push', False, folder_name='잠금소설')
+
