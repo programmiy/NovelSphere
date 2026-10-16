@@ -20,7 +20,7 @@ class TocUrl(BaseModel):
     summary="목차 가져오기",
     description="Kakuyomu, Syosetu 또는 NovelUp URL에서 목차(Table of Contents)를 가져옵니다."
 )
-async def import_toc(item: TocUrl):
+def import_toc(item: TocUrl):
     toc_url = item.toc_url.strip()
     if not is_safe_external_url(toc_url):
         raise HTTPException(status_code=400, detail="유효하지 않거나 안전하지 않은 외부 URL입니다.")

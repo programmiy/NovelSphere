@@ -623,7 +623,7 @@ async def get_review_folders(db: Session = Depends(get_db)):
     return {"folders": [f[0] for f in folders if f[0]]}
 
 @router.get("/api/ai_review/queue")
-async def get_review_queue(folderName: Optional[str] = None, db: Session = Depends(get_db)):
+def get_review_queue(folderName: Optional[str] = None, db: Session = Depends(get_db)):
     from sqlalchemy import case
     query = db.query(AiReviewQueue, Translation).join(Translation, AiReviewQueue.translation_id == Translation.id).filter(AiReviewQueue.status == 'pending_review')
     if folderName:
@@ -634,6 +634,22 @@ async def get_review_queue(folderName: Optional[str] = None, db: Session = Depen
     query = query.order_by(priority, AiReviewQueue.updated_at.desc(), AiReviewQueue.id.asc())
         
     items = query.all()
+
+    # URL 및 폴더 단위 번역문 메모이제이션 캐시 (N+1 개별 쿼리 폭증 방지)
+    url_trans_cache = {}
+    folder_trans_cache = {}
+
+    def format_ctx(c):
+        return {
+            "id": c.id,
+            "original": c.original,
+            "translated": c.translated,
+            "url": c.url,
+            "pid": c.pid,
+            "folderName": c.folderName,
+            "title": c.title
+        }
+
     res = []
     for queue_item, base_trans in items:
         context_before = []
@@ -643,40 +659,42 @@ async def get_review_queue(folderName: Optional[str] = None, db: Session = Depen
         if base_trans:
             folder = base_trans.folderName
             url = base_trans.url
-            def format_ctx(c):
-                return {
-                    "id": c.id,
-                    "original": c.original,
-                    "translated": c.translated,
-                    "url": c.url,
-                    "pid": c.pid,
-                    "folderName": c.folderName,
-                    "title": c.title
-                }
 
             # Fetch context (before/after) with intelligent fallback
             # 1. Primary: Same URL (episode-level context)
             if url:
-                if base_trans.toc_sort_order is not None:
-                    ctx_b = db.query(Translation).filter(Translation.url == url, Translation.toc_sort_order < base_trans.toc_sort_order).order_by(Translation.toc_sort_order.desc()).limit(3).all()
-                    context_before = [format_ctx(c) for c in reversed(ctx_b)]
-                    
-                    ctx_a = db.query(Translation).filter(Translation.url == url, Translation.toc_sort_order > base_trans.toc_sort_order).order_by(Translation.toc_sort_order.asc()).limit(3).all()
-                    context_after = [format_ctx(c) for c in ctx_a]
-                else:
-                    ctx_b = db.query(Translation).filter(Translation.url == url, Translation.id < base_trans.id).order_by(Translation.id.desc()).limit(3).all()
-                    context_before = [format_ctx(c) for c in reversed(ctx_b)]
-                    
-                    ctx_a = db.query(Translation).filter(Translation.url == url, Translation.id > base_trans.id).order_by(Translation.id.asc()).limit(3).all()
-                    context_after = [format_ctx(c) for c in ctx_a]
+                if url not in url_trans_cache:
+                    if base_trans.toc_sort_order is not None:
+                        url_trans_cache[url] = db.query(Translation).filter(
+                            Translation.url == url
+                        ).order_by(Translation.toc_sort_order.asc(), Translation.id.asc()).all()
+                    else:
+                        url_trans_cache[url] = db.query(Translation).filter(
+                            Translation.url == url
+                        ).order_by(Translation.id.asc()).all()
+
+                chap_list = url_trans_cache[url]
+                try:
+                    target_idx = next(i for i, c in enumerate(chap_list) if c.id == base_trans.id)
+                    context_before = [format_ctx(c) for c in chap_list[max(0, target_idx - 3):target_idx]]
+                    context_after = [format_ctx(c) for c in chap_list[target_idx + 1:target_idx + 4]]
+                except StopIteration:
+                    pass
 
             # 2. Secondary fallback: Same Folder if URL returned no context
             if not context_before and not context_after and folder:
-                ctx_b = db.query(Translation).filter(Translation.folderName == folder, Translation.id < base_trans.id).order_by(Translation.id.desc()).limit(3).all()
-                context_before = [format_ctx(c) for c in reversed(ctx_b)]
-                
-                ctx_a = db.query(Translation).filter(Translation.folderName == folder, Translation.id > base_trans.id).order_by(Translation.id.asc()).limit(3).all()
-                context_after = [format_ctx(c) for c in ctx_a]
+                if folder not in folder_trans_cache:
+                    folder_trans_cache[folder] = db.query(Translation).filter(
+                        Translation.folderName == folder
+                    ).order_by(Translation.id.asc()).all()
+
+                f_list = folder_trans_cache[folder]
+                try:
+                    target_idx = next(i for i, c in enumerate(f_list) if c.id == base_trans.id)
+                    context_before = [format_ctx(c) for c in f_list[max(0, target_idx - 3):target_idx]]
+                    context_after = [format_ctx(c) for c in f_list[target_idx + 1:target_idx + 4]]
+                except StopIteration:
+                    pass
                 
         cause_kws = get_cause_keywords(
             queue_item.original_text,

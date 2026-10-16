@@ -330,18 +330,19 @@ async def download_full_mobile_pack(background_tasks: BackgroundTasks):
     temp_gz_path = os.path.join(temp_dir, f"{pack_id}.db.gz")
 
     try:
-        # 1. 모바일 최적화 하이브리드 DB 빌드
-        _build_mobile_optimized_db(temp_db_path)
+        # 1. 모바일 최적화 하이브리드 DB 빌드 및 Gzip 압축 (별도 스레드에서 비동기 처리하여 이벤트 루프 프리징 방지)
+        import anyio
 
-        # 2. 네트워크 전송량 극소화를 위한 Gzip 압축 (150MB -> 약 26MB)
-        with open(temp_db_path, 'rb') as f_in:
-            with gzip.open(temp_gz_path, 'wb', compresslevel=6) as f_out:
-                while chunk := f_in.read(1024 * 1024):
-                    f_out.write(chunk)
+        def _build_and_compress(db_path: str, gz_path: str):
+            _build_mobile_optimized_db(db_path)
+            with open(db_path, 'rb') as f_in:
+                with gzip.open(gz_path, 'wb', compresslevel=6) as f_out:
+                    while chunk := f_in.read(1024 * 1024):
+                        f_out.write(chunk)
+            if os.path.exists(db_path):
+                os.remove(db_path)
 
-        # DB 원본 임시파일은 gz 생성 즉시 삭제
-        if os.path.exists(temp_db_path):
-            os.remove(temp_db_path)
+        await anyio.to_thread.run_sync(_build_and_compress, temp_db_path, temp_gz_path)
 
         _ACTIVE_TEMP_PACKS[pack_id] = temp_gz_path
 

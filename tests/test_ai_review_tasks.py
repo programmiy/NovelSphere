@@ -170,3 +170,48 @@ def test_ai_review_reretranslate_specific(mock_worker):
         db.commit()
     finally:
         db.close()
+
+
+def test_get_review_queue_and_context():
+    """GET /api/ai_review/queue가 비동기 스레드 및 메모이제이션 기반으로 전후 문맥을 올바르게 반환하는지 검증"""
+    db = SessionLocal()
+    url = "http://example.com/queue_ctx_test"
+    folder = "QueueContextTestBook"
+    try:
+        db.query(Translation).filter(Translation.url == url).delete()
+        t1 = Translation(url=url, pid="p1", original="1번 문장", translated="1번 번역", timestamp=1000, folderName=folder, title="1화", toc_sort_order=1)
+        t2 = Translation(url=url, pid="p2", original="2번 문장(이상)", translated="2번 번역", timestamp=1000, folderName=folder, title="1화", toc_sort_order=2)
+        t3 = Translation(url=url, pid="p3", original="3번 문장", translated="3번 번역", timestamp=1000, folderName=folder, title="1화", toc_sort_order=3)
+        db.add_all([t1, t2, t3])
+        db.commit()
+        db.refresh(t2)
+
+        q_item = AiReviewQueue(
+            translation_id=t2.id,
+            original_text=t2.original,
+            old_translated_text=t2.translated,
+            ai_translated_text="2번 AI 재번역",
+            model_used="gemini-3.8-flash",
+            status="pending_review",
+            created_at=int(time.time()),
+            updated_at=int(time.time())
+        )
+        db.add(q_item)
+        db.commit()
+
+        res = client.get(f"/api/ai_review/queue?folderName={folder}")
+        assert res.status_code == 200
+        items = res.json()["items"]
+        assert len(items) == 1
+        item = items[0]
+        assert item["translation_id"] == t2.id
+        assert len(item["context_before"]) == 1
+        assert item["context_before"][0]["original"] == "1번 문장"
+        assert len(item["context_after"]) == 1
+        assert item["context_after"][0]["original"] == "3번 문장"
+    finally:
+        db.query(AiReviewQueue).filter(AiReviewQueue.original_text == "2번 문장(이상)").delete()
+        db.query(Translation).filter(Translation.url == url).delete()
+        db.commit()
+        db.close()
+

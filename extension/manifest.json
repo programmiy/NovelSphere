@@ -38,7 +38,7 @@
         "*://localhost/*",
         "*://127.0.0.1/*"
       ],
-      "js": ["content.js", "remote_content.js"],
+      "js": ["content.js"],
       "css": ["content.css"]
     }
   ],
