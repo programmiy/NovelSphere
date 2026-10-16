@@ -219,6 +219,7 @@ def upsert_translations(items: List[TranslationItem], db: Session = Depends(get_
 
     verbatim_items_to_clean = []
     target_title = None
+    deleted_existing_count = 0
 
     for item in items:
         key = (item.url, item.pid)
@@ -245,6 +246,7 @@ def upsert_translations(items: List[TranslationItem], db: Session = Depends(get_
             })
             if existing_translation:
                 db.delete(existing_translation)
+                deleted_existing_count += 1
                 if key in existing_map:
                     del existing_map[key]
             continue
@@ -253,6 +255,7 @@ def upsert_translations(items: List[TranslationItem], db: Session = Depends(get_
         if not target_trans or not str(target_trans).strip():
             if existing_translation:
                 db.delete(existing_translation)
+                deleted_existing_count += 1
                 if key in existing_map:
                     del existing_map[key]
             continue
@@ -308,6 +311,10 @@ def upsert_translations(items: List[TranslationItem], db: Session = Depends(get_
             )
 
     db.commit()
+
+    if deleted_existing_count > 0:
+        from server.backup_utils import record_legitimate_deletion
+        record_legitimate_deletion(deleted_existing_count, reason="upsert_filtered_exclusion")
 
     if items:
         latest_item = items[-1]
