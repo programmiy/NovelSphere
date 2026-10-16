@@ -1,7 +1,7 @@
 # LANOVEL 종합 코드베이스 기능 및 함수 레퍼런스 (Architectural & Functional Reference)
 
 > **문서 목적**: AI 어시스턴트가 사용자 요구사항 및 구어체 지시를 입력받았을 때, 혼선이나 회귀(Regression) 없이 전체 아키텍처와 1:1 타깃 코드를 0초 만에 직관적으로 파악할 수 있도록 압축 정리한 단일 진실 공급원(SSOT) 기술 레퍼런스입니다.
-> **최신 동기화 일자**: 2026-10-15 (크롬 확장 프로그램 TypeScript 모듈화 및 esbuild 빌드 파이프라인 구축 완료: 4,540줄 단일 content.js 및 remote_content.js의 wrapGlobal 해킹 전면 폐기, scrapers/·core/·ui/ 3계층 모듈화, 중앙 상태 머신 연동 원격 제어 직접 발행; 모바일 Luminary UI v1.5.1 빌드 배포; PC 서재 증기 차분기관 톱니/배관/압력계 & 3D 닉시관 UI; 최근 번역 회차 연동 적응형 RPM 방어 시스템; 사전 연동 및 34만 누적 번역 코퍼스 학습/교정 엔진)
+> **최신 동기화 일자**: 2026-10-16 (모바일 Luminary UI Impeller 커스텀 프래그먼트 셰이더 `shaders/hyper_ambient_mesh.frag` 도입: 풀스크린 BackdropFilter/SaveLayer 병목 원천 제거, 단일 패스 도메인 워핑 오로라 유체 메쉬 + 마이크로 필름 그레인 디더링 및 120Hz 고정; 크롬 확장 프로그램 TypeScript 모듈화 및 esbuild 빌드 파이프라인; PC 서재 증기 차분기관 & 3D 닉시관 UI; 최근 번역 회차 연동 적응형 RPM 방어 시스템; 사전 연동 및 34만 누적 번역 코퍼스 학습/교정 엔진)
 
 ---
 
@@ -29,7 +29,7 @@
 | **구분선** | `server/routers/separators.py` | 후기/광고 번역 차단용 소설별 구분선 CRUD (공통 7종, 프리셋 6종) |
 | **원격 허브** | `server/routers/remote.py` | 모바일/웹 리모컨 (`/command`, `/status`, `/ws`, `/poll`, `/report`, `/ack`) |
 | **크롬 확장** | `extension/` | **TypeScript + esbuild 모듈화 구조**: `src/content.ts` (클린 엔트리), `src/background/` (`remote_ws.ts`, `index.ts`), `src/scrapers/` (플랫폼별 DOM 파서), `src/core/` (상태 머신, 청킹, 적응형 스로틀링, 번역 실행), `src/ui/` (사이드바, HUD, 단축키, 목차 퀵점프) |
-| **모바일 앱** | `mobile_app/lib/` | **v1.5.1 하이퍼 에스테틱 Luminary UI** (`hyper_aesthetic_theme.dart`, `HyperAmbientMeshBackground`, `HyperGlassCard`, `HyperHapticPill`, `HyperProgressRing`, 플로팅 글래스 네비게이션 독 & 뷰어 에어-글래스 컨트롤 허브, Sqflite 하이브리드 압축 DB, 루비/방점 렌더러) |
+| **모바일 앱** | `mobile_app/lib/`<br>`mobile_app/shaders/` | **하이퍼 에스테틱 Luminary UI & Impeller GLSL 셰이더** (`shaders/hyper_ambient_mesh.frag`, `hyper_aesthetic_theme.dart`, `HyperAmbientMeshBackground`, `_HyperAuroraShaderPainter`, `HyperGlassCard`, `HyperHapticPill`, `HyperProgressRing`, 플로팅 글래스 네비게이션 독, Sqflite 하이브리드 압축 DB, 루비/방점 렌더러) |
 | **웹 프론트** | `server/static/` | `viewer.js` (3D 닉시관 인디케이터, 사전 & 용례 학습 패널), `library.js` (증기 차분기관 톱니/배관/압력계 대시보드), `admin.js` |
 
 ---

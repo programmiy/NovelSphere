@@ -6,13 +6,17 @@ import 'services/preferences_service.dart';
 import 'services/status_dashboard_service.dart';
 import 'services/tts_audio_service.dart';
 import 'ui/library/library_screen.dart';
+import 'ui/themes/hyper_aesthetic_theme.dart';
 import 'ui/themes/reader_themes.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
-  // 환경 설정, TTS 서비스 및 로컬 알림 플러그인 초기화
-  await PreferencesService.init();
+  // 환경 설정, Impeller 오로라 프래그먼트 셰이더, TTS 서비스 및 로컬 알림 플러그인 초기화
+  await Future.wait([
+    PreferencesService.init(),
+    HyperAestheticTheme.loadMeshShaderProgram(),
+  ]);
   await TtsAudioService.init();
   await LocalNotificationService.init();
 

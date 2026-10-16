@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -6,11 +7,37 @@ import 'reader_themes.dart';
 /// ============================================================================
 /// LANOVEL 하이퍼 에스테틱 모바일 디자인 시스템 (Hyper-Aesthetic Luminary UI)
 /// ----------------------------------------------------------------------------
-/// - 자원 소모를 아끼지 않는 극상의 비주얼 에스테틱 (Fluid Ambient Blur, Glassmorphism)
+/// - 자원 소모를 아끼지 않는 극상의 비주얼 에스테틱 (Impeller GLSL Fluid Aurora Mesh & Glassmorphism)
+/// - 오프스크린 SaveLayer(BackdropFilter)를 배제한 단일 패스 프래그먼트 셰이더로 120Hz 고정
 /// - 한 손 조작성을 극한으로 끌어올린 햅틱 인터랙티브 컴포넌트
 /// ============================================================================
 
 class HyperAestheticTheme {
+  static FragmentProgram? _cachedMeshProgram;
+  static Future<FragmentProgram?>? _loadingMeshFuture;
+
+  /// 사전 로드된 프래그먼트 셰이더 프로그램 반환 (첫 프레임 즉시 바인딩용)
+  static FragmentProgram? get cachedMeshProgram => _cachedMeshProgram;
+
+  /// Impeller 커스텀 프래그먼트 셰이더(`shaders/hyper_ambient_mesh.frag`) 사전 로드 및 캐싱
+  static Future<FragmentProgram?> loadMeshShaderProgram() {
+    if (_cachedMeshProgram != null) {
+      return Future.value(_cachedMeshProgram);
+    }
+    return _loadingMeshFuture ??= _initMeshProgram();
+  }
+
+  static Future<FragmentProgram?> _initMeshProgram() async {
+    try {
+      _cachedMeshProgram = await FragmentProgram.fromAsset(
+        'shaders/hyper_ambient_mesh.frag',
+      );
+      return _cachedMeshProgram;
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// 테마별 앰비언트 글로우 메인 컬러 추출
   static Color getAmbientPrimary(ReaderThemeData theme) {
     if (theme.isDark) {
@@ -39,6 +66,23 @@ class HyperAestheticTheme {
       if (theme.id == 'rose') return const Color(0xFFFB923C);
       if (theme.id == 'lavender') return const Color(0xFFEC4899);
       return const Color(0xFF8B5CF6);
+    }
+  }
+
+  /// 오로라 유체 간섭(Silk Interference)을 위한 제3 하이라이트 컬러 추출
+  static Color getAmbientTertiary(ReaderThemeData theme) {
+    if (theme.isDark) {
+      if (theme.id == 'midnight') return const Color(0xFF38BDF8); // Cyan Glow
+      if (theme.id == 'charcoal') return const Color(0xFF8B5CF6); // Violet
+      if (theme.id == 'mocha') return const Color(0xFFF43F5E);    // Warm Rose
+      if (theme.id == 'slate') return const Color(0xFF818CF8);    // Soft Indigo
+      return const Color(0xFF06B6D4);                             // Deep Cyan
+    } else {
+      if (theme.id == 'mint') return const Color(0xFF14B8A6);
+      if (theme.id == 'rose') return const Color(0xFFA855F7);
+      if (theme.id == 'lavender') return const Color(0xFF38BDF8);
+      if (theme.id == 'sepia') return const Color(0xFFEAB308);
+      return const Color(0xFF06B6D4);
     }
   }
 
@@ -86,12 +130,14 @@ class HyperAestheticTheme {
 }
 
 /// ============================================================================
-/// 배경 앰비언트 서피스 위젯 (Lightweight Static Ambient Surface)
+/// Impeller 커스텀 프래그먼트 셰이더 기반 오로라 유체 메쉬 배경 (Fluid Aurora Mesh)
 /// ----------------------------------------------------------------------------
-/// GPU 부하를 유발하는 무한 회전 블러를 제거하고, 정갈한 단색 배경과 미세한
-/// 앰비언트 비네트 효과를 RepaintBoundary로 완전히 격리하여 120fps 스크롤 성능 보장
+/// - 기존 Container 3개 + 풀스크린 BackdropFilter(sigma: 45)의 SaveLayer 병목을 완전 제거
+/// - 단일 패스(Single-pass) GLSL 프래그먼트 셰이더(`shaders/hyper_ambient_mesh.frag`)로
+///   도메인 워핑 유체 실크(Fluid Mesh)와 미세 필름 그레인(Micro Film Grain)을 동시에 연산
+/// - CustomPainter(repaint: _controller) + RepaintBoundary 격리로 위젯 리빌드 0회, 120Hz 고정
 /// ============================================================================
-class HyperAmbientMeshBackground extends StatelessWidget {
+class HyperAmbientMeshBackground extends StatefulWidget {
   final ReaderThemeData theme;
   final Widget child;
 
@@ -102,43 +148,201 @@ class HyperAmbientMeshBackground extends StatelessWidget {
   });
 
   @override
+  State<HyperAmbientMeshBackground> createState() =>
+      _HyperAmbientMeshBackgroundState();
+}
+
+class _HyperAmbientMeshBackgroundState extends State<HyperAmbientMeshBackground>
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
+  late final AnimationController _controller;
+  FragmentShader? _shader;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    // 600초 주기의 연속 타임라인 (1.0배속 초 단위 진행, 경계 끊김 없는 왕복)
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 600),
+    )..repeat(reverse: true);
+
+    // 사전 로드된 프로그램이 있으면 첫 프레임부터 즉시 바인딩
+    final cached = HyperAestheticTheme.cachedMeshProgram;
+    if (cached != null) {
+      _shader = cached.fragmentShader();
+    } else {
+      _bindShader();
+    }
+  }
+
+  Future<void> _bindShader() async {
+    final program = await HyperAestheticTheme.loadMeshShaderProgram();
+    if (!mounted || program == null) return;
+    setState(() {
+      _shader = program.fragmentShader();
+    });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // 앱이 백그라운드로 전환되면 셰이더 틱을 즉시 멈춰 배터리 소모 0% 보장
+    if (state == AppLifecycleState.resumed) {
+      if (!_controller.isAnimating) {
+        _controller.repeat(reverse: true);
+      }
+    } else if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden) {
+      _controller.stop();
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _controller.dispose();
+    _shader?.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final primary = HyperAestheticTheme.getAmbientPrimary(theme);
-    final secondary = HyperAestheticTheme.getAmbientSecondary(theme);
+    final c1 = HyperAestheticTheme.getAmbientPrimary(widget.theme);
+    final c2 = HyperAestheticTheme.getAmbientSecondary(widget.theme);
+    final c3 = HyperAestheticTheme.getAmbientTertiary(widget.theme);
 
-    return RepaintBoundary(
-      child: Stack(
-        children: [
-          // 1. 테마 기본 단색 배경
-          Positioned.fill(
-            child: ColoredBox(color: theme.background),
-          ),
-
-          // 2. 미세한 정적 앰비언트 비네트 (GPU 프레임 드랍 제로)
-          Positioned.fill(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: RadialGradient(
-                  center: const Alignment(0.65, -0.75),
-                  radius: 1.3,
-                  colors: [
-                    primary.withOpacity(theme.isDark ? 0.08 : 0.035),
-                    secondary.withOpacity(theme.isDark ? 0.04 : 0.015),
-                    Colors.transparent,
-                  ],
-                  stops: const [0.0, 0.45, 1.0],
-                ),
+    return Stack(
+      children: [
+        // 1. 독립 렌더 레이어로 격리된 단일 패스 GPU 오로라 프래그먼트 셰이더
+        Positioned.fill(
+          child: RepaintBoundary(
+            child: CustomPaint(
+              painter: _HyperAuroraShaderPainter(
+                animation: _controller,
+                shader: _shader,
+                theme: widget.theme,
+                primaryColor: c1,
+                secondaryColor: c2,
+                tertiaryColor: c3,
               ),
+              isComplex: true,
+              willChange: true,
             ),
           ),
+        ),
 
-          // 3. 전면 실제 콘텐츠
-          Positioned.fill(
-            child: child,
-          ),
-        ],
-      ),
+        // 2. 전면 실제 콘텐츠 (셰이더 애니메이션과 레이어 완전 분리)
+        Positioned.fill(
+          child: widget.child,
+        ),
+      ],
     );
+  }
+}
+
+class _HyperAuroraShaderPainter extends CustomPainter {
+  final Animation<double> animation;
+  final FragmentShader? shader;
+  final ReaderThemeData theme;
+  final Color primaryColor;
+  final Color secondaryColor;
+  final Color tertiaryColor;
+  final Paint _shaderPaint = Paint();
+
+  _HyperAuroraShaderPainter({
+    required this.animation,
+    required this.shader,
+    required this.theme,
+    required this.primaryColor,
+    required this.secondaryColor,
+    required this.tertiaryColor,
+  }) : super(repaint: animation);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rect = Offset.zero & size;
+    final activeShader = shader;
+
+    if (activeShader != null) {
+      // uTime: 초 단위 연속 시간 (0.0 ~ 600.0)
+      final timeSeconds = animation.value * 600.0;
+      final isDark = theme.isDark ? 1.0 : 0.0;
+      final intensity = theme.id == 'oled'
+          ? 0.52
+          : (theme.isDark ? 1.0 : 0.85);
+
+      final bg = theme.background;
+
+      // Uniforms [0..16] — shaders/hyper_ambient_mesh.frag 레이아웃과 1:1 매핑
+      activeShader
+        ..setFloat(0, size.width)
+        ..setFloat(1, size.height)
+        ..setFloat(2, timeSeconds)
+        ..setFloat(3, isDark)
+        ..setFloat(4, intensity)
+        ..setFloat(5, bg.red / 255.0)
+        ..setFloat(6, bg.green / 255.0)
+        ..setFloat(7, bg.blue / 255.0)
+        ..setFloat(8, primaryColor.red / 255.0)
+        ..setFloat(9, primaryColor.green / 255.0)
+        ..setFloat(10, primaryColor.blue / 255.0)
+        ..setFloat(11, secondaryColor.red / 255.0)
+        ..setFloat(12, secondaryColor.green / 255.0)
+        ..setFloat(13, secondaryColor.blue / 255.0)
+        ..setFloat(14, tertiaryColor.red / 255.0)
+        ..setFloat(15, tertiaryColor.green / 255.0)
+        ..setFloat(16, tertiaryColor.blue / 255.0);
+
+      _shaderPaint.shader = activeShader;
+      canvas.drawRect(rect, _shaderPaint);
+      return;
+    }
+
+    // 셰이더 에셋 초기화 전 첫 1프레임 또는 미지원 환경용 경량 폴백 (SaveLayer 없음)
+    canvas.drawRect(rect, Paint()..color = theme.background);
+    final t = animation.value * 600.0 * 0.4;
+    final c1Center = Alignment(
+      -0.45 + 0.25 * math.sin(t * 0.7),
+      -0.65 + 0.20 * math.cos(t * 0.5),
+    );
+    final c2Center = Alignment(
+      0.55 + 0.25 * math.cos(t * 0.6),
+      0.15 + 0.25 * math.sin(t * 0.8),
+    );
+
+    canvas.drawRect(
+      rect,
+      Paint()
+        ..shader = RadialGradient(
+          center: c1Center,
+          radius: 1.15,
+          colors: [
+            primaryColor.withOpacity(theme.isDark ? 0.18 : 0.08),
+            Colors.transparent,
+          ],
+        ).createShader(rect),
+    );
+    canvas.drawRect(
+      rect,
+      Paint()
+        ..shader = RadialGradient(
+          center: c2Center,
+          radius: 1.25,
+          colors: [
+            secondaryColor.withOpacity(theme.isDark ? 0.14 : 0.06),
+            Colors.transparent,
+          ],
+        ).createShader(rect),
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _HyperAuroraShaderPainter oldDelegate) {
+    return oldDelegate.shader != shader ||
+        oldDelegate.theme.id != theme.id ||
+        oldDelegate.primaryColor != primaryColor ||
+        oldDelegate.secondaryColor != secondaryColor ||
+        oldDelegate.tertiaryColor != tertiaryColor;
   }
 }
 
