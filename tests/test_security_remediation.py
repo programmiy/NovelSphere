@@ -98,3 +98,54 @@ def test_path_traversal_protection_in_sync():
     assert res_del_routed.status_code == 200
     assert res_del_routed.json()["status"] == "not_found"
 
+
+def test_rules_json_no_indiscriminate_cors():
+    """크롬 확장 rules.json 보안 검증: 외부 소설 사이트 대상 Access-Control-Allow-Origin: * 주입 규칙 배제"""
+    import json
+    import os
+    rules_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "extension", "rules.json")
+    assert os.path.exists(rules_path)
+    with open(rules_path, "r", encoding="utf-8") as f:
+        rules = json.load(f)
+
+    # 1. rules.json은 유효한 리스트 형식이어야 함
+    assert isinstance(rules, list)
+
+    # 2. 어떤 규칙도 외부 소설 도메인에 대해 Access-Control-Allow-Origin을 주입해선 안 됨
+    forbidden_domains = {"kakuyomu.jp", "syosetu.com", "novelup.plus", "syosetu.org", "alphapolis.co.jp"}
+    for rule in rules:
+        domains = set(rule.get("condition", {}).get("requestDomains", []))
+        overlap = domains & forbidden_domains
+        assert not overlap, f"Forbidden domain found in rules.json with header modification: {overlap}"
+
+    # 3. 로컬 루프백(127.0.0.1, localhost) PNA 규칙은 보존되어 있어야 함
+    local_rules = [
+        r for r in rules
+        if any(d in r.get("condition", {}).get("requestDomains", []) for d in ("127.0.0.1", "localhost"))
+    ]
+    assert len(local_rules) >= 1
+
+
+def test_unclassified_deterministic_work_id_and_ssrf():
+    """미분류 소설 스크래퍼의 결정론적 CRC32 해시 및 SSRF 가드 검증"""
+    import zlib
+    from server.routers.unclassified import parse_work_metadata, fetch_novel_title_from_web
+
+    # 1. 기타 웹소설 URL에 대해 결정론적이고 일관된 work_id 생성 확인
+    url1 = "https://custom-novel.xyz/series/view/98765/episode/1"
+    url2 = "https://custom-novel.xyz/series/view/98765/episode/2"
+    meta1 = parse_work_metadata(url1)
+    meta2 = parse_work_metadata(url2)
+
+    assert meta1["work_id"] == meta2["work_id"]
+    assert meta1["work_id"].startswith("custom:")
+    expected_hash = zlib.crc32(meta1["work_url"].encode("utf-8")) & 0xffffffff
+    assert meta1["work_id"] == f"custom:{expected_hash}"
+
+    # 2. SSRF 차단: 사설망/루프백/메타데이터 주소 요청 시 fetch 거부 (None 반환)
+    assert fetch_novel_title_from_web("기타 웹", "http://127.0.0.1:8001/admin") is None
+    assert fetch_novel_title_from_web("기타 웹", "http://localhost:8080/flag") is None
+    assert fetch_novel_title_from_web("기타 웹", "http://192.168.1.1/secret") is None
+    assert fetch_novel_title_from_web("기타 웹", "http://169.254.169.254/latest/meta-data/") is None
+
+

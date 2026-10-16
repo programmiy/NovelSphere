@@ -41,7 +41,7 @@ def call_gemini_with_model_fallback(primary_model: str, prompt: str) -> Tuple[Op
             
     last_err = None
     for m in models_to_try:
-        api_url = f"https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent?key={settings.gemini_api_key}"
+        api_url = f"https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent"
         try:
             res = call_gemini_api(api_url, prompt, timeout=15)
             return res, m

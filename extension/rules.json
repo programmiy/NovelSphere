@@ -1,34 +1,5 @@
 [
   {
-    "id": 1,
-    "priority": 1,
-    "action": {
-      "type": "modifyHeaders",
-      "responseHeaders": [
-        {
-          "header": "Access-Control-Allow-Origin",
-          "operation": "set",
-          "value": "*"
-        }
-      ]
-    },
-    "condition": {
-      "requestDomains": [
-        "kakuyomu.jp",
-        "syosetu.com",
-        "novel18.syosetu.com",
-        "ncode.syosetu.com",
-        "noc.syosetu.com",
-        "mid.syosetu.com",
-        "mnlt.syosetu.com",
-        "novelup.plus",
-        "syosetu.org",
-        "alphapolis.co.jp"
-      ],
-      "resourceTypes": ["xmlhttprequest", "main_frame", "sub_frame"]
-    }
-  },
-  {
     "id": 2,
     "priority": 1,
     "action": {

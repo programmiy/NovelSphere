@@ -1,5 +1,6 @@
 import re
 import time
+import zlib
 import logging
 import requests
 from typing import Optional, Dict, Any
@@ -8,6 +9,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from server.database import get_sqlite_conn
+from server.security import is_safe_external_url
 
 router = APIRouter(prefix="/api/unclassified_novels", tags=["UnclassifiedNovels"])
 logger = logging.getLogger(__name__)
@@ -86,7 +88,7 @@ def parse_work_metadata(url: str) -> Dict[str, str]:
     base_part = clean.split('?')[0].rstrip('/')
     tokens = base_part.split('/')
     prefix = '/'.join(tokens[:5]) if len(tokens) >= 5 else base_part
-    work_id = f"custom:{hash(prefix) & 0xffffffff}"
+    work_id = f"custom:{zlib.crc32(prefix.encode('utf-8')) & 0xffffffff}"
     return {
         "work_id": work_id,
         "platform": "기타 웹",
@@ -96,6 +98,10 @@ def parse_work_metadata(url: str) -> Dict[str, str]:
 
 def fetch_novel_title_from_web(platform: str, work_url: str) -> Optional[str]:
     """Scrapes the main novel title from the novel top page."""
+    if not is_safe_external_url(work_url):
+        logger.warning(f"Blocked unsafe/internal URL from being fetched for novel title: {work_url}")
+        return None
+
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     }
@@ -104,7 +110,11 @@ def fetch_novel_title_from_web(platform: str, work_url: str) -> Optional[str]:
         cookies['over18'] = 'yes'
 
     try:
-        resp = requests.get(work_url, headers=headers, cookies=cookies, timeout=8)
+        resp = requests.get(work_url, headers=headers, cookies=cookies, timeout=8, allow_redirects=True)
+        if resp.history and not is_safe_external_url(resp.url):
+            logger.warning(f"Blocked unsafe redirect target for novel title fetch: {resp.url}")
+            return None
+
         if resp.status_code != 200:
             return None
         resp.encoding = resp.apparent_encoding

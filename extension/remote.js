@@ -6,8 +6,10 @@
 // background.js 맨 위에서 importScripts('remote.js') 로 로드된다.
 // =================================================================================
 
-const REMOTE_BASE_HTTP = 'http://127.0.0.1:8001';
-const REMOTE_BASE_WS = 'ws://127.0.0.1:8001';
+const DEFAULT_PORTS = [8001, 8000];
+let currentPortIndex = 0;
+let cachedBaseHttp = `http://127.0.0.1:${DEFAULT_PORTS[0]}`;
+let cachedBaseWs = `ws://127.0.0.1:${DEFAULT_PORTS[0]}`;
 const REMOTE_POLL_INTERVAL_MS = 5000;
 const REMOTE_WS_RETRY_MS = 10000;
 const REMOTE_PING_INTERVAL_MS = 20000;   // service worker 30초 유휴 종료 방지 + 서버 생존 신호
@@ -23,10 +25,55 @@ let remoteConnecting = false;
 const remoteReports = new Map();
 let remoteTargetTabId = null;
 
+async function remoteGetBaseUrls() {
+    try {
+        if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+            const stored = await chrome.storage.local.get(['server_url', 'server_port']);
+            if (stored.server_url && typeof stored.server_url === 'string') {
+                const http = stored.server_url.replace(/\/+$/, '');
+                const ws = http.replace(/^http:/i, 'ws:').replace(/^https:/i, 'wss:');
+                return { http, ws };
+            }
+            if (stored.server_port) {
+                const port = parseInt(stored.server_port, 10);
+                if (!isNaN(port) && port > 0) {
+                    return {
+                        http: `http://127.0.0.1:${port}`,
+                        ws: `ws://127.0.0.1:${port}`
+                    };
+                }
+            }
+        }
+    } catch (_) {}
+    const port = DEFAULT_PORTS[currentPortIndex];
+    return {
+        http: `http://127.0.0.1:${port}`,
+        ws: `ws://127.0.0.1:${port}`
+    };
+}
+
+async function remoteRotateFallbackPort() {
+    try {
+        if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+            const stored = await chrome.storage.local.get(['server_url', 'server_port']);
+            if (stored.server_url || stored.server_port) {
+                return; // 사용자가 명시한 고정 설정이 있으면 자동 순환 안 함
+            }
+        }
+    } catch (_) {}
+    currentPortIndex = (currentPortIndex + 1) % DEFAULT_PORTS.length;
+    const port = DEFAULT_PORTS[currentPortIndex];
+    cachedBaseHttp = `http://127.0.0.1:${port}`;
+    cachedBaseWs = `ws://127.0.0.1:${port}`;
+}
+
 // ---------- 서버 호출 ----------
 // 확장은 PC 안(127.0.0.1)에서 서버에 접속하므로 별도 토큰이 필요 없다. (서버가 루프백을 신뢰)
-function remoteFetch(path, options = {}) {
-    return fetch(`${REMOTE_BASE_HTTP}/api/remote${path}`, {
+async function remoteFetch(path, options = {}) {
+    const base = await remoteGetBaseUrls();
+    cachedBaseHttp = base.http;
+    cachedBaseWs = base.ws;
+    return fetch(`${base.http}/api/remote${path}`, {
         ...options,
         headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
     });
@@ -154,8 +201,13 @@ function remoteStartPolling() {
             if (res.ok) {
                 const json = await res.json();
                 await remoteHandleCommands(json.commands);
+            } else {
+                await remoteRotateFallbackPort();
             }
-        } catch (e) { /* 서버 오프라인: 다음 주기에 재시도 */ }
+        } catch (e) {
+            /* 서버 오프라인 또는 포트 불일치: 다음 주기에 대체 포트 시도 */
+            await remoteRotateFallbackPort();
+        }
     };
     tick();
     remotePollTimer = setInterval(tick, REMOTE_POLL_INTERVAL_MS);
@@ -175,7 +227,10 @@ async function remoteConnect() {
     if (remoteWs && (remoteWs.readyState === WebSocket.OPEN || remoteWs.readyState === WebSocket.CONNECTING)) return;
     remoteConnecting = true;
     try {
-        const ws = new WebSocket(`${REMOTE_BASE_WS}/api/remote/ws`);
+        const base = await remoteGetBaseUrls();
+        cachedBaseHttp = base.http;
+        cachedBaseWs = base.ws;
+        const ws = new WebSocket(`${base.ws}/api/remote/ws`);
         remoteWs = ws;
 
         ws.onopen = () => {
@@ -198,10 +253,13 @@ async function remoteConnect() {
         ws.onclose = () => {
             clearInterval(remotePingTimer); remotePingTimer = null;
             if (remoteWs === ws) remoteWs = null;
+            remoteRotateFallbackPort(); // 연결 실패 시 8001 ↔ 8000 교차 시도
             remoteStartPolling();       // WS가 안 될 땐 폴링으로 대체
             remoteScheduleReconnect();
         };
         ws.onerror = () => { /* onclose 에서 처리 */ };
+    } catch (e) {
+        await remoteRotateFallbackPort();
     } finally {
         remoteConnecting = false;
     }
@@ -211,5 +269,16 @@ chrome.alarms.create('remote-keepalive', { periodInMinutes: 0.5 });
 chrome.alarms.onAlarm.addListener((alarm) => {
     if (alarm.name === 'remote-keepalive') remoteConnect();
 });
+
+if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged) {
+    chrome.storage.onChanged.addListener((changes, area) => {
+        if (area === 'local' && (changes.server_url || changes.server_port)) {
+            if (remoteWs) {
+                try { remoteWs.close(); } catch (_) {}
+            }
+            remoteConnect();
+        }
+    });
+}
 
 remoteConnect();

@@ -85,7 +85,7 @@ LANOVEL/
    GEMINI_API_KEY="your-gemini-api-key-here"
    DEBUG=False
    SERVER_HOST=0.0.0.0
-   SERVER_PORT=8000
+   SERVER_PORT=8001
    ```
 
 ### 3. 애플리케이션 실행
