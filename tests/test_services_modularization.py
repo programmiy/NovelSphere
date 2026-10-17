@@ -97,10 +97,14 @@ def test_service_translation_engine_parse_json():
 
 
 def test_service_translation_engine_repeated_chars():
-    """6회 이상 반복 기호 (반복) 대체 검증"""
-    raw = "우와아아아!!!!!!"
-    processed = process_repeated_chars(raw)
-    assert processed == "우와아아아(반복)"
+    """6회 초과 연속 반복 문자/기호의 6회 안전 캡핑 검증 (더 이상 '(반복)' 태그 삽입 안 함)"""
+    raw_excessive = "우와아아아!!!!!!!!!!!!!!!!!"  # 느낌표 17개
+    processed = process_repeated_chars(raw_excessive)
+    assert processed == "우와아아아!!!!!!"  # 최대 6개로 캡핑
+    assert "(반복)" not in processed
+
+    raw_voice = "아하하하하하하하하하하하하하"  # 하 13개
+    assert process_repeated_chars(raw_voice) == "아하하하하하하"  # 최대 6개로 캡핑
 
     raw_normal = "우와아아아!!!"
     assert process_repeated_chars(raw_normal) == "우와아아아!!!"

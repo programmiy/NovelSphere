@@ -130,10 +130,14 @@ def call_gemini_api(api_url: str, prompt: str, api_key: Optional[str] = None, sy
 
 
 def process_repeated_chars(text: str) -> str:
-    """6번 이상 반복되는 문자를 '(반복)'으로 대체합니다."""
+    """
+    LLM의 환각/무한 루프로 인해 비정상적으로 연속 반복되는 문자를 안전하게 최대 6글자로 캡핑합니다.
+    더 이상 '(반복)' 태그로 번역문을 파괴하지 않고, 원문의 의성어/기호 뉘앙스를 자연스럽게 보존합니다.
+    """
     if not text:
         return text
-    return re.sub(r'(.)\1{5,}', '(반복)', text)
+    # 동일 문자가 6회 초과 반복될 경우, 6회로 캡핑 (예: !!!!!!!! -> !!!!!!, 하하하하하하하 -> 하하하하하하)
+    return re.sub(r'(.)\1{6,}', r'\1\1\1\1\1\1', text)
 
 
 def parse_translation_response(raw_text: str) -> dict:
