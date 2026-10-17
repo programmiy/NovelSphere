@@ -68,6 +68,9 @@ export class KakuyomuScraper implements PlatformScraper {
   }
 
   isTocPage(_url: string, path: string): boolean {
+    if (path.includes('/episodes/') || document.querySelector('.widget-episodeBody, #contentMain-inner p[id]')) {
+      return false;
+    }
     return /\/works\/\d+\/?$/.test(path) || !!document.querySelector('.widget-toc-episode');
   }
 

@@ -1,10 +1,11 @@
 // state.ts: 중앙 집중식 상태 관리 및 원격 제어 직접 발행 엔진 (wrapGlobal 해킹 폐기)
-import { RemoteStatusPayload, RemotePhase, RemoteCommandType, RemoteCommandResult } from '../types/remote';
-import { TranslationRecord, SeparatorConfig } from '../types/novel';
-import { DEFAULT_GLOBAL_SEPARATORS } from './separators';
+import type { RemoteStatusPayload, RemotePhase, RemoteCommandType, RemoteCommandResult } from '../types/remote.ts';
+import type { TranslationRecord, SeparatorConfig, SeparatorExcludedItem } from '../types/novel.ts';
+import { DEFAULT_GLOBAL_SEPARATORS } from './separators.ts';
 
 export class ExtensionState {
   // 번역 수명주기 상태
+  public hasScannedForPTags = false;
   public isTranslationCancelled = false;
   public resolveResume: (() => void) | null = null;
   public translationCache = new Map<string, TranslationRecord>();
@@ -21,6 +22,7 @@ export class ExtensionState {
     customSeparators: [],
     effectiveSeparators: [...DEFAULT_GLOBAL_SEPARATORS],
   };
+  public separatorExcludedItems: SeparatorExcludedItem[] = [];
 
   // 알림 센터 검수 상태
   public reviewTargetsData: any = null;
@@ -44,7 +46,7 @@ export class ExtensionState {
   public retryDelayUntil = 0;
   public activeDelayFn: (() => number) | number | null = null;
 
-  // 콜백 핸들러 주입 (순환 참조 방지)
+  // 원격 제어 핸들러 주입
   public onNextEpisode: (() => RemoteCommandResult) | null = null;
   public onPrevEpisode: (() => RemoteCommandResult) | null = null;
   public onRetranslate: (() => RemoteCommandResult) | null = null;
@@ -58,6 +60,12 @@ export class ExtensionState {
   constructor() {
     this.startStatusReporting();
   }
+
+  public isReviewMode(): boolean {
+    const hasHash = typeof window !== 'undefined' && window.location && window.location.hash.includes('lanovel_review');
+    return this.isReviewSession || hasHash || Boolean(this.reviewTargetPids && this.reviewTargetPids.size > 0);
+  }
+
 
   public recordLog(message: string): void {
     const text = String(message || '');
@@ -151,10 +159,14 @@ export class ExtensionState {
   }
 
   private startStatusReporting(): void {
+    if (typeof document === 'undefined') return;
     if (this.reportIntervalTimer) clearInterval(this.reportIntervalTimer);
     this.reportIntervalTimer = setInterval(() => {
       this.broadcastStatus();
     }, 2000);
+    if (this.reportIntervalTimer && typeof (this.reportIntervalTimer as any).unref === 'function') {
+      (this.reportIntervalTimer as any).unref();
+    }
   }
 
   public handleRemoteCommand(type: RemoteCommandType, _params: Record<string, any> = {}): RemoteCommandResult {

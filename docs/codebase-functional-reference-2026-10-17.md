@@ -1,7 +1,7 @@
 # LANOVEL 종합 코드베이스 기능 및 함수 레퍼런스 (Architectural & Functional Reference)
 
 > **문서 목적**: AI 어시스턴트가 사용자 요구사항 및 구어체 지시를 입력받았을 때, 혼선이나 회귀(Regression) 없이 전체 아키텍처와 1:1 타깃 코드를 0초 만에 직관적으로 파악할 수 있도록 압축 정리한 단일 진실 공급원(SSOT) 기술 레퍼런스입니다.
-> **최신 동기화 일자**: 2026-10-16 (모바일 Luminary UI Impeller 커스텀 프래그먼트 셰이더 `shaders/hyper_ambient_mesh.frag` 도입: 풀스크린 BackdropFilter/SaveLayer 병목 원천 제거, 단일 패스 도메인 워핑 오로라 유체 메쉬 + 마이크로 필름 그레인 디더링 및 120Hz 고정; 크롬 확장 프로그램 TypeScript 모듈화 및 esbuild 빌드 파이프라인; PC 서재 증기 차분기관 & 3D 닉시관 UI; 최근 번역 회차 연동 적응형 RPM 방어 시스템; 사전 연동 및 34만 누적 번역 코퍼스 학습/교정 엔진)
+> **최신 동기화 일자**: 2026-10-17 (크롬 확장 프로그램 검수 3대 서브시스템 레거시 100% 복원 및 단일 책임 모듈 분리: `review_panel.ts`, `separator_panel.ts`, `row_actions.ts`, `dom_applier.ts` 신설 및 `sidebar.ts` 800줄 중복 인라인 CSS 제거; 모바일 Luminary UI Impeller 커스텀 프래그먼트 셰이더 `shaders/hyper_ambient_mesh.frag` 도입; PC 서재 증기 차분기관 & 3D 닉시관 UI; 최근 번역 회차 연동 적응형 RPM 방어 시스템; 사전 연동 및 34만 누적 번역 코퍼스 학습/교정 엔진)
 
 ---
 
@@ -28,7 +28,7 @@
 | **앱 배포** | `server/routers/app_release.py` | 모바일 OTA 무선 자동 업데이트: `/api/app/version`, `/api/app/download`, 웹 랜딩 페이지(`/download`) |
 | **구분선** | `server/routers/separators.py` | 후기/광고 번역 차단용 소설별 구분선 CRUD (공통 7종, 프리셋 6종) |
 | **원격 허브** | `server/routers/remote.py` | 모바일/웹 리모컨 (`/command`, `/status`, `/ws`, `/poll`, `/report`, `/ack`) |
-| **크롬 확장** | `extension/` | **TypeScript + esbuild 모듈화 구조**: `src/content.ts` (클린 엔트리), `src/background/` (`remote_ws.ts`, `index.ts`), `src/scrapers/` (플랫폼별 DOM 파서), `src/core/` (상태 머신, 청킹, 적응형 스로틀링, 번역 실행), `src/ui/` (사이드바, HUD, 단축키, 목차 퀵점프) |
+| **크롬 확장** | `extension/` | **TypeScript + esbuild 단일 책임 모듈화 구조**: `src/content.ts`, `src/background/` (`remote_ws.ts`, `index.ts`), `src/scrapers/`, `src/core/` (`state.ts`, `chunker.ts`, `filters.ts`, `turbo.ts`, `separators.ts`, `adaptive_throttle.ts`, `dom_applier.ts`, `row_actions.ts`, `page_translator.ts`), `src/ui/` (`sidebar.ts`, `review_panel.ts`, `separator_panel.ts`, `hud.ts`, `key_nav.ts`, `toc_quick_jump.ts`) |
 | **모바일 앱** | `mobile_app/lib/`<br>`mobile_app/shaders/` | **하이퍼 에스테틱 Luminary UI & Impeller GLSL 셰이더** (`shaders/hyper_ambient_mesh.frag`, `hyper_aesthetic_theme.dart`, `HyperAmbientMeshBackground`, `_HyperAuroraShaderPainter`, `HyperGlassCard`, `HyperHapticPill`, `HyperProgressRing`, 플로팅 글래스 네비게이션 독, Sqflite 하이브리드 압축 DB, 루비/방점 렌더러) |
 | **웹 프론트** | `server/static/` | `viewer.js` (3D 닉시관 인디케이터, 사전 & 용례 학습 패널), `library.js` (증기 차분기관 톱니/배관/압력계 대시보드), `admin.js` |
 
@@ -45,9 +45,10 @@
 [ 크롬 확장 프로그램 (extension/src/ -> build.js -> extension/content.js & background.js) ]
    - src/scrapers/: 카쿠요무, 소설가가 되자, 노벨업, 하멜른, 알파폴리스 DOM 파서
    - src/core/state.ts: wrapGlobal 멍키패치 완전 폐기, 중앙 상태 머신에서 remoteStatus 직접 디스패치
-   - src/core/page_translator.ts: 가변 청킹, 적응형 스로틀링(8~55초), 문장 분할 재시도, DOM 치환
+   - src/core/page_translator.ts: 가변 청킹, 적응형 스로틀링(8~55초), 문장 분할 재시도
+   - src/core/dom_applier.ts & row_actions.ts: 본문 DOM 주입/복원, 개별 문장 인라인 저장 및 단건 즉시 재번역
    - src/background/remote_ws.ts: WebSocket(ws://127.0.0.1:8001/api/remote/ws) + HTTP 폴링 백오프, 원격 명령 실행
-   - src/ui/: 사이드바, 플로팅 HUD, 목차 배지 & 퀵점프 패널
+   - src/ui/: 사이드바(sidebar.ts), 알림 센터 연계 검수 패널(review_panel.ts), 구분선 자동 제외/복원 패널(separator_panel.ts), 플로팅 HUD, 목차 배지 & 퀵점프 패널
            │ HTTP (POST /translate, GET /api/rpm_status, POST /api/check_translated_urls, WS /api/remote/ws)
            ▼
 [ FastAPI 백엔드 서버 (server:app, Port: 8001) ]
@@ -81,7 +82,7 @@
 extension/
 ├── src/
 │   ├── types/                  # 공통 타입 정의
-│   │   ├── novel.ts            # ParagraphItem, TranslationRecord, SeparatorConfig
+│   │   ├── novel.ts            # ParagraphItem, TranslationRecord, SeparatorConfig, SeparatorExcludedItem
 │   │   └── remote.ts           # RemoteStatusPayload, RemoteCommand, RemotePhase
 │   ├── scrapers/               # 플랫폼별 DOM 파서
 │   │   ├── base.ts             # PlatformScraper 인터페이스
@@ -97,22 +98,26 @@ extension/
 │   │   ├── chunker.ts          # 글자 수/토큰 예산 기반 가변 청킹 (최대 2,000자 / 40문장)
 │   │   ├── filters.ts          # 기호 전용 Fast-path 필터, 일본어/중국어/원문복붙 판별
 │   │   ├── turbo.ts            # 쾌속모드 및 16시/17시 쿼터 초기화 정각 감지
-│   │   ├── separators.ts       # 상단 잡글/하단 후기 구분선 분석 및 API 연동
+│   │   ├── separators.ts       # 상단 잡글/하단 후기 구분선 분석(excludedPidMap) 및 API 연동
 │   │   ├── adaptive_throttle.ts# 최근 5분 번역 회차 슬라이딩 윈도우 및 가변 딜레이
-│   │   └── page_translator.ts  # 번역 실행, 청크 전송, 재시도, 본문 치환, 서버 저장
+│   │   ├── dom_applier.ts      # 본문 <p> 번역 주입, 원문 복원, 문단 클릭 연동
+│   │   ├── row_actions.ts      # 개별 문장 인라인 저장(saveSingleTranslation) 및 단건 재번역(retranslateSingleRow)
+│   │   └── page_translator.ts  # 번역 실행, 청크 전송, 재시도, 전체 재번역 초기화(startFullRetranslation)
 │   ├── ui/                     # UI 컴포넌트
 │   │   ├── hud.ts              # 플로팅 미니멀 HUD (showLanovelHud)
 │   │   ├── key_nav.ts          # 단축키 내비게이션 (], L, [, H, O, T, N, Enter)
-│   │   ├── sidebar.ts          # 사이드바 DOM 주입, 번역 테이블, 로그 콘솔, 모달
+│   │   ├── sidebar.ts          # 사이드바 셸, 번역 테이블 행, 실시간 로그 콘솔
+│   │   ├── review_panel.ts     # 알림 센터 연계 재번역 검수 패널(#review-target-panel) 및 하이라이트
+│   │   ├── separator_panel.ts  # 소설별 구분선 설정 및 자동 제외/복원 검수 패널(#separator-exclude-panel)
 │   │   └── toc_quick_jump.ts   # 목차 상태 배지 및 미번역 퀵 점프 패널
-│   └── content.ts              # 클린 오케스트레이션 엔트리포인트 (~280줄)
+│   └── content.ts              # 클린 오케스트레이션 엔트리포인트
 ├── background/
 │   ├── remote_ws.ts            # WebSocket/폴링 원격 제어 클라이언트
 │   └── index.ts                # 서비스 워커 메인 엔트리 (API 중계, 쿼터 에러 핸들링)
 ├── build.js                    # 15줄 esbuild 초경량 번들러 스크립트
 ├── package.json                # TypeScript, esbuild, @types/chrome 의존성 (완전 격리)
 ├── tsconfig.json               # ES2022, bundler 모듈 해석, strict 타입 체크
-├── manifest.json               # MV3 설정 ("js": ["content.js"] 단일 스크립트)
+├── manifest.json               # MV3 설정 ("js": ["content.js"], "css": ["content.css"])
 └── legacy_backup/              # 기존 레거시 파일 5종 안전 보관 (npm run rollback 지원)
 ```
 
@@ -123,6 +128,7 @@ extension/
 | 사용자 발화 / 요청 예시 | 연관 파일 및 핵심 함수 | 핵심 처리 내용 |
 | :--- | :--- | :--- |
 | **"확장 프로그램 수정하고 빌드해줘" / "확장 빌드해줘"** | `extension/build.js`<br>`extension/package.json` | `npm run build`로 20ms 내에 `content.js`와 `background.js` 초고속 번들링. `npm run typecheck`로 타입 오류 선제 검사. |
+| **"확장 프로그램 검수 패널 / 재번역 검수 / 제외 단락 복원"** | `extension/src/ui/review_panel.ts`<br>`extension/src/ui/separator_panel.ts`<br>`extension/src/core/row_actions.ts` | 알림 센터 연계 재번역 검수(`#review-target-panel`, `✓ 검수 완료`), 구분선 자동 제외 검수 및 복원(`#separator-exclude-panel`, `🛡️`), 개별 행 저장 및 단건 재번역(`🔄`). |
 | **"확장 프로그램 이전 코드로 되돌려줘" / "롤백해줘"** | `extension/package.json` (`npm run rollback`)<br>`extension/legacy_backup/` | `npm run rollback` 실행 시 `legacy_backup/`에 보관된 레거시 5종 파일로 1초 만에 100% 원상복구. |
 | **"원격 제어 안 돼" / "모바일 리모컨 상태 안 올라와"** | `extension/src/background/remote_ws.ts`<br>`extension/src/core/state.ts` | WebSocket(`ws://127.0.0.1:8001/api/remote/ws`) 연결 상태 점검. `state.broadcastStatus()`를 통해 주기적(2초) 및 상태 변화 시 직접 디스패치. |
 | **"최근 소설이 분당 번역수가 늘어나서 rpm제한에 걸려"** | `extension/src/core/adaptive_throttle.ts`<br>`server/services/rpm_manager.py` | 최근 5분간 번역된 회차 수를 실시간 추적하여, 회차가 많을수록 다음 화 이동 대기시간을 8초에서 최대 55초까지 계단식으로 늘려 분당 호출 폭증 차단. |

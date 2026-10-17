@@ -38,10 +38,47 @@ export class AlphapolisScraper implements PlatformScraper {
   }
 
   isTocPage(_url: string, path: string): boolean {
+    if (path.includes('/episode/') || document.querySelector('#novelBoby, #novelBody, .novel-body')) {
+      return false;
+    }
     return (
-      /\/novel\/\d+\/?$/.test(path) ||
+      /\/novel\/\d+\/\d+\/?$/.test(path) ||
       !!document.querySelector('.content-statuses, .episode-list, .episodes')
     );
+  }
+
+  prepareContent(): void {
+    const bodyEl = document.querySelector<HTMLElement>('#novelBoby, #novelBody, .novel-body');
+    if (!bodyEl || bodyEl.dataset.lanovelPreprocessed) return;
+    if (bodyEl.querySelectorAll('p[id]').length > 0) return;
+
+    const existingPs = bodyEl.querySelectorAll('p');
+    if (existingPs.length > 1) {
+      existingPs.forEach((p, idx) => {
+        if (!p.id) p.id = `L${idx + 1}`;
+      });
+      bodyEl.dataset.lanovelPreprocessed = 'true';
+      return;
+    }
+
+    const rawHtml = bodyEl.innerHTML;
+    const lines = /<br\s*\/?>/i.test(rawHtml) ? rawHtml.split(/<br\s*\/?>/i) : rawHtml.split(/\r?\n/);
+    if (lines.length <= 1) return;
+
+    bodyEl.innerHTML = '';
+    lines.forEach((line, index) => {
+      const p = document.createElement('p');
+      p.id = `L${index + 1}`;
+      const trimmed = line.replace(/<[^>]*>/g, '').trim();
+      if (!trimmed) {
+        p.className = 'blank';
+        p.innerHTML = '<br>';
+      } else {
+        p.innerHTML = line.trim();
+      }
+      bodyEl.appendChild(p);
+    });
+    bodyEl.dataset.lanovelPreprocessed = 'true';
   }
 
   findNextEpisodeLink(): HTMLAnchorElement | null {

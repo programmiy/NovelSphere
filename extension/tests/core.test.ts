@@ -2,7 +2,14 @@ import test from 'node:test';
 import assert from 'node:assert';
 import { chunkArray, createBudgetChunks } from '../src/core/chunker.ts';
 import { isTranslatableText, isPurePunctuationOnly, hasJapaneseText } from '../src/core/filters.ts';
-import { calculateAdaptiveChunkDelay, calculateAdaptiveEpisodeDelay } from '../src/core/adaptive_throttle.ts';
+import {
+  calculateAdaptiveChunkDelay,
+  calculateAdaptiveEpisodeDelay,
+  getNovelWorkKey,
+  getCurrentQuotaWindow,
+  sendProgressNotification,
+  sendCompleteNotification,
+} from '../src/core/adaptive_throttle.ts';
 
 test('chunker: chunkArray splits array by exact size', () => {
   const input = [1, 2, 3, 4, 5];
@@ -97,4 +104,154 @@ test('throttle: turbo mode uses fast 2s chunk delay and 8s episode delay with sc
   assert.strictEqual(calculateAdaptiveEpisodeDelay(3, true), 15000);
   assert.strictEqual(calculateAdaptiveEpisodeDelay(7, true), 55000);
 });
+
+test('counter: getNovelWorkKey extracts platform work key and getCurrentQuotaWindow respects cutoff hour', () => {
+  assert.strictEqual(
+    getNovelWorkKey('https://kakuyomu.jp/works/1177354054887975130/episodes/123', '테스트'),
+    'kakuyomu_1177354054887975130'
+  );
+  assert.strictEqual(
+    getNovelWorkKey('https://ncode.syosetu.com/n3298hj/15/', '테스트'),
+    'syosetu_n3298hj'
+  );
+  assert.strictEqual(
+    getNovelWorkKey('https://novelup.plus/story/987654/111', '테스트'),
+    'novelup_987654'
+  );
+  assert.strictEqual(
+    getNovelWorkKey('https://example.com/ch1', '마왕 학원의 부적합자'),
+    'novel_마왕_학원의_부적합자'
+  );
+
+  const beforeCutoff = new Date(2026, 9, 17, 15, 30, 0); // Oct 17, 15:30 (< 16:00)
+  const afterCutoff = new Date(2026, 9, 17, 16, 30, 0); // Oct 17, 16:30 (>= 16:00)
+  assert.strictEqual(getCurrentQuotaWindow(beforeCutoff, 16), '2026-10-16_16');
+  assert.strictEqual(getCurrentQuotaWindow(afterCutoff, 16), '2026-10-17_16');
+});
+
+test('notifications: sendProgressNotification and sendCompleteNotification call legacy server endpoints and payload keys', async () => {
+  const calls: Array<{ url: string; body: any }> = [];
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: any, init?: any) => {
+    calls.push({ url: String(input), body: JSON.parse(init.body) });
+    return { ok: true } as any;
+  }) as any;
+
+  try {
+    await sendProgressNotification('소설제목', '10화', 45, 45, 100, 'https://syosetu.com/n1234ab/10', 10);
+    await sendCompleteNotification('소설제목', '25화', 50, 'https://syosetu.com/n1234ab/25', 25);
+
+    assert.strictEqual(calls.length, 2);
+    assert.strictEqual(calls[0].url, 'http://127.0.0.1:8001/api/notifications/progress');
+    assert.deepStrictEqual(calls[0].body, {
+      novel_title: '소설제목',
+      episode_title: '10화',
+      current: 45,
+      total: 45,
+      percentage: 100,
+      url: 'https://syosetu.com/n1234ab/10',
+      episode_count: 10,
+    });
+
+    assert.strictEqual(calls[1].url, 'http://127.0.0.1:8001/api/notifications/complete');
+    assert.deepStrictEqual(calls[1].body, {
+      novel_title: '소설제목',
+      episode_title: '25화',
+      total_count: 50,
+      url: 'https://syosetu.com/n1234ab/25',
+      episode_count: 25,
+    });
+  } finally {
+    globalThis.fetch = origFetch;
+  }
+});
+
+test('separators: analyzeSeparatorSections preserves body paragraphs when scene breaks appear in the middle', async () => {
+  const { analyzeSeparatorSections, DEFAULT_GLOBAL_SEPARATORS } = await import('../src/core/separators.ts');
+
+  const paragraphs = Array.from({ length: 50 }, (_, idx) => ({
+    pid: `p${idx + 1}`,
+    text: idx === 20 || idx === 30 ? '***' : `본문 문장 ${idx + 1}`,
+    element: {} as any,
+  }));
+
+  // 1) 기본 구분선(DEFAULT_GLOBAL_SEPARATORS) 사용 시 중간의 '***'는 전혀 제외되지 않아야 함
+  const resDefault = analyzeSeparatorSections(paragraphs, DEFAULT_GLOBAL_SEPARATORS);
+  assert.strictEqual(resDefault.prefacePids.size, 0);
+  assert.strictEqual(resDefault.afterwordPids.size, 0);
+
+  // 2) 커스텀 구분선에 '***'가 있더라도 본문 한가운데(21번째, 31번째)에 있으면 앞뒤 본문을 통째로 날리지 않아야 함
+  const resCustom = analyzeSeparatorSections(paragraphs, [...DEFAULT_GLOBAL_SEPARATORS, '***']);
+  assert.strictEqual(resCustom.prefacePids.size, 0);
+  assert.strictEqual(resCustom.afterwordPids.size, 0);
+  assert.strictEqual(resCustom.separatorPids.has('p21'), true);
+  assert.strictEqual(resCustom.separatorPids.has('p31'), true);
+});
+
+test('separators: analyzeSeparatorSections populates excludedPidMap with preface, separator, and afterword metadata', async () => {
+  const { analyzeSeparatorSections, DEFAULT_GLOBAL_SEPARATORS } = await import('../src/core/separators.ts');
+
+  const paragraphs = Array.from({ length: 20 }, (_, idx) => {
+    const pid = `p${idx + 1}`;
+    let text = `본문 문장 ${idx + 1}`;
+    if (idx === 1) text = '=================='; // p2: 상단 구분선
+    if (idx === 17) text = '＜あとがき＞'; // p18: 하단 후기 구분선
+    return { pid, text, element: {} as any };
+  });
+
+  const analysis = analyzeSeparatorSections(paragraphs, [...DEFAULT_GLOBAL_SEPARATORS, '==================']);
+
+  // 상단 구분선 이전 잡글 (p1) 및 상단 구분선 자체 (p2)
+  assert.strictEqual(analysis.prefacePids.has('p1'), true);
+  assert.deepStrictEqual(analysis.excludedPidMap.get('p1'), {
+    matchedSep: '==================',
+    isSubsequent: false,
+    isPreface: true,
+  });
+  assert.deepStrictEqual(analysis.excludedPidMap.get('p2'), {
+    matchedSep: '==================',
+    isSubsequent: false,
+    isPreface: false,
+  });
+
+  // 본문 단락 (p10)은 제외되지 않음
+  assert.strictEqual(analysis.excludedPidMap.has('p10'), false);
+
+  // 하단 구분선 자체 (p18) 및 후기 단락 (p19, p20)
+  assert.deepStrictEqual(analysis.excludedPidMap.get('p18'), {
+    matchedSep: '＜あとがき＞',
+    isSubsequent: false,
+    isPreface: false,
+  });
+  assert.deepStrictEqual(analysis.excludedPidMap.get('p19'), {
+    matchedSep: '＜あとがき＞',
+    isSubsequent: true,
+    isPreface: false,
+  });
+  assert.deepStrictEqual(analysis.excludedPidMap.get('p20'), {
+    matchedSep: '＜あとがき＞',
+    isSubsequent: true,
+    isPreface: false,
+  });
+});
+
+test('state & filters: isReviewMode and checkIsVerbatimOrParaphrased work as expected', async () => {
+  const { ExtensionState } = await import('../src/core/state.ts');
+  const { checkIsVerbatimOrParaphrased } = await import('../src/core/filters.ts');
+
+  const s = new ExtensionState();
+  assert.strictEqual(s.isReviewMode(), false);
+  s.reviewTargetPids.add('p12');
+  assert.strictEqual(s.isReviewMode(), true);
+  s.reviewTargetPids.clear();
+  s.isReviewSession = true;
+  assert.strictEqual(s.isReviewMode(), true);
+
+  // 원문 그대로 복제 또는 미세 변형(일본어 잔존, 한글 부재) 감지
+  assert.strictEqual(checkIsVerbatimOrParaphrased('「おはよう、勇者様」', '「おはよう、勇者様」'), true);
+  assert.strictEqual(checkIsVerbatimOrParaphrased('「おはよう、勇者様」', 'おはよう、勇者様！'), true);
+  // 정상 한국어 번역문은 false
+  assert.strictEqual(checkIsVerbatimOrParaphrased('「おはよう、勇者様」', '「좋은 아침이에요, 용사님」'), false);
+});
+
 

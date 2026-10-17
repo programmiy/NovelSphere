@@ -38,16 +38,27 @@ import {
   showSidebar,
 } from '../ui/sidebar';
 import { showLanovelHud } from '../ui/hud';
+import { updateReviewCardTranslation } from '../ui/review_panel';
 import { getScraper } from '../scrapers';
+import {
+  getCleanUrl,
+  getTargetParagraphs,
+  applyTranslationsToPage,
+  restoreOriginalPage,
+  setPageApplyStatus,
+  togglePageApplyStatus,
+  setupParagraphInteraction,
+} from './dom_applier';
 
-export function getCleanUrl(): string {
-  return window.location.href.split('#')[0].trim();
-}
-
-export function getTargetParagraphs(): HTMLElement[] {
-  const allParagraphs = document.querySelectorAll<HTMLElement>('p[id]');
-  return Array.from(allParagraphs).filter((p) => !p.classList.contains('blank') && PID_REGEX.test(p.id));
-}
+export {
+  getCleanUrl,
+  getTargetParagraphs,
+  applyTranslationsToPage,
+  restoreOriginalPage,
+  setPageApplyStatus,
+  togglePageApplyStatus,
+  setupParagraphInteraction,
+};
 
 export function sleepResponsive(getDelayFn: (() => number) | number): Promise<void> {
   return new Promise((resolve) => {
@@ -283,134 +294,6 @@ export function hasUntranslatedParagraphs(): boolean {
   return false;
 }
 
-export function applyTranslationsToPage(translations: any[], logNotification = true): void {
-  if (!translations || translations.length === 0) return;
-
-  const translationMap = new Map(translations.map((t) => [t.pid || t.id, t.translated]));
-  const paragraphs = getTargetParagraphs();
-  let replacementCount = 0;
-
-  paragraphs.forEach((p) => {
-    if (translationMap.has(p.id)) {
-      const translatedText = translationMap.get(p.id);
-      if (translatedText && !translatedText.includes('번역 실패') && !translatedText.includes('API 오류')) {
-        if (!p.dataset.lanovelOriginalHtml) {
-          p.dataset.lanovelOriginalHtml = p.innerHTML;
-          p.dataset.lanovelOriginalStyle = p.getAttribute('style') || '';
-        }
-        p.innerHTML = translatedText;
-        p.classList.add('lanovel-applied-text');
-        const appliedStyle = { color: '#E2E8F0', fontFamily: 'TwoCon' };
-        Object.assign(p.style, appliedStyle);
-        replacementCount++;
-      }
-    }
-  });
-
-  if (logNotification && replacementCount > 0) {
-    logToSidebar(`페이지에 번역 ${replacementCount}개를 적용했습니다.`);
-  }
-  updateApplyButtonUI(true, paragraphs.length);
-  setupParagraphInteraction();
-}
-
-export function restoreOriginalPage(): void {
-  const paragraphs = getTargetParagraphs();
-  let restoredCount = 0;
-
-  paragraphs.forEach((p) => {
-    if (p.dataset.lanovelOriginalHtml) {
-      p.innerHTML = p.dataset.lanovelOriginalHtml;
-      if (p.dataset.lanovelOriginalStyle) {
-        p.setAttribute('style', p.dataset.lanovelOriginalStyle);
-      } else {
-        p.removeAttribute('style');
-      }
-      p.classList.remove('lanovel-applied-text');
-      restoredCount++;
-    }
-  });
-
-  logToSidebar(`본문을 원문으로 복원했습니다 (${restoredCount}개 문단).`);
-  updateApplyButtonUI(false, paragraphs.length);
-  setupParagraphInteraction();
-}
-
-export async function setPageApplyStatus(applied: boolean, syncStorageAndServer = true): Promise<void> {
-  state.isPageApplied = applied;
-
-  if (state.isPageApplied) {
-    const allTranslations = Array.from(state.translationCache.values());
-    applyTranslationsToPage(allTranslations, true);
-  } else {
-    restoreOriginalPage();
-  }
-
-  const paragraphs = getTargetParagraphs();
-  updateApplyButtonUI(state.isPageApplied, paragraphs.length);
-
-  if (syncStorageAndServer) {
-    const cleanUrl = getCleanUrl();
-    const currentUrl = window.location.href;
-
-    try {
-      await fetch('http://127.0.0.1:8001/api/urls/apply', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: cleanUrl, apply: state.isPageApplied }),
-      });
-    } catch (e) {
-      console.warn('[setPageApplyStatus] Failed to sync apply status to server:', e);
-    }
-
-    try {
-      const statusObj = { applied: state.isPageApplied, timestamp: Date.now() };
-      await chrome.storage.local.set({
-        ['status-' + cleanUrl]: statusObj,
-        ['status-' + currentUrl]: statusObj,
-      });
-    } catch (e) {
-      console.warn('[setPageApplyStatus] Failed to sync apply status to chrome storage:', e);
-    }
-  }
-}
-
-export function togglePageApplyStatus(): void {
-  setPageApplyStatus(!state.isPageApplied, true);
-}
-
-export function setupParagraphInteraction(): void {
-  const paragraphs = getTargetParagraphs();
-  paragraphs.forEach((p) => {
-    if (p.dataset.lanovelLinked) return;
-    p.dataset.lanovelLinked = 'true';
-
-    p.addEventListener('click', () => {
-      const selection = window.getSelection();
-      if (selection && selection.toString().trim().length > 0) return;
-
-      p.classList.remove('lanovel-highlight-pulse');
-      void p.offsetWidth;
-      p.classList.add('lanovel-highlight-pulse');
-      setTimeout(() => {
-        p.classList.remove('lanovel-highlight-pulse');
-      }, 1600);
-
-      const row = document.querySelector<HTMLTableRowElement>(`tr[data-pid="${p.id}"]`);
-      if (row) {
-        showSidebar();
-        row.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        row.classList.remove('lanovel-row-highlight');
-        void row.offsetWidth;
-        row.classList.add('lanovel-row-highlight');
-        setTimeout(() => {
-          row.classList.remove('lanovel-row-highlight');
-        }, 1600);
-      }
-    });
-  });
-}
-
 export async function saveAllTranslations(itemsToSave: any[]): Promise<void> {
   const validItems = itemsToSave.filter((item) => item.translated && item.translated.trim());
   if (validItems.length === 0) return;
@@ -444,107 +327,19 @@ export async function saveAllTranslations(itemsToSave: any[]): Promise<void> {
   }
 }
 
-export async function checkAndExcludeSeparatorTranslations(translationsList: any[]): Promise<void> {
-  if (!translationsList || !Array.isArray(translationsList) || translationsList.length === 0) return;
-  if (!state.activeSeparators || state.activeSeparators.length === 0) return;
-
-  const allParagraphs = getTargetParagraphs();
-  const validParagraphs: ParagraphItem[] = [];
-  allParagraphs.forEach((p) => {
-    if (!p || p.id === 'tagCount' || /^(la|lp)\d+$/i.test(p.id)) return;
-    const text = p.innerHTML.replace(/<br\s*\/?>/gi, ' ').replace(/<[^>]*>/g, '').trim();
-    if (text) {
-      validParagraphs.push({ element: p, text: text, pid: p.id });
-    }
-  });
-
-  const sepAnalysis = analyzeSeparatorSections(validParagraphs, state.activeSeparators);
-  const targetsToExclude: any[] = [];
-  const targetIds: string[] = [];
-
-  translationsList.forEach((t) => {
-    if (!t || !t.id) return;
-    if (state.exclusionSet.has(t.original)) return;
-
-    let isExcluded = false;
-    if (t.pid && (sepAnalysis.prefacePids.has(t.pid) || sepAnalysis.afterwordPids.has(t.pid) || sepAnalysis.separatorPids.has(t.pid))) {
-      isExcluded = true;
-    } else if (t.original && checkSeparatorMatch(t.original.trim(), state.activeSeparators)) {
-      isExcluded = true;
-    }
-
-    if (isExcluded && t.translated && t.translated.trim()) {
-      targetsToExclude.push(t);
-      targetIds.push(t.id);
-    }
-  });
-
-  if (targetsToExclude.length === 0) return;
-
-  try {
-    const response = await fetch('http://127.0.0.1:8001/translations/exclude', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ids: targetIds }),
-    });
-
-    if (response.ok) {
-      targetsToExclude.forEach((item) => {
-        if (item.pid) {
-          state.userDeletedTranslationPids.add(String(item.pid));
-          state.translationCache.delete(item.pid);
-          const row = document.querySelector(`tr[data-pid="${item.pid}"]`);
-          if (row) row.remove();
-        }
-        if (item.original) {
-          state.exclusionSet.add(item.original);
-        }
-      });
-      logToSidebar(`[구분선/후기 감지] ${targetsToExclude.length}개 단락을 번역에서 자동 제외했습니다.`);
-    }
-  } catch (e) {
-    console.warn('[checkAndExcludeSeparatorTranslations] Server call failed:', e);
-  }
-}
-
-export async function checkAndLoadReviewTargets(): Promise<void> {
-  try {
-    const cleanUrl = getCleanUrl();
-    let batchId: string | null = null;
-    if (window.location.hash.includes('lanovel_review=')) {
-      state.isReviewSession = true;
-      const hashMatch = window.location.hash.match(/lanovel_review=([^&]+)/);
-      if (hashMatch) {
-        batchId = decodeURIComponent(hashMatch[1]);
-      }
-    } else if (window.location.hash.includes('lanovel_review')) {
-      state.isReviewSession = true;
-    }
-
-    let apiUrl = `http://127.0.0.1:8001/cleanup/review_targets?url=${encodeURIComponent(cleanUrl)}`;
-    if (batchId) {
-      apiUrl += `&batch_id=${encodeURIComponent(batchId)}`;
-    }
-
-    const res = await fetch(apiUrl);
-    if (!res.ok) return;
-    const data = await res.json();
-
-    if (data.has_targets && Array.isArray(data.targets) && data.targets.length > 0) {
-      state.isReviewSession = true;
-      state.reviewTargetsData = data;
-      state.reviewTargetPids = new Set(data.targets.map((t: any) => t.pid).filter(Boolean));
-
-      if (window.location.hash.includes('lanovel_review')) {
-        showSidebar();
-        logToSidebar(
-          `🔔 [알림 센터 연계] 재번역 검수 대상 ${data.targets.length}건이 감지되었습니다.`
-        );
-      }
-    }
-  } catch (e) {
-    console.warn('[checkAndLoadReviewTargets] Failed to load review targets:', e);
-  }
+/**
+ * 전체 재번역(🔄 버튼 또는 원격 재번역 명령) 실행 시 기존 캐시와 테이블을 초기화하고 고성능 모델로 재번역을 시작합니다.
+ */
+export function startFullRetranslation(): void {
+  logToSidebar('번역을 처음부터 다시 시작합니다.');
+  const tableBody = document.getElementById('translation-table-body');
+  if (tableBody) tableBody.innerHTML = '';
+  state.translationCache.clear();
+  state.userDeletedTranslationPids.clear();
+  state.translationsLoadedPromise = null;
+  state.hasScannedForPTags = false;
+  translateAllPTags(true);
+  showSidebar();
 }
 
 let isTranslatingInProgress = false;
@@ -559,6 +354,7 @@ export async function translateAllPTags(isRetranslation = false): Promise<void> 
     return;
   }
   isTranslatingInProgress = true;
+  state.hasScannedForPTags = true;
   state.isTranslationCancelled = false;
   state.notifyInflightStart();
 
@@ -577,6 +373,11 @@ export async function translateAllPTags(isRetranslation = false): Promise<void> 
       await ensureTranslationsLoaded();
     }
 
+    const prepScraper = getScraper();
+    if (prepScraper.prepareContent) {
+      prepScraper.prepareContent();
+    }
+
     const allParagraphs = getTargetParagraphs();
     const validParagraphs: ParagraphItem[] = [];
     allParagraphs.forEach((p) => {
@@ -588,6 +389,17 @@ export async function translateAllPTags(isRetranslation = false): Promise<void> 
     });
 
     const sepAnalysis = analyzeSeparatorSections(validParagraphs, state.activeSeparators);
+    if (sepAnalysis.topSeparator) {
+      logToSidebar(
+        `[상단 구분선 감지] '${sepAnalysis.topSeparator.sep}' 이전 잡글 ${sepAnalysis.prefacePids.size}개 문단(구분선 포함)을 번역에서 자동 제외합니다.`
+      );
+    }
+    if (sepAnalysis.bottomSeparator) {
+      logToSidebar(
+        `[하단 구분선 감지] '${sepAnalysis.bottomSeparator.sep}' 이후 후기 ${sepAnalysis.afterwordPids.size}개 문단(구분선 포함)을 번역에서 자동 제외합니다.`
+      );
+    }
+
     const textsToTranslate: Array<{ id: string; text: string }> = [];
     const instantPunctuationItems: Array<{ id: string; original: string; translated: string }> = [];
 
@@ -686,6 +498,15 @@ export async function translateAllPTags(isRetranslation = false): Promise<void> 
                 await abortTurboMode(response.isServerOffline ? '서버 오프라인' : '초기화 시간 도달');
                 return;
               }
+              items.forEach((item) => {
+                const row = document.querySelector<HTMLTableRowElement>(`tr[data-pid="${item.id}"]`);
+                if (row) {
+                  const cell = row.querySelector('.translated-text');
+                  if (cell && cell.textContent?.includes('번역 중')) {
+                    cell.textContent = '';
+                  }
+                }
+              });
               if (stopBtn) stopBtn.style.display = 'none';
               const resumeBtn = document.getElementById('resume-translation-btn');
               if (resumeBtn) resumeBtn.style.display = 'inline-block';
@@ -700,9 +521,56 @@ export async function translateAllPTags(isRetranslation = false): Promise<void> 
           }
 
           if (response && response.translations) {
+            const censoredItems = response.translations.filter(
+              (t: any) => t.censored || (t.translated && t.translated.includes('[검열로 인해 번역 생략]'))
+            );
+            if (censoredItems.length > 0) {
+              censoredItems.forEach((item: any) => {
+                const preview = item.original ? (item.original.length > 25 ? item.original.slice(0, 25) + '...' : item.original) : '';
+                logToSidebar(`⚠️ [검열 감지] 문장(ID: ${item.id}) 번역이 검열로 인해 생략되었습니다. (원문: ${preview})`, 'log-error');
+              });
+            }
+
             const verbatimItems = response.translations.filter(
               (t: any) => Boolean(t.verbatim) || (t.translated && checkIsVerbatimOrParaphrased(t.original, t.translated))
             );
+            if (verbatimItems.length > 0) {
+              verbatimItems.forEach((item: any) => {
+                const preview = item.original ? (item.original.length > 25 ? item.original.slice(0, 25) + '...' : item.original) : '';
+                logToSidebar(
+                  `⚠️ [원문 복제·변형 감지] 문장(ID: ${item.id})이 원문과 동일/변형되어 자동 삭제 및 휴지통으로 이전되었습니다. (원문: ${preview})`,
+                  'log-error'
+                );
+                state.translationCache.delete(item.id);
+                if (state.isPageApplied) {
+                  const pTag = document.getElementById(item.id);
+                  if (pTag && pTag.dataset.lanovelOriginalHtml) {
+                    pTag.innerHTML = pTag.dataset.lanovelOriginalHtml;
+                    pTag.classList.remove('lanovel-applied-text');
+                    pTag.removeAttribute('style');
+                    if (pTag.dataset.lanovelOriginalStyle) {
+                      pTag.setAttribute('style', pTag.dataset.lanovelOriginalStyle);
+                    }
+                  }
+                }
+                const row = document.querySelector<HTMLTableRowElement>(`tr[data-pid="${item.id}"]`);
+                if (row) {
+                  const cell = row.querySelector('.translated-text');
+                  if (cell) {
+                    cell.textContent = '';
+                    cell.setAttribute('contenteditable', 'true');
+                  }
+                  const saveBtnEl = row.querySelector<HTMLButtonElement>('.save-btn');
+                  if (saveBtnEl) saveBtnEl.disabled = false;
+                  const retransBtnEl = row.querySelector<HTMLButtonElement>('.retranslate-row-btn');
+                  if (retransBtnEl) retransBtnEl.disabled = false;
+                }
+                if (state.reviewTargetPids && state.reviewTargetPids.has(item.id)) {
+                  updateReviewCardTranslation(item.id, '번역: (원문 복제·변형 감지되어 자동 삭제됨)', true);
+                }
+              });
+              updateApplyButtonUI(state.isPageApplied);
+            }
             const verbatimIdSet = new Set(verbatimItems.map((v: any) => String(v.id)));
 
             const successes = response.translations.filter(
@@ -895,20 +763,52 @@ export async function translateAllPTags(isRetranslation = false): Promise<void> 
     logToSidebar('모든 번역 작업이 완료되었습니다.');
 
     // 번역 완료 후 다음 화 자동 이동 및 알림 처리
-    if (!state.isTranslationCancelled && !state.isReviewSession) {
-      const currentUrl = getCleanUrl();
-      const batchStats = await updateAndGetBatchCount(currentUrl);
-      const consecutiveCount = batchStats.consecutiveCount;
+    if (!state.isTranslationCancelled) {
+      if (
+        state.isReviewSession ||
+        window.location.hash.includes('lanovel_review') ||
+        (state.reviewTargetPids && state.reviewTargetPids.size > 0)
+      ) {
+        logToSidebar('🔔 [알림 센터 검수 모드] 재번역 검수 회차이므로 다음 페이지 자동 넘기기가 비활성화되었습니다.');
+        return;
+      }
 
+      const currentUrl = getCleanUrl();
+      const scraper = getScraper();
+      const episodeTitle = scraper.extractEpisodeTitle() || document.title || '';
+
+      // [10화 단위 번역 진행 알림 (100% 완료 시에만)]
+      // 30분 세션 타임아웃, 중복 방지, 이번 연속 번역 및 일일 누적 통계 조회
+      const batchStats = await updateAndGetBatchCount(
+        currentUrl,
+        logToSidebar,
+        state.currentNovelTitle,
+        state.turboCutoffHour
+      );
+      const consecutiveCount = batchStats.consecutiveCount;
+      const novelTodayCount = batchStats.novelTodayCount;
+      const totalTodayCount = batchStats.totalTodayCount;
+
+      const totalTodayMsg = totalTodayCount ? ` / 전체: ${totalTodayCount}화` : '';
+      logToSidebar(
+        `[번역 진행 카운터] 현재 소설 이번 연속: ${consecutiveCount}화 완료 (오늘 이 소설: ${novelTodayCount}화${totalTodayMsg})`
+      );
+
+      // 10의 배수(10, 20, 30, ...) 화가 100% 완료되었을 때만 진행 알림 발송!
       if (consecutiveCount > 0 && consecutiveCount % 10 === 0) {
+        logToSidebar(`🔔 [알림] 이번 연속 ${consecutiveCount}화 달성! 10화 단위 번역 진행 알림을 발송합니다.`);
         sendProgressNotification(
           state.currentNovelTitle,
-          getScraper().extractEpisodeTitle() || document.title,
+          episodeTitle,
           textsToTranslate.length,
           textsToTranslate.length,
           100,
           currentUrl,
           consecutiveCount
+        );
+      } else {
+        logToSidebar(
+          `[알림] 10화 단위 알림 정책 적용 중 (현재 이번 연속: ${consecutiveCount}화, 다음 알림: ${Math.ceil(consecutiveCount / 10) * 10}화)`
         );
       }
 
@@ -935,26 +835,56 @@ export async function translateAllPTags(isRetranslation = false): Promise<void> 
             `[RPM 적응형 보호] 최근 5분간 번역 회차: ${completedRecentCount}화 감지 → 다음 회차 대기 시간을 ${delaySec}초로 연장합니다.`
           );
         } else {
-          logToSidebar(`번역 완료. ${delaySec}초 후 다음 페이지로 이동합니다.`);
+          logToSidebar(`번역 완료. ${delaySec}초 후 페이지 끝으로 자동 스크롤합니다.`);
         }
       }
 
       await sleepResponsive(() => calculateAdaptiveEpisodeDelay(completedRecentCount, state.isTurboMode));
       if (state.isTranslationCancelled) return;
 
-      const scraper = getScraper();
+      if (state.isTurboMode && checkCutoffTimeReached(state.turboCutoffHour, state.turboTargetTimestamp)) {
+        await abortTurboMode('초기화 시간 도달');
+        return;
+      }
+
+      logToSidebar('페이지 끝으로 스크롤 후 다음 페이지 액션을 실행합니다.');
+      const scrollTarget = Math.max(document.body.scrollHeight, document.documentElement.scrollHeight);
+      window.scrollTo({ top: scrollTarget, behavior: 'smooth' });
+
+      await new Promise<void>((resolve) => {
+        let scrollCheckAttempts = 0;
+        const checkScrollEndInterval = setInterval(() => {
+          if (state.isTranslationCancelled) {
+            clearInterval(checkScrollEndInterval);
+            resolve();
+            return;
+          }
+          scrollCheckAttempts++;
+          const currentScroll = window.innerHeight + window.scrollY;
+          const maxScroll = Math.max(document.body.scrollHeight, document.documentElement.scrollHeight);
+          if (currentScroll >= maxScroll - 50 || scrollCheckAttempts >= 30) {
+            clearInterval(checkScrollEndInterval);
+            resolve();
+          }
+        }, 100);
+      });
+
+      if (state.isTranslationCancelled) return;
+
       const nextLink = scraper.findNextEpisodeLink();
       if (nextLink && nextLink.href) {
+        const navDelay = Math.floor(Math.random() * 1000) + 1500;
+        logToSidebar(`다음 페이지로 이동합니다 (${(navDelay / 1000).toFixed(1)}초 대기): ${nextLink.href}`);
         sessionStorage.setItem('lanovel_auto_translate_next', '1');
         showLanovelHud('다음 화로 자동 이동...', '⚡');
         setTimeout(() => {
           window.location.href = nextLink.href;
-        }, 1500);
+        }, navDelay);
       } else {
-        logToSidebar('다음 페이지 링크를 찾을 수 없습니다. (마지막 회차)');
+        logToSidebar('다음 페이지 버튼을 찾을 수 없습니다. (소설 연속 번역 종료)');
         sendCompleteNotification(
           state.currentNovelTitle,
-          scraper.extractEpisodeTitle() || document.title,
+          episodeTitle,
           textsToTranslate.length,
           currentUrl,
           consecutiveCount

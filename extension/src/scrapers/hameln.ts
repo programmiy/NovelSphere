@@ -38,10 +38,29 @@ export class HamelnScraper implements PlatformScraper {
   }
 
   isTocPage(_url: string, path: string): boolean {
+    if (document.getElementById('honbun')) {
+      return false;
+    }
     return (
       /\/novel\/\d+\/?$/.test(path) ||
       (!path.endsWith('.html') && document.querySelectorAll('table a[href*="/novel/"]').length > 3)
     );
+  }
+
+  prepareContent(): void {
+    const honbun = document.getElementById('honbun');
+    if (!honbun || honbun.dataset.lanovelPreprocessed) return;
+    const paragraphs = honbun.querySelectorAll('p');
+    if (paragraphs.length > 0) {
+      paragraphs.forEach((p, idx) => {
+        if (!p.id) {
+          p.id = `L${idx + 1}`;
+        } else if (/^\d+$/.test(p.id)) {
+          p.id = `L${p.id}`;
+        }
+      });
+      honbun.dataset.lanovelPreprocessed = 'true';
+    }
   }
 
   findNextEpisodeLink(): HTMLAnchorElement | null {

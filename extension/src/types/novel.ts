@@ -7,7 +7,7 @@ export interface ParagraphItem {
 }
 
 export interface TranslationRecord {
-  id?: string;
+  id?: string | number;
   pid?: string;
   original: string;
   translated: string;
@@ -26,14 +26,32 @@ export interface SeparatorConfig {
 export interface SeparatorMatch {
   sep: string;
   index: number;
+  pid?: string;
+}
+
+export interface ExcludedPidInfo {
+  matchedSep: string;
+  isSubsequent: boolean;
+  isPreface: boolean;
 }
 
 export interface SeparatorAnalysis {
-  topSeparator?: SeparatorMatch;
-  bottomSeparator?: SeparatorMatch;
+  topSeparator?: SeparatorMatch | null;
+  bottomSeparator?: SeparatorMatch | null;
   prefacePids: Set<string>;
   afterwordPids: Set<string>;
   separatorPids: Set<string>;
+  excludedPidMap: Map<string, ExcludedPidInfo>;
+}
+
+export interface SeparatorExcludedItem {
+  id: string | number;
+  pid: string;
+  original: string;
+  translated: string;
+  matchedSep: string;
+  isSubsequent: boolean;
+  isPreface?: boolean;
 }
 
 export interface BatchStats {
@@ -41,3 +59,4 @@ export interface BatchStats {
   novelTodayCount: number;
   totalTodayCount: number;
 }
+

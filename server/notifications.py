@@ -333,7 +333,7 @@ def notify_episode_progress(
         book_title=novel_title,
         chapter_title=episode_title,
         click_url=click_url,
-        priority="default"
+        priority="urgent"
     )
 
 def notify_api_error(

@@ -3,16 +3,16 @@ import { state } from './core/state';
 import { getScraper } from './scrapers';
 import {
   getCleanUrl,
+  getTargetParagraphs,
   ensureTranslationsLoaded,
   hasUntranslatedParagraphs,
   applyTranslationsToPage,
   setPageApplyStatus,
   setupParagraphInteraction,
-  checkAndExcludeSeparatorTranslations,
-  checkAndLoadReviewTargets,
   loadTurboModeState,
   setTurboMode,
   translateAllPTags,
+  startFullRetranslation,
   abortTurboMode,
 } from './core/page_translator';
 import { loadNovelSeparators } from './core/separators';
@@ -21,13 +21,17 @@ import {
   injectSidebar,
   showSidebar,
   updateNovelTitleUI,
-  renderSeparatorSettingsPanel,
-  renderReviewTargetPanel,
   updateApplyButtonUI,
   updateTurboModeUI,
   updateTurboBadgeUI,
+  updateSidebarWithCancelled,
   logToSidebar,
 } from './ui/sidebar';
+import { checkAndLoadReviewTargets } from './ui/review_panel';
+import {
+  renderSeparatorSettingsPanel,
+  checkAndExcludeSeparatorTranslations,
+} from './ui/separator_panel';
 import { setupLanovelKeyboardNavigation, checkAutoTranslateNextTrigger } from './ui/key_nav';
 import { initTocPageFeatures, isEpisodeUrlExcluded } from './ui/toc_quick_jump';
 import { showLanovelHud } from './ui/hud';
@@ -97,8 +101,8 @@ async function init(): Promise<void> {
       translateAllPTags(false);
     });
 
-    // 0.1. 목차(TOC) 페이지 감지 시 배지 및 퀵 점프 서랍 즉시 초기화 후 조기 복귀
-    if (scraper.isTocPage(window.location.href, window.location.pathname)) {
+    // 0.1. 목차(TOC) 페이지 감지 시 배지 및 퀵 점프 서랍 즉시 초기화 후 조기 복귀 (본문 문단이 없을 때만)
+    if (scraper.isTocPage(window.location.href, window.location.pathname) && getTargetParagraphs().length === 0) {
       console.log('[LANOVEL] 목차(TOC) 페이지 감지: 목차 기능(배지 및 퀵 점프 서랍)을 즉시 초기화합니다.');
       try {
         const title = (await scraper.detectNovelTitle()) || '기본 소설';
@@ -140,6 +144,7 @@ async function init(): Promise<void> {
 
     checkAutoTranslateNextTrigger(() => {
       showSidebar();
+      translateAllPTags(false);
     });
 
     // 소설 제목 감지 (서버 우선, DOM 폴백)
@@ -173,8 +178,7 @@ async function init(): Promise<void> {
     }
 
     // 재번역 검수 대상 조회
-    await checkAndLoadReviewTargets();
-    renderReviewTargetPanel();
+    await checkAndLoadReviewTargets(cleanUrl);
 
     // 본문 적용(Apply) 상태 조회 및 복원
     let initialApplied = false;
@@ -224,7 +228,7 @@ async function init(): Promise<void> {
       return { ok: true, message: '이전 화로 이동합니다.' };
     };
     state.onRetranslate = () => {
-      translateAllPTags(true);
+      startFullRetranslation();
       return { ok: true, message: '재번역을 시작합니다.' };
     };
     state.onStartTranslation = async (isRetrans = false) => {
@@ -243,6 +247,7 @@ async function init(): Promise<void> {
         const retryBtn = document.getElementById('retry-translation-btn');
         if (retryBtn) retryBtn.style.display = 'inline-block';
         logToSidebar('번역이 중지되었습니다.');
+        updateSidebarWithCancelled();
         state.broadcastStatus();
       });
     }
@@ -250,7 +255,7 @@ async function init(): Promise<void> {
     const retryBtn = document.getElementById('retry-translation-btn');
     if (retryBtn) {
       retryBtn.addEventListener('click', () => {
-        translateAllPTags(true);
+        startFullRetranslation();
       });
     }
 
@@ -274,6 +279,20 @@ async function init(): Promise<void> {
       });
     }
 
+    // 지연 렌더링된 본문 DOM 대응 (아직 문단이 감지되지 않은 경우 최대 3회 재시도)
+    if (getTargetParagraphs().length === 0) {
+      for (let retry = 0; retry < 3; retry++) {
+        await new Promise((r) => setTimeout(r, 250));
+        if (scraper.prepareContent) {
+          scraper.prepareContent();
+        }
+        if (getTargetParagraphs().length > 0) {
+          setupParagraphInteraction();
+          break;
+        }
+      }
+    }
+
     // 미번역 문단이 존재하면 번역 실행
     if (state.turboAbortedOnLoad || (state.isTurboMode && checkCutoffTimeReached(state.turboCutoffHour, state.turboTargetTimestamp))) {
       if (!state.turboAbortedOnLoad) {
@@ -285,6 +304,7 @@ async function init(): Promise<void> {
         showSidebar();
         translateAllPTags(false);
       } else {
+        if (retryBtn) retryBtn.style.display = 'inline-block';
         console.log('[LANOVEL] 모든 문장이 이미 번역되어 있어 자동 번역을 생략합니다.');
       }
     }

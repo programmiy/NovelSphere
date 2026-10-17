@@ -120,8 +120,12 @@ class NotificationService {
                       timestamp: (data['timestamp'] as num?)?.toInt(),
                     );
 
-                    // 🚨 긴급 DB 경보 또는 urgent 우선순위 알림일 경우 상단바 시스템 푸시 알림 즉시 팝업
-                    if (itemType == 'db_alert' || itemPriority == 'urgent') {
+                    // 🚨 긴급 DB 경보, 10화 마일스톤, 번역 완료 또는 urgent/high 우선순위 알림일 경우 상단바 시스템 푸시 알림 즉시 팝업
+                    if (itemType == 'db_alert' ||
+                        itemType == 'episode_milestone' ||
+                        itemType == 'complete' ||
+                        itemPriority == 'urgent' ||
+                        itemPriority == 'high') {
                       try {
                         LocalNotificationService.showNotification(
                           id: 7777,

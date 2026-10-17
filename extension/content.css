@@ -771,109 +771,119 @@
  * 알림 센터 연계 재번역 검수 전용 패널 & 하이라이트 스타일
  * ================================================================================= */
 .review-target-panel {
-    background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
-    border: 1.5px solid #f59e0b;
-    border-radius: 8px;
-    margin: 8px 12px;
-    padding: 10px 12px;
-    box-shadow: 0 2px 8px rgba(245, 158, 11, 0.15);
-    font-size: 12px;
-    font-family: inherit;
-    color: #92400e;
+    background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%) !important;
+    border: 1.5px solid #f59e0b !important;
+    border-radius: 8px !important;
+    margin: 8px 12px !important;
+    padding: 10px 12px !important;
+    box-shadow: 0 2px 8px rgba(245, 158, 11, 0.15) !important;
+    font-size: 12px !important;
+    font-family: inherit !important;
+    color: #92400e !important;
+    flex-shrink: 0 !important;
 }
 
 .review-panel-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 8px;
+    display: flex !important;
+    justify-content: space-between !important;
+    align-items: center !important;
+    margin-bottom: 8px !important;
 }
 
 .review-panel-title {
-    font-weight: 700;
-    font-size: 13px;
-    color: #b45309;
-    display: flex;
-    align-items: center;
-    gap: 5px;
+    font-weight: 700 !important;
+    font-size: 13px !important;
+    color: #b45309 !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 5px !important;
 }
 
 .review-panel-actions {
-    display: flex;
-    gap: 6px;
-    align-items: center;
+    display: flex !important;
+    gap: 6px !important;
+    align-items: center !important;
 }
 
 .review-dismiss-btn {
-    background-color: #f59e0b;
-    color: #ffffff;
-    border: none;
-    border-radius: 4px;
-    padding: 2px 8px;
-    font-size: 11px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: background-color 0.2s;
+    background-color: #f59e0b !important;
+    color: #ffffff !important;
+    border: none !important;
+    border-radius: 4px !important;
+    padding: 2px 8px !important;
+    font-size: 11px !important;
+    font-weight: 600 !important;
+    cursor: pointer !important;
+    transition: background-color 0.2s !important;
 }
 
 .review-dismiss-btn:hover {
-    background-color: #d97706;
+    background-color: #d97706 !important;
+}
+
+.review-panel-close-btn {
+    background: none !important;
+    border: none !important;
+    font-size: 18px !important;
+    cursor: pointer !important;
+    color: #b45309 !important;
+    line-height: 1 !important;
 }
 
 .review-panel-body {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    max-height: 200px;
-    overflow-y: auto;
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 6px !important;
+    max-height: 200px !important;
+    overflow-y: auto !important;
 }
 
 .review-card {
-    background: #ffffff;
-    border: 1px solid #fde68a;
-    border-left: 3px solid #f59e0b;
-    border-radius: 6px;
-    padding: 6px 8px;
-    cursor: pointer;
-    transition: all 0.2s;
+    background: #ffffff !important;
+    border: 1px solid #fde68a !important;
+    border-left: 3px solid #f59e0b !important;
+    border-radius: 6px !important;
+    padding: 6px 8px !important;
+    cursor: pointer !important;
+    transition: all 0.2s !important;
 }
 
 .review-card:hover {
-    background: #fffdf5;
-    border-color: #f59e0b;
-    transform: translateX(2px);
-    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    background: #fffdf5 !important;
+    border-color: #f59e0b !important;
+    transform: translateX(2px) !important;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05) !important;
 }
 
 .review-card-pid {
-    font-size: 10px;
-    font-weight: 700;
-    color: #b45309;
-    margin-bottom: 2px;
+    font-size: 10px !important;
+    font-weight: 700 !important;
+    color: #b45309 !important;
+    margin-bottom: 2px !important;
 }
 
 .review-card-ori {
-    color: #4b5563;
-    font-size: 11px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    margin-bottom: 2px;
+    color: #4b5563 !important;
+    font-size: 11px !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    margin-bottom: 2px !important;
 }
 
 .review-card-tra {
-    color: #1f2937;
-    font-weight: 600;
-    font-size: 12px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    color: #1f2937 !important;
+    font-weight: 600 !important;
+    font-size: 12px !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
 }
 
 .review-card-tra.waiting {
-    color: #9ca3af;
-    font-style: italic;
-    font-weight: 400;
+    color: #9ca3af !important;
+    font-style: italic !important;
+    font-weight: 400 !important;
 }
 
 /* 사이드바 행 강조 */
@@ -888,16 +898,16 @@ tr.review-target-row:hover {
 
 /* 재검수 뱃지 */
 .review-badge {
-    display: inline-block;
-    background: linear-gradient(135deg, #f59e0b, #d97706);
-    color: white;
-    font-size: 10px;
-    font-weight: 700;
-    padding: 1px 5px;
-    border-radius: 4px;
-    margin-right: 4px;
-    vertical-align: middle;
-    box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+    display: inline-block !important;
+    background: linear-gradient(135deg, #f59e0b, #d97706) !important;
+    color: white !important;
+    font-size: 10px !important;
+    font-weight: 700 !important;
+    padding: 1px 5px !important;
+    border-radius: 4px !important;
+    margin-right: 4px !important;
+    vertical-align: middle !important;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.1) !important;
 }
 
 /* 웹페이지 본문 문장 강조 */
@@ -906,189 +916,190 @@ tr.review-target-row:hover {
     border-left: 3px solid #f59e0b !important;
     padding-left: 4px !important;
     border-radius: 2px !important;
-    transition: background-color 0.3s ease;
+    transition: background-color 0.3s ease !important;
 }
 
 /* =================================================================================
  * 구분선 자동 제외 패널 & 카드 스타일 (검수탭 유사 알림 배너)
  * ================================================================================= */
 .separator-exclude-panel {
-    background: linear-gradient(135deg, #fff7ed 0%, #ffedd5 100%);
-    border: 1.5px solid #f97316;
-    border-radius: 8px;
-    margin: 8px 12px;
-    padding: 10px 12px;
-    box-shadow: 0 2px 8px rgba(249, 115, 22, 0.15);
-    font-size: 12px;
-    font-family: inherit;
-    color: #9a3412;
+    background: linear-gradient(135deg, #fff7ed 0%, #ffedd5 100%) !important;
+    border: 1.5px solid #f97316 !important;
+    border-radius: 8px !important;
+    margin: 8px 12px !important;
+    padding: 10px 12px !important;
+    box-shadow: 0 2px 8px rgba(249, 115, 22, 0.15) !important;
+    font-size: 12px !important;
+    font-family: inherit !important;
+    color: #9a3412 !important;
+    flex-shrink: 0 !important;
 }
 
 .separator-exclude-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 4px;
+    display: flex !important;
+    justify-content: space-between !important;
+    align-items: center !important;
+    margin-bottom: 4px !important;
 }
 
 .separator-exclude-title {
-    font-weight: 700;
-    font-size: 13px;
-    color: #c2410c;
-    display: flex;
-    align-items: center;
-    gap: 5px;
+    font-weight: 700 !important;
+    font-size: 13px !important;
+    color: #c2410c !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 5px !important;
 }
 
 .separator-exclude-actions {
-    display: flex;
-    gap: 6px;
-    align-items: center;
+    display: flex !important;
+    gap: 6px !important;
+    align-items: center !important;
 }
 
 .sep-exclude-close-btn {
-    background: none;
-    border: none;
-    font-size: 16px;
-    cursor: pointer;
-    color: #c2410c;
-    line-height: 1;
+    background: none !important;
+    border: none !important;
+    font-size: 16px !important;
+    cursor: pointer !important;
+    color: #c2410c !important;
+    line-height: 1 !important;
 }
 
 .separator-exclude-desc {
-    font-size: 11px;
-    color: #9a3412;
-    margin-bottom: 8px;
-    opacity: 0.9;
+    font-size: 11px !important;
+    color: #9a3412 !important;
+    margin-bottom: 8px !important;
+    opacity: 0.9 !important;
 }
 
 .separator-exclude-body {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    max-height: 180px;
-    overflow-y: auto;
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 6px !important;
+    max-height: 180px !important;
+    overflow-y: auto !important;
 }
 
 .separator-exclude-card {
-    background: #ffffff;
-    border: 1px solid #fed7aa;
-    border-left: 3px solid #f97316;
-    border-radius: 6px;
-    padding: 6px 8px;
-    cursor: pointer;
-    transition: all 0.2s;
+    background: #ffffff !important;
+    border: 1px solid #fed7aa !important;
+    border-left: 3px solid #f97316 !important;
+    border-radius: 6px !important;
+    padding: 6px 8px !important;
+    cursor: pointer !important;
+    transition: all 0.2s !important;
 }
 
 .separator-exclude-card:hover {
-    background: #fffaf5;
-    border-color: #ea580c;
-    transform: translateX(2px);
-    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    background: #fffaf5 !important;
+    border-color: #ea580c !important;
+    transform: translateX(2px) !important;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05) !important;
 }
 
 .sep-card-pid {
-    font-size: 10px;
-    font-weight: 700;
-    color: #ea580c;
-    margin-bottom: 2px;
-    display: flex;
-    justify-content: space-between;
+    font-size: 10px !important;
+    font-weight: 700 !important;
+    color: #ea580c !important;
+    margin-bottom: 2px !important;
+    display: flex !important;
+    justify-content: space-between !important;
 }
 
 .sep-card-match {
-    font-weight: normal;
-    color: #9a3412;
-    font-size: 10px;
+    font-weight: normal !important;
+    color: #9a3412 !important;
+    font-size: 10px !important;
 }
 
 .sep-card-ori {
-    color: #4b5563;
-    font-size: 11px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    margin-bottom: 2px;
+    color: #4b5563 !important;
+    font-size: 11px !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    margin-bottom: 2px !important;
 }
 
 .sep-card-tra {
-    color: #dc2626;
-    font-weight: 500;
-    font-size: 11px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    color: #dc2626 !important;
+    font-weight: 500 !important;
+    font-size: 11px !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
 }
 
 .sep-card-tra del {
-    color: #b91c1c;
+    color: #b91c1c !important;
 }
 
 .sep-exclude-restore-all-btn {
-    background: #059669;
-    color: white;
-    border: none;
-    border-radius: 4px;
-    padding: 3px 8px;
-    font-size: 11px;
-    font-weight: 600;
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    gap: 3px;
-    transition: background-color 0.2s;
+    background: #059669 !important;
+    color: white !important;
+    border: none !important;
+    border-radius: 4px !important;
+    padding: 3px 8px !important;
+    font-size: 11px !important;
+    font-weight: 600 !important;
+    cursor: pointer !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 3px !important;
+    transition: background-color 0.2s !important;
 }
 
 .sep-exclude-restore-all-btn:hover {
-    background: #047857;
+    background: #047857 !important;
 }
 
 .sep-card-footer {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-top: 5px;
-    padding-top: 4px;
-    border-top: 1px dashed #fed7aa;
+    display: flex !important;
+    justify-content: space-between !important;
+    align-items: center !important;
+    margin-top: 5px !important;
+    padding-top: 4px !important;
+    border-top: 1px dashed #fed7aa !important;
 }
 
 .sep-card-hint {
-    font-size: 10px;
-    color: #9a3412;
-    opacity: 0.8;
+    font-size: 10px !important;
+    color: #9a3412 !important;
+    opacity: 0.8 !important;
 }
 
 .sep-card-restore-btn {
-    background: #059669;
-    color: white;
-    border: none;
-    border-radius: 4px;
-    padding: 2px 7px;
-    font-size: 10.5px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: background-color 0.2s;
+    background: #059669 !important;
+    color: white !important;
+    border: none !important;
+    border-radius: 4px !important;
+    padding: 2px 7px !important;
+    font-size: 10.5px !important;
+    font-weight: 600 !important;
+    cursor: pointer !important;
+    transition: background-color 0.2s !important;
 }
 
 .sep-card-restore-btn:hover {
-    background: #047857;
+    background: #047857 !important;
 }
 
 .sep-manage-excluded-btn {
-    background: #f97316;
-    color: white;
-    border: none;
-    border-radius: 4px;
-    padding: 5px 9px;
-    font-size: 11.5px;
-    font-weight: 600;
-    cursor: pointer;
-    margin-left: 6px;
-    transition: background-color 0.2s;
+    background: #f97316 !important;
+    color: white !important;
+    border: none !important;
+    border-radius: 4px !important;
+    padding: 5px 9px !important;
+    font-size: 11.5px !important;
+    font-weight: 600 !important;
+    cursor: pointer !important;
+    margin-left: 6px !important;
+    transition: background-color 0.2s !important;
 }
 
 .sep-manage-excluded-btn:hover {
-    background: #ea580c;
+    background: #ea580c !important;
 }
 
 /* =================================================================================

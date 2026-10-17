@@ -1,30 +1,33 @@
 "use strict";
 (() => {
+  var __defProp = Object.defineProperty;
+  var __getOwnPropNames = Object.getOwnPropertyNames;
+  var __esm = (fn, res) => function __init() {
+    return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;
+  };
+  var __export = (target, all) => {
+    for (var name in all)
+      __defProp(target, name, { get: all[name], enumerable: true });
+  };
+
   // src/core/separators.ts
-  var DEFAULT_GLOBAL_SEPARATORS = [
-    "\u25C6\u25C7\u25C6\u25C7",
-    "\u25C7\u25C6\u25C7\u25C6",
-    "----------------",
-    "------------------------------------------------",
-    "\uFF0A\uFF0A\uFF0A",
-    "***",
-    "==="
-  ];
-  var PRESET_SEPARATORS = [
-    { name: "\uB2E4\uC774\uC544 (\u25C6\u25C7\u25C6\u25C7)", sep: "\u25C6\u25C7\u25C6\u25C7" },
-    { name: "\uC5ED\uB2E4\uC774\uC544 (\u25C7\u25C6\u25C7\u25C6)", sep: "\u25C7\u25C6\u25C7\u25C6" },
-    { name: "\uC9E7\uC740 \uB300\uC2DC (----------------)", sep: "----------------" },
-    { name: "\uAE34 \uB300\uC2DC (------------------------------------------------)", sep: "------------------------------------------------" },
-    { name: "\uC804\uAC01 \uBCC4 (\uFF0A\uFF0A\uFF0A)", sep: "\uFF0A\uFF0A\uFF0A" },
-    { name: "\uBC18\uAC01 \uBCC4 (***)", sep: "***" }
-  ];
+  var separators_exports = {};
+  __export(separators_exports, {
+    DEFAULT_GLOBAL_SEPARATORS: () => DEFAULT_GLOBAL_SEPARATORS,
+    PRESET_SEPARATORS: () => PRESET_SEPARATORS,
+    analyzeSeparatorSections: () => analyzeSeparatorSections,
+    checkSeparatorMatch: () => checkSeparatorMatch,
+    loadNovelSeparators: () => loadNovelSeparators,
+    resetNovelSeparators: () => resetNovelSeparators,
+    saveNovelSeparators: () => saveNovelSeparators
+  });
   function checkSeparatorMatch(text, separators) {
     if (!text || !separators || separators.length === 0) return null;
-    const trimmed = text.trim();
     for (const sep of separators) {
-      if (!sep || !sep.trim()) continue;
-      const cleanSep = sep.trim();
-      if (trimmed === cleanSep || trimmed.includes(cleanSep)) {
+      if (!sep) continue;
+      if (sep === "\u2014 (em-dash)" || sep === "^[\\s\u2014]+$") {
+        if (/^[\s—]+$/.test(text)) return sep;
+      } else if (text.includes(sep)) {
         return sep;
       }
     }
@@ -34,47 +37,105 @@
     const result = {
       prefacePids: /* @__PURE__ */ new Set(),
       afterwordPids: /* @__PURE__ */ new Set(),
-      separatorPids: /* @__PURE__ */ new Set()
+      separatorPids: /* @__PURE__ */ new Set(),
+      excludedPidMap: /* @__PURE__ */ new Map(),
+      topSeparator: null,
+      bottomSeparator: null
     };
     if (!validParagraphs || validParagraphs.length === 0 || !separators || separators.length === 0) {
       return result;
     }
-    const matches = [];
-    validParagraphs.forEach((p, idx) => {
-      const matched = checkSeparatorMatch(p.text, separators);
-      if (matched) {
-        matches.push({ index: idx, pid: p.pid, sep: matched });
-        result.separatorPids.add(p.pid);
+    const N = validParagraphs.length;
+    const separatorHits = [];
+    for (let i = 0; i < N; i++) {
+      const item = validParagraphs[i];
+      const matchedSep = checkSeparatorMatch(item.text, separators);
+      if (matchedSep) {
+        separatorHits.push({ index: i, item, sep: matchedSep });
       }
-    });
-    if (matches.length === 0) {
+    }
+    if (separatorHits.length === 0) {
       return result;
     }
-    const total = validParagraphs.length;
-    if (matches.length === 1) {
-      const single = matches[0];
-      if (single.index <= total * 0.3) {
-        result.topSeparator = { sep: single.sep, index: single.index };
-        for (let i = 0; i <= single.index; i++) {
-          result.prefacePids.add(validParagraphs[i].pid);
+    const firstHit = separatorHits[0];
+    const firstIndex = firstHit.index;
+    const isExplicitAfterwordKeyword = DEFAULT_GLOBAL_SEPARATORS.includes(firstHit.sep);
+    const maxPrefaceCount = Math.max(5, Math.min(15, Math.floor(N * 0.2)));
+    const remainingAfterFirst = N - 1 - firstIndex;
+    const isTopSeparator = !isExplicitAfterwordKeyword && firstIndex <= maxPrefaceCount && remainingAfterFirst >= 5 && remainingAfterFirst > firstIndex;
+    const maxAfterwordCount = Math.max(5, Math.min(25, Math.floor(N * 0.25)));
+    if (isTopSeparator) {
+      result.topSeparator = { index: firstIndex, sep: firstHit.sep, pid: firstHit.item.pid };
+      result.separatorPids.add(firstHit.item.pid);
+      for (let i = 0; i < firstIndex; i++) {
+        const pItem = validParagraphs[i];
+        result.prefacePids.add(pItem.pid);
+        result.excludedPidMap.set(pItem.pid, {
+          matchedSep: firstHit.sep,
+          isSubsequent: false,
+          isPreface: true
+        });
+      }
+      result.excludedPidMap.set(firstHit.item.pid, {
+        matchedSep: firstHit.sep,
+        isSubsequent: false,
+        isPreface: false
+      });
+      const remainingHits = separatorHits.slice(1);
+      if (remainingHits.length > 0) {
+        const lastHit = remainingHits[remainingHits.length - 1];
+        const lastIndex = lastHit.index;
+        const remainingAfterLast = N - 1 - lastIndex;
+        const isLastExplicitAfterword = DEFAULT_GLOBAL_SEPARATORS.includes(lastHit.sep);
+        if ((isLastExplicitAfterword || remainingAfterLast <= maxAfterwordCount) && lastIndex > firstIndex) {
+          result.bottomSeparator = { index: lastIndex, sep: lastHit.sep, pid: lastHit.item.pid };
+          result.separatorPids.add(lastHit.item.pid);
+          result.excludedPidMap.set(lastHit.item.pid, {
+            matchedSep: lastHit.sep,
+            isSubsequent: false,
+            isPreface: false
+          });
+          for (let j = lastIndex + 1; j < N; j++) {
+            const nextItem = validParagraphs[j];
+            result.afterwordPids.add(nextItem.pid);
+            result.excludedPidMap.set(nextItem.pid, {
+              matchedSep: lastHit.sep,
+              isSubsequent: true,
+              isPreface: false
+            });
+          }
+        }
+      }
+    } else {
+      const bottomCandidate = separatorHits.find((h) => DEFAULT_GLOBAL_SEPARATORS.includes(h.sep) && h.index > 0) || [...separatorHits].reverse().find((h) => N - 1 - h.index <= maxAfterwordCount && h.index > 0);
+      if (bottomCandidate) {
+        const lastIndex = bottomCandidate.index;
+        result.bottomSeparator = { index: lastIndex, sep: bottomCandidate.sep, pid: bottomCandidate.item.pid };
+        result.separatorPids.add(bottomCandidate.item.pid);
+        result.excludedPidMap.set(bottomCandidate.item.pid, {
+          matchedSep: bottomCandidate.sep,
+          isSubsequent: false,
+          isPreface: false
+        });
+        for (let j = lastIndex + 1; j < N; j++) {
+          const nextItem = validParagraphs[j];
+          result.afterwordPids.add(nextItem.pid);
+          result.excludedPidMap.set(nextItem.pid, {
+            matchedSep: bottomCandidate.sep,
+            isSubsequent: true,
+            isPreface: false
+          });
         }
       } else {
-        result.bottomSeparator = { sep: single.sep, index: single.index };
-        for (let i = single.index; i < total; i++) {
-          result.afterwordPids.add(validParagraphs[i].pid);
-        }
+        separatorHits.forEach((h) => {
+          result.separatorPids.add(h.item.pid);
+          result.excludedPidMap.set(h.item.pid, {
+            matchedSep: h.sep,
+            isSubsequent: false,
+            isPreface: false
+          });
+        });
       }
-      return result;
-    }
-    const first = matches[0];
-    const last = matches[matches.length - 1];
-    result.topSeparator = { sep: first.sep, index: first.index };
-    for (let i = 0; i <= first.index; i++) {
-      result.prefacePids.add(validParagraphs[i].pid);
-    }
-    result.bottomSeparator = { sep: last.sep, index: last.index };
-    for (let i = last.index; i < total; i++) {
-      result.afterwordPids.add(validParagraphs[i].pid);
     }
     return result;
   }
@@ -129,723 +190,884 @@
       customSeparators,
       effectiveSeparators: effective
     };
+    const cacheKey = `separators_${novelTitle}`;
+    await chrome.storage.local.set({ [cacheKey]: config });
     try {
-      await fetch("http://127.0.0.1:8001/api/separators", {
+      const resp = await fetch("http://127.0.0.1:8001/api/separators", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
       });
+      if (!resp.ok) {
+        console.warn("Failed to persist separators to server, stored locally:", resp.status);
+      }
     } catch (e) {
       console.warn("[saveNovelSeparators] Server save failed:", e);
     }
-    const cacheKey = `separators_${novelTitle}`;
-    await chrome.storage.local.set({ [cacheKey]: config });
     return config;
   }
-
-  // src/core/state.ts
-  var ExtensionState = class {
-    // 번역 수명주기 상태
-    isTranslationCancelled = false;
-    resolveResume = null;
-    translationCache = /* @__PURE__ */ new Map();
-    exclusionSet = /* @__PURE__ */ new Set();
-    isPageApplied = false;
-    translationsLoadedPromise = null;
-    userDeletedTranslationPids = /* @__PURE__ */ new Set();
-    // 소설 및 구분선 상태
-    currentNovelTitle = "";
-    activeSeparators = [...DEFAULT_GLOBAL_SEPARATORS];
-    separatorConfig = {
+  async function resetNovelSeparators(novelTitle) {
+    try {
+      await fetch(`http://127.0.0.1:8001/api/separators?novel_title=${encodeURIComponent(novelTitle)}`, {
+        method: "DELETE"
+      });
+    } catch (e) {
+      console.warn("Server delete request failed:", e);
+    }
+    const cacheKey = `separators_${novelTitle}`;
+    try {
+      await chrome.storage.local.remove(cacheKey);
+    } catch (_) {
+    }
+    return {
       useDefaults: true,
       customSeparators: [],
       effectiveSeparators: [...DEFAULT_GLOBAL_SEPARATORS]
     };
-    // 알림 센터 검수 상태
-    reviewTargetsData = null;
-    reviewTargetPids = /* @__PURE__ */ new Set();
-    isReviewSession = false;
-    // ⚡ 쾌속모드 상태
-    isTurboMode = false;
-    turboCutoffHour = null;
-    turboTargetTimestamp = 0;
-    turboAbortedOnLoad = false;
-    currentDelayResolver = null;
-    currentDelayStart = 0;
-    // 원격 제어 및 관찰 상태
-    inflight = 0;
-    remoteNextPending = false;
-    nextDeadlineTimer = null;
-    lastLogText = "";
-    censorSplitUntil = 0;
-    retryDelayUntil = 0;
-    activeDelayFn = null;
-    // 콜백 핸들러 주입 (순환 참조 방지)
-    onNextEpisode = null;
-    onPrevEpisode = null;
-    onRetranslate = null;
-    onResumeTranslation = null;
-    onStartTranslation = null;
-    onToggleTurboMode = null;
-    onExtractEpisodeTitle = null;
-    reportIntervalTimer = null;
-    constructor() {
-      this.startStatusReporting();
+  }
+  var DEFAULT_GLOBAL_SEPARATORS, PRESET_SEPARATORS;
+  var init_separators = __esm({
+    "src/core/separators.ts"() {
+      "use strict";
+      DEFAULT_GLOBAL_SEPARATORS = [
+        "\uFF1C\u3042\u3068\u304C\u304D\uFF1E",
+        "&lt;\u3042\u3068\u304C\u304D&gt;",
+        "\u3010\u3042\u3068\u304C\u304D\u3011",
+        "\uFF1C\u89E3\u8AAC\uFF1E",
+        "\u3010\u5927\u4E8B\u306A\u304A\u77E5\u3089\u305B\u3011",
+        "\u3010\u5BA3\u4F1D\u3011",
+        "\u304A\u8AAD\u307F\u9802\u304D\u3042\u308A\u304C\u3068\u3046\u3054\u3056\u3044\u307E\u3059\uFF01"
+      ];
+      PRESET_SEPARATORS = [
+        { name: "\u25CE\u25CE\u25CE", sep: "\u25CE\u25CE\u25CE" },
+        { name: "----------", sep: "----------" },
+        { name: "++", sep: "++" },
+        { name: "\u3000\u2606\u2606\u2606\u2606\u2606", sep: "\u3000\u2606\u2606\u2606\u2606\u2606" },
+        { name: "\u2015\u2015\u2015\u2015", sep: "\u2015\u2015\u2015\u2015" },
+        { name: "***", sep: "***" },
+        { name: "\u25C6\u25C7\u25C6\u25C7", sep: "\u25C6\u25C7\u25C6\u25C7" },
+        { name: "\u25C7\u25C6\u25C7\u25C6", sep: "\u25C7\u25C6\u25C7\u25C6" },
+        { name: "\uFF0A\uFF0A\uFF0A", sep: "\uFF0A\uFF0A\uFF0A" }
+      ];
     }
-    recordLog(message) {
-      const text = String(message || "");
-      this.lastLogText = text.slice(0, 120);
-      if (text.includes("\uBB38\uC7A5 \uBD84\uD560 \uC7AC\uC2DC\uB3C4") || text.includes("\uAC80\uC5F4 \uAC10\uC9C0")) {
-        this.censorSplitUntil = Date.now() + 2e4;
-      }
-      const m = text.match(/(\d+)초 후 재시도/);
-      if (m) {
-        this.retryDelayUntil = Date.now() + parseInt(m[1], 10) * 1e3;
-      }
-      this.broadcastStatus();
-    }
-    notifyInflightStart() {
-      this.inflight++;
-      this.broadcastStatus();
-    }
-    notifyInflightEnd() {
-      this.inflight = Math.max(0, this.inflight - 1);
-      this.broadcastStatus();
-    }
-    computeProgress() {
-      const rows = document.querySelectorAll("#translation-table-body tr[data-pid]");
-      if (!rows.length) return 0;
-      let done = 0;
-      rows.forEach((tr) => {
-        const cell = tr.querySelector(".translated-text");
-        const t = cell ? (cell.textContent || "").trim() : "";
-        if (t && !t.includes("\uBC88\uC5ED \uC911") && !t.includes("\uC7AC\uBC88\uC5ED \uC911")) done++;
-      });
-      return Math.round(done / rows.length * 100);
-    }
-    delayRemainingSec() {
-      let remaining = 0;
-      try {
-        if (this.currentDelayResolver && this.activeDelayFn) {
-          const target = typeof this.activeDelayFn === "function" ? this.activeDelayFn() : this.activeDelayFn;
-          remaining = Math.max(remaining, target - (Date.now() - this.currentDelayStart));
+  });
+
+  // src/core/state.ts
+  var ExtensionState, state;
+  var init_state = __esm({
+    "src/core/state.ts"() {
+      "use strict";
+      init_separators();
+      ExtensionState = class {
+        // 번역 수명주기 상태
+        hasScannedForPTags = false;
+        isTranslationCancelled = false;
+        resolveResume = null;
+        translationCache = /* @__PURE__ */ new Map();
+        exclusionSet = /* @__PURE__ */ new Set();
+        isPageApplied = false;
+        translationsLoadedPromise = null;
+        userDeletedTranslationPids = /* @__PURE__ */ new Set();
+        // 소설 및 구분선 상태
+        currentNovelTitle = "";
+        activeSeparators = [...DEFAULT_GLOBAL_SEPARATORS];
+        separatorConfig = {
+          useDefaults: true,
+          customSeparators: [],
+          effectiveSeparators: [...DEFAULT_GLOBAL_SEPARATORS]
+        };
+        separatorExcludedItems = [];
+        // 알림 센터 검수 상태
+        reviewTargetsData = null;
+        reviewTargetPids = /* @__PURE__ */ new Set();
+        isReviewSession = false;
+        // ⚡ 쾌속모드 상태
+        isTurboMode = false;
+        turboCutoffHour = null;
+        turboTargetTimestamp = 0;
+        turboAbortedOnLoad = false;
+        currentDelayResolver = null;
+        currentDelayStart = 0;
+        // 원격 제어 및 관찰 상태
+        inflight = 0;
+        remoteNextPending = false;
+        nextDeadlineTimer = null;
+        lastLogText = "";
+        censorSplitUntil = 0;
+        retryDelayUntil = 0;
+        activeDelayFn = null;
+        // 원격 제어 핸들러 주입
+        onNextEpisode = null;
+        onPrevEpisode = null;
+        onRetranslate = null;
+        onResumeTranslation = null;
+        onStartTranslation = null;
+        onToggleTurboMode = null;
+        onExtractEpisodeTitle = null;
+        reportIntervalTimer = null;
+        constructor() {
+          this.startStatusReporting();
         }
-      } catch (e) {
-      }
-      remaining = Math.max(remaining, this.retryDelayUntil - Date.now());
-      return Math.max(0, Math.ceil(remaining / 1e3));
-    }
-    buildStatusPayload() {
-      const cancelled = this.isTranslationCancelled;
-      const turboAborted = this.turboAbortedOnLoad;
-      const delaySec = this.delayRemainingSec();
-      let phase = "idle";
-      if (turboAborted) phase = "turbo_wait";
-      else if (cancelled) phase = "paused";
-      else if (Date.now() < this.censorSplitUntil && this.inflight > 0) phase = "censor_split";
-      else if (delaySec > 0) phase = "delay_wait";
-      else if (this.inflight > 0) phase = "translating";
-      let chapterTitle = "";
-      try {
-        chapterTitle = this.onExtractEpisodeTitle && this.onExtractEpisodeTitle() || document.title || "";
-      } catch (e) {
-        chapterTitle = document.title || "";
-      }
-      return {
-        phase,
-        text: this.lastLogText,
-        url: window.location.href.split("#")[0],
-        book_title: this.currentNovelTitle || "",
-        chapter_title: chapterTitle,
-        percentage: this.computeProgress(),
-        delay_remaining_sec: phase === "delay_wait" ? delaySec : 0,
-        next_scheduled: this.remoteNextPending,
-        turbo: this.isTurboMode
-      };
-    }
-    broadcastStatus() {
-      if (!document.getElementById("jp-translator-sidebar")) return;
-      try {
-        const payload = this.buildStatusPayload();
-        chrome.runtime.sendMessage({ action: "remoteStatus", data: payload }, () => {
-          void chrome.runtime.lastError;
-        });
-      } catch (e) {
-      }
-    }
-    startStatusReporting() {
-      if (this.reportIntervalTimer) clearInterval(this.reportIntervalTimer);
-      this.reportIntervalTimer = setInterval(() => {
-        this.broadcastStatus();
-      }, 2e3);
-    }
-    handleRemoteCommand(type, _params = {}) {
-      const sidebar = document.getElementById("jp-translator-sidebar");
-      if (!sidebar) return { ok: false, message: "\uC774 \uD0ED\uC740 \uBC88\uC5ED \uD398\uC774\uC9C0\uAC00 \uC544\uB2D9\uB2C8\uB2E4." };
-      switch (type) {
-        case "next":
-          if (this.inflight > 0) {
-            this.remoteNextPending = true;
-            return { ok: true, message: "\uD604\uC7AC \uD654 \uBC88\uC5ED\uC774 \uB05D\uB098\uBA74 \uB2E4\uC74C \uD654\uB85C \uC774\uB3D9\uD569\uB2C8\uB2E4." };
+        isReviewMode() {
+          const hasHash = typeof window !== "undefined" && window.location && window.location.hash.includes("lanovel_review");
+          return this.isReviewSession || hasHash || Boolean(this.reviewTargetPids && this.reviewTargetPids.size > 0);
+        }
+        recordLog(message) {
+          const text = String(message || "");
+          this.lastLogText = text.slice(0, 120);
+          if (text.includes("\uBB38\uC7A5 \uBD84\uD560 \uC7AC\uC2DC\uB3C4") || text.includes("\uAC80\uC5F4 \uAC10\uC9C0")) {
+            this.censorSplitUntil = Date.now() + 2e4;
           }
-          if (this.isTranslationCancelled) {
-            this.remoteNextPending = true;
-            return { ok: true, message: "\uC77C\uC2DC\uC815\uC9C0 \uC0C1\uD0DC\uC785\uB2C8\uB2E4. \uC7AC\uAC1C \uD6C4 \uBC88\uC5ED\uC774 \uB05D\uB098\uBA74 \uC774\uB3D9\uD569\uB2C8\uB2E4." };
+          const m = text.match(/(\d+)초 후 재시도/);
+          if (m) {
+            this.retryDelayUntil = Date.now() + parseInt(m[1], 10) * 1e3;
           }
-          if (this.onNextEpisode) return this.onNextEpisode();
-          return { ok: false, message: "\uB2E4\uC74C \uD654 \uC774\uB3D9 \uD578\uB4E4\uB7EC\uAC00 \uB4F1\uB85D\uB418\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4." };
-        case "cancel_next":
-          this.remoteNextPending = false;
-          if (this.nextDeadlineTimer) {
-            clearTimeout(this.nextDeadlineTimer);
-            this.nextDeadlineTimer = null;
-          }
-          return { ok: true, message: "\uB2E4\uC74C\uD654 \uC608\uC57D\uC744 \uCDE8\uC18C\uD588\uC2B5\uB2C8\uB2E4." };
-        case "prev":
-          if (this.onPrevEpisode) return this.onPrevEpisode();
-          return { ok: false, message: "\uC774\uC804 \uD654 \uC774\uB3D9 \uD578\uB4E4\uB7EC\uAC00 \uB4F1\uB85D\uB418\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4." };
-        case "pause":
-          if (this.isTranslationCancelled) return { ok: true, message: "\uC774\uBBF8 \uC77C\uC2DC\uC815\uC9C0 \uC0C1\uD0DC\uC785\uB2C8\uB2E4." };
-          this.isTranslationCancelled = true;
-          const stopBtn = document.getElementById("stop-translation-btn");
-          if (stopBtn) stopBtn.click();
           this.broadcastStatus();
-          return { ok: true, message: "\uC77C\uC2DC\uC815\uC9C0\uD588\uC2B5\uB2C8\uB2E4." };
-        case "resume":
-          if (this.resolveResume) {
-            const resumeBtn = document.getElementById("resume-translation-btn");
-            if (resumeBtn) resumeBtn.click();
-            this.broadcastStatus();
-            return { ok: true, message: "\uBC88\uC5ED\uC744 \uC7AC\uAC1C\uD569\uB2C8\uB2E4." };
-          }
-          if (this.isTranslationCancelled) {
-            this.isTranslationCancelled = false;
-            const retryBtn = document.getElementById("retry-translation-btn");
-            if (retryBtn) retryBtn.style.display = "none";
-            if (this.onStartTranslation) {
-              this.onStartTranslation(false);
-              this.broadcastStatus();
-              return { ok: true, message: "\uB0A8\uC740 \uBB38\uC7A5\uBD80\uD130 \uBC88\uC5ED\uC744 \uB2E4\uC2DC \uC2DC\uC791\uD569\uB2C8\uB2E4." };
+        }
+        notifyInflightStart() {
+          this.inflight++;
+          this.broadcastStatus();
+        }
+        notifyInflightEnd() {
+          this.inflight = Math.max(0, this.inflight - 1);
+          this.broadcastStatus();
+        }
+        computeProgress() {
+          const rows = document.querySelectorAll("#translation-table-body tr[data-pid]");
+          if (!rows.length) return 0;
+          let done = 0;
+          rows.forEach((tr) => {
+            const cell = tr.querySelector(".translated-text");
+            const t = cell ? (cell.textContent || "").trim() : "";
+            if (t && !t.includes("\uBC88\uC5ED \uC911") && !t.includes("\uC7AC\uBC88\uC5ED \uC911")) done++;
+          });
+          return Math.round(done / rows.length * 100);
+        }
+        delayRemainingSec() {
+          let remaining = 0;
+          try {
+            if (this.currentDelayResolver && this.activeDelayFn) {
+              const target = typeof this.activeDelayFn === "function" ? this.activeDelayFn() : this.activeDelayFn;
+              remaining = Math.max(remaining, target - (Date.now() - this.currentDelayStart));
             }
+          } catch (e) {
           }
-          return { ok: true, message: "\uC774\uBBF8 \uC9C4\uD589 \uC911\uC785\uB2C8\uB2E4." };
-        case "turbo_on":
-          if (this.onToggleTurboMode) this.onToggleTurboMode(true, true);
-          this.broadcastStatus();
-          return { ok: true, message: "\uD130\uBCF4 \uBAA8\uB4DC\uB97C \uCF30\uC2B5\uB2C8\uB2E4." };
-        case "turbo_off":
-          if (this.onToggleTurboMode) this.onToggleTurboMode(false, true);
-          this.broadcastStatus();
-          return { ok: true, message: "\uD130\uBCF4 \uBAA8\uB4DC\uB97C \uAED0\uC2B5\uB2C8\uB2E4." };
-        case "retranslate":
-          if (this.onRetranslate) return this.onRetranslate();
-          const retryEl = document.getElementById("retry-translation-btn");
-          if (retryEl) {
-            retryEl.click();
-            return { ok: true, message: "\uD604\uC7AC \uD654 \uC804\uCCB4 \uC7AC\uBC88\uC5ED\uC744 \uC2DC\uC791\uD569\uB2C8\uB2E4." };
+          remaining = Math.max(remaining, this.retryDelayUntil - Date.now());
+          return Math.max(0, Math.ceil(remaining / 1e3));
+        }
+        buildStatusPayload() {
+          const cancelled = this.isTranslationCancelled;
+          const turboAborted = this.turboAbortedOnLoad;
+          const delaySec = this.delayRemainingSec();
+          let phase = "idle";
+          if (turboAborted) phase = "turbo_wait";
+          else if (cancelled) phase = "paused";
+          else if (Date.now() < this.censorSplitUntil && this.inflight > 0) phase = "censor_split";
+          else if (delaySec > 0) phase = "delay_wait";
+          else if (this.inflight > 0) phase = "translating";
+          let chapterTitle = "";
+          try {
+            chapterTitle = this.onExtractEpisodeTitle && this.onExtractEpisodeTitle() || document.title || "";
+          } catch (e) {
+            chapterTitle = document.title || "";
           }
-          return { ok: false, message: "\uC7AC\uBC88\uC5ED \uBC84\uD2BC\uC744 \uCC3E\uC744 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4." };
-        default:
-          return { ok: false, message: `\uC774 \uD0ED\uC5D0\uC11C \uCC98\uB9AC\uD558\uC9C0 \uC54A\uB294 \uBA85\uB839: ${type}` };
-      }
+          return {
+            phase,
+            text: this.lastLogText,
+            url: window.location.href.split("#")[0],
+            book_title: this.currentNovelTitle || "",
+            chapter_title: chapterTitle,
+            percentage: this.computeProgress(),
+            delay_remaining_sec: phase === "delay_wait" ? delaySec : 0,
+            next_scheduled: this.remoteNextPending,
+            turbo: this.isTurboMode
+          };
+        }
+        broadcastStatus() {
+          if (!document.getElementById("jp-translator-sidebar")) return;
+          try {
+            const payload = this.buildStatusPayload();
+            chrome.runtime.sendMessage({ action: "remoteStatus", data: payload }, () => {
+              void chrome.runtime.lastError;
+            });
+          } catch (e) {
+          }
+        }
+        startStatusReporting() {
+          if (typeof document === "undefined") return;
+          if (this.reportIntervalTimer) clearInterval(this.reportIntervalTimer);
+          this.reportIntervalTimer = setInterval(() => {
+            this.broadcastStatus();
+          }, 2e3);
+          if (this.reportIntervalTimer && typeof this.reportIntervalTimer.unref === "function") {
+            this.reportIntervalTimer.unref();
+          }
+        }
+        handleRemoteCommand(type, _params = {}) {
+          const sidebar = document.getElementById("jp-translator-sidebar");
+          if (!sidebar) return { ok: false, message: "\uC774 \uD0ED\uC740 \uBC88\uC5ED \uD398\uC774\uC9C0\uAC00 \uC544\uB2D9\uB2C8\uB2E4." };
+          switch (type) {
+            case "next":
+              if (this.inflight > 0) {
+                this.remoteNextPending = true;
+                return { ok: true, message: "\uD604\uC7AC \uD654 \uBC88\uC5ED\uC774 \uB05D\uB098\uBA74 \uB2E4\uC74C \uD654\uB85C \uC774\uB3D9\uD569\uB2C8\uB2E4." };
+              }
+              if (this.isTranslationCancelled) {
+                this.remoteNextPending = true;
+                return { ok: true, message: "\uC77C\uC2DC\uC815\uC9C0 \uC0C1\uD0DC\uC785\uB2C8\uB2E4. \uC7AC\uAC1C \uD6C4 \uBC88\uC5ED\uC774 \uB05D\uB098\uBA74 \uC774\uB3D9\uD569\uB2C8\uB2E4." };
+              }
+              if (this.onNextEpisode) return this.onNextEpisode();
+              return { ok: false, message: "\uB2E4\uC74C \uD654 \uC774\uB3D9 \uD578\uB4E4\uB7EC\uAC00 \uB4F1\uB85D\uB418\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4." };
+            case "cancel_next":
+              this.remoteNextPending = false;
+              if (this.nextDeadlineTimer) {
+                clearTimeout(this.nextDeadlineTimer);
+                this.nextDeadlineTimer = null;
+              }
+              return { ok: true, message: "\uB2E4\uC74C\uD654 \uC608\uC57D\uC744 \uCDE8\uC18C\uD588\uC2B5\uB2C8\uB2E4." };
+            case "prev":
+              if (this.onPrevEpisode) return this.onPrevEpisode();
+              return { ok: false, message: "\uC774\uC804 \uD654 \uC774\uB3D9 \uD578\uB4E4\uB7EC\uAC00 \uB4F1\uB85D\uB418\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4." };
+            case "pause":
+              if (this.isTranslationCancelled) return { ok: true, message: "\uC774\uBBF8 \uC77C\uC2DC\uC815\uC9C0 \uC0C1\uD0DC\uC785\uB2C8\uB2E4." };
+              this.isTranslationCancelled = true;
+              const stopBtn = document.getElementById("stop-translation-btn");
+              if (stopBtn) stopBtn.click();
+              this.broadcastStatus();
+              return { ok: true, message: "\uC77C\uC2DC\uC815\uC9C0\uD588\uC2B5\uB2C8\uB2E4." };
+            case "resume":
+              if (this.resolveResume) {
+                const resumeBtn = document.getElementById("resume-translation-btn");
+                if (resumeBtn) resumeBtn.click();
+                this.broadcastStatus();
+                return { ok: true, message: "\uBC88\uC5ED\uC744 \uC7AC\uAC1C\uD569\uB2C8\uB2E4." };
+              }
+              if (this.isTranslationCancelled) {
+                this.isTranslationCancelled = false;
+                const retryBtn = document.getElementById("retry-translation-btn");
+                if (retryBtn) retryBtn.style.display = "none";
+                if (this.onStartTranslation) {
+                  this.onStartTranslation(false);
+                  this.broadcastStatus();
+                  return { ok: true, message: "\uB0A8\uC740 \uBB38\uC7A5\uBD80\uD130 \uBC88\uC5ED\uC744 \uB2E4\uC2DC \uC2DC\uC791\uD569\uB2C8\uB2E4." };
+                }
+              }
+              return { ok: true, message: "\uC774\uBBF8 \uC9C4\uD589 \uC911\uC785\uB2C8\uB2E4." };
+            case "turbo_on":
+              if (this.onToggleTurboMode) this.onToggleTurboMode(true, true);
+              this.broadcastStatus();
+              return { ok: true, message: "\uD130\uBCF4 \uBAA8\uB4DC\uB97C \uCF30\uC2B5\uB2C8\uB2E4." };
+            case "turbo_off":
+              if (this.onToggleTurboMode) this.onToggleTurboMode(false, true);
+              this.broadcastStatus();
+              return { ok: true, message: "\uD130\uBCF4 \uBAA8\uB4DC\uB97C \uAED0\uC2B5\uB2C8\uB2E4." };
+            case "retranslate":
+              if (this.onRetranslate) return this.onRetranslate();
+              const retryEl = document.getElementById("retry-translation-btn");
+              if (retryEl) {
+                retryEl.click();
+                return { ok: true, message: "\uD604\uC7AC \uD654 \uC804\uCCB4 \uC7AC\uBC88\uC5ED\uC744 \uC2DC\uC791\uD569\uB2C8\uB2E4." };
+              }
+              return { ok: false, message: "\uC7AC\uBC88\uC5ED \uBC84\uD2BC\uC744 \uCC3E\uC744 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4." };
+            default:
+              return { ok: false, message: `\uC774 \uD0ED\uC5D0\uC11C \uCC98\uB9AC\uD558\uC9C0 \uC54A\uB294 \uBA85\uB839: ${type}` };
+          }
+        }
+      };
+      state = new ExtensionState();
     }
-  };
-  var state = new ExtensionState();
+  });
 
   // src/scrapers/kakuyomu.ts
-  var KakuyomuScraper = class {
-    name = "kakuyomu";
-    matches(_url, host) {
-      return host.includes("kakuyomu.jp");
-    }
-    detectNovelTitle() {
-      const workLink = Array.from(document.querySelectorAll('header a[href*="/works/"]')).find((a) => {
-        const txt = (a.textContent || "").trim();
-        const aria = a.getAttribute("aria-label") || "";
-        const href = a.getAttribute("href") || "";
-        return txt && !txt.includes("\u9589\u3058\u308B") && !aria.includes("\u9589\u3058\u308B") && !txt.includes("\u76EE\u6B21") && !txt.includes("TOP") && /\/works\/\d+$/.test(href.split("?")[0]);
-      }) || document.querySelector(".widget-toc-main-title") || document.querySelector('a[href^="/works/"][class*="Title"]') || document.querySelector('header a[class*="workTitle"]');
-      if (workLink && workLink.textContent && workLink.textContent.trim()) {
-        const candidate = workLink.textContent.trim();
-        if (candidate && !candidate.includes("\u9589\u3058\u308B")) {
-          return candidate;
+  var KakuyomuScraper;
+  var init_kakuyomu = __esm({
+    "src/scrapers/kakuyomu.ts"() {
+      "use strict";
+      KakuyomuScraper = class {
+        name = "kakuyomu";
+        matches(_url, host) {
+          return host.includes("kakuyomu.jp");
         }
-      }
-      const titleText = document.title.replace(/\s*-\s*カクヨム.*$/i, "").trim();
-      const parts = titleText.split(/\s*-\s*/);
-      if (parts.length > 1) {
-        let novelPart = parts[parts.length - 1].trim();
-        novelPart = novelPart.replace(/（[^）]+）$/, "").trim();
-        novelPart = novelPart.replace(/\([^)]+\)$/, "").trim();
-        if (novelPart && !novelPart.includes("\u9589\u3058\u308B")) return novelPart;
-      }
-      return null;
-    }
-    extractEpisodeTitle() {
-      const epEl = document.querySelector('.widget-episodeTitle, [class*="widget-episodeTitle"], h1[class*="episodeTitle"]');
-      if (epEl && epEl.textContent && epEl.textContent.trim()) {
-        return epEl.textContent.trim();
-      }
-      if (document.title) {
-        const clean = document.title.replace(/\s*-\s*カクヨム.*$/i, "").trim();
-        const parts = clean.split(/\s*-\s*/);
-        if (parts.length > 1 && parts[0].trim()) {
-          return parts[0].trim();
+        detectNovelTitle() {
+          const workLink = Array.from(document.querySelectorAll('header a[href*="/works/"]')).find((a) => {
+            const txt = (a.textContent || "").trim();
+            const aria = a.getAttribute("aria-label") || "";
+            const href = a.getAttribute("href") || "";
+            return txt && !txt.includes("\u9589\u3058\u308B") && !aria.includes("\u9589\u3058\u308B") && !txt.includes("\u76EE\u6B21") && !txt.includes("TOP") && /\/works\/\d+$/.test(href.split("?")[0]);
+          }) || document.querySelector(".widget-toc-main-title") || document.querySelector('a[href^="/works/"][class*="Title"]') || document.querySelector('header a[class*="workTitle"]');
+          if (workLink && workLink.textContent && workLink.textContent.trim()) {
+            const candidate = workLink.textContent.trim();
+            if (candidate && !candidate.includes("\u9589\u3058\u308B")) {
+              return candidate;
+            }
+          }
+          const titleText = document.title.replace(/\s*-\s*カクヨム.*$/i, "").trim();
+          const parts = titleText.split(/\s*-\s*/);
+          if (parts.length > 1) {
+            let novelPart = parts[parts.length - 1].trim();
+            novelPart = novelPart.replace(/（[^）]+）$/, "").trim();
+            novelPart = novelPart.replace(/\([^)]+\)$/, "").trim();
+            if (novelPart && !novelPart.includes("\u9589\u3058\u308B")) return novelPart;
+          }
+          return null;
         }
-        if (parts[0].trim()) return parts[0].trim();
-      }
-      return "";
+        extractEpisodeTitle() {
+          const epEl = document.querySelector('.widget-episodeTitle, [class*="widget-episodeTitle"], h1[class*="episodeTitle"]');
+          if (epEl && epEl.textContent && epEl.textContent.trim()) {
+            return epEl.textContent.trim();
+          }
+          if (document.title) {
+            const clean = document.title.replace(/\s*-\s*カクヨム.*$/i, "").trim();
+            const parts = clean.split(/\s*-\s*/);
+            if (parts.length > 1 && parts[0].trim()) {
+              return parts[0].trim();
+            }
+            if (parts[0].trim()) return parts[0].trim();
+          }
+          return "";
+        }
+        getWorkKey(url) {
+          const match = url.match(/\/works\/(\d+)/);
+          return match ? `kakuyomu_${match[1]}` : null;
+        }
+        isTocPage(_url, path) {
+          if (path.includes("/episodes/") || document.querySelector(".widget-episodeBody, #contentMain-inner p[id]")) {
+            return false;
+          }
+          return /\/works\/\d+\/?$/.test(path) || !!document.querySelector(".widget-toc-episode");
+        }
+        findNextEpisodeLink() {
+          const direct = document.getElementById("contentMain-nextEpisode") || document.querySelector("a.widget-episodeNavigation-next") || document.querySelector("#contentMain-readNextEpisode") || document.querySelector("a.js-read-next-episode") || document.querySelector('a[data-link-click-action-name="WorksEpisodesEpisodeFooterNextEpisode"]');
+          if (direct && direct.href) return direct;
+          const candidates = Array.from(document.querySelectorAll('a[href*="/episodes/"]'));
+          const found = candidates.find((a) => (a.textContent || "").includes("\u6B21\u306E\u30A8\u30D4\u30BD\u30FC\u30C9"));
+          if (found && found.href) return found;
+          const relNext = document.querySelector('a[rel="next"], link[rel="next"]');
+          if (relNext && relNext.href) return relNext;
+          return null;
+        }
+        findPrevEpisodeLink() {
+          const direct = document.getElementById("contentMain-previousEpisode") || document.querySelector("a.widget-episodeNavigation-previous");
+          if (direct && direct.href) return direct;
+          const candidates = Array.from(document.querySelectorAll('a[href*="/episodes/"]'));
+          const found = candidates.find((a) => (a.textContent || "").includes("\u524D\u306E\u30A8\u30D4\u30BD\u30FC\u30C9"));
+          if (found && found.href) return found;
+          return null;
+        }
+        findTocLink() {
+          const links = Array.from(
+            document.querySelectorAll('header a[href*="/works/"], a.widget-toc-main-title, a[class*="workTitle"]')
+          );
+          const found = links.find((a) => /\/works\/\d+$/.test((a.getAttribute("href") || "").split("?")[0]));
+          return found || null;
+        }
+        getTocEpisodes() {
+          const elements = Array.from(
+            document.querySelectorAll(".widget-toc-episode a, a.widget-toc-episode-episodeTitle")
+          );
+          return elements.map((el) => ({
+            element: el,
+            url: el.href.split("#")[0],
+            title: (el.textContent || "").trim()
+          }));
+        }
+      };
     }
-    getWorkKey(url) {
-      const match = url.match(/\/works\/(\d+)/);
-      return match ? `kakuyomu_${match[1]}` : null;
-    }
-    isTocPage(_url, path) {
-      return /\/works\/\d+\/?$/.test(path) || !!document.querySelector(".widget-toc-episode");
-    }
-    findNextEpisodeLink() {
-      const direct = document.getElementById("contentMain-nextEpisode") || document.querySelector("a.widget-episodeNavigation-next") || document.querySelector("#contentMain-readNextEpisode") || document.querySelector("a.js-read-next-episode") || document.querySelector('a[data-link-click-action-name="WorksEpisodesEpisodeFooterNextEpisode"]');
-      if (direct && direct.href) return direct;
-      const candidates = Array.from(document.querySelectorAll('a[href*="/episodes/"]'));
-      const found = candidates.find((a) => (a.textContent || "").includes("\u6B21\u306E\u30A8\u30D4\u30BD\u30FC\u30C9"));
-      if (found && found.href) return found;
-      const relNext = document.querySelector('a[rel="next"], link[rel="next"]');
-      if (relNext && relNext.href) return relNext;
-      return null;
-    }
-    findPrevEpisodeLink() {
-      const direct = document.getElementById("contentMain-previousEpisode") || document.querySelector("a.widget-episodeNavigation-previous");
-      if (direct && direct.href) return direct;
-      const candidates = Array.from(document.querySelectorAll('a[href*="/episodes/"]'));
-      const found = candidates.find((a) => (a.textContent || "").includes("\u524D\u306E\u30A8\u30D4\u30BD\u30FC\u30C9"));
-      if (found && found.href) return found;
-      return null;
-    }
-    findTocLink() {
-      const links = Array.from(
-        document.querySelectorAll('header a[href*="/works/"], a.widget-toc-main-title, a[class*="workTitle"]')
-      );
-      const found = links.find((a) => /\/works\/\d+$/.test((a.getAttribute("href") || "").split("?")[0]));
-      return found || null;
-    }
-    getTocEpisodes() {
-      const elements = Array.from(
-        document.querySelectorAll(".widget-toc-episode a, a.widget-toc-episode-episodeTitle")
-      );
-      return elements.map((el) => ({
-        element: el,
-        url: el.href.split("#")[0],
-        title: (el.textContent || "").trim()
-      }));
-    }
-  };
+  });
 
   // src/scrapers/syosetu.ts
-  var SyosetuScraper = class {
-    name = "syosetu";
-    matches(_url, host) {
-      return host.includes("syosetu.com");
-    }
-    detectNovelTitle() {
-      const novelLink = document.querySelector('.c-announce a[href*="/n"]') || document.querySelector(".p-novel__series-link") || document.querySelector(".novel_title") || document.querySelector("a.margin_r20");
-      if (novelLink && novelLink.textContent && novelLink.textContent.trim()) {
-        return novelLink.textContent.trim();
-      }
-      const parts = document.title.split(/\s*-\s*/);
-      if (parts.length > 1) {
-        return parts[parts.length - 1].trim();
-      } else if (parts.length > 0 && parts[0].trim()) {
-        return parts[0].trim();
-      }
-      return null;
-    }
-    extractEpisodeTitle() {
-      const epEl = document.querySelector('.p-novel__title, .novel_subtitle, [class*="novel__title"]');
-      if (epEl && epEl.textContent && epEl.textContent.trim()) {
-        return epEl.textContent.trim();
-      }
-      if (document.title) {
-        const clean = document.title.replace(/\s*-\s*(小説家になろう|ノクターンノベルズ|ムーンライトノベルズ|ミッドナイトノベルズ).*$/i, "").trim();
-        const parts = clean.split(/\s*-\s*/);
-        if (parts.length > 1 && parts[parts.length - 1].trim()) {
-          return parts[parts.length - 1].trim();
+  var SyosetuScraper;
+  var init_syosetu = __esm({
+    "src/scrapers/syosetu.ts"() {
+      "use strict";
+      SyosetuScraper = class {
+        name = "syosetu";
+        matches(_url, host) {
+          return host.includes("syosetu.com");
         }
-        if (parts[0].trim()) return parts[0].trim();
-      }
-      return "";
+        detectNovelTitle() {
+          const novelLink = document.querySelector('.c-announce a[href*="/n"]') || document.querySelector(".p-novel__series-link") || document.querySelector(".novel_title") || document.querySelector("a.margin_r20");
+          if (novelLink && novelLink.textContent && novelLink.textContent.trim()) {
+            return novelLink.textContent.trim();
+          }
+          const parts = document.title.split(/\s*-\s*/);
+          if (parts.length > 1) {
+            return parts[parts.length - 1].trim();
+          } else if (parts.length > 0 && parts[0].trim()) {
+            return parts[0].trim();
+          }
+          return null;
+        }
+        extractEpisodeTitle() {
+          const epEl = document.querySelector('.p-novel__title, .novel_subtitle, [class*="novel__title"]');
+          if (epEl && epEl.textContent && epEl.textContent.trim()) {
+            return epEl.textContent.trim();
+          }
+          if (document.title) {
+            const clean = document.title.replace(/\s*-\s*(小説家になろう|ノクターンノベルズ|ムーンライトノベルズ|ミッドナイトノベルズ).*$/i, "").trim();
+            const parts = clean.split(/\s*-\s*/);
+            if (parts.length > 1 && parts[parts.length - 1].trim()) {
+              return parts[parts.length - 1].trim();
+            }
+            if (parts[0].trim()) return parts[0].trim();
+          }
+          return "";
+        }
+        getWorkKey(url) {
+          const match = url.match(/\/(n\d+[a-z]+)(\/|$)/i);
+          return match ? `syosetu_${match[1].toLowerCase()}` : null;
+        }
+        isTocPage(_url, path) {
+          if (document.querySelector(".p-novel__body, #novel_honbun, .p-novel__text")) {
+            return false;
+          }
+          return /\/n[a-z0-9]+\/?$/i.test(path) && !/\/\d+\/?$/.test(path) || !!document.querySelector(".p-eplist, .index_box");
+        }
+        findNextEpisodeLink() {
+          const direct = document.querySelector(".c-pager__item--next") || document.querySelector("a.novel_bn_next") || document.querySelector(".novel_bn a.c-pager__item--next") || document.querySelector("a.c-pager__item.c-pager__item--next") || document.querySelector("a.novelview_pager-next");
+          if (direct && direct.href) return direct;
+          const links = Array.from(document.querySelectorAll(".novel_bn a, .c-pager a, a.c-pager__item"));
+          const found = links.find((a) => (a.textContent || "").includes("\u6B21\u3078"));
+          return found || null;
+        }
+        findPrevEpisodeLink() {
+          const direct = document.querySelector(".c-pager__item--before") || document.querySelector("a.novel_bn_prev");
+          if (direct && direct.href) return direct;
+          const links = Array.from(document.querySelectorAll(".novel_bn a, .c-pager a, a.c-pager__item"));
+          const found = links.find((a) => (a.textContent || "").includes("\u524D\u3078"));
+          return found || null;
+        }
+        findTocLink() {
+          const direct = document.querySelector('.c-announce a[href*="/n"]') || document.querySelector(".p-novel__series-link a") || document.querySelector("a.p-novel__series-link") || document.querySelector(".novel_title a");
+          return direct && direct.href ? direct : null;
+        }
+        getTocEpisodes() {
+          const elements = Array.from(
+            document.querySelectorAll(
+              "a.p-eplist__subtitle, .p-eplist a.p-eplist__subtitle, .p-eplist__sublist a, .p-eplist a, .index_box .subtitle a, .subtitle a"
+            )
+          ).filter((el) => {
+            const rawHref = el.getAttribute("href") || "";
+            const cleanHref = rawHref.split("#")[0].split("?")[0];
+            return /\/\d+\/?$/.test(cleanHref);
+          });
+          return elements.map((el) => ({
+            element: el,
+            url: el.href.split("#")[0],
+            title: (el.textContent || "").trim()
+          }));
+        }
+      };
     }
-    getWorkKey(url) {
-      const match = url.match(/\/(n\d+[a-z]+)(\/|$)/i);
-      return match ? `syosetu_${match[1].toLowerCase()}` : null;
-    }
-    isTocPage(_url, path) {
-      if (document.querySelector(".p-novel__body, #novel_honbun, .p-novel__text")) {
-        return false;
-      }
-      return /\/n[a-z0-9]+\/?$/i.test(path) && !/\/\d+\/?$/.test(path) || !!document.querySelector(".p-eplist, .index_box");
-    }
-    findNextEpisodeLink() {
-      const direct = document.querySelector(".c-pager__item--next") || document.querySelector("a.novel_bn_next") || document.querySelector(".novel_bn a.c-pager__item--next") || document.querySelector("a.c-pager__item.c-pager__item--next") || document.querySelector("a.novelview_pager-next");
-      if (direct && direct.href) return direct;
-      const links = Array.from(document.querySelectorAll(".novel_bn a, .c-pager a, a.c-pager__item"));
-      const found = links.find((a) => (a.textContent || "").includes("\u6B21\u3078"));
-      return found || null;
-    }
-    findPrevEpisodeLink() {
-      const direct = document.querySelector(".c-pager__item--before") || document.querySelector("a.novel_bn_prev");
-      if (direct && direct.href) return direct;
-      const links = Array.from(document.querySelectorAll(".novel_bn a, .c-pager a, a.c-pager__item"));
-      const found = links.find((a) => (a.textContent || "").includes("\u524D\u3078"));
-      return found || null;
-    }
-    findTocLink() {
-      const direct = document.querySelector('.c-announce a[href*="/n"]') || document.querySelector(".p-novel__series-link a") || document.querySelector("a.p-novel__series-link") || document.querySelector(".novel_title a");
-      return direct && direct.href ? direct : null;
-    }
-    getTocEpisodes() {
-      const elements = Array.from(
-        document.querySelectorAll(
-          "a.p-eplist__subtitle, .p-eplist a.p-eplist__subtitle, .p-eplist__sublist a, .p-eplist a, .index_box .subtitle a, .subtitle a"
-        )
-      ).filter((el) => {
-        const rawHref = el.getAttribute("href") || "";
-        const cleanHref = rawHref.split("#")[0].split("?")[0];
-        return /\/\d+\/?$/.test(cleanHref);
-      });
-      return elements.map((el) => ({
-        element: el,
-        url: el.href.split("#")[0],
-        title: (el.textContent || "").trim()
-      }));
-    }
-  };
+  });
 
   // src/scrapers/novelup.ts
-  var NovelUpScraper = class {
-    name = "novelup";
-    matches(_url, host) {
-      return host.includes("novelup.plus");
-    }
-    detectNovelTitle() {
-      const novelTitleEl = document.querySelector(".episodeHeader .storyTitle") || document.querySelector(".storyTitle") || document.querySelector(".story_title");
-      if (novelTitleEl && novelTitleEl.textContent && novelTitleEl.textContent.trim()) {
-        return novelTitleEl.textContent.trim();
-      }
-      const titleText = document.title.replace(/\s*\|\s*小説投稿サイトノベルアップ.*$/i, "").trim();
-      const parts = titleText.split(/\s*-\s*/);
-      if (parts.length > 0 && parts[0].trim()) {
-        let novelPart = parts[0].trim();
-        novelPart = novelPart.replace(/（[^）]+）$/, "").trim();
-        novelPart = novelPart.replace(/\([^)]+\)$/, "").trim();
-        if (novelPart) return novelPart;
-      }
-      return null;
-    }
-    extractEpisodeTitle() {
-      const epEl = document.querySelector(".episode_title, #section_episode .episode_title, h1");
-      if (epEl && epEl.textContent && epEl.textContent.trim()) {
-        return epEl.textContent.trim();
-      }
-      if (document.title) {
-        const clean = document.title.replace(/\s*\|\s*小説投稿サイトノベルアップ.*$/i, "").trim();
-        const parts = clean.split(/\s*-\s*/);
-        if (parts.length > 1 && parts[parts.length - 1].trim()) {
-          return parts[parts.length - 1].trim();
+  var NovelUpScraper;
+  var init_novelup = __esm({
+    "src/scrapers/novelup.ts"() {
+      "use strict";
+      NovelUpScraper = class {
+        name = "novelup";
+        matches(_url, host) {
+          return host.includes("novelup.plus");
         }
-        if (parts[0].trim()) return parts[0].trim();
-      }
-      return "";
-    }
-    getWorkKey(url) {
-      const match = url.match(/\/story\/(\d+)/);
-      return match ? `novelup_${match[1]}` : null;
-    }
-    isTocPage(_url, path) {
-      if (document.getElementById("episode_content")) {
-        return false;
-      }
-      return /\/story\/\d+\/?$/.test(path) && !/\/\d+\/\d+/.test(path) || !!document.querySelector("#section_episode, .episodeListItem, a.episodeTitle, .storyList");
-    }
-    findNextEpisodeLink() {
-      const direct = document.querySelector(".episodeNavi .nextEpisode a") || document.querySelector(".btn_next") || document.querySelector(".episode_navigation .next a");
-      if (direct && direct.href) return direct;
-      const allLinks = Array.from(document.querySelectorAll("a"));
-      const contextual = allLinks.find(
-        (a) => (a.closest(".episodeHeaderPager") || a.closest("#section_episode") || a.closest(".storyIndexFooter")) && (a.textContent || "").includes("\u6B21\u3078") && a.href && !(a.textContent || "").includes("\u524D\u3078")
-      );
-      if (contextual) return contextual;
-      const storyLink = allLinks.find(
-        (a) => (a.textContent || "").includes("\u6B21\u3078") && a.href && a.href.includes("/story/") && !(a.textContent || "").includes("\u524D\u3078")
-      );
-      return storyLink || null;
-    }
-    findPrevEpisodeLink() {
-      const direct = document.querySelector(".episodeNavi .prevEpisode a") || document.querySelector(".btn_prev") || document.querySelector(".episode_navigation .prev a");
-      if (direct && direct.href) return direct;
-      const allLinks = Array.from(document.querySelectorAll("a"));
-      const contextual = allLinks.find(
-        (a) => (a.closest(".episodeHeaderPager") || a.closest("#section_episode") || a.closest(".storyIndexFooter")) && (a.textContent || "").includes("\u524D\u3078") && a.href && !(a.textContent || "").includes("\u6B21\u3078")
-      );
-      return contextual || null;
-    }
-    findTocLink() {
-      const direct = document.querySelector(".episodeHeader .storyTitle a") || document.querySelector(".storyTitle a") || document.querySelector(".story_title a") || document.querySelector("a.storyTitle");
-      if (direct && direct.href) return direct;
-      const candidates = Array.from(document.querySelectorAll('a[href*="/story/"]'));
-      const found = candidates.find(
-        (a) => /\/story\/\d+\/?$/.test((a.getAttribute("href") || "").split("?")[0].split("#")[0])
-      );
-      return found && found.href ? found : null;
-    }
-    prepareContent() {
-      const epContent = document.getElementById("episode_content");
-      if (!epContent || epContent.dataset.lanovelPreprocessed) return;
-      if (epContent.tagName.toLowerCase() === "div" && epContent.querySelectorAll("p[id]").length > 0) {
-        return;
-      }
-      const rawHtml = epContent.innerHTML;
-      const lines = rawHtml.split(/\r?\n/);
-      if (lines.length <= 1 && epContent.querySelectorAll("p").length > 1) {
-        return;
-      }
-      const container = document.createElement("div");
-      container.id = "episode_content";
-      container.dataset.lanovelPreprocessed = "true";
-      container.className = epContent.className;
-      if (epContent.getAttribute("style")) {
-        container.setAttribute("style", epContent.getAttribute("style") || "");
-      }
-      lines.forEach((line, index) => {
-        const p = document.createElement("p");
-        p.id = `L${index + 1}`;
-        const trimmed = line.replace(/<[^>]*>/g, "").trim();
-        if (!trimmed) {
-          p.className = "blank";
-          p.innerHTML = "<br>";
-        } else {
-          p.innerHTML = line;
+        detectNovelTitle() {
+          const novelTitleEl = document.querySelector(".episodeHeader .storyTitle") || document.querySelector(".storyTitle") || document.querySelector(".story_title");
+          if (novelTitleEl && novelTitleEl.textContent && novelTitleEl.textContent.trim()) {
+            return novelTitleEl.textContent.trim();
+          }
+          const titleText = document.title.replace(/\s*\|\s*小説投稿サイトノベルアップ.*$/i, "").trim();
+          const parts = titleText.split(/\s*-\s*/);
+          if (parts.length > 0 && parts[0].trim()) {
+            let novelPart = parts[0].trim();
+            novelPart = novelPart.replace(/（[^）]+）$/, "").trim();
+            novelPart = novelPart.replace(/\([^)]+\)$/, "").trim();
+            if (novelPart) return novelPart;
+          }
+          return null;
         }
-        container.appendChild(p);
-      });
-      epContent.replaceWith(container);
-      console.log(`[LANOVEL] NovelUp content transformed into ${lines.length} paragraphs for translation.`);
+        extractEpisodeTitle() {
+          const epEl = document.querySelector(".episode_title, #section_episode .episode_title, h1");
+          if (epEl && epEl.textContent && epEl.textContent.trim()) {
+            return epEl.textContent.trim();
+          }
+          if (document.title) {
+            const clean = document.title.replace(/\s*\|\s*小説投稿サイトノベルアップ.*$/i, "").trim();
+            const parts = clean.split(/\s*-\s*/);
+            if (parts.length > 1 && parts[parts.length - 1].trim()) {
+              return parts[parts.length - 1].trim();
+            }
+            if (parts[0].trim()) return parts[0].trim();
+          }
+          return "";
+        }
+        getWorkKey(url) {
+          const match = url.match(/\/story\/(\d+)/);
+          return match ? `novelup_${match[1]}` : null;
+        }
+        isTocPage(_url, path) {
+          if (document.getElementById("episode_content")) {
+            return false;
+          }
+          return /\/story\/\d+\/?$/.test(path) && !/\/\d+\/\d+/.test(path) || !!document.querySelector("#section_episode, .episodeListItem, a.episodeTitle, .storyList");
+        }
+        findNextEpisodeLink() {
+          const direct = document.querySelector(".episodeNavi .nextEpisode a") || document.querySelector(".btn_next") || document.querySelector(".episode_navigation .next a");
+          if (direct && direct.href) return direct;
+          const allLinks = Array.from(document.querySelectorAll("a"));
+          const contextual = allLinks.find(
+            (a) => (a.closest(".episodeHeaderPager") || a.closest("#section_episode") || a.closest(".storyIndexFooter")) && (a.textContent || "").includes("\u6B21\u3078") && a.href && !(a.textContent || "").includes("\u524D\u3078")
+          );
+          if (contextual) return contextual;
+          const storyLink = allLinks.find(
+            (a) => (a.textContent || "").includes("\u6B21\u3078") && a.href && a.href.includes("/story/") && !(a.textContent || "").includes("\u524D\u3078")
+          );
+          return storyLink || null;
+        }
+        findPrevEpisodeLink() {
+          const direct = document.querySelector(".episodeNavi .prevEpisode a") || document.querySelector(".btn_prev") || document.querySelector(".episode_navigation .prev a");
+          if (direct && direct.href) return direct;
+          const allLinks = Array.from(document.querySelectorAll("a"));
+          const contextual = allLinks.find(
+            (a) => (a.closest(".episodeHeaderPager") || a.closest("#section_episode") || a.closest(".storyIndexFooter")) && (a.textContent || "").includes("\u524D\u3078") && a.href && !(a.textContent || "").includes("\u6B21\u3078")
+          );
+          return contextual || null;
+        }
+        findTocLink() {
+          const direct = document.querySelector(".episodeHeader .storyTitle a") || document.querySelector(".storyTitle a") || document.querySelector(".story_title a") || document.querySelector("a.storyTitle");
+          if (direct && direct.href) return direct;
+          const candidates = Array.from(document.querySelectorAll('a[href*="/story/"]'));
+          const found = candidates.find(
+            (a) => /\/story\/\d+\/?$/.test((a.getAttribute("href") || "").split("?")[0].split("#")[0])
+          );
+          return found && found.href ? found : null;
+        }
+        prepareContent() {
+          const epContent = document.getElementById("episode_content");
+          if (!epContent || epContent.dataset.lanovelPreprocessed) return;
+          if (epContent.tagName.toLowerCase() === "div" && epContent.querySelectorAll("p[id]").length > 0) {
+            return;
+          }
+          const rawHtml = epContent.innerHTML;
+          let lines = rawHtml.split(/\r?\n/);
+          if (lines.length <= 1 && epContent.querySelectorAll("p").length > 1) {
+            epContent.querySelectorAll("p").forEach((p, idx) => {
+              if (!p.id) p.id = `L${idx + 1}`;
+            });
+            epContent.dataset.lanovelPreprocessed = "true";
+            return;
+          }
+          if (lines.length <= 1 && /<br\s*\/?>/i.test(rawHtml)) {
+            lines = rawHtml.split(/<br\s*\/?>/i);
+          }
+          const container = document.createElement("div");
+          container.id = "episode_content";
+          container.dataset.lanovelPreprocessed = "true";
+          container.className = epContent.className;
+          if (epContent.getAttribute("style")) {
+            container.setAttribute("style", epContent.getAttribute("style") || "");
+          }
+          lines.forEach((line, index) => {
+            const p = document.createElement("p");
+            p.id = `L${index + 1}`;
+            const trimmed = line.replace(/<[^>]*>/g, "").trim();
+            if (!trimmed) {
+              p.className = "blank";
+              p.innerHTML = "<br>";
+            } else {
+              p.innerHTML = line;
+            }
+            container.appendChild(p);
+          });
+          epContent.replaceWith(container);
+          console.log(`[LANOVEL] NovelUp content transformed into ${lines.length} paragraphs for translation.`);
+        }
+        getTocEpisodes() {
+          let elements = Array.from(
+            document.querySelectorAll(
+              '.episodeListItem a.episodeTitle, #section_episode a.episodeTitle, .episodeListItem a, a.episodeTitle, .storyList .episode a, .episode_list a, .storyList a[href*="/story/"]'
+            )
+          ).filter((el) => {
+            const rawHref = el.getAttribute("href") || "";
+            const cleanHref = rawHref.split("#")[0].split("?")[0];
+            return /\/story\/\d+\/\d+\/?$/.test(cleanHref);
+          });
+          if (!elements.length) {
+            elements = Array.from(document.querySelectorAll('a[href*="/story/"]')).filter((el) => {
+              const rawHref = el.getAttribute("href") || "";
+              const cleanHref = rawHref.split("#")[0].split("?")[0];
+              return /\/story\/\d+\/\d+\/?$/.test(cleanHref);
+            });
+          }
+          return elements.map((el) => ({
+            element: el,
+            url: el.href.split("#")[0],
+            title: (el.textContent || "").trim()
+          }));
+        }
+      };
     }
-    getTocEpisodes() {
-      let elements = Array.from(
-        document.querySelectorAll(
-          '.episodeListItem a.episodeTitle, #section_episode a.episodeTitle, .episodeListItem a, a.episodeTitle, .storyList .episode a, .episode_list a, .storyList a[href*="/story/"]'
-        )
-      ).filter((el) => {
-        const rawHref = el.getAttribute("href") || "";
-        const cleanHref = rawHref.split("#")[0].split("?")[0];
-        return /\/story\/\d+\/\d+\/?$/.test(cleanHref);
-      });
-      if (!elements.length) {
-        elements = Array.from(document.querySelectorAll('a[href*="/story/"]')).filter((el) => {
-          const rawHref = el.getAttribute("href") || "";
-          const cleanHref = rawHref.split("#")[0].split("?")[0];
-          return /\/story\/\d+\/\d+\/?$/.test(cleanHref);
-        });
-      }
-      return elements.map((el) => ({
-        element: el,
-        url: el.href.split("#")[0],
-        title: (el.textContent || "").trim()
-      }));
-    }
-  };
+  });
 
   // src/scrapers/hameln.ts
-  var HamelnScraper = class {
-    name = "hameln";
-    matches(_url, host) {
-      return host.includes("syosetu.org");
+  var HamelnScraper;
+  var init_hameln = __esm({
+    "src/scrapers/hameln.ts"() {
+      "use strict";
+      HamelnScraper = class {
+        name = "hameln";
+        matches(_url, host) {
+          return host.includes("syosetu.org");
+        }
+        detectNovelTitle() {
+          const titleLink = document.querySelector('a[href*="/novel/"][style*="font-weight:bold"], span.novel_title a');
+          if (titleLink && titleLink.textContent && titleLink.textContent.trim()) {
+            return titleLink.textContent.trim();
+          }
+          const parts = document.title.split(/\s*-\s*/);
+          if (parts.length > 1) {
+            return parts[parts.length - 1].trim();
+          }
+          return null;
+        }
+        extractEpisodeTitle() {
+          const epEl = document.querySelector('span[style*="font-size:120%"], h2, .ss');
+          if (epEl && epEl.textContent && epEl.textContent.trim()) {
+            return epEl.textContent.trim();
+          }
+          const parts = document.title.split(/\s*-\s*/);
+          if (parts.length > 0 && parts[0].trim()) {
+            return parts[0].trim();
+          }
+          return "";
+        }
+        getWorkKey(url) {
+          const match = url.match(/\/novel\/(\d+)/);
+          return match ? `hameln_${match[1]}` : null;
+        }
+        isTocPage(_url, path) {
+          if (document.getElementById("honbun")) {
+            return false;
+          }
+          return /\/novel\/\d+\/?$/.test(path) || !path.endsWith(".html") && document.querySelectorAll('table a[href*="/novel/"]').length > 3;
+        }
+        prepareContent() {
+          const honbun = document.getElementById("honbun");
+          if (!honbun || honbun.dataset.lanovelPreprocessed) return;
+          const paragraphs = honbun.querySelectorAll("p");
+          if (paragraphs.length > 0) {
+            paragraphs.forEach((p, idx) => {
+              if (!p.id) {
+                p.id = `L${idx + 1}`;
+              } else if (/^\d+$/.test(p.id)) {
+                p.id = `L${p.id}`;
+              }
+            });
+            honbun.dataset.lanovelPreprocessed = "true";
+          }
+        }
+        findNextEpisodeLink() {
+          const links = Array.from(document.querySelectorAll("a"));
+          return links.find((a) => (a.textContent || "").trim() === "\u6B21\u3078" && a.href) || null;
+        }
+        findPrevEpisodeLink() {
+          const links = Array.from(document.querySelectorAll("a"));
+          return links.find((a) => (a.textContent || "").trim() === "\u524D\u3078" && a.href) || null;
+        }
+        findTocLink() {
+          const links = Array.from(document.querySelectorAll("a"));
+          return links.find((a) => {
+            const txt = (a.textContent || "").trim();
+            return (txt === "\u76EE\u6B21" || txt === "TOP") && a.href;
+          }) || null;
+        }
+        getTocEpisodes() {
+          const elements = Array.from(document.querySelectorAll('table a[href*="/novel/"]'));
+          return elements.map((el) => ({
+            element: el,
+            url: el.href.split("#")[0],
+            title: (el.textContent || "").trim()
+          }));
+        }
+      };
     }
-    detectNovelTitle() {
-      const titleLink = document.querySelector('a[href*="/novel/"][style*="font-weight:bold"], span.novel_title a');
-      if (titleLink && titleLink.textContent && titleLink.textContent.trim()) {
-        return titleLink.textContent.trim();
-      }
-      const parts = document.title.split(/\s*-\s*/);
-      if (parts.length > 1) {
-        return parts[parts.length - 1].trim();
-      }
-      return null;
-    }
-    extractEpisodeTitle() {
-      const epEl = document.querySelector('span[style*="font-size:120%"], h2, .ss');
-      if (epEl && epEl.textContent && epEl.textContent.trim()) {
-        return epEl.textContent.trim();
-      }
-      const parts = document.title.split(/\s*-\s*/);
-      if (parts.length > 0 && parts[0].trim()) {
-        return parts[0].trim();
-      }
-      return "";
-    }
-    getWorkKey(url) {
-      const match = url.match(/\/novel\/(\d+)/);
-      return match ? `hameln_${match[1]}` : null;
-    }
-    isTocPage(_url, path) {
-      return /\/novel\/\d+\/?$/.test(path) || !path.endsWith(".html") && document.querySelectorAll('table a[href*="/novel/"]').length > 3;
-    }
-    findNextEpisodeLink() {
-      const links = Array.from(document.querySelectorAll("a"));
-      return links.find((a) => (a.textContent || "").trim() === "\u6B21\u3078" && a.href) || null;
-    }
-    findPrevEpisodeLink() {
-      const links = Array.from(document.querySelectorAll("a"));
-      return links.find((a) => (a.textContent || "").trim() === "\u524D\u3078" && a.href) || null;
-    }
-    findTocLink() {
-      const links = Array.from(document.querySelectorAll("a"));
-      return links.find((a) => {
-        const txt = (a.textContent || "").trim();
-        return (txt === "\u76EE\u6B21" || txt === "TOP") && a.href;
-      }) || null;
-    }
-    getTocEpisodes() {
-      const elements = Array.from(document.querySelectorAll('table a[href*="/novel/"]'));
-      return elements.map((el) => ({
-        element: el,
-        url: el.href.split("#")[0],
-        title: (el.textContent || "").trim()
-      }));
-    }
-  };
+  });
 
   // src/scrapers/alphapolis.ts
-  var AlphapolisScraper = class {
-    name = "alphapolis";
-    matches(_url, host) {
-      return host.includes("alphapolis.co.jp");
+  var AlphapolisScraper;
+  var init_alphapolis = __esm({
+    "src/scrapers/alphapolis.ts"() {
+      "use strict";
+      AlphapolisScraper = class {
+        name = "alphapolis";
+        matches(_url, host) {
+          return host.includes("alphapolis.co.jp");
+        }
+        detectNovelTitle() {
+          const titleEl = document.querySelector(".title a, .novel-title, h1.title, .title");
+          if (titleEl && titleEl.textContent && titleEl.textContent.trim()) {
+            return titleEl.textContent.trim();
+          }
+          const parts = document.title.split(/\s*[\/|-]\s*/);
+          if (parts.length > 1) {
+            return parts[parts.length - 1].trim();
+          }
+          return null;
+        }
+        extractEpisodeTitle() {
+          const epEl = document.querySelector(".episode-title, h2.title, .novel-sub-title, .sub-title");
+          if (epEl && epEl.textContent && epEl.textContent.trim()) {
+            return epEl.textContent.trim();
+          }
+          const parts = document.title.split(/\s*[\/|-]\s*/);
+          if (parts.length > 0 && parts[0].trim()) {
+            return parts[0].trim();
+          }
+          return "";
+        }
+        getWorkKey(url) {
+          const match = url.match(/\/novel\/(\d+)/);
+          return match ? `alphapolis_${match[1]}` : null;
+        }
+        isTocPage(_url, path) {
+          if (path.includes("/episode/") || document.querySelector("#novelBoby, #novelBody, .novel-body")) {
+            return false;
+          }
+          return /\/novel\/\d+\/\d+\/?$/.test(path) || !!document.querySelector(".content-statuses, .episode-list, .episodes");
+        }
+        prepareContent() {
+          const bodyEl = document.querySelector("#novelBoby, #novelBody, .novel-body");
+          if (!bodyEl || bodyEl.dataset.lanovelPreprocessed) return;
+          if (bodyEl.querySelectorAll("p[id]").length > 0) return;
+          const existingPs = bodyEl.querySelectorAll("p");
+          if (existingPs.length > 1) {
+            existingPs.forEach((p, idx) => {
+              if (!p.id) p.id = `L${idx + 1}`;
+            });
+            bodyEl.dataset.lanovelPreprocessed = "true";
+            return;
+          }
+          const rawHtml = bodyEl.innerHTML;
+          const lines = /<br\s*\/?>/i.test(rawHtml) ? rawHtml.split(/<br\s*\/?>/i) : rawHtml.split(/\r?\n/);
+          if (lines.length <= 1) return;
+          bodyEl.innerHTML = "";
+          lines.forEach((line, index) => {
+            const p = document.createElement("p");
+            p.id = `L${index + 1}`;
+            const trimmed = line.replace(/<[^>]*>/g, "").trim();
+            if (!trimmed) {
+              p.className = "blank";
+              p.innerHTML = "<br>";
+            } else {
+              p.innerHTML = line.trim();
+            }
+            bodyEl.appendChild(p);
+          });
+          bodyEl.dataset.lanovelPreprocessed = "true";
+        }
+        findNextEpisodeLink() {
+          const direct = document.querySelector(".next a") || document.querySelector("a.btn-next") || document.querySelector(".navigation .next a") || document.querySelector('a[rel="next"]');
+          return direct && direct.href ? direct : null;
+        }
+        findPrevEpisodeLink() {
+          const direct = document.querySelector(".prev a") || document.querySelector("a.btn-prev") || document.querySelector(".navigation .prev a") || document.querySelector('a[rel="prev"]');
+          return direct && direct.href ? direct : null;
+        }
+        findTocLink() {
+          const direct = document.querySelector(".header-novel-title a") || document.querySelector('a[href*="/novel/"]');
+          return direct && direct.href ? direct : null;
+        }
+        getTocEpisodes() {
+          const elements = Array.from(
+            document.querySelectorAll(".episode a, .episode-list a, .episodes a")
+          );
+          return elements.map((el) => ({
+            element: el,
+            url: el.href.split("#")[0],
+            title: (el.textContent || "").trim()
+          }));
+        }
+      };
     }
-    detectNovelTitle() {
-      const titleEl = document.querySelector(".title a, .novel-title, h1.title, .title");
-      if (titleEl && titleEl.textContent && titleEl.textContent.trim()) {
-        return titleEl.textContent.trim();
-      }
-      const parts = document.title.split(/\s*[\/|-]\s*/);
-      if (parts.length > 1) {
-        return parts[parts.length - 1].trim();
-      }
-      return null;
-    }
-    extractEpisodeTitle() {
-      const epEl = document.querySelector(".episode-title, h2.title, .novel-sub-title, .sub-title");
-      if (epEl && epEl.textContent && epEl.textContent.trim()) {
-        return epEl.textContent.trim();
-      }
-      const parts = document.title.split(/\s*[\/|-]\s*/);
-      if (parts.length > 0 && parts[0].trim()) {
-        return parts[0].trim();
-      }
-      return "";
-    }
-    getWorkKey(url) {
-      const match = url.match(/\/novel\/(\d+)/);
-      return match ? `alphapolis_${match[1]}` : null;
-    }
-    isTocPage(_url, path) {
-      return /\/novel\/\d+\/?$/.test(path) || !!document.querySelector(".content-statuses, .episode-list, .episodes");
-    }
-    findNextEpisodeLink() {
-      const direct = document.querySelector(".next a") || document.querySelector("a.btn-next") || document.querySelector(".navigation .next a") || document.querySelector('a[rel="next"]');
-      return direct && direct.href ? direct : null;
-    }
-    findPrevEpisodeLink() {
-      const direct = document.querySelector(".prev a") || document.querySelector("a.btn-prev") || document.querySelector(".navigation .prev a") || document.querySelector('a[rel="prev"]');
-      return direct && direct.href ? direct : null;
-    }
-    findTocLink() {
-      const direct = document.querySelector(".header-novel-title a") || document.querySelector('a[href*="/novel/"]');
-      return direct && direct.href ? direct : null;
-    }
-    getTocEpisodes() {
-      const elements = Array.from(
-        document.querySelectorAll(".episode a, .episode-list a, .episodes a")
-      );
-      return elements.map((el) => ({
-        element: el,
-        url: el.href.split("#")[0],
-        title: (el.textContent || "").trim()
-      }));
-    }
-  };
+  });
 
   // src/scrapers/generic.ts
-  var GenericScraper = class {
-    name = "generic";
-    matches(_url, _host) {
-      return true;
-    }
-    detectNovelTitle() {
-      const cleanDocTitle = document.title.split(/[-|–—]/)[0].trim();
-      if (cleanDocTitle && cleanDocTitle !== "\u9589\u3058\u308B") {
-        return cleanDocTitle;
-      }
-      return "\uAE30\uBCF8 \uC18C\uC124";
-    }
-    extractEpisodeTitle() {
-      if (document.title) {
-        let clean = document.title.replace(/\s*-\s*(カクヨム|小説家になろう|ノクターンノベルズ|ムーンライトノベルズ|ミッドナイトノベルズ|ノベルアップ).*$/i, "").trim();
-        clean = clean.replace(/\s*\|\s*小説投稿サイトノベルアップ.*$/i, "").trim();
-        const parts = clean.split(/\s*-\s*/);
-        if (parts.length > 1 && parts[0].trim()) {
-          return parts[0].trim();
+  var GenericScraper;
+  var init_generic = __esm({
+    "src/scrapers/generic.ts"() {
+      "use strict";
+      GenericScraper = class {
+        name = "generic";
+        matches(_url, _host) {
+          return true;
         }
-        return clean;
-      }
-      return "";
+        detectNovelTitle() {
+          const cleanDocTitle = document.title.split(/[-|–—]/)[0].trim();
+          if (cleanDocTitle && cleanDocTitle !== "\u9589\u3058\u308B") {
+            return cleanDocTitle;
+          }
+          return "\uAE30\uBCF8 \uC18C\uC124";
+        }
+        extractEpisodeTitle() {
+          if (document.title) {
+            let clean = document.title.replace(/\s*-\s*(カクヨム|小説家になろう|ノクターンノベルズ|ムーンライトノベルズ|ミッドナイトノベルズ|ノベルアップ).*$/i, "").trim();
+            clean = clean.replace(/\s*\|\s*小説投稿サイトノベルアップ.*$/i, "").trim();
+            const parts = clean.split(/\s*-\s*/);
+            if (parts.length > 1 && parts[0].trim()) {
+              return parts[0].trim();
+            }
+            return clean;
+          }
+          return "";
+        }
+        getWorkKey(_url) {
+          return null;
+        }
+        isTocPage(_url, _path) {
+          return false;
+        }
+        findNextEpisodeLink() {
+          const relNext = document.querySelector('a[rel="next"]');
+          if (relNext && relNext.href) return relNext;
+          const allLinks = Array.from(document.querySelectorAll("a"));
+          return allLinks.find((a) => {
+            const txt = (a.textContent || "").trim();
+            return txt === "\u6B21\u3078" || txt === "\uB2E4\uC74C\uD654" || txt === "\uB2E4\uC74C \uD654" || txt === "\uB2E4\uC74C";
+          }) || null;
+        }
+        findPrevEpisodeLink() {
+          const relPrev = document.querySelector('a[rel="prev"]');
+          if (relPrev && relPrev.href) return relPrev;
+          const allLinks = Array.from(document.querySelectorAll("a"));
+          return allLinks.find((a) => {
+            const txt = (a.textContent || "").trim();
+            return txt === "\u524D\u3078" || txt === "\uC774\uC804\uD654" || txt === "\uC774\uC804 \uD654" || txt === "\uC774\uC804";
+          }) || null;
+        }
+        findTocLink() {
+          const relIndex = document.querySelector('a[rel="index"]');
+          if (relIndex && relIndex.href) return relIndex;
+          const allLinks = Array.from(document.querySelectorAll("a"));
+          return allLinks.find((a) => {
+            const txt = (a.textContent || "").trim();
+            return txt === "\u76EE\u6B21" || txt === "\uBAA9\uCC28" || txt === "TOC";
+          }) || null;
+        }
+        getTocEpisodes() {
+          return [];
+        }
+      };
     }
-    getWorkKey(_url) {
-      return null;
+  });
+
+  // src/scrapers/base.ts
+  var init_base = __esm({
+    "src/scrapers/base.ts"() {
+      "use strict";
     }
-    isTocPage(_url, _path) {
-      return false;
-    }
-    findNextEpisodeLink() {
-      const relNext = document.querySelector('a[rel="next"]');
-      if (relNext && relNext.href) return relNext;
-      const allLinks = Array.from(document.querySelectorAll("a"));
-      return allLinks.find((a) => {
-        const txt = (a.textContent || "").trim();
-        return txt === "\u6B21\u3078" || txt === "\uB2E4\uC74C\uD654" || txt === "\uB2E4\uC74C \uD654" || txt === "\uB2E4\uC74C";
-      }) || null;
-    }
-    findPrevEpisodeLink() {
-      const relPrev = document.querySelector('a[rel="prev"]');
-      if (relPrev && relPrev.href) return relPrev;
-      const allLinks = Array.from(document.querySelectorAll("a"));
-      return allLinks.find((a) => {
-        const txt = (a.textContent || "").trim();
-        return txt === "\u524D\u3078" || txt === "\uC774\uC804\uD654" || txt === "\uC774\uC804 \uD654" || txt === "\uC774\uC804";
-      }) || null;
-    }
-    findTocLink() {
-      const relIndex = document.querySelector('a[rel="index"]');
-      if (relIndex && relIndex.href) return relIndex;
-      const allLinks = Array.from(document.querySelectorAll("a"));
-      return allLinks.find((a) => {
-        const txt = (a.textContent || "").trim();
-        return txt === "\u76EE\u6B21" || txt === "\uBAA9\uCC28" || txt === "TOC";
-      }) || null;
-    }
-    getTocEpisodes() {
-      return [];
-    }
-  };
+  });
 
   // src/scrapers/index.ts
-  var scrapers = [
-    new KakuyomuScraper(),
-    new SyosetuScraper(),
-    new NovelUpScraper(),
-    new HamelnScraper(),
-    new AlphapolisScraper()
-  ];
-  var genericScraper = new GenericScraper();
   function getScraper(url = window.location.href) {
     try {
       const parsed = new URL(url);
@@ -859,10 +1081,29 @@
     }
     return genericScraper;
   }
+  var scrapers, genericScraper;
+  var init_scrapers = __esm({
+    "src/scrapers/index.ts"() {
+      "use strict";
+      init_kakuyomu();
+      init_syosetu();
+      init_novelup();
+      init_hameln();
+      init_alphapolis();
+      init_generic();
+      init_base();
+      scrapers = [
+        new KakuyomuScraper(),
+        new SyosetuScraper(),
+        new NovelUpScraper(),
+        new HamelnScraper(),
+        new AlphapolisScraper()
+      ];
+      genericScraper = new GenericScraper();
+    }
+  });
 
   // src/core/filters.ts
-  var JAPANESE_REGEX = /[\u3040-\u309f\u30a0-\u30fa\u30fd-\u30ff\u4e00-\u9faf\u3400-\u4dbf]/;
-  var PID_REGEX = /^[a-zA-Z][a-zA-Z0-9]*$/;
   function isTranslatableText(text) {
     if (!text || typeof text !== "string") return false;
     const trimmed = text.trim();
@@ -898,12 +1139,6 @@
     if (!text) return true;
     return isPurePunctuationOnly(text);
   }
-  var SIMPLIFIED_CHINESE_CHARS = new Set(
-    "\u4F24\u4F53\u56FD\u7231\u65F6\u95E8\u5B66\u4E66\u7535\u89C1\u540E\u53D1\u957F\u6C14\u8F66\u5F00\u4E3A\u8FC7\u4E48\u8FD9\u5934\u7ECF\u52A8\u95EE\u5E94\u73B0\u5B9E\u5173\u70B9\u8FDB\u4ECE\u603B\u5C06\u5185\u95F4\u6765\u8BF4\u8BDD\u5BF9\u7ED9\u4F1A\u628A\u6CA1\u8BA9\u6837\u600E\u4E48\u53BB\u91CC\u4E24\u8D77\u5E26\u542C\u8BF4\u53D8\u4EEC\u8FD9\u4E3A\u4E48\u7740\u8BF4\u5BF9\u8BA9\u7ED9\u6837\u600E\u4E24\u5E26\u542C\u53D8\u5934\u7ECF\u52A8\u95EE\u5E94\u5173\u8FDB\u4ECE\u95F4\u957F\u8F66\u95E8\u89C1\u4E66\u7535\u4F24\u53D1\u8FC7\u65F6\u8FD8\u5F00\u5199\u8BDD\u8FB9\u4E1C\u5904\u529E\u5E2E\u5B9D\u5907\u7B14\u4EA7\u573A\u89C6\u8BA4\u673A\u4E1A\u5F20\u8282\u8BED\u867D\u968F\u5C81\u5B59\u635F\u7F29\u9501\u6001\u644A\u8D2A\u6EE9\u575B\u53F9\u6C64\u70EB\u6D9B\u8BA8\u817E\u94C1\u5385\u94DC\u7EDF\u56FE\u6D82\u56E2\u9893\u817F\u6258\u8131\u6D3C\u889C\u7F51\u4F2A\u8FDD\u56F4\u7EAC\u4F1F\u536B\u6E29\u95FB\u7A33\u6DA1\u7A9D\u545C\u575E\u59A9\u96FE\u52A1\u8BEF\u9521\u727A\u88AD\u4E60\u620F\u7EC6\u867E\u5413\u663E\u9669\u7EBF\u5BAA\u53BF\u54CD\u9879\u9500\u6653\u4E9B\u6CC4\u8C22\u950C\u5174\u6C79\u7EE3\u9508\u987B\u865A\u5618\u8BB8\u53D9\u7EEA\u7EED\u8F69\u60AC\u9009\u8BE2\u5BFB\u8BAD\u8BAF\u900A\u538B\u9E26\u9E2D\u54D1\u4E9A\u8BB6\u4E25\u5CA9\u76D0\u538C\u626C\u9633\u517B\u7476\u6447\u5C27\u9065\u7A91\u836F\u7237\u9875\u53F6\u533B\u4EBF\u4E49\u827A\u8BAE\u8BD1\u5F02\u836B\u9634\u94F6\u996E\u9690\u9E70\u5A74\u83B9\u8425\u8367\u8747\u8D62\u9896\u54DF\u62E5\u4F63\u548F\u8E0A\u6D8C\u75C8\u4F18\u72B9\u6CB9\u90AE\u94C0\u6E38\u8BF1\u9C7C\u6E14\u5A31\u4E0E\u5C7F\u5401\u9A6D\u72F1\u8A89\u9884\u6E0A\u5458\u5706\u56ED\u8F95\u8FDC\u6028\u613F\u7EA6\u8DC3\u94A5\u5CB3\u7CA4\u60A6\u9605\u4E91\u5300\u9668\u8FD0\u8574\u915D\u6655\u97F5\u6742\u707E\u8F7D\u6512\u6682\u8D5E\u51FF\u7076\u5219\u62E9\u6CFD\u8D23\u8D3C\u95F8\u624E\u658B\u503A\u6BE1\u6218\u6808\u5360\u7C98\u6DA8\u5E10\u8D26\u80C0\u8D75\u7167\u6298\u54F2\u9488\u4FA6\u73CD\u771F\u8BCA\u9547\u9635\u4E89\u5F81\u6323\u7741\u72F0\u8BC1\u652F\u53EA\u7EC7\u804C\u6267\u7EB8\u6307\u63B7\u5E1C\u8D28\u949F\u7EC8\u79CD\u80BF\u91CD\u5468\u6D32\u663C\u6731\u732A\u8BF8\u8BDB\u70DB\u77A9\u5C5E\u8457\u52A9\u94F8\u7B51\u6293\u62FD\u4E13\u7816\u8F6C\u8D5A\u5E84\u6869\u88C5\u58EE\u72B6\u9525\u8FFD\u51C6\u6D4A\u7EB5\u90B9\u963B\u7EC4\u94BB\u522B\u6CA1\u4E48\u4E3A\u4EC0\u4E48\u600E\u4E48\u5982\u679C\u56E0\u4E3A\u6240\u4EE5\u4F46\u662F\u800C\u4E14\u7136\u540E\u77E5\u9053\u770B\u89C1\u89C9\u5F97"
-  );
-  var CHINESE_INDICATOR_CHARS = new Set(
-    "\u7684\u4E86\u662F\u5728\u6211\u6709\u4E2A\u4EBA\u8FD9\u4E3A\u8BF4\u548C\u65F6\u8981\u4F60\u3479\u540E\u5BF9\u7740\u91CC\u53BB\u8FC7\u53D1\u90FD\u7ECF\u5F53\u4E0E\u5B66\u8FDB\u8FD8\u6CA1\u73B0\u5979\u4ED6\u4EEC\u5199\u542C\u5934\u95EE\u8BDD\u5E26\u8BA9\u6837\u7ED9\u4ECE\u5173\u53D8\u603B\u4E24\u5E94\u95F4\u957F\u8F66\u95E8\u89C1\u4E66\u7535\u4F24\u52A8\u5F00\u6761\u8FB9\u4E1C\u5904\u529E\u5E2E\u5B9D\u5907\u7B14\u4EA7\u573A\u89C6\u8BA4\u673A\u5B9E\u4E1A\u5F20\u8282\u8BED\u867D\u968F\u5C81\u5B59\u635F\u7F29\u9501\u6001\u6EE9\u575B\u53F9\u6C64\u8BA8\u4F53\u94C1\u5385\u7EDF\u56FE\u56E2\u8131\u7F51\u4F2A\u8FDD\u56F4\u536B\u95FB\u7A33\u52A1\u8BEF\u88AD\u4E60\u620F\u7EC6\u663E\u9669\u7EBF\u53BF\u54CD\u9879\u9500\u4E9B\u8C22\u5174\u987B\u865A\u8BB8\u53D9\u7EED\u9009\u8BE2\u5BFB\u8BAD\u538B\u4E25\u5CA9\u76D0\u538C\u626C\u9633\u517B\u836F\u9875\u53F6\u533B\u4EBF\u4E49\u827A\u8BAE\u8BD1\u5F02\u9690\u9E70\u5A74\u8425\u8D62\u4F18\u72B9\u6CB9\u90AE\u6CB9\u6E38\u8BF1\u9C7C\u6E14\u5A31\u4E0E\u5C7F\u8BED\u5401\u72F1\u8A89\u9884\u5458\u5706\u56ED\u8FDC\u6028\u613F\u7EA6\u8DC3\u8FD0\u6742\u707E\u8F7D\u6682\u8D5E\u5219\u62E9\u6CFD\u8D23\u8D3C\u6218\u5F20\u8D75\u7167\u9488\u4FA6\u73CD\u8BCA\u9547\u9635\u4E89\u5F81\u6323\u7741\u8BC1\u53EA\u7EC7\u804C\u6267\u7EB8\u6307\u8D28\u949F\u7EC8\u79CD\u91CD\u5468\u663C\u8BF8\u6731\u73E0\u77A9\u52A9\u4E13\u7816\u8F6C\u8D5A\u5E84\u88C5\u58EE\u72B6\u8FFD\u51C6\u603B\u7EC4\u5417\u5427\u5462\u554A\u4E48\u600E\u8C01\u4E3A\u4EC0\u4E48\u600E\u4E48\u56E0\u4E3A\u6240\u4EE5\u5982\u679C\u4F46\u662F"
-  );
   function containsChinese(text) {
     if (!text) return false;
     if (/[\u3040-\u309f\u30a0-\u30fa\u30fd-\u30ff]/.test(text)) return false;
@@ -1000,10 +1235,22 @@
     }
     return pending;
   }
+  var JAPANESE_REGEX, PID_REGEX, SIMPLIFIED_CHINESE_CHARS, CHINESE_INDICATOR_CHARS;
+  var init_filters = __esm({
+    "src/core/filters.ts"() {
+      "use strict";
+      JAPANESE_REGEX = /[\u3040-\u309f\u30a0-\u30fa\u30fd-\u30ff\u4e00-\u9faf\u3400-\u4dbf]/;
+      PID_REGEX = /^[a-zA-Z][a-zA-Z0-9]*$/;
+      SIMPLIFIED_CHINESE_CHARS = new Set(
+        "\u4F24\u4F53\u56FD\u7231\u65F6\u95E8\u5B66\u4E66\u7535\u89C1\u540E\u53D1\u957F\u6C14\u8F66\u5F00\u4E3A\u8FC7\u4E48\u8FD9\u5934\u7ECF\u52A8\u95EE\u5E94\u73B0\u5B9E\u5173\u70B9\u8FDB\u4ECE\u603B\u5C06\u5185\u95F4\u6765\u8BF4\u8BDD\u5BF9\u7ED9\u4F1A\u628A\u6CA1\u8BA9\u6837\u600E\u4E48\u53BB\u91CC\u4E24\u8D77\u5E26\u542C\u8BF4\u53D8\u4EEC\u8FD9\u4E3A\u4E48\u7740\u8BF4\u5BF9\u8BA9\u7ED9\u6837\u600E\u4E24\u5E26\u542C\u53D8\u5934\u7ECF\u52A8\u95EE\u5E94\u5173\u8FDB\u4ECE\u95F4\u957F\u8F66\u95E8\u89C1\u4E66\u7535\u4F24\u53D1\u8FC7\u65F6\u8FD8\u5F00\u5199\u8BDD\u8FB9\u4E1C\u5904\u529E\u5E2E\u5B9D\u5907\u7B14\u4EA7\u573A\u89C6\u8BA4\u673A\u4E1A\u5F20\u8282\u8BED\u867D\u968F\u5C81\u5B59\u635F\u7F29\u9501\u6001\u644A\u8D2A\u6EE9\u575B\u53F9\u6C64\u70EB\u6D9B\u8BA8\u817E\u94C1\u5385\u94DC\u7EDF\u56FE\u6D82\u56E2\u9893\u817F\u6258\u8131\u6D3C\u889C\u7F51\u4F2A\u8FDD\u56F4\u7EAC\u4F1F\u536B\u6E29\u95FB\u7A33\u6DA1\u7A9D\u545C\u575E\u59A9\u96FE\u52A1\u8BEF\u9521\u727A\u88AD\u4E60\u620F\u7EC6\u867E\u5413\u663E\u9669\u7EBF\u5BAA\u53BF\u54CD\u9879\u9500\u6653\u4E9B\u6CC4\u8C22\u950C\u5174\u6C79\u7EE3\u9508\u987B\u865A\u5618\u8BB8\u53D9\u7EEA\u7EED\u8F69\u60AC\u9009\u8BE2\u5BFB\u8BAD\u8BAF\u900A\u538B\u9E26\u9E2D\u54D1\u4E9A\u8BB6\u4E25\u5CA9\u76D0\u538C\u626C\u9633\u517B\u7476\u6447\u5C27\u9065\u7A91\u836F\u7237\u9875\u53F6\u533B\u4EBF\u4E49\u827A\u8BAE\u8BD1\u5F02\u836B\u9634\u94F6\u996E\u9690\u9E70\u5A74\u83B9\u8425\u8367\u8747\u8D62\u9896\u54DF\u62E5\u4F63\u548F\u8E0A\u6D8C\u75C8\u4F18\u72B9\u6CB9\u90AE\u94C0\u6E38\u8BF1\u9C7C\u6E14\u5A31\u4E0E\u5C7F\u5401\u9A6D\u72F1\u8A89\u9884\u6E0A\u5458\u5706\u56ED\u8F95\u8FDC\u6028\u613F\u7EA6\u8DC3\u94A5\u5CB3\u7CA4\u60A6\u9605\u4E91\u5300\u9668\u8FD0\u8574\u915D\u6655\u97F5\u6742\u707E\u8F7D\u6512\u6682\u8D5E\u51FF\u7076\u5219\u62E9\u6CFD\u8D23\u8D3C\u95F8\u624E\u658B\u503A\u6BE1\u6218\u6808\u5360\u7C98\u6DA8\u5E10\u8D26\u80C0\u8D75\u7167\u6298\u54F2\u9488\u4FA6\u73CD\u771F\u8BCA\u9547\u9635\u4E89\u5F81\u6323\u7741\u72F0\u8BC1\u652F\u53EA\u7EC7\u804C\u6267\u7EB8\u6307\u63B7\u5E1C\u8D28\u949F\u7EC8\u79CD\u80BF\u91CD\u5468\u6D32\u663C\u6731\u732A\u8BF8\u8BDB\u70DB\u77A9\u5C5E\u8457\u52A9\u94F8\u7B51\u6293\u62FD\u4E13\u7816\u8F6C\u8D5A\u5E84\u6869\u88C5\u58EE\u72B6\u9525\u8FFD\u51C6\u6D4A\u7EB5\u90B9\u963B\u7EC4\u94BB\u522B\u6CA1\u4E48\u4E3A\u4EC0\u4E48\u600E\u4E48\u5982\u679C\u56E0\u4E3A\u6240\u4EE5\u4F46\u662F\u800C\u4E14\u7136\u540E\u77E5\u9053\u770B\u89C1\u89C9\u5F97"
+      );
+      CHINESE_INDICATOR_CHARS = new Set(
+        "\u7684\u4E86\u662F\u5728\u6211\u6709\u4E2A\u4EBA\u8FD9\u4E3A\u8BF4\u548C\u65F6\u8981\u4F60\u3479\u540E\u5BF9\u7740\u91CC\u53BB\u8FC7\u53D1\u90FD\u7ECF\u5F53\u4E0E\u5B66\u8FDB\u8FD8\u6CA1\u73B0\u5979\u4ED6\u4EEC\u5199\u542C\u5934\u95EE\u8BDD\u5E26\u8BA9\u6837\u7ED9\u4ECE\u5173\u53D8\u603B\u4E24\u5E94\u95F4\u957F\u8F66\u95E8\u89C1\u4E66\u7535\u4F24\u52A8\u5F00\u6761\u8FB9\u4E1C\u5904\u529E\u5E2E\u5B9D\u5907\u7B14\u4EA7\u573A\u89C6\u8BA4\u673A\u5B9E\u4E1A\u5F20\u8282\u8BED\u867D\u968F\u5C81\u5B59\u635F\u7F29\u9501\u6001\u6EE9\u575B\u53F9\u6C64\u8BA8\u4F53\u94C1\u5385\u7EDF\u56FE\u56E2\u8131\u7F51\u4F2A\u8FDD\u56F4\u536B\u95FB\u7A33\u52A1\u8BEF\u88AD\u4E60\u620F\u7EC6\u663E\u9669\u7EBF\u53BF\u54CD\u9879\u9500\u4E9B\u8C22\u5174\u987B\u865A\u8BB8\u53D9\u7EED\u9009\u8BE2\u5BFB\u8BAD\u538B\u4E25\u5CA9\u76D0\u538C\u626C\u9633\u517B\u836F\u9875\u53F6\u533B\u4EBF\u4E49\u827A\u8BAE\u8BD1\u5F02\u9690\u9E70\u5A74\u8425\u8D62\u4F18\u72B9\u6CB9\u90AE\u6CB9\u6E38\u8BF1\u9C7C\u6E14\u5A31\u4E0E\u5C7F\u8BED\u5401\u72F1\u8A89\u9884\u5458\u5706\u56ED\u8FDC\u6028\u613F\u7EA6\u8DC3\u8FD0\u6742\u707E\u8F7D\u6682\u8D5E\u5219\u62E9\u6CFD\u8D23\u8D3C\u6218\u5F20\u8D75\u7167\u9488\u4FA6\u73CD\u8BCA\u9547\u9635\u4E89\u5F81\u6323\u7741\u8BC1\u53EA\u7EC7\u804C\u6267\u7EB8\u6307\u8D28\u949F\u7EC8\u79CD\u91CD\u5468\u663C\u8BF8\u6731\u73E0\u77A9\u52A9\u4E13\u7816\u8F6C\u8D5A\u5E84\u88C5\u58EE\u72B6\u8FFD\u51C6\u603B\u7EC4\u5417\u5427\u5462\u554A\u4E48\u600E\u8C01\u4E3A\u4EC0\u4E48\u600E\u4E48\u56E0\u4E3A\u6240\u4EE5\u5982\u679C\u4F46\u662F"
+      );
+    }
+  });
 
   // src/core/chunker.ts
-  var CHUNK_BUDGET_CHARACTERS = 2e3;
-  var CHUNK_BUDGET_MAX_ITEMS = 40;
   function chunkArray(array, size) {
     const chunks = [];
     for (let i = 0; i < array.length; i += size) {
@@ -1031,6 +1278,14 @@
     }
     return chunks;
   }
+  var CHUNK_BUDGET_CHARACTERS, CHUNK_BUDGET_MAX_ITEMS;
+  var init_chunker = __esm({
+    "src/core/chunker.ts"() {
+      "use strict";
+      CHUNK_BUDGET_CHARACTERS = 2e3;
+      CHUNK_BUDGET_MAX_ITEMS = 40;
+    }
+  });
 
   // src/core/turbo.ts
   function isUsDstRule(d = /* @__PURE__ */ new Date()) {
@@ -1088,19 +1343,41 @@
     }
     return Date.now() >= target;
   }
+  function getCurrentQuotaWindow(now = /* @__PURE__ */ new Date(), turboCutoffHour = null) {
+    const cutoffHour = detectCutoffInfo(turboCutoffHour).hour;
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, "0");
+    const day = String(now.getDate()).padStart(2, "0");
+    const hour = now.getHours();
+    if (hour < cutoffHour) {
+      const prev = new Date(now.getTime() - 24 * 3600 * 1e3);
+      const pYear = prev.getFullYear();
+      const pMonth = String(prev.getMonth() + 1).padStart(2, "0");
+      const pDay = String(prev.getDate()).padStart(2, "0");
+      return `${pYear}-${pMonth}-${pDay}_${cutoffHour}`;
+    }
+    return `${year}-${month}-${day}_${cutoffHour}`;
+  }
+  var init_turbo = __esm({
+    "src/core/turbo.ts"() {
+      "use strict";
+    }
+  });
 
   // src/core/adaptive_throttle.ts
-  var RECENT_EPISODES_STORAGE_KEY = "lanovel_recent_episodes";
-  var recentEpisodesMemoryCache = [];
   async function recordRecentEpisode(cleanUrl) {
+    if (!cleanUrl) return;
     const now = Date.now();
     const tenMinutesAgo = now - 10 * 60 * 1e3;
     try {
       const data = await chrome.storage.local.get(RECENT_EPISODES_STORAGE_KEY);
-      let list = data[RECENT_EPISODES_STORAGE_KEY] || [];
-      list = list.filter((item) => item.timestamp >= tenMinutesAgo);
-      list = list.filter((item) => item.url !== cleanUrl);
-      list.push({ url: cleanUrl, timestamp: now });
+      let list = Array.isArray(data[RECENT_EPISODES_STORAGE_KEY]) ? data[RECENT_EPISODES_STORAGE_KEY].filter((item) => item && item.timestamp >= tenMinutesAgo) : [];
+      const existingIndex = list.findIndex((item) => item.url === cleanUrl);
+      if (existingIndex >= 0) {
+        list[existingIndex].timestamp = now;
+      } else {
+        list.push({ url: cleanUrl, timestamp: now });
+      }
       recentEpisodesMemoryCache = list;
       await chrome.storage.local.set({ [RECENT_EPISODES_STORAGE_KEY]: list });
     } catch (e) {
@@ -1112,14 +1389,14 @@
     const cutoffTime = now - windowMinutes * 60 * 1e3;
     try {
       const data = await chrome.storage.local.get(RECENT_EPISODES_STORAGE_KEY);
-      const list = data[RECENT_EPISODES_STORAGE_KEY] || [];
+      const list = Array.isArray(data[RECENT_EPISODES_STORAGE_KEY]) ? data[RECENT_EPISODES_STORAGE_KEY] : recentEpisodesMemoryCache;
       recentEpisodesMemoryCache = list;
-      const recentItems = list.filter((item) => item.timestamp >= cutoffTime);
+      const recentItems = list.filter((item) => item && item.timestamp >= cutoffTime && item.url);
       const uniqueUrls = new Set(recentItems.map((item) => item.url));
       return uniqueUrls.size;
     } catch (e) {
       console.warn("[getRecentEpisodeCount] Fallback to memory cache:", e);
-      const recentItems = recentEpisodesMemoryCache.filter((item) => item.timestamp >= cutoffTime);
+      const recentItems = recentEpisodesMemoryCache.filter((item) => item && item.timestamp >= cutoffTime && item.url);
       return new Set(recentItems.map((item) => item.url)).size;
     }
   }
@@ -1145,86 +1422,1022 @@
     if (recentCount <= 4) return 5e3;
     return 6500;
   }
-  async function updateAndGetBatchCount(currentCleanUrl) {
-    const now = Date.now();
-    const sessionTimeoutMs = 30 * 60 * 1e3;
-    const todayDateStr = (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
+  function getNovelWorkKey(customUrl, customNovelTitle) {
+    const url = customUrl ?? (typeof window !== "undefined" ? window.location.href : "");
+    let host = "";
     try {
-      const data = await chrome.storage.local.get([
-        "lanovel_consecutive_batch_count",
-        "lanovel_last_batch_timestamp",
-        "lanovel_last_batch_url",
-        "lanovel_daily_counts"
-      ]);
-      let consecutive = data.lanovel_consecutive_batch_count || 0;
-      const lastTimestamp = data.lanovel_last_batch_timestamp || 0;
-      const lastUrl = data.lanovel_last_batch_url || "";
-      let dailyCounts = data.lanovel_daily_counts || {};
-      if (!dailyCounts[todayDateStr]) {
-        dailyCounts = { [todayDateStr]: { total: 0, byUrl: {} } };
+      host = customUrl ? new URL(customUrl).hostname : typeof window !== "undefined" ? window.location.hostname : "";
+    } catch (_) {
+      host = typeof window !== "undefined" ? window.location.hostname : "";
+    }
+    if (host.includes("kakuyomu.jp")) {
+      const match = url.match(/\/works\/(\d+)/);
+      if (match) return `kakuyomu_${match[1]}`;
+    }
+    if (host.includes("syosetu.com")) {
+      const match = url.match(/\/(n\d+[a-z]+)(\/|$)/i);
+      if (match) return `syosetu_${match[1].toLowerCase()}`;
+    }
+    if (host.includes("novelup.plus")) {
+      const match = url.match(/\/story\/(\d+)/);
+      if (match) return `novelup_${match[1]}`;
+    }
+    if (host.includes("syosetu.org")) {
+      const match = url.match(/\/novel\/(\d+)/);
+      if (match) return `hameln_${match[1]}`;
+    }
+    if (host.includes("alphapolis.co.jp")) {
+      const match = url.match(/\/novel\/(\d+)/);
+      if (match) return `alphapolis_${match[1]}`;
+    }
+    const novelTitle = customNovelTitle || "";
+    if (novelTitle && novelTitle !== "\uAE30\uBCF8 \uC18C\uC124" && novelTitle !== "\u9589\u3058\u308B") {
+      const sanitized = novelTitle.trim().replace(/[^a-zA-Z0-9가-힣\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff_]/g, "_");
+      if (sanitized && sanitized.replace(/_/g, "").length > 0) {
+        return `novel_${sanitized}`;
       }
-      if (now - lastTimestamp > sessionTimeoutMs) {
-        consecutive = 0;
+    }
+    return "default";
+  }
+  async function updateAndGetBatchCount(currentCleanUrl, onLog, novelTitle = "", turboCutoffHour = null) {
+    const workKey = getNovelWorkKey(currentCleanUrl, novelTitle);
+    const stateKey = `lanovel_batch_state_${workKey}`;
+    try {
+      const allKeys = await chrome.storage.local.get(null);
+      const legacyKeys = Object.keys(allKeys).filter((k) => k.startsWith("lanovel_batch_count_"));
+      if (legacyKeys.length > 0) {
+        await chrome.storage.local.remove(legacyKeys);
       }
-      if (lastUrl !== currentCleanUrl) {
-        consecutive++;
-        dailyCounts[todayDateStr].total = (dailyCounts[todayDateStr].total || 0) + 1;
-        dailyCounts[todayDateStr].byUrl[currentCleanUrl] = (dailyCounts[todayDateStr].byUrl[currentCleanUrl] || 0) + 1;
-        await chrome.storage.local.set({
-          lanovel_consecutive_batch_count: consecutive,
-          lanovel_last_batch_timestamp: now,
-          lanovel_last_batch_url: currentCleanUrl,
-          lanovel_daily_counts: dailyCounts
+    } catch (_) {
+    }
+    const currentWindow = getCurrentQuotaWindow(/* @__PURE__ */ new Date(), turboCutoffHour);
+    const cutoffInfo = detectCutoffInfo(turboCutoffHour);
+    const cutoffHour = cutoffInfo.hour;
+    const now = Date.now();
+    const SESSION_TIMEOUT_MS = 30 * 60 * 1e3;
+    const batchState = {
+      consecutiveCount: 0,
+      lastUpdated: 0,
+      lastUrl: "",
+      window: currentWindow
+    };
+    try {
+      const stored = await chrome.storage.local.get(stateKey);
+      if (stored && stored[stateKey]) {
+        const s = stored[stateKey];
+        batchState.consecutiveCount = typeof s.consecutiveCount === "number" ? s.consecutiveCount : 0;
+        batchState.lastUpdated = s.lastUpdated || 0;
+        batchState.lastUrl = s.lastUrl || "";
+        batchState.window = s.window || currentWindow;
+      }
+    } catch (e) {
+      console.warn("[Notification] Failed to read batch state from storage:", e);
+    }
+    if (batchState.window && batchState.window !== currentWindow) {
+      if (onLog) {
+        onLog(`\u{1F504} [\uC77C\uC77C \uAC31\uC2E0] Gemini API \uCFFC\uD130 \uCD08\uAE30\uD654 \uC2DC\uAC04(${cutoffHour}\uC2DC)\uC5D0 \uB3C4\uB2EC\uD558\uC5EC \uC774\uBC88 \uC138\uC158 \uC5F0\uC18D \uBC88\uC5ED \uCE74\uC6B4\uD130\uB97C \uC0C8\uB85C \uC2DC\uC791\uD569\uB2C8\uB2E4.`);
+      }
+      batchState.consecutiveCount = 0;
+      batchState.lastUrl = "";
+      batchState.window = currentWindow;
+    }
+    const isSessionExpired = !batchState.lastUpdated || now - batchState.lastUpdated > SESSION_TIMEOUT_MS;
+    if (isSessionExpired) {
+      batchState.consecutiveCount = 0;
+      batchState.lastUrl = "";
+    }
+    const isSameEpisode = Boolean(batchState.lastUrl && batchState.lastUrl === currentCleanUrl);
+    if (isSameEpisode) {
+      if (!batchState.consecutiveCount || batchState.consecutiveCount < 1) {
+        batchState.consecutiveCount = 1;
+      }
+      if (onLog) {
+        onLog(`[\uBC88\uC5ED \uC9C4\uD589 \uCE74\uC6B4\uD130] \uB3D9\uC77C \uD68C\uCC28 \uC7AC\uBC88\uC5ED \uAC10\uC9C0: \uC774\uBC88 \uC5F0\uC18D \uBC88\uC5ED \uCE74\uC6B4\uD130\uB97C \uC720\uC9C0\uD569\uB2C8\uB2E4. (${batchState.consecutiveCount}\uD654)`);
+      }
+    } else {
+      batchState.consecutiveCount = (batchState.consecutiveCount || 0) + 1;
+    }
+    batchState.lastUpdated = now;
+    batchState.lastUrl = currentCleanUrl;
+    batchState.window = currentWindow;
+    try {
+      await chrome.storage.local.set({ [stateKey]: batchState });
+    } catch (e) {
+      console.warn("[Notification] Failed to save batch state:", e);
+    }
+    let novelTodayCount = batchState.consecutiveCount;
+    let totalTodayCount = cachedTodayTotalEpisodes || 0;
+    try {
+      const syncUrl = `http://127.0.0.1:8001/api/translation_session_count?url=${encodeURIComponent(currentCleanUrl)}&work_key=${encodeURIComponent(workKey)}&novel_title=${encodeURIComponent(novelTitle || "")}`;
+      const serverResp = await fetch(syncUrl);
+      if (serverResp.ok) {
+        const serverData = await serverResp.json();
+        if (typeof serverData.total_today_count === "number") {
+          totalTodayCount = serverData.total_today_count;
+          cachedTodayTotalEpisodes = totalTodayCount;
+        }
+        if (typeof serverData.count === "number" && serverData.count > 0) {
+          novelTodayCount = serverData.count;
+        }
+      }
+    } catch (_) {
+    }
+    return {
+      consecutiveCount: batchState.consecutiveCount,
+      novelTodayCount,
+      totalTodayCount
+    };
+  }
+  async function sendProgressNotification(novelTitle, episodeTitle, current, total, percentage, url, episodeCount = null) {
+    try {
+      const payload = {
+        novel_title: novelTitle || "",
+        episode_title: episodeTitle || "",
+        current,
+        total,
+        percentage,
+        url: url || ""
+      };
+      if (episodeCount !== null && episodeCount !== void 0) {
+        payload.episode_count = episodeCount;
+      }
+      await fetch("http://127.0.0.1:8001/api/notifications/progress", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+    } catch (e) {
+    }
+  }
+  async function sendCompleteNotification(novelTitle, episodeTitle, totalCount, url, episodeCount = null) {
+    try {
+      const payload = {
+        novel_title: novelTitle || "",
+        episode_title: episodeTitle || "",
+        total_count: totalCount,
+        url: url || ""
+      };
+      if (episodeCount !== null && episodeCount !== void 0) {
+        payload.episode_count = episodeCount;
+      }
+      await fetch("http://127.0.0.1:8001/api/notifications/complete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+    } catch (e) {
+    }
+  }
+  var RECENT_EPISODES_STORAGE_KEY, recentEpisodesMemoryCache, cachedTodayTotalEpisodes;
+  var init_adaptive_throttle = __esm({
+    "src/core/adaptive_throttle.ts"() {
+      "use strict";
+      init_turbo();
+      RECENT_EPISODES_STORAGE_KEY = "lanovel_recent_episodes";
+      recentEpisodesMemoryCache = [];
+      cachedTodayTotalEpisodes = 0;
+    }
+  });
+
+  // src/ui/review_panel.ts
+  function focusAndScrollToPid(pid) {
+    if (!pid) return;
+    const targetP = document.getElementById(pid);
+    if (targetP) {
+      targetP.scrollIntoView({ behavior: "smooth", block: "center" });
+      targetP.classList.remove("lanovel-highlight-pulse");
+      void targetP.offsetWidth;
+      targetP.classList.add("lanovel-highlight-pulse");
+      setTimeout(() => {
+        targetP.classList.remove("lanovel-highlight-pulse");
+      }, 1800);
+    }
+    const row = document.querySelector(`tr[data-pid="${pid}"]`);
+    if (row) {
+      showSidebar();
+      row.scrollIntoView({ behavior: "smooth", block: "center" });
+      row.classList.remove("lanovel-row-highlight");
+      void row.offsetWidth;
+      row.classList.add("lanovel-row-highlight");
+      setTimeout(() => {
+        row.classList.remove("lanovel-row-highlight");
+      }, 1800);
+    }
+  }
+  function highlightReviewTargetDOMs() {
+    if (!state.reviewTargetPids || state.reviewTargetPids.size === 0) return;
+    state.reviewTargetPids.forEach((pid) => {
+      const p = document.getElementById(pid);
+      if (p) {
+        p.classList.add("review-target-dom");
+        p.title = "\u26A1 [\uC54C\uB9BC \uC13C\uD130] \uC7AC\uBC88\uC5ED \uAC80\uC218 \uB300\uC0C1 \uBB38\uC7A5\uC785\uB2C8\uB2E4. \uD074\uB9AD \uC2DC \uC0AC\uC774\uB4DC\uBC14\uC5D0\uC11C \uD655\uC778\uD569\uB2C8\uB2E4.";
+      }
+    });
+  }
+  function updateSidebarReviewTargetHighlights() {
+    if (!state.reviewTargetPids || state.reviewTargetPids.size === 0) return;
+    state.reviewTargetPids.forEach((pid) => {
+      const row = document.querySelector(`tr[data-pid="${pid}"]`);
+      if (row) {
+        row.classList.add("review-target-row");
+        const oriCell = row.querySelector(".original-text");
+        if (oriCell && !oriCell.querySelector(".review-badge")) {
+          const badge = document.createElement("span");
+          badge.className = "review-badge";
+          badge.textContent = "\u26A1\uC7AC\uAC80\uC218";
+          oriCell.prepend(badge);
+        }
+      }
+    });
+  }
+  function updateReviewCardTranslation(pid, text, isWaiting = false) {
+    const reviewTraEl = document.getElementById(`review-tra-${pid}`);
+    if (!reviewTraEl) return;
+    reviewTraEl.textContent = text;
+    if (isWaiting) {
+      reviewTraEl.classList.add("waiting");
+    } else {
+      reviewTraEl.classList.remove("waiting");
+    }
+  }
+  function renderReviewTargetPanel() {
+    const panel = document.getElementById("review-target-panel");
+    if (!panel) return;
+    if (!state.reviewTargetsData || !state.reviewTargetsData.targets || state.reviewTargetsData.targets.length === 0) {
+      panel.style.display = "none";
+      return;
+    }
+    const targets = state.reviewTargetsData.targets;
+    const notifId = state.reviewTargetsData.notif_id;
+    let cardsHtml = "";
+    targets.forEach((t) => {
+      const cached = state.translationCache.get(t.pid);
+      const transText = cached && cached.translated ? cached.translated : "";
+      const isWaiting = !transText || transText.includes("\uBC88\uC5ED \uC911");
+      cardsHtml += `
+      <div class="review-card" data-pid="${escapeHtml(t.pid)}" title="\uD074\uB9AD\uD558\uBA74 \uBCF8\uBB38 \uBC0F \uC0AC\uC774\uB4DC\uBC14\uC758 \uD574\uB2F9 \uBB38\uC7A5\uC73C\uB85C \uC774\uB3D9\uD569\uB2C8\uB2E4">
+        <div class="review-card-pid">ID: ${escapeHtml(t.pid)} ${t.reason_category ? `(${escapeHtml(t.reason_category)})` : ""}</div>
+        <div class="review-card-ori">\uC6D0\uBB38: ${escapeHtml(t.original || "")}</div>
+        <div class="review-card-tra ${isWaiting ? "waiting" : ""}" id="review-tra-${escapeHtml(t.pid)}">
+          ${isWaiting ? "\u23F3 \uBC88\uC5ED \uB300\uAE30 \uB610\uB294 \uC7AC\uBC88\uC5ED \uC9C4\uD589 \uC911..." : `\uBC88\uC5ED: ${escapeHtml(transText)}`}
+        </div>
+      </div>
+    `;
+    });
+    panel.innerHTML = `
+    <div class="review-panel-header">
+      <div class="review-panel-title">
+        <span>\u{1F514} \uC7AC\uBC88\uC5ED \uAC80\uC218 \uB300\uC0C1 (${targets.length}\uAC74)</span>
+      </div>
+      <div class="review-panel-actions">
+        ${notifId ? `<button id="review-dismiss-notif-btn" class="review-dismiss-btn" title="\uAC80\uC218\uB97C \uC644\uB8CC\uD558\uACE0 \uC54C\uB9BC \uC13C\uD130\uC5D0\uC11C \uC774 \uC54C\uB9BC\uC744 \uB2EB\uC2B5\uB2C8\uB2E4">\u2713 \uAC80\uC218 \uC644\uB8CC</button>` : ""}
+        <button id="review-panel-close-btn" class="review-panel-close-btn" title="\uD328\uB110 \uC811\uAE30">&times;</button>
+      </div>
+    </div>
+    <div class="review-panel-body">
+      ${cardsHtml}
+    </div>
+  `;
+    panel.style.display = "block";
+    panel.querySelectorAll(".review-card").forEach((card) => {
+      card.addEventListener("click", () => {
+        const pid = card.getAttribute("data-pid");
+        if (pid) focusAndScrollToPid(pid);
+      });
+    });
+    const closeBtn = document.getElementById("review-panel-close-btn");
+    if (closeBtn) {
+      closeBtn.addEventListener("click", () => {
+        panel.style.display = "none";
+      });
+    }
+    const dismissBtn = document.getElementById("review-dismiss-notif-btn");
+    if (dismissBtn && notifId) {
+      dismissBtn.addEventListener("click", async () => {
+        try {
+          dismissBtn.disabled = true;
+          dismissBtn.textContent = "\uCC98\uB9AC \uC911...";
+          await fetch(`http://127.0.0.1:8001/cleanup/notifications/${notifId}/dismiss`, {
+            method: "POST"
+          });
+          try {
+            await chrome.storage.local.set({ lastNotificationDismissed: Date.now() });
+          } catch (storageErr) {
+            console.warn("[ReviewTarget] Failed to notify popup via storage:", storageErr);
+          }
+          panel.style.display = "none";
+          logToSidebar("\u2713 \uC7AC\uBC88\uC5ED \uAC80\uC218\uAC00 \uC644\uB8CC \uCC98\uB9AC\uB418\uC5B4 \uC54C\uB9BC\uC774 \uD574\uC81C\uB418\uC5C8\uC2B5\uB2C8\uB2E4.");
+        } catch (e) {
+          console.error("Failed to dismiss notification:", e);
+          dismissBtn.disabled = false;
+          dismissBtn.textContent = "\u2713 \uAC80\uC218 \uC644\uB8CC";
+        }
+      });
+    }
+  }
+  async function checkAndLoadReviewTargets(cleanUrl) {
+    try {
+      let batchId = null;
+      if (window.location.hash.includes("lanovel_review=")) {
+        state.isReviewSession = true;
+        const hashMatch = window.location.hash.match(/lanovel_review=([^&]+)/);
+        if (hashMatch) {
+          batchId = decodeURIComponent(hashMatch[1]);
+        }
+      } else if (window.location.hash.includes("lanovel_review")) {
+        state.isReviewSession = true;
+      }
+      let apiUrl = `http://127.0.0.1:8001/cleanup/review_targets?url=${encodeURIComponent(cleanUrl)}`;
+      if (batchId) {
+        apiUrl += `&batch_id=${encodeURIComponent(batchId)}`;
+      }
+      const res = await fetch(apiUrl);
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.has_targets && Array.isArray(data.targets) && data.targets.length > 0) {
+        state.isReviewSession = true;
+        state.reviewTargetsData = data;
+        state.reviewTargetPids = new Set(data.targets.map((t) => t.pid).filter(Boolean));
+        renderReviewTargetPanel();
+        highlightReviewTargetDOMs();
+        updateSidebarReviewTargetHighlights();
+        if (window.location.hash.includes("lanovel_review")) {
+          showSidebar();
+          logToSidebar(
+            `\u{1F514} [\uC54C\uB9BC \uC13C\uD130 \uC5F0\uACC4] \uC7AC\uBC88\uC5ED \uAC80\uC218 \uB300\uC0C1 ${data.targets.length}\uAC74\uC774 \uAC10\uC9C0\uB418\uC5C8\uC2B5\uB2C8\uB2E4.`
+          );
+          const firstPid = data.targets[0].pid;
+          if (firstPid) {
+            setTimeout(() => focusAndScrollToPid(firstPid), 600);
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("[checkAndLoadReviewTargets] Failed to load review targets:", e);
+    }
+  }
+  var init_review_panel = __esm({
+    "src/ui/review_panel.ts"() {
+      "use strict";
+      init_state();
+      init_sidebar();
+    }
+  });
+
+  // src/core/row_actions.ts
+  async function saveSingleTranslation(pid, originalText, newTranslatedText) {
+    const url = getCleanUrl();
+    const scraper = getScraper();
+    const title = scraper.extractEpisodeTitle() || document.title;
+    const record = {
+      url,
+      pid,
+      original: originalText,
+      translated: newTranslatedText,
+      timestamp: Math.floor(Date.now() / 1e3),
+      folderName: null,
+      title
+    };
+    if (!newTranslatedText || !newTranslatedText.trim()) {
+      state.userDeletedTranslationPids.add(String(pid));
+      state.translationCache.delete(pid);
+      if (state.isPageApplied) {
+        const pTag = document.getElementById(pid);
+        if (pTag && pTag.dataset.lanovelOriginalHtml) {
+          pTag.innerHTML = pTag.dataset.lanovelOriginalHtml;
+          pTag.classList.remove("lanovel-applied-text");
+          pTag.removeAttribute("style");
+          if (pTag.dataset.lanovelOriginalStyle) {
+            pTag.setAttribute("style", pTag.dataset.lanovelOriginalStyle);
+          }
+        }
+      }
+    } else {
+      state.userDeletedTranslationPids.delete(String(pid));
+      state.translationCache.set(pid, {
+        pid,
+        original: originalText,
+        translated: newTranslatedText
+      });
+      if (state.isPageApplied) {
+        const pTag = document.getElementById(pid);
+        if (pTag) {
+          if (!pTag.dataset.lanovelOriginalHtml) {
+            pTag.dataset.lanovelOriginalHtml = pTag.innerHTML;
+            pTag.dataset.lanovelOriginalStyle = pTag.getAttribute("style") || "";
+          }
+          pTag.innerHTML = newTranslatedText;
+          pTag.classList.add("lanovel-applied-text");
+          Object.assign(pTag.style, { color: "#E2E8F0", fontFamily: "TwoCon" });
+        }
+      }
+    }
+    updateApplyButtonUI(state.isPageApplied);
+    if (state.reviewTargetPids && state.reviewTargetPids.has(pid)) {
+      if (newTranslatedText && newTranslatedText.trim()) {
+        updateReviewCardTranslation(pid, `\uBC88\uC5ED: ${newTranslatedText}`, false);
+      } else {
+        updateReviewCardTranslation(pid, "\u23F3 \uBC88\uC5ED \uB300\uAE30 \uB610\uB294 \uC7AC\uBC88\uC5ED \uC9C4\uD589 \uC911...", true);
+      }
+    }
+    try {
+      const response = await fetch("http://127.0.0.1:8001/translations/upsert", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify([record])
+      });
+      if (!response.ok) {
+        throw new Error(`Server returned status ${response.status}`);
+      }
+      logToSidebar(`\uBC88\uC5ED(ID: ${pid})\uC744 \uC11C\uBC84\uC5D0 \uC800\uC7A5\uD588\uC2B5\uB2C8\uB2E4.`);
+    } catch (error) {
+      console.error(`Error saving single translation for ${pid} to server:`, error);
+      logToSidebar(`\uC11C\uBC84\uC5D0 \uC800\uC7A5 \uC2E4\uD328 (ID: ${pid}): ${error.message}`, "log-error");
+    }
+  }
+  async function retranslateSingleRow(pid, originalText) {
+    if (!pid || !originalText) return;
+    const row = document.querySelector(`tr[data-pid="${pid}"]`);
+    const translatedCell = row ? row.querySelector(".translated-text") : null;
+    const retranslateBtn = row ? row.querySelector(".retranslate-row-btn") : null;
+    const saveBtn = row ? row.querySelector(".save-btn") : null;
+    if (retranslateBtn) retranslateBtn.disabled = true;
+    if (saveBtn) saveBtn.disabled = true;
+    if (translatedCell) {
+      translatedCell.textContent = "\u23F3 \uC7AC\uBC88\uC5ED \uC911...";
+      translatedCell.style.color = "#64748b";
+    }
+    const cleanedText = originalText.replace(/([あアいイうウえエおオ])\1{2,}/g, "$1\u30FC");
+    logToSidebar(`\uB2E8\uC77C \uBB38\uC7A5 \uC7AC\uBC88\uC5ED \uC694\uCCAD \uC911... (ID: ${pid})`);
+    try {
+      const response = await chrome.runtime.sendMessage({
+        action: "batchTranslate",
+        items: [{ id: pid, text: cleanedText }],
+        isRetranslation: true
+      });
+      if (chrome.runtime.lastError) {
+        throw new Error(chrome.runtime.lastError.message);
+      }
+      if (response && response.error) {
+        throw new Error(response.error);
+      }
+      if (response && response.notification) {
+        logToSidebar(response.notification, "log-error");
+        if (translatedCell) {
+          const cached = state.translationCache.get(pid);
+          translatedCell.textContent = cached ? cached.translated : "\u26A0\uFE0F \uC7AC\uBC88\uC5ED \uC77C\uC2DC \uC911\uB2E8\uB428";
+          translatedCell.style.color = "";
+        }
+        return;
+      }
+      if (response && response.translations && response.translations.length > 0) {
+        const result = response.translations[0];
+        const newTranslation = result.translated;
+        const isVerbatim = Boolean(result.verbatim) || newTranslation && checkIsVerbatimOrParaphrased(originalText, newTranslation);
+        if (isVerbatim) {
+          logToSidebar(
+            `\u26A0\uFE0F [\uC6D0\uBB38 \uBCF5\uC81C\xB7\uBCC0\uD615 \uAC10\uC9C0] \uB2E8\uC77C \uC7AC\uBC88\uC5ED \uBB38\uC7A5(ID: ${pid})\uC774 \uC6D0\uBB38\uACFC \uB3D9\uC77C/\uBCC0\uD615\uB418\uC5B4 \uC790\uB3D9 \uC0AD\uC81C \uBC0F \uD734\uC9C0\uD1B5\uC73C\uB85C \uC774\uC804\uB418\uC5C8\uC2B5\uB2C8\uB2E4.`,
+            "log-error"
+          );
+          state.translationCache.delete(pid);
+          if (translatedCell) {
+            translatedCell.textContent = "";
+            translatedCell.style.color = "";
+            translatedCell.setAttribute("contenteditable", "true");
+          }
+          if (saveBtn) saveBtn.disabled = false;
+          if (state.isPageApplied) {
+            const pTag = document.getElementById(pid);
+            if (pTag && pTag.dataset.lanovelOriginalHtml) {
+              pTag.innerHTML = pTag.dataset.lanovelOriginalHtml;
+              pTag.classList.remove("lanovel-applied-text");
+              pTag.removeAttribute("style");
+              if (pTag.dataset.lanovelOriginalStyle) {
+                pTag.setAttribute("style", pTag.dataset.lanovelOriginalStyle);
+              }
+            }
+          }
+          updateApplyButtonUI(state.isPageApplied);
+          if (state.reviewTargetPids && state.reviewTargetPids.has(pid)) {
+            updateReviewCardTranslation(pid, "\uBC88\uC5ED: (\uC6D0\uBB38 \uBCF5\uC81C\xB7\uBCC0\uD615 \uAC10\uC9C0\uB418\uC5B4 \uC790\uB3D9 \uC0AD\uC81C\uB428)", true);
+          }
+          await saveSingleTranslation(pid, originalText, "");
+        } else if (newTranslation && !newTranslation.includes("\uBC88\uC5ED \uC2E4\uD328")) {
+          if (translatedCell) {
+            translatedCell.textContent = newTranslation;
+            translatedCell.style.color = "";
+            translatedCell.setAttribute("contenteditable", "true");
+          }
+          state.userDeletedTranslationPids.delete(String(pid));
+          state.translationCache.set(pid, {
+            pid,
+            original: originalText,
+            translated: newTranslation
+          });
+          if (state.isPageApplied) {
+            const pTag = document.getElementById(pid);
+            if (pTag) {
+              if (!pTag.dataset.lanovelOriginalHtml) {
+                pTag.dataset.lanovelOriginalHtml = pTag.innerHTML;
+                pTag.dataset.lanovelOriginalStyle = pTag.getAttribute("style") || "";
+              }
+              pTag.innerHTML = newTranslation;
+              pTag.classList.add("lanovel-applied-text");
+              Object.assign(pTag.style, { color: "#E2E8F0", fontFamily: "TwoCon" });
+            }
+          }
+          updateApplyButtonUI(state.isPageApplied);
+          if (state.reviewTargetPids && state.reviewTargetPids.has(pid)) {
+            updateReviewCardTranslation(pid, `\uBC88\uC5ED: ${newTranslation}`, false);
+          }
+          await saveSingleTranslation(pid, originalText, newTranslation);
+          logToSidebar(`\uB2E8\uC77C \uBB38\uC7A5 \uC7AC\uBC88\uC5ED \uC644\uB8CC (ID: ${pid})`);
+        } else {
+          throw new Error(newTranslation || "\uBC88\uC5ED \uC2E4\uD328");
+        }
+      } else {
+        throw new Error("\uBC88\uC5ED \uACB0\uACFC\uB97C \uBC1B\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4.");
+      }
+    } catch (err) {
+      console.error(`[retranslateSingleRow] Error for ${pid}:`, err);
+      logToSidebar(`\uB2E8\uC77C \uC7AC\uBC88\uC5ED \uC2E4\uD328 (ID: ${pid}): ${err.message}`, "log-error");
+      if (translatedCell) {
+        const cached = state.translationCache.get(pid);
+        translatedCell.textContent = cached ? cached.translated : `\u274C \uC7AC\uBC88\uC5ED \uC2E4\uD328: ${err.message}`;
+        translatedCell.style.color = cached ? "" : "#ef4444";
+      }
+    } finally {
+      if (retranslateBtn) retranslateBtn.disabled = false;
+    }
+  }
+  var init_row_actions = __esm({
+    "src/core/row_actions.ts"() {
+      "use strict";
+      init_state();
+      init_filters();
+      init_page_translator();
+      init_scrapers();
+      init_sidebar();
+      init_review_panel();
+    }
+  });
+
+  // src/ui/separator_panel.ts
+  var separator_panel_exports = {};
+  __export(separator_panel_exports, {
+    addSeparatorTag: () => addSeparatorTag,
+    bindSeparatorPanelEvents: () => bindSeparatorPanelEvents,
+    checkAndExcludeSeparatorTranslations: () => checkAndExcludeSeparatorTranslations,
+    openExcludedManager: () => openExcludedManager,
+    removeSeparatorTag: () => removeSeparatorTag,
+    renderSeparatorExcludePanel: () => renderSeparatorExcludePanel,
+    renderSeparatorSettingsPanel: () => renderSeparatorSettingsPanel,
+    restoreExcludedItems: () => restoreExcludedItems,
+    toggleSeparatorPanel: () => toggleSeparatorPanel
+  });
+  function toggleSeparatorPanel() {
+    const panel = document.getElementById("separator-settings-panel");
+    if (!panel) return;
+    if (panel.style.display === "none" || !panel.style.display) {
+      panel.style.display = "block";
+      renderSeparatorSettingsPanel();
+    } else {
+      panel.style.display = "none";
+    }
+  }
+  function renderSeparatorSettingsPanel() {
+    const panel = document.getElementById("separator-settings-panel");
+    if (!panel) return;
+    const novelNameDisplay = document.getElementById("panel-novel-name-display");
+    if (novelNameDisplay) {
+      novelNameDisplay.textContent = `'${state.currentNovelTitle || "\uAE30\uBCF8 \uC18C\uC124"}'`;
+    }
+    const useDefaultsCheck = document.getElementById("use-global-defaults-check");
+    if (useDefaultsCheck) {
+      useDefaultsCheck.checked = state.separatorConfig.useDefaults !== false;
+    }
+    const tagsContainer = document.getElementById("active-separators-container");
+    if (tagsContainer) {
+      tagsContainer.innerHTML = "";
+      if (state.activeSeparators.length === 0) {
+        tagsContainer.innerHTML = '<span style="color:#94a3b8; font-style:italic; font-size:11px;">\uC124\uC815\uB41C \uAD6C\uBD84\uC120\uC774 \uC5C6\uC2B5\uB2C8\uB2E4.</span>';
+      } else {
+        state.activeSeparators.forEach((sep) => {
+          const isDefault = DEFAULT_GLOBAL_SEPARATORS.includes(sep);
+          const tag = document.createElement("span");
+          tag.className = "sep-tag" + (isDefault ? "" : " is-custom");
+          tag.innerHTML = `<span>${escapeHtml(sep)}</span><span class="sep-tag-remove" title="\uC81C\uAC70">&times;</span>`;
+          tag.querySelector(".sep-tag-remove")?.addEventListener("click", () => {
+            removeSeparatorTag(sep);
+          });
+          tagsContainer.appendChild(tag);
         });
       }
-      return {
-        consecutiveCount: consecutive,
-        novelTodayCount: dailyCounts[todayDateStr]?.byUrl[currentCleanUrl] || 1,
-        totalTodayCount: dailyCounts[todayDateStr]?.total || 1
+    }
+    const presetsContainer = document.getElementById("preset-buttons-container");
+    if (presetsContainer) {
+      presetsContainer.innerHTML = "";
+      PRESET_SEPARATORS.forEach((preset) => {
+        const isAdded = state.activeSeparators.includes(preset.sep);
+        const btn = document.createElement("button");
+        btn.className = "sep-preset-btn";
+        btn.textContent = (isAdded ? "\u2713 " : "+ ") + preset.name;
+        if (isAdded) {
+          btn.style.opacity = "0.6";
+          btn.style.borderColor = "#10b981";
+          btn.style.color = "#059669";
+        }
+        btn.addEventListener("click", () => {
+          if (!isAdded) {
+            addSeparatorTag(preset.sep);
+          } else {
+            removeSeparatorTag(preset.sep);
+          }
+        });
+        presetsContainer.appendChild(btn);
+      });
+    }
+  }
+  function addSeparatorTag(sep) {
+    const trimmed = sep.trim();
+    if (!trimmed) return;
+    if (!state.activeSeparators.includes(trimmed)) {
+      state.activeSeparators.push(trimmed);
+      if (!state.separatorConfig.customSeparators.includes(trimmed)) {
+        state.separatorConfig.customSeparators.push(trimmed);
+      }
+      renderSeparatorSettingsPanel();
+    }
+  }
+  function removeSeparatorTag(sep) {
+    state.activeSeparators = state.activeSeparators.filter((s) => s !== sep);
+    state.separatorConfig.customSeparators = state.separatorConfig.customSeparators.filter((s) => s !== sep);
+    renderSeparatorSettingsPanel();
+  }
+  function renderSeparatorExcludePanel(excludedItems) {
+    const panel = document.getElementById("separator-exclude-panel");
+    if (!panel) return;
+    if (!excludedItems || excludedItems.length === 0) {
+      panel.style.display = "none";
+      return;
+    }
+    let cardsHtml = "";
+    excludedItems.forEach((item, idx) => {
+      const typeLabel = item.isPreface ? "\uC0C1\uB2E8 \uAD6C\uBD84\uC120 \uC774\uC804 \uC7A1\uAE00" : item.isSubsequent ? "\uAD6C\uBD84\uC120 \uC774\uD6C4 \uD6C4\uAE30 \uB2E8\uB77D" : "\uAD6C\uBD84\uC120 \uC9C1\uC811 \uC77C\uCE58";
+      cardsHtml += `
+      <div class="separator-exclude-card" data-pid="${escapeHtml(item.pid || "")}" data-idx="${idx}">
+        <div class="sep-card-pid">
+          <span>ID: ${escapeHtml(item.pid || "-")} (${typeLabel})</span>
+          <span class="sep-card-match">\uB9E4\uCE6D: '${escapeHtml(item.matchedSep || "")}'</span>
+        </div>
+        <div class="sep-card-ori">\uC6D0\uBB38: ${escapeHtml(item.original || "")}</div>
+        <div class="sep-card-tra">\uC81C\uC678\uB41C \uBC88\uC5ED: <del>${escapeHtml(item.translated || "(\uBC88\uC5ED\uBB38 \uC5C6\uC74C \u2014 \uC81C\uC678 \uADDC\uCE59 \uC801\uC6A9 \uC911)")}</del></div>
+        <div class="sep-card-footer">
+          <span class="sep-card-hint">\uD074\uB9AD \uC2DC \uBCF8\uBB38 \uC704\uCE58 \uD655\uC778</span>
+          <button class="sep-card-restore-btn" data-idx="${idx}" title="\uC774 \uB2E8\uB77D\uC758 \uBC88\uC5ED \uC81C\uC678\uB97C \uCDE8\uC18C\uD558\uACE0 \uB2E4\uC2DC \uBCF5\uC6D0\uD569\uB2C8\uB2E4">\u21A9\uFE0F \uBCF5\uC6D0</button>
+        </div>
+      </div>
+    `;
+    });
+    panel.innerHTML = `
+    <div class="separator-exclude-header">
+      <div class="separator-exclude-title">
+        <span>\u2702\uFE0F \uAD6C\uBD84\uC120 \uAE30\uC900 \uBC88\uC5ED \uC790\uB3D9 \uC81C\uC678 (${excludedItems.length}\uAC74)</span>
+      </div>
+      <div class="separator-exclude-actions">
+        <button id="sep-exclude-restore-all-btn" class="sep-exclude-restore-all-btn" title="\uC81C\uC678\uB41C ${excludedItems.length}\uAC74\uC744 \uBAA8\uB450 \uBC88\uC5ED \uC0C1\uD0DC\uB85C \uBCF5\uC6D0\uD569\uB2C8\uB2E4">\u21A9\uFE0F \uC804\uCCB4 \uBCF5\uC6D0</button>
+        <button id="sep-exclude-panel-close-btn" class="sep-exclude-close-btn" title="\uD328\uB110 \uB2EB\uAE30">&times;</button>
+      </div>
+    </div>
+    <div class="separator-exclude-desc">
+      \uC124\uC815\uB41C \uAD6C\uBD84\uC120\uACFC \uC77C\uCE58\uD558\uAC70\uB098 \uAD6C\uBD84\uC120 \uC774\uD6C4(\uD6C4\uAE30)\uC5D0 \uC704\uCE58\uD558\uC5EC \uAE30\uC874 \uBC88\uC5ED\uC774 \uC81C\uC678(\uC6D0\uBB38 \uBCF5\uC6D0)\uB418\uC5C8\uC2B5\uB2C8\uB2E4. \uC798\uBABB \uC81C\uC678\uB41C \uACBD\uC6B0 [\uBCF5\uC6D0]\uC744 \uB20C\uB7EC \uB418\uB3CC\uB9B4 \uC218 \uC788\uC2B5\uB2C8\uB2E4.
+    </div>
+    <div class="separator-exclude-body">
+      ${cardsHtml}
+    </div>
+  `;
+    panel.style.display = "block";
+    panel.querySelectorAll(".separator-exclude-card").forEach((card) => {
+      card.addEventListener("click", (e) => {
+        const target = e.target;
+        if (target && target.closest(".sep-card-restore-btn")) return;
+        const pid = card.getAttribute("data-pid");
+        if (pid) focusAndScrollToPid(pid);
+      });
+    });
+    panel.querySelectorAll(".sep-card-restore-btn").forEach((btn) => {
+      btn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        const idx = parseInt(btn.getAttribute("data-idx") || "0", 10);
+        const targetItem = excludedItems[idx];
+        if (!targetItem) return;
+        const btnEl = btn;
+        btnEl.disabled = true;
+        btnEl.textContent = "\uBCF5\uC6D0 \uC911...";
+        await restoreExcludedItems([targetItem]);
+      });
+    });
+    const restoreAllBtn = document.getElementById("sep-exclude-restore-all-btn");
+    if (restoreAllBtn) {
+      restoreAllBtn.addEventListener("click", async () => {
+        restoreAllBtn.disabled = true;
+        restoreAllBtn.textContent = "\uC804\uCCB4 \uBCF5\uC6D0 \uC911...";
+        await restoreExcludedItems([...excludedItems]);
+      });
+    }
+    const closeBtn = document.getElementById("sep-exclude-panel-close-btn");
+    if (closeBtn) {
+      closeBtn.addEventListener("click", () => {
+        panel.style.display = "none";
+      });
+    }
+  }
+  async function checkAndExcludeSeparatorTranslations(translationsList) {
+    if (!translationsList || !Array.isArray(translationsList) || translationsList.length === 0) return;
+    if (!state.activeSeparators || state.activeSeparators.length === 0) return;
+    const allParagraphs = getTargetParagraphs();
+    const validParagraphs = [];
+    allParagraphs.forEach((p) => {
+      if (!p || p.id === "tagCount" || /^(la|lp)\d+$/i.test(p.id)) return;
+      const text = p.innerHTML.replace(/<br\s*\/?>/gi, " ").replace(/<[^>]*>/g, "").trim();
+      if (text) {
+        validParagraphs.push({ element: p, text, pid: p.id });
+      }
+    });
+    const sepAnalysis = analyzeSeparatorSections(validParagraphs, state.activeSeparators);
+    const excludedPidMap = sepAnalysis.excludedPidMap;
+    const targetsToExclude = [];
+    const targetIds = [];
+    translationsList.forEach((t) => {
+      if (!t || !t.id) return;
+      if (state.exclusionSet.has(t.original)) return;
+      let matchedInfo = null;
+      if (t.pid && excludedPidMap.has(t.pid)) {
+        matchedInfo = excludedPidMap.get(t.pid);
+      } else if (t.original) {
+        const matchedSep = checkSeparatorMatch(t.original.trim(), state.activeSeparators);
+        if (matchedSep) {
+          matchedInfo = { matchedSep, isSubsequent: false, isPreface: false };
+        }
+      }
+      if (matchedInfo && t.translated && t.translated.trim()) {
+        targetsToExclude.push({
+          id: t.id,
+          pid: t.pid,
+          original: t.original,
+          translated: t.translated,
+          matchedSep: matchedInfo.matchedSep,
+          isSubsequent: matchedInfo.isSubsequent,
+          isPreface: matchedInfo.isPreface
+        });
+        targetIds.push(t.id);
+      }
+    });
+    if (targetsToExclude.length === 0) return;
+    try {
+      const response = await fetch("http://127.0.0.1:8001/translations/exclude", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: targetIds })
+      });
+      if (!response.ok) return;
+      targetsToExclude.forEach((item) => {
+        if (item.pid) {
+          state.userDeletedTranslationPids.add(String(item.pid));
+          state.translationCache.delete(item.pid);
+        }
+        if (item.original) {
+          state.exclusionSet.add(item.original);
+        }
+        const idx = translationsList.findIndex((t) => t.id === item.id);
+        if (idx !== -1) {
+          translationsList.splice(idx, 1);
+        }
+        if (item.pid) {
+          const row = document.querySelector(`tr[data-pid="${item.pid}"]`);
+          if (row) row.remove();
+          const pTag = document.getElementById(item.pid);
+          if (pTag && pTag.dataset.lanovelOriginalHtml) {
+            pTag.innerHTML = pTag.dataset.lanovelOriginalHtml;
+            pTag.classList.remove("lanovel-applied-text");
+            if (pTag.dataset.lanovelOriginalStyle) {
+              pTag.setAttribute("style", pTag.dataset.lanovelOriginalStyle);
+            } else {
+              pTag.removeAttribute("style");
+            }
+          }
+        }
+      });
+      updateApplyButtonUI(state.isPageApplied);
+      state.separatorExcludedItems = targetsToExclude;
+      renderSeparatorExcludePanel(targetsToExclude);
+      showSidebar();
+    } catch (e) {
+      console.warn("[checkAndExcludeSeparatorTranslations] Server call failed:", e);
+    }
+  }
+  async function restoreExcludedItems(itemsToRestore) {
+    if (!itemsToRestore || itemsToRestore.length === 0) return;
+    const cleanUrl = getCleanUrl();
+    try {
+      const response = await fetch("http://127.0.0.1:8001/translations/restore_excluded", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          url: cleanUrl,
+          items: itemsToRestore.map((it) => ({
+            id: it.id,
+            pid: it.pid,
+            original: it.original,
+            translated: it.translated
+          }))
+        })
+      });
+      if (!response.ok) {
+        throw new Error(`Server returned ${response.status}`);
+      }
+      const allParagraphs = getTargetParagraphs();
+      itemsToRestore.forEach((item) => {
+        if (item.original) {
+          state.exclusionSet.delete(item.original);
+        }
+        if (item.pid) {
+          state.userDeletedTranslationPids.delete(String(item.pid));
+          if (item.translated && item.translated.trim()) {
+            const restoredEntry = {
+              id: item.id,
+              pid: item.pid,
+              original: item.original,
+              translated: item.translated
+            };
+            state.translationCache.set(item.pid, restoredEntry);
+            addEntryToSidebar(restoredEntry);
+          }
+        }
+      });
+      sortSidebar(allParagraphs.map((p) => p.id));
+      if (state.isPageApplied) {
+        const validRestored = itemsToRestore.filter(
+          (it) => it.pid && it.translated && it.translated.trim()
+        );
+        if (validRestored.length > 0) {
+          applyTranslationsToPage(validRestored, false);
+        }
+      }
+      updateApplyButtonUI(state.isPageApplied);
+      const restoredOriginals = new Set(itemsToRestore.map((it) => it.original));
+      state.separatorExcludedItems = state.separatorExcludedItems.filter(
+        (it) => !restoredOriginals.has(it.original)
+      );
+      renderSeparatorExcludePanel(state.separatorExcludedItems);
+      logToSidebar(`\u2713 \uC81C\uC678\uB418\uC5C8\uB358 \uB2E8\uB77D ${itemsToRestore.length}\uAC74\uC744 \uB2E4\uC2DC \uBCF5\uC6D0\uD588\uC2B5\uB2C8\uB2E4.`);
+    } catch (err) {
+      console.error("[restoreExcludedItems] Failed to restore:", err);
+      logToSidebar(`\uC81C\uC678 \uB2E8\uB77D \uBCF5\uC6D0 \uC2E4\uD328: ${err.message}`, "log-error");
+      renderSeparatorExcludePanel(state.separatorExcludedItems);
+    }
+  }
+  async function openExcludedManager() {
+    const cleanUrl = getCleanUrl();
+    try {
+      const resp = await fetch(
+        `http://127.0.0.1:8001/translations/excluded_details?url=${encodeURIComponent(cleanUrl)}`
+      );
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const data = await resp.json();
+      const items = data.excluded_items || [];
+      if (items.length === 0) {
+        alert("\uD604\uC7AC \uD398\uC774\uC9C0(\uD68C\uCC28)\uC5D0\uC11C \uBC88\uC5ED \uC81C\uC678\uB41C \uB2E8\uB77D\uC774 \uC5C6\uC2B5\uB2C8\uB2E4.");
+        return;
+      }
+      state.separatorExcludedItems = items.map((it) => ({
+        id: it.id,
+        pid: it.pid,
+        original: it.original,
+        translated: it.translated,
+        matchedSep: "\uC81C\uC678\uB428",
+        isSubsequent: false
+      }));
+      renderSeparatorExcludePanel(state.separatorExcludedItems);
+      const sepSettingsPanel = document.getElementById("separator-settings-panel");
+      if (sepSettingsPanel) sepSettingsPanel.style.display = "none";
+      showSidebar();
+    } catch (e) {
+      console.error("[openExcludedManager] Error:", e);
+      logToSidebar(`\uC81C\uC678 \uB2E8\uB77D \uBAA9\uB85D \uC870\uD68C \uC2E4\uD328: ${e.message}`, "log-error");
+    }
+  }
+  function bindSeparatorPanelEvents() {
+    const sepBtn1 = document.getElementById("separator-settings-btn");
+    const sepBtn2 = document.getElementById("toggle-sep-panel-btn");
+    const closeSepBtn = document.getElementById("close-sep-panel-btn");
+    if (sepBtn1) sepBtn1.addEventListener("click", toggleSeparatorPanel);
+    if (sepBtn2) sepBtn2.addEventListener("click", toggleSeparatorPanel);
+    if (closeSepBtn) {
+      closeSepBtn.addEventListener("click", () => {
+        const panel = document.getElementById("separator-settings-panel");
+        if (panel) panel.style.display = "none";
+      });
+    }
+    const useDefaultsCheck = document.getElementById("use-global-defaults-check");
+    if (useDefaultsCheck) {
+      useDefaultsCheck.addEventListener("change", (e) => {
+        const checked = e.target.checked;
+        state.separatorConfig.useDefaults = checked;
+        if (checked) {
+          DEFAULT_GLOBAL_SEPARATORS.forEach((d) => {
+            if (!state.activeSeparators.includes(d)) state.activeSeparators.unshift(d);
+          });
+        } else {
+          state.activeSeparators = state.activeSeparators.filter(
+            (s) => !DEFAULT_GLOBAL_SEPARATORS.includes(s) || state.separatorConfig.customSeparators.includes(s)
+          );
+        }
+        renderSeparatorSettingsPanel();
+      });
+    }
+    const addSepBtn = document.getElementById("add-separator-btn");
+    const newSepInput = document.getElementById("new-separator-input");
+    if (addSepBtn && newSepInput) {
+      const handleAdd = () => {
+        const val = newSepInput.value.trim();
+        if (val) {
+          addSeparatorTag(val);
+          newSepInput.value = "";
+        }
       };
-    } catch (e) {
-      console.warn("[updateAndGetBatchCount] Failed to update batch count:", e);
-      return { consecutiveCount: 1, novelTodayCount: 1, totalTodayCount: 1 };
-    }
-  }
-  function sendProgressNotification(novelTitle, episodeTitle, translatedCount, totalCount, percent, url, consecutiveEpisodes) {
-    try {
-      fetch("http://127.0.0.1:8001/api/notifications", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          type: "progress",
-          novel_title: novelTitle,
-          episode_title: episodeTitle,
-          translated_count: translatedCount,
-          total_count: totalCount,
-          progress_percentage: percent,
-          url,
-          consecutive_episodes: consecutiveEpisodes
-        })
-      }).catch(() => {
+      addSepBtn.addEventListener("click", handleAdd);
+      newSepInput.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") handleAdd();
       });
-    } catch (e) {
     }
-  }
-  function sendCompleteNotification(novelTitle, episodeTitle, totalCount, url, consecutiveEpisodes) {
-    try {
-      fetch("http://127.0.0.1:8001/api/notifications", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          type: "complete",
-          novel_title: novelTitle,
-          episode_title: episodeTitle,
-          total_count: totalCount,
-          url,
-          consecutive_episodes: consecutiveEpisodes
-        })
-      }).catch(() => {
+    const saveSepBtn = document.getElementById("save-separators-btn");
+    if (saveSepBtn) {
+      saveSepBtn.addEventListener("click", async () => {
+        const useDefaults = useDefaultsCheck ? useDefaultsCheck.checked : true;
+        const customList = state.activeSeparators.filter((s) => !DEFAULT_GLOBAL_SEPARATORS.includes(s));
+        const saved = await saveNovelSeparators(
+          state.currentNovelTitle,
+          useDefaults ? customList : state.activeSeparators,
+          useDefaults
+        );
+        if (saved) {
+          state.separatorConfig = await loadNovelSeparators(state.currentNovelTitle);
+          state.activeSeparators = state.separatorConfig.effectiveSeparators;
+          renderSeparatorSettingsPanel();
+          logToSidebar(
+            `[\uAD6C\uBD84\uC120 \uC800\uC7A5 \uC644\uB8CC] '${state.currentNovelTitle}' \uC18C\uC124\uC758 \uAD6C\uBD84\uC120 \uC124\uC815(${state.activeSeparators.length}\uAC1C)\uC774 \uC800\uC7A5\uB418\uC5C8\uC2B5\uB2C8\uB2E4.`
+          );
+          const panel = document.getElementById("separator-settings-panel");
+          if (panel) panel.style.display = "none";
+          const currentTranslations = await ensureTranslationsLoaded();
+          if (currentTranslations && currentTranslations.length > 0) {
+            await checkAndExcludeSeparatorTranslations(currentTranslations);
+          }
+        } else {
+          logToSidebar("[\uC624\uB958] \uAD6C\uBD84\uC120 \uC124\uC815 \uC800\uC7A5\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4.", "log-error");
+        }
       });
-    } catch (e) {
+    }
+    const resetSepBtn = document.getElementById("reset-separators-btn");
+    if (resetSepBtn) {
+      resetSepBtn.addEventListener("click", async () => {
+        const ok = await resetNovelSeparators(state.currentNovelTitle);
+        if (ok) {
+          state.separatorConfig = await loadNovelSeparators(state.currentNovelTitle);
+          state.activeSeparators = state.separatorConfig.effectiveSeparators;
+          renderSeparatorSettingsPanel();
+          logToSidebar(
+            `[\uAD6C\uBD84\uC120 \uCD08\uAE30\uD654] '${state.currentNovelTitle || "\uAE30\uBCF8 \uC18C\uC124"}'\uC758 \uAD6C\uBD84\uC120\uC774 \uAE30\uBCF8\uAC12\uC73C\uB85C \uBCF5\uC6D0\uB418\uC5C8\uC2B5\uB2C8\uB2E4.`
+          );
+        } else {
+          logToSidebar("[\uC624\uB958] \uAD6C\uBD84\uC120 \uCD08\uAE30\uD654\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4.", "log-error");
+        }
+      });
+    }
+    const openExcludedBtn = document.getElementById("open-excluded-manager-btn");
+    if (openExcludedBtn) {
+      openExcludedBtn.addEventListener("click", () => {
+        openExcludedManager();
+      });
+    }
+    const headerExcludedBtn = document.getElementById("sidebar-excluded-list-btn");
+    if (headerExcludedBtn) {
+      headerExcludedBtn.addEventListener("click", () => {
+        openExcludedManager();
+      });
     }
   }
+  var init_separator_panel = __esm({
+    "src/ui/separator_panel.ts"() {
+      "use strict";
+      init_state();
+      init_separators();
+      init_page_translator();
+      init_sidebar();
+      init_review_panel();
+    }
+  });
 
   // src/ui/sidebar.ts
   function escapeHtml(text) {
@@ -1260,6 +2473,10 @@
     if (sidebar) {
       sidebar.classList.add("visible");
       updateEmptyState();
+      if (!state.hasScannedForPTags && state.onStartTranslation) {
+        state.hasScannedForPTags = true;
+        state.onStartTranslation(false);
+      }
       state.broadcastStatus();
     }
   }
@@ -1277,1008 +2494,8 @@
       showSidebar();
     }
   }
-  function injectSidebarStyles() {
-    if (document.getElementById("lanovel-sidebar-style")) return;
-    const style = document.createElement("style");
-    style.id = "lanovel-sidebar-style";
-    style.textContent = `
-    #jp-translator-sidebar {
-      position: fixed !important;
-      top: 0 !important;
-      right: 0 !important;
-      width: 460px !important;
-      max-width: 90vw !important;
-      min-width: 320px !important;
-      height: 100% !important;
-      background-color: #f8f9fa !important;
-      color: #212529 !important;
-      border-left: 1px solid #dee2e6 !important;
-      box-shadow: -2px 0 8px rgba(0,0,0,0.1) !important;
-      z-index: 9999 !important;
-      transform: translateX(100%) !important;
-      transition: transform 0.3s ease-in-out !important;
-      display: flex !important;
-      flex-direction: column !important;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
-      box-sizing: border-box !important;
-    }
-    #jp-translator-sidebar.visible {
-      transform: translateX(0) !important;
-    }
-    .sidebar-header {
-      display: flex !important;
-      justify-content: space-between !important;
-      align-items: center !important;
-      padding: 10px 15px !important;
-      background-color: #667eea !important;
-      color: white !important;
-      flex-shrink: 0 !important;
-      box-sizing: border-box !important;
-    }
-    .sidebar-header h3 {
-      margin: 0 !important;
-      font-size: 16px !important;
-      color: white !important;
-      font-weight: 600 !important;
-    }
-    .sidebar-controls {
-      display: flex !important;
-      align-items: center !important;
-      gap: 4px !important;
-    }
-    .sidebar-controls button {
-      background: none !important;
-      border: none !important;
-      color: white !important;
-      font-size: 18px !important;
-      cursor: pointer !important;
-      margin-left: 4px !important;
-      padding: 2px 4px !important;
-      line-height: 1 !important;
-      border-radius: 4px !important;
-      transition: background-color 0.2s !important;
-    }
-    .sidebar-controls button:hover {
-      background-color: rgba(255, 255, 255, 0.2) !important;
-    }
-    .sidebar-novel-banner {
-      display: flex !important;
-      justify-content: space-between !important;
-      align-items: center !important;
-      padding: 7px 12px !important;
-      background: #eef2ff !important;
-      border-bottom: 1px solid #c7d2fe !important;
-      font-size: 12px !important;
-      flex-shrink: 0 !important;
-      box-sizing: border-box !important;
-    }
-    .novel-banner-info {
-      display: flex !important;
-      align-items: center !important;
-      gap: 5px !important;
-      overflow: hidden !important;
-      flex: 1 !important;
-    }
-    .novel-banner-icon {
-      font-size: 14px !important;
-    }
-    .novel-banner-title {
-      font-weight: 600 !important;
-      color: #3730a3 !important;
-      max-width: 220px !important;
-      overflow: hidden !important;
-      text-overflow: ellipsis !important;
-      white-space: nowrap !important;
-      cursor: pointer !important;
-      border-bottom: 1px dashed #6366f1 !important;
-    }
-    .novel-banner-title:hover {
-      color: #4338ca !important;
-      background: #e0e7ff !important;
-    }
-    .novel-banner-btn {
-      background: none !important;
-      border: none !important;
-      cursor: pointer !important;
-      font-size: 12px !important;
-      padding: 0 2px !important;
-      line-height: 1 !important;
-    }
-    .novel-banner-sep-toggle {
-      background: #4f46e5 !important;
-      color: white !important;
-      border: none !important;
-      border-radius: 4px !important;
-      padding: 3px 8px !important;
-      font-size: 11px !important;
-      cursor: pointer !important;
-      font-weight: 500 !important;
-      white-space: nowrap !important;
-      transition: background-color 0.2s !important;
-    }
-    .novel-banner-sep-toggle:hover {
-      background: #4338ca !important;
-    }
-    .sidebar-apply-banner {
-      display: flex !important;
-      justify-content: space-between !important;
-      align-items: center !important;
-      padding: 8px 12px !important;
-      background: #ffffff !important;
-      border-bottom: 1px solid #e2e8f0 !important;
-      font-size: 12px !important;
-      flex-shrink: 0 !important;
-      box-sizing: border-box !important;
-    }
-    .apply-status-info {
-      display: flex !important;
-      align-items: center !important;
-      gap: 6px !important;
-    }
-    .status-dot {
-      width: 8px !important;
-      height: 8px !important;
-      border-radius: 50% !important;
-      background-color: #94a3b8 !important;
-      display: inline-block !important;
-      transition: background-color 0.3s !important;
-    }
-    .status-dot.applied {
-      background-color: #10b981 !important;
-      box-shadow: 0 0 6px rgba(16, 185, 129, 0.6) !important;
-    }
-    .apply-status-text {
-      font-weight: 600 !important;
-      color: #475569 !important;
-    }
-    .apply-status-text.applied {
-      color: #059669 !important;
-    }
-    .apply-stats-count {
-      font-size: 11px !important;
-      color: #64748b !important;
-    }
-    .sidebar-apply-btn {
-      display: inline-flex !important;
-      align-items: center !important;
-      gap: 4px !important;
-      border: 1px solid #cbd5e1 !important;
-      background: #f8fafc !important;
-      color: #334155 !important;
-      padding: 4px 10px !important;
-      border-radius: 5px !important;
-      font-size: 11.5px !important;
-      font-weight: 500 !important;
-      cursor: pointer !important;
-      transition: all 0.2s !important;
-    }
-    .sidebar-apply-btn:hover {
-      background: #f1f5f9 !important;
-      border-color: #94a3b8 !important;
-    }
-    .sidebar-apply-btn.applied {
-      background: #10b981 !important;
-      border-color: #059669 !important;
-      color: white !important;
-    }
-    .sidebar-apply-btn.applied:hover {
-      background: #059669 !important;
-    }
-    .separator-settings-panel {
-      background: #ffffff !important;
-      border-bottom: 2px solid #6366f1 !important;
-      padding: 12px 14px !important;
-      box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1) !important;
-      font-size: 12px !important;
-      max-height: 380px !important;
-      overflow-y: auto !important;
-      flex-shrink: 0 !important;
-      box-sizing: border-box !important;
-    }
-    .sep-panel-header {
-      display: flex !important;
-      justify-content: space-between !important;
-      align-items: center !important;
-      margin-bottom: 8px !important;
-    }
-    .sep-panel-title {
-      font-weight: 600 !important;
-      color: #1e1b4b !important;
-      font-size: 13px !important;
-    }
-    .sep-close-btn {
-      background: none !important;
-      border: none !important;
-      font-size: 18px !important;
-      cursor: pointer !important;
-      color: #64748b !important;
-      line-height: 1 !important;
-    }
-    .sep-info-box {
-      background: #f8f9fa !important;
-      border: 1px solid #e2e8f0 !important;
-      border-radius: 4px !important;
-      padding: 6px 10px !important;
-      margin-bottom: 8px !important;
-      color: #475569 !important;
-      font-size: 11px !important;
-      line-height: 1.4 !important;
-    }
-    .sep-novel-name {
-      font-weight: 600 !important;
-      color: #4f46e5 !important;
-    }
-    .sep-form-group {
-      margin-bottom: 8px !important;
-    }
-    .sep-checkbox-label {
-      display: flex !important;
-      align-items: center !important;
-      gap: 6px !important;
-      cursor: pointer !important;
-      color: #334155 !important;
-      font-size: 11.5px !important;
-    }
-    .sep-section-title {
-      font-size: 11px !important;
-      font-weight: 600 !important;
-      color: #475569 !important;
-      margin: 8px 0 4px !important;
-    }
-    .sep-tags-wrap {
-      display: flex !important;
-      flex-wrap: wrap !important;
-      gap: 5px !important;
-      margin-bottom: 8px !important;
-      min-height: 26px !important;
-    }
-    .sep-tag {
-      display: inline-flex !important;
-      align-items: center !important;
-      background: #e0e7ff !important;
-      color: #3730a3 !important;
-      padding: 2px 7px !important;
-      border-radius: 12px !important;
-      font-size: 11px !important;
-      font-weight: 500 !important;
-    }
-    .sep-tag.is-custom {
-      background: #fef3c7 !important;
-      color: #92400e !important;
-      border: 1px solid #fde68a !important;
-    }
-    .sep-tag-remove {
-      margin-left: 4px !important;
-      cursor: pointer !important;
-      color: #ef4444 !important;
-      font-weight: bold !important;
-      font-size: 13px !important;
-    }
-    .sep-tag-remove:hover {
-      color: #b91c1c !important;
-    }
-    .sep-presets-wrap {
-      display: flex !important;
-      flex-wrap: wrap !important;
-      gap: 4px !important;
-      margin-bottom: 8px !important;
-    }
-    .sep-preset-btn {
-      background: #f1f5f9 !important;
-      border: 1px solid #cbd5e1 !important;
-      border-radius: 4px !important;
-      padding: 2px 6px !important;
-      font-size: 11px !important;
-      cursor: pointer !important;
-      color: #334155 !important;
-      transition: background 0.2s !important;
-    }
-    .sep-preset-btn:hover {
-      background: #e2e8f0 !important;
-    }
-    .sep-input-row {
-      display: flex !important;
-      gap: 4px !important;
-      margin-bottom: 10px !important;
-    }
-    .sep-input {
-      flex: 1 !important;
-      padding: 4px 8px !important;
-      border: 1px solid #cbd5e1 !important;
-      border-radius: 4px !important;
-      font-size: 12px !important;
-      outline: none !important;
-    }
-    .sep-input:focus {
-      border-color: #6366f1 !important;
-    }
-    .sep-add-btn {
-      background: #6366f1 !important;
-      color: white !important;
-      border: none !important;
-      border-radius: 4px !important;
-      padding: 4px 10px !important;
-      font-size: 12px !important;
-      cursor: pointer !important;
-    }
-    .sep-add-btn:hover {
-      background: #4f46e5 !important;
-    }
-    .sep-panel-footer {
-      display: flex !important;
-      justify-content: flex-end !important;
-      gap: 6px !important;
-      border-top: 1px solid #f1f5f9 !important;
-      padding-top: 8px !important;
-    }
-    .sep-save-btn {
-      background: #10b981 !important;
-      color: white !important;
-      border: none !important;
-      border-radius: 4px !important;
-      padding: 5px 12px !important;
-      font-size: 12px !important;
-      cursor: pointer !important;
-      font-weight: 500 !important;
-    }
-    .sep-save-btn:hover {
-      background: #059669 !important;
-    }
-    .sep-reset-btn {
-      background: #94a3b8 !important;
-      color: white !important;
-      border: none !important;
-      border-radius: 4px !important;
-      padding: 5px 10px !important;
-      font-size: 12px !important;
-      cursor: pointer !important;
-    }
-    .sep-reset-btn:hover {
-      background: #64748b !important;
-    }
-    .sidebar-content {
-      flex-grow: 1 !important;
-      overflow-y: auto !important;
-      box-sizing: border-box !important;
-    }
-    #translation-table {
-      width: 100% !important;
-      border-collapse: collapse !important;
-      table-layout: fixed !important;
-    }
-    #translation-table th, #translation-table td {
-      padding: 8px 10px !important;
-      text-align: left !important;
-      border-bottom: 1px solid #e9ecef !important;
-      box-sizing: border-box !important;
-      vertical-align: top !important;
-    }
-    #translation-table th:nth-child(1) {
-      width: 40% !important;
-    }
-    #translation-table th:nth-child(2) {
-      width: 42% !important;
-    }
-    #translation-table th:nth-child(3) {
-      width: 18% !important;
-    }
-    #translation-table th {
-      background-color: #f1f3f5 !important;
-      font-size: 12px !important;
-      font-weight: 600 !important;
-      color: #495057 !important;
-    }
-    #translation-table tbody tr {
-      cursor: pointer !important;
-      transition: background-color 0.2s !important;
-    }
-    #translation-table tbody tr:hover {
-      background-color: #f1f5f9 !important;
-    }
-    #translation-table .original-text {
-      font-size: 13px !important;
-      color: #495057 !important;
-      word-break: break-all !important;
-      line-height: 1.5 !important;
-    }
-    #translation-table .translated-text {
-      font-size: 13px !important;
-      color: #212529 !important;
-      outline: none !important;
-      width: 100% !important;
-      word-break: break-all !important;
-      line-height: 1.5 !important;
-      -webkit-user-modify: read-write-plaintext-only !important;
-    }
-    #translation-table .translated-text:focus {
-      background-color: #e9f7fd !important;
-      border-radius: 3px !important;
-    }
-    #translation-table .action-btns {
-      display: flex !important;
-      gap: 4px !important;
-      align-items: center !important;
-    }
-    #translation-table .save-btn {
-      background-color: #4CAF50 !important;
-      color: white !important;
-      border: none !important;
-      padding: 4px 6px !important;
-      border-radius: 4px !important;
-      cursor: pointer !important;
-      font-size: 11px !important;
-      white-space: nowrap !important;
-      transition: background-color 0.2s !important;
-    }
-    #translation-table .save-btn:hover {
-      background-color: #45a049 !important;
-    }
-    #translation-table .save-btn:disabled {
-      background-color: #cccccc !important;
-      cursor: not-allowed !important;
-    }
-    #translation-table .retranslate-row-btn {
-      background: #ffffff !important;
-      border: 1px solid #cbd5e1 !important;
-      border-radius: 4px !important;
-      padding: 3px 5px !important;
-      cursor: pointer !important;
-      font-size: 11px !important;
-      line-height: 1 !important;
-      display: inline-flex !important;
-      align-items: center !important;
-      justify-content: center !important;
-      transition: all 0.2s !important;
-    }
-    #translation-table .retranslate-row-btn:hover {
-      background: #f1f5f9 !important;
-      border-color: #94a3b8 !important;
-    }
-    #translation-table .retranslate-row-btn:disabled {
-      opacity: 0.5 !important;
-      cursor: not-allowed !important;
-    }
-    .lanovel-row-highlight {
-      animation: lanovelRowPulse 1.5s ease-out !important;
-    }
-    @keyframes lanovelRowPulse {
-      0% { background-color: #fef08a !important; }
-      100% { background-color: transparent !important; }
-    }
-    @keyframes lanovelPulse {
-      0% { background-color: rgba(99, 102, 241, 0.4) !important; outline: 2px solid #6366f1 !important; outline-offset: 2px !important; }
-      50% { background-color: rgba(99, 102, 241, 0.18) !important; outline: 2px solid #818cf8 !important; outline-offset: 2px !important; }
-      100% { background-color: transparent !important; outline: none !important; }
-    }
-    .lanovel-highlight-pulse {
-      animation: lanovelPulse 1.5s ease-out !important;
-      border-radius: 4px !important;
-    }
-    .review-target-card {
-      background: #ffffff !important;
-      border: 1px solid #fde68a !important;
-      border-left: 3px solid #f59e0b !important;
-      border-radius: 6px !important;
-      padding: 6px 8px !important;
-      margin-bottom: 6px !important;
-      cursor: pointer !important;
-      transition: all 0.2s !important;
-    }
-    .review-target-card:hover {
-      background: #fffdf5 !important;
-      border-color: #f59e0b !important;
-      transform: translateX(2px) !important;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.05) !important;
-    }
-    .review-target-card .card-top {
-      display: flex !important;
-      justify-content: space-between !important;
-      align-items: center !important;
-      margin-bottom: 4px !important;
-    }
-    .review-target-card .pid-badge {
-      font-size: 10px !important;
-      font-weight: 700 !important;
-      color: #b45309 !important;
-    }
-    .review-target-card .reason-badge {
-      font-size: 10px !important;
-      background: #fef3c7 !important;
-      color: #92400e !important;
-      padding: 1px 5px !important;
-      border-radius: 4px !important;
-    }
-    .review-target-card .card-body .orig-text {
-      color: #4b5563 !important;
-      font-size: 11px !important;
-      white-space: nowrap !important;
-      overflow: hidden !important;
-      text-overflow: ellipsis !important;
-      margin-bottom: 2px !important;
-    }
-    .review-target-card .card-body .trans-text {
-      color: #1f2937 !important;
-      font-weight: 600 !important;
-      font-size: 12px !important;
-      white-space: nowrap !important;
-      overflow: hidden !important;
-      text-overflow: ellipsis !important;
-    }
-    .review-panel-close-btn {
-      background: none !important;
-      border: none !important;
-      font-size: 18px !important;
-      cursor: pointer !important;
-      color: #b45309 !important;
-      line-height: 1 !important;
-    }
-    .sidebar-footer {
-      flex-shrink: 0 !important;
-      border-top: 1px solid #334155 !important;
-      background-color: #0f172a !important;
-      color: #e2e8f0 !important;
-      font-family: Consolas, "Fira Code", Menlo, Monaco, monospace !important;
-      font-size: 11px !important;
-      max-height: 145px !important;
-      display: flex !important;
-      flex-direction: column !important;
-      overflow: hidden !important;
-      box-sizing: border-box !important;
-    }
-    .sidebar-footer-header {
-      display: flex !important;
-      justify-content: space-between !important;
-      align-items: center !important;
-      padding: 4px 10px !important;
-      background: #1e293b !important;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
-      flex-shrink: 0 !important;
-      user-select: none !important;
-    }
-    .footer-header-title {
-      font-size: 11px !important;
-      font-weight: 600 !important;
-      color: #94a3b8 !important;
-      letter-spacing: -0.2px !important;
-    }
-    .footer-clear-btn {
-      background: none !important;
-      border: 1px solid rgba(255, 255, 255, 0.15) !important;
-      color: #94a3b8 !important;
-      border-radius: 3px !important;
-      font-size: 10px !important;
-      padding: 1px 6px !important;
-      cursor: pointer !important;
-      line-height: 1.2 !important;
-      transition: all 0.15s ease !important;
-    }
-    .footer-clear-btn:hover {
-      background: rgba(255, 255, 255, 0.1) !important;
-      color: #f1f5f9 !important;
-      border-color: rgba(255, 255, 255, 0.3) !important;
-    }
-    #sidebar-log-console {
-      padding: 6px 10px !important;
-      overflow-y: auto !important;
-      flex: 1 !important;
-      box-sizing: border-box !important;
-    }
-    #sidebar-log-console::-webkit-scrollbar {
-      width: 5px !important;
-    }
-    #sidebar-log-console::-webkit-scrollbar-thumb {
-      background: #334155 !important;
-      border-radius: 3px !important;
-    }
-    #sidebar-log-console p, #sidebar-log-console .log-entry {
-      margin: 0 0 4px !important;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.06) !important;
-      padding-bottom: 3px !important;
-      line-height: 1.45 !important;
-      word-break: break-all !important;
-      display: flex !important;
-      align-items: baseline !important;
-      gap: 6px !important;
-      font-size: 11px !important;
-    }
-    .log-time {
-      color: #64748b !important;
-      font-size: 10.5px !important;
-      flex-shrink: 0 !important;
-      user-select: none !important;
-      font-family: inherit !important;
-    }
-    .log-msg {
-      color: #e2e8f0 !important;
-      flex: 1 !important;
-      font-family: inherit !important;
-    }
-    .log-error, .log-error .log-msg {
-      color: #f87171 !important;
-    }
-    .log-info, .log-info .log-msg {
-      color: #38bdf8 !important;
-    }
-    #jp-translator-toggle-btn {
-      position: fixed !important;
-      top: 50% !important;
-      left: 0 !important;
-      transform: translateY(-50%) !important;
-      background-color: #667eea !important;
-      color: white !important;
-      border: none !important;
-      border-top-right-radius: 5px !important;
-      border-bottom-right-radius: 5px !important;
-      padding: 10px 5px !important;
-      cursor: pointer !important;
-      z-index: 9998 !important;
-      font-size: 18px !important;
-      writing-mode: vertical-rl !important;
-      box-sizing: border-box !important;
-    }
-  `;
-    document.head.appendChild(style);
-  }
-  function updateEmptyState() {
-    const tableBody = document.getElementById("translation-table-body");
-    const emptyState = document.getElementById("sidebar-empty-state");
-    if (!tableBody || !emptyState) return;
-    emptyState.style.display = tableBody.children.length === 0 ? "block" : "none";
-  }
-  function updateTurboModeUI(enabled) {
-    const toggle = document.getElementById("sidebar-turbo-toggle");
-    const desc = document.getElementById("turbo-desc-text");
-    if (toggle) toggle.checked = enabled;
-    if (desc) {
-      desc.textContent = enabled ? "\u26A1 2\uCD08 / 8\uCD08 (\uCF8C\uC18D)" : "\uC77C\uBC18 \uBAA8\uB4DC (RPM \uBCF4\uC218\uC801)";
-    }
-  }
-  function updateTurboBadgeUI() {
-    const badge = document.getElementById("turbo-cutoff-badge");
-    if (!badge) return;
-    const info = detectCutoffInfo(state.turboCutoffHour);
-    badge.textContent = `\uAE30\uC900 ${info.label}`;
-  }
-  function updateApplyButtonUI(applied, totalTargetCount = 0) {
-    const dot = document.getElementById("apply-status-dot");
-    const text = document.getElementById("apply-status-text");
-    const count = document.getElementById("apply-stats-count");
-    const btn = document.getElementById("sidebar-apply-toggle-btn");
-    const btnIcon = document.getElementById("apply-btn-icon");
-    const btnText = document.getElementById("apply-btn-text");
-    const translatedCount = state.translationCache.size;
-    if (count) {
-      count.textContent = `(\uBC88\uC5ED ${translatedCount}\uAC1C / \uBCF8\uBB38 ${totalTargetCount}\uAC1C)`;
-    }
-    if (applied) {
-      if (dot) dot.className = "status-dot applied";
-      if (text) {
-        text.className = "apply-status-text applied";
-        text.textContent = "\uBCF8\uBB38 \uBC88\uC5ED \uC801\uC6A9 \uC911";
-      }
-      if (btn) {
-        btn.className = "sidebar-apply-btn applied";
-        btn.title = "\uD074\uB9AD\uD558\uBA74 \uC6F9\uD398\uC774\uC9C0 \uBCF8\uBB38\uC744 \uC6D0\uBB38\uC73C\uB85C \uBCF5\uC6D0\uD569\uB2C8\uB2E4.";
-      }
-      if (btnIcon) btnIcon.textContent = "\u2705";
-      if (btnText) btnText.textContent = "\uC801\uC6A9 \uC911 (\uC6D0\uBB38 \uBCF5\uC6D0)";
-    } else {
-      if (dot) dot.className = "status-dot";
-      if (text) {
-        text.className = "apply-status-text";
-        text.textContent = "\uC6D0\uBB38 \uD45C\uC2DC \uC911";
-      }
-      if (btn) {
-        btn.className = "sidebar-apply-btn";
-        btn.title = "\uD074\uB9AD\uD558\uBA74 \uBC88\uC5ED\uBB38\uC744 \uC6F9\uD398\uC774\uC9C0 \uBCF8\uBB38\uC5D0 \uC801\uC6A9\uD569\uB2C8\uB2E4.";
-      }
-      if (btnIcon) btnIcon.textContent = "\u{1F4C4}";
-      if (btnText) btnText.textContent = "\uD398\uC774\uC9C0\uC5D0 \uC801\uC6A9";
-    }
-  }
-  function updateNovelTitleUI(title) {
-    const el = document.getElementById("current-novel-title-display");
-    const panelNovel = document.getElementById("panel-novel-name-display");
-    if (el) el.textContent = title || "\uAE30\uBCF8 \uC18C\uC124";
-    if (panelNovel) panelNovel.textContent = title || "\uAE30\uBCF8 \uC18C\uC124";
-  }
-  function toggleSeparatorPanel() {
-    const panel = document.getElementById("separator-settings-panel");
-    if (!panel) return;
-    const isOpen = panel.style.display !== "none";
-    panel.style.display = isOpen ? "none" : "block";
-    if (!isOpen) {
-      renderSeparatorSettingsPanel();
-    }
-  }
-  function renderSeparatorSettingsPanel() {
-    const container = document.getElementById("active-separators-container");
-    const presetsContainer = document.getElementById("preset-buttons-container");
-    const defaultCheck = document.getElementById("use-global-defaults-check");
-    if (!container || !presetsContainer) return;
-    if (defaultCheck) {
-      defaultCheck.checked = state.separatorConfig.useDefaults;
-    }
-    container.innerHTML = "";
-    state.activeSeparators.forEach((sep) => {
-      const isCustom = state.separatorConfig.customSeparators.includes(sep);
-      const tag = document.createElement("span");
-      tag.className = `sep-tag ${isCustom ? "is-custom" : ""}`;
-      tag.innerHTML = `<span>${escapeHtml(sep)}</span><span class="sep-tag-remove" title="\uC0AD\uC81C">&times;</span>`;
-      const removeBtn = tag.querySelector(".sep-tag-remove");
-      if (removeBtn) {
-        removeBtn.addEventListener("click", () => {
-          state.activeSeparators = state.activeSeparators.filter((s) => s !== sep);
-          state.separatorConfig.customSeparators = state.separatorConfig.customSeparators.filter((s) => s !== sep);
-          renderSeparatorSettingsPanel();
-        });
-      }
-      container.appendChild(tag);
-    });
-    presetsContainer.innerHTML = "";
-    PRESET_SEPARATORS.forEach((p) => {
-      const btn = document.createElement("button");
-      btn.className = "sep-preset-btn";
-      btn.textContent = p.name;
-      btn.addEventListener("click", () => {
-        if (!state.activeSeparators.includes(p.sep)) {
-          state.activeSeparators.push(p.sep);
-          if (!state.separatorConfig.customSeparators.includes(p.sep)) {
-            state.separatorConfig.customSeparators.push(p.sep);
-          }
-          renderSeparatorSettingsPanel();
-        }
-      });
-      presetsContainer.appendChild(btn);
-    });
-  }
-  function renderReviewTargetPanel() {
-    const panel = document.getElementById("review-target-panel");
-    if (!panel) return;
-    if (!state.reviewTargetsData || !state.reviewTargetsData.targets || state.reviewTargetsData.targets.length === 0) {
-      panel.style.display = "none";
-      return;
-    }
-    const targets = state.reviewTargetsData.targets;
-    panel.style.display = "block";
-    panel.innerHTML = `
-    <div class="review-panel-header">
-      <div class="review-panel-title">
-        <span>\u26A1 \uC7AC\uBC88\uC5ED \uAC80\uC218 \uB300\uC0C1 (${targets.length}\uAC1C)</span>
-      </div>
-      <button class="review-panel-close-btn" id="close-review-panel-btn">&times;</button>
-    </div>
-    <div class="review-panel-list">
-      ${targets.map(
-      (t) => `
-        <div class="review-target-card" data-pid="${t.pid}">
-          <div class="card-top">
-            <span class="pid-badge">#${t.pid}</span>
-            <span class="reason-badge">${escapeHtml(t.reason || "\uD488\uC9C8 \uC7AC\uAC80\uC218")}</span>
-          </div>
-          <div class="card-body">
-            <div class="orig-text">\uC6D0\uBB38: ${escapeHtml(t.original)}</div>
-            <div class="trans-text" id="review-tra-${t.pid}">\uBC88\uC5ED: ${escapeHtml(t.translated || "(\uBBF8\uBC88\uC5ED)")}</div>
-          </div>
-        </div>
-      `
-    ).join("")}
-    </div>
-  `;
-    const closeBtn = document.getElementById("close-review-panel-btn");
-    if (closeBtn) {
-      closeBtn.addEventListener("click", () => {
-        panel.style.display = "none";
-      });
-    }
-    const cardList = panel.querySelector(".review-panel-list");
-    if (cardList) {
-      cardList.addEventListener("click", (e) => {
-        const target = e.target;
-        const card = target ? target.closest(".review-target-card") : null;
-        if (card && card.dataset.pid) {
-          handleSidebarRowClick(card.dataset.pid);
-        }
-      });
-    }
-  }
-  function populateSidebar(translations) {
-    const tableBody = document.getElementById("translation-table-body");
-    if (!tableBody) return;
-    tableBody.innerHTML = "";
-    translations.forEach((t) => {
-      addEntryToSidebar(t);
-    });
-    updateEmptyState();
-  }
-  function handleSidebarRowClick(pid, e) {
-    if (e) {
-      const target = e.target;
-      if (target && (target.closest("button") || target.closest(".translated-text") || target.tagName === "INPUT" || target.tagName === "TEXTAREA")) {
-        return;
-      }
-    }
-    const row = document.querySelector(`tr[data-pid="${pid}"]`);
-    if (row) {
-      row.classList.remove("lanovel-row-highlight");
-      void row.offsetWidth;
-      row.classList.add("lanovel-row-highlight");
-      setTimeout(() => {
-        row.classList.remove("lanovel-row-highlight");
-      }, 1600);
-    }
-    const targetP = document.getElementById(pid);
-    if (targetP) {
-      targetP.scrollIntoView({ behavior: "smooth", block: "center" });
-      targetP.classList.remove("lanovel-highlight-pulse");
-      void targetP.offsetWidth;
-      targetP.classList.add("lanovel-highlight-pulse");
-      setTimeout(() => {
-        targetP.classList.remove("lanovel-highlight-pulse");
-      }, 1600);
-    }
-  }
-  function addPlaceholderRows(items) {
-    const tableBody = document.getElementById("translation-table-body");
-    if (!tableBody) return;
-    items.forEach((item) => {
-      let row = document.querySelector(`tr[data-pid="${item.id}"]`);
-      if (!row) {
-        const newRow = tableBody.insertRow(0);
-        newRow.setAttribute("data-pid", item.id);
-        newRow.addEventListener("click", (e) => handleSidebarRowClick(item.id, e));
-        newRow.innerHTML = `
-        <td><div class="original-text">${escapeHtml(item.text)}</div></td>
-        <td><div class="translated-text">\u23F3 \uBC88\uC5ED \uC911...</div></td>
-        <td>
-          <div class="action-btns">
-            <button class="save-btn" disabled>\uC800\uC7A5</button>
-            <button class="retranslate-row-btn" disabled title="\uACE0\uC131\uB2A5 \uBAA8\uB378\uB85C \uC7AC\uBC88\uC5ED">\u{1F504}</button>
-          </div>
-        </td>
-      `;
-      } else {
-        const cell = row.querySelector(".translated-text");
-        if (cell) cell.textContent = "\u23F3 \uBC88\uC5ED \uC911...";
-        tableBody.prepend(row);
-      }
-    });
-    updateEmptyState();
-  }
-  function updateSidebarWithTranslations(translations) {
-    translations.forEach((t) => {
-      const pid = t.id || t.pid;
-      const row = document.querySelector(`tr[data-pid="${pid}"]`);
-      if (row) {
-        const cell = row.querySelector(".translated-text");
-        if (cell) {
-          cell.textContent = t.translated || "";
-          cell.removeAttribute("style");
-        }
-        const saveBtn = row.querySelector(".save-btn");
-        if (saveBtn) saveBtn.disabled = false;
-        const retransBtn = row.querySelector(".retranslate-row-btn");
-        if (retransBtn) retransBtn.disabled = false;
-      } else {
-        addEntryToSidebar({
-          pid,
-          original: t.original,
-          translated: t.translated
-        });
-      }
-    });
-    state.broadcastStatus();
-  }
-  function addEntryToSidebar(translation) {
-    const tableBody = document.getElementById("translation-table-body");
-    if (!tableBody || !translation.pid) return;
-    if (document.querySelector(`tr[data-pid="${translation.pid}"]`)) return;
-    const pid = String(translation.pid);
-    const row = tableBody.insertRow();
-    row.setAttribute("data-pid", pid);
-    row.addEventListener("click", (e) => handleSidebarRowClick(pid, e));
-    const isReviewTarget = state.reviewTargetPids.has(pid);
-    if (isReviewTarget) {
-      row.classList.add("review-target-row");
-      const p = document.getElementById(pid);
-      if (p) p.classList.add("review-target-dom");
-    }
-    const badgeHtml = isReviewTarget ? '<span class="review-badge" title="\uC54C\uB9BC \uC13C\uD130 \uC5F0\uACC4 \uC7AC\uBC88\uC5ED \uAC80\uC218 \uBB38\uC7A5">\u26A1\uC7AC\uAC80\uC218</span>' : "";
-    row.innerHTML = `
-    <td><div class="original-text" title="\uD074\uB9AD\uD558\uBA74 \uBCF8\uBB38\uC758 \uD574\uB2F9 \uBB38\uB2E8\uC73C\uB85C \uC774\uB3D9\uD569\uB2C8\uB2E4">${badgeHtml}${escapeHtml(translation.original)}</div></td>
-    <td><div class="translated-text" contenteditable="true">${escapeHtml(translation.translated)}</div></td>
-    <td>
-      <div class="action-btns">
-        <button class="save-btn">\uC800\uC7A5</button>
-        <button class="retranslate-row-btn" title="\uACE0\uC131\uB2A5 \uBAA8\uB378\uB85C \uC7AC\uBC88\uC5ED">\u{1F504}</button>
-      </div>
-    </td>
-  `;
-    const saveBtn = row.querySelector(".save-btn");
-    if (saveBtn) {
-      saveBtn.addEventListener("click", async (e) => {
-        e.stopPropagation();
-        const cell = row.querySelector(".translated-text");
-        const editedText = cell ? (cell.textContent || "").trim() : "";
-        if (!editedText) {
-          state.userDeletedTranslationPids.add(String(translation.pid));
-          row.setAttribute("data-user-deleted", "true");
-        } else {
-          state.userDeletedTranslationPids.delete(String(translation.pid));
-          row.removeAttribute("data-user-deleted");
-        }
-        const record = {
-          url: window.location.href.split("#")[0].trim(),
-          pid: translation.pid,
-          original: translation.original,
-          translated: editedText,
-          timestamp: Math.floor(Date.now() / 1e3),
-          folderName: null,
-          title: state.onExtractEpisodeTitle && state.onExtractEpisodeTitle() || document.title
-        };
-        state.translationCache.set(translation.pid, { pid: translation.pid, original: translation.original, translated: editedText });
-        try {
-          await fetch("http://127.0.0.1:8001/translations/upsert", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify([record])
-          });
-          saveBtn.textContent = "\uC800\uC7A5\uB428!";
-          setTimeout(() => {
-            saveBtn.textContent = "\uC800\uC7A5";
-          }, 1500);
-        } catch (err) {
-          logToSidebar(`\uBC88\uC5ED \uC800\uC7A5 \uC2E4\uD328: ${err.message}`, "log-error");
-        }
-      });
-    }
-    const retransBtn = row.querySelector(".retranslate-row-btn");
-    if (retransBtn) {
-      retransBtn.addEventListener("click", async (e) => {
-        e.stopPropagation();
-        retransBtn.disabled = true;
-        const cell = row.querySelector(".translated-text");
-        if (cell) {
-          cell.textContent = "\u23F3 \uC7AC\uBC88\uC5ED \uC911...";
-        }
-        logToSidebar(`(pid: ${translation.pid}) \uACE0\uC131\uB2A5 \uBAA8\uB378\uB85C \uC7AC\uBC88\uC5ED \uC694\uCCAD \uC911...`);
-        try {
-          const response = await chrome.runtime.sendMessage({
-            action: "batchTranslate",
-            items: [{ id: translation.pid, text: translation.original }],
-            isRetranslation: true
-          });
-          if (response && response.translations && response.translations.length > 0) {
-            const item = response.translations[0];
-            updateSidebarWithTranslations([item]);
-            logToSidebar(`(pid: ${translation.pid}) \uC7AC\uBC88\uC5ED \uC644\uB8CC!`);
-          }
-        } catch (err) {
-          logToSidebar(`\uC7AC\uBC88\uC5ED \uC2E4\uD328: ${err.message}`, "log-error");
-        } finally {
-          retransBtn.disabled = false;
-        }
-      });
-    }
-    updateEmptyState();
-  }
-  function sortSidebar(orderedPids) {
-    const tableBody = document.getElementById("translation-table-body");
-    if (!tableBody) return;
-    const rows = Array.from(tableBody.querySelectorAll("tr[data-pid]"));
-    const pidOrderMap = new Map(orderedPids.map((id, idx) => [id, idx]));
-    rows.sort((a, b) => {
-      const pidA = a.dataset.pid || "";
-      const pidB = b.dataset.pid || "";
-      const idxA = pidOrderMap.has(pidA) ? pidOrderMap.get(pidA) : 999999;
-      const idxB = pidOrderMap.has(pidB) ? pidOrderMap.get(pidB) : 999999;
-      return idxA - idxB;
-    });
-    rows.forEach((r) => tableBody.appendChild(r));
-  }
   function injectSidebar() {
     if (document.getElementById("jp-translator-sidebar")) return;
-    injectSidebarStyles();
     const sidebar = document.createElement("div");
     sidebar.id = "jp-translator-sidebar";
     sidebar.innerHTML = `
@@ -2318,19 +2535,17 @@
         </div>
         <div class="sep-section-title">\uC801\uC6A9 \uC911\uC778 \uAD6C\uBD84\uC120 \uBAA9\uB85D:</div>
         <div id="active-separators-container" class="sep-tags-wrap"></div>
-        
         <div class="sep-section-title">\uC790\uC8FC \uC4F0\uB294 \uAE30\uD638 \uBE60\uB978 \uCD94\uAC00:</div>
         <div id="preset-buttons-container" class="sep-presets-wrap"></div>
-
         <div class="sep-section-title">\uC0C8 \uAD6C\uBD84\uC120 \uC9C1\uC811 \uCD94\uAC00:</div>
         <div class="sep-input-row">
           <input type="text" id="new-separator-input" placeholder="\uCD94\uAC00\uD560 \uAE30\uD638/\uBB38\uC790\uC5F4 \uC785\uB825 (\uC608: \u25CE\u25CE\u25CE)" class="sep-input">
           <button id="add-separator-btn" class="sep-add-btn">\uCD94\uAC00</button>
         </div>
-
         <div class="sep-panel-footer">
           <button id="save-separators-btn" class="sep-save-btn">\u{1F4BE} \uC124\uC815 \uC800\uC7A5</button>
           <button id="reset-separators-btn" class="sep-reset-btn">\uAE30\uBCF8\uAC12 \uBCF5\uC6D0</button>
+          <button id="open-excluded-manager-btn" class="sep-manage-excluded-btn" title="\uD604\uC7AC \uD398\uC774\uC9C0\uC5D0\uC11C \uC81C\uC678\uB41C \uBAA8\uB4E0 \uB2E8\uB77D\uC744 \uC870\uD68C\uD558\uACE0 \uBCF5\uC6D0\uD569\uB2C8\uB2E4">\u{1F6E1}\uFE0F \uC81C\uC678 \uB2E8\uB77D \uD655\uC778/\uBCF5\uC6D0</button>
         </div>
       </div>
     </div>
@@ -2378,8 +2593,8 @@
     </div>
     <div class="sidebar-footer">
       <div class="sidebar-footer-header">
-        <span class="footer-header-title">\u{1F4E1} \uC2DC\uC2A4\uD15C \uC54C\uB9BC \uBC0F \uC9C4\uD589 \uB85C\uADF8</span>
-        <button id="clear-sidebar-log-btn" class="footer-clear-btn" title="\uB85C\uADF8 \uC9C0\uC6B0\uAE30">\uBE44\uC6B0\uAE30</button>
+        <span class="footer-header-title">\u{1F4CB} \uC2E4\uC2DC\uAC04 \uC54C\uB9BC \uB85C\uADF8</span>
+        <button id="clear-sidebar-log-btn" class="footer-clear-btn" title="\uC54C\uB9BC \uB85C\uADF8 \uBE44\uC6B0\uAE30">\uBE44\uC6B0\uAE30</button>
       </div>
       <div id="sidebar-log-console"></div>
     </div>
@@ -2389,107 +2604,362 @@
     toggleButton.id = "jp-translator-toggle-btn";
     toggleButton.innerHTML = "\u6587";
     document.body.appendChild(toggleButton);
+    document.getElementById("sidebar-close-btn")?.addEventListener("click", hideSidebar);
     toggleButton.addEventListener("click", toggleSidebar);
-    const closeBtn = document.getElementById("sidebar-close-btn");
-    if (closeBtn) closeBtn.addEventListener("click", hideSidebar);
-    const clearLogBtn = document.getElementById("clear-sidebar-log-btn");
-    if (clearLogBtn) {
-      clearLogBtn.addEventListener("click", () => {
-        const consoleEl = document.getElementById("sidebar-log-console");
-        if (consoleEl) consoleEl.innerHTML = "";
-      });
-    }
-    const editNovelTitleBtn = document.getElementById("edit-novel-title-btn");
-    const novelTitleDisplay = document.getElementById("current-novel-title-display");
-    const handleEditNovelTitle = async () => {
-      const newTitle = prompt("\uD604\uC7AC \uC18C\uC124\uC758 \uC81C\uBAA9\uC744 \uC785\uB825\uD558\uC138\uC694 (\uC18C\uC124\uBCC4 \uAD6C\uBD84\uC120 \uBC0F \uD3F4\uB354 \uAE30\uC900\uC774 \uB429\uB2C8\uB2E4):", state.currentNovelTitle);
-      if (newTitle && newTitle.trim() && newTitle.trim() !== state.currentNovelTitle) {
-        state.currentNovelTitle = newTitle.trim();
-        updateNovelTitleUI(state.currentNovelTitle);
-        state.separatorConfig = await loadNovelSeparators(state.currentNovelTitle);
-        state.activeSeparators = state.separatorConfig.effectiveSeparators;
-        renderSeparatorSettingsPanel();
-        logToSidebar(`\uC18C\uC124 \uC81C\uBAA9\uC774 '${state.currentNovelTitle}'(\uC73C)\uB85C \uBCC0\uACBD\uB418\uC5C8\uC2B5\uB2C8\uB2E4.`);
-      }
-    };
-    if (editNovelTitleBtn) editNovelTitleBtn.addEventListener("click", handleEditNovelTitle);
-    if (novelTitleDisplay) novelTitleDisplay.addEventListener("click", handleEditNovelTitle);
-    const excludedBtn = document.getElementById("sidebar-excluded-list-btn");
-    if (excludedBtn) {
-      excludedBtn.addEventListener("click", () => {
-        const panel = document.getElementById("separator-exclude-panel");
-        if (panel) {
-          panel.style.display = panel.style.display === "none" ? "block" : "none";
-        }
-      });
-    }
-    const toggleSepBtn = document.getElementById("toggle-sep-panel-btn");
-    if (toggleSepBtn) toggleSepBtn.addEventListener("click", toggleSeparatorPanel);
-    const sepSettingsBtn = document.getElementById("separator-settings-btn");
-    if (sepSettingsBtn) sepSettingsBtn.addEventListener("click", toggleSeparatorPanel);
-    const closeSepBtn = document.getElementById("close-sep-panel-btn");
-    if (closeSepBtn) closeSepBtn.addEventListener("click", toggleSeparatorPanel);
-    const addSepBtn = document.getElementById("add-separator-btn");
-    const newSepInput = document.getElementById("new-separator-input");
-    if (addSepBtn && newSepInput) {
-      addSepBtn.addEventListener("click", () => {
-        const val = newSepInput.value.trim();
-        if (val && !state.activeSeparators.includes(val)) {
-          state.activeSeparators.push(val);
-          state.separatorConfig.customSeparators.push(val);
-          newSepInput.value = "";
-          renderSeparatorSettingsPanel();
-        }
-      });
-    }
-    const saveSepBtn = document.getElementById("save-separators-btn");
-    const defaultCheck = document.getElementById("use-global-defaults-check");
-    if (saveSepBtn) {
-      saveSepBtn.addEventListener("click", async () => {
-        const useDefaults = defaultCheck ? defaultCheck.checked : true;
-        await saveNovelSeparators(state.currentNovelTitle, state.separatorConfig.customSeparators, useDefaults);
-        logToSidebar(`[\uAD6C\uBD84\uC120 \uC124\uC815] '${state.currentNovelTitle || "\uAE30\uBCF8 \uC18C\uC124"}'\uC758 \uAD6C\uBD84\uC120 \uC124\uC815\uC774 \uC800\uC7A5\uB418\uC5C8\uC2B5\uB2C8\uB2E4.`);
-        toggleSeparatorPanel();
-      });
-    }
+    document.getElementById("clear-sidebar-log-btn")?.addEventListener("click", () => {
+      const consoleEl = document.getElementById("sidebar-log-console");
+      if (consoleEl) consoleEl.innerHTML = "";
+    });
+    bindSeparatorPanelEvents();
+    const editTitleBtn = document.getElementById("edit-novel-title-btn");
+    const titleDisplay = document.getElementById("current-novel-title-display");
+    if (editTitleBtn) editTitleBtn.addEventListener("click", promptEditNovelTitle);
+    if (titleDisplay) titleDisplay.addEventListener("click", promptEditNovelTitle);
     const turboToggle = document.getElementById("sidebar-turbo-toggle");
     if (turboToggle) {
-      turboToggle.addEventListener("change", () => {
-        const isChecked = turboToggle.checked;
+      turboToggle.addEventListener("change", (e) => {
+        const checked = e.target.checked;
         if (state.onToggleTurboMode) {
-          state.onToggleTurboMode(isChecked, true);
+          state.onToggleTurboMode(checked, true);
         }
       });
     }
-    const turboBadge = document.getElementById("turbo-cutoff-badge");
-    if (turboBadge) {
-      turboBadge.addEventListener("click", () => {
-        if (state.turboCutoffHour === null) {
-          state.turboCutoffHour = 16;
-        } else if (state.turboCutoffHour === 16) {
-          state.turboCutoffHour = 17;
-        } else {
-          state.turboCutoffHour = null;
-        }
-        chrome.storage.local.set({ lanovel_turbo_cutoff: state.turboCutoffHour });
-        updateTurboBadgeUI();
-      });
-    }
-    const tableBody = document.getElementById("translation-table-body");
-    if (tableBody) {
-      tableBody.addEventListener("click", (e) => {
-        const target = e.target;
-        if (!target) return;
-        if (target.closest("button") || target.closest(".translated-text") || target.tagName === "INPUT" || target.tagName === "TEXTAREA") {
-          return;
-        }
-        const row = target.closest("tr[data-pid]");
-        if (row && row.dataset.pid) {
-          handleSidebarRowClick(row.dataset.pid, e);
-        }
+    const turboCutoffBadge = document.getElementById("turbo-cutoff-badge");
+    if (turboCutoffBadge) {
+      turboCutoffBadge.addEventListener("click", () => {
+        cycleTurboCutoff();
       });
     }
   }
+  function updateEmptyState() {
+    const tableBody = document.getElementById("translation-table-body");
+    const emptyState = document.getElementById("sidebar-empty-state");
+    if (tableBody && emptyState) {
+      emptyState.style.display = tableBody.rows.length === 0 ? "block" : "none";
+    }
+  }
+  function updateNovelTitleUI(title) {
+    const display = document.getElementById("current-novel-title-display");
+    if (display) {
+      display.textContent = title || "\uC81C\uBAA9 \uBBF8\uAC10\uC9C0";
+      display.title = `\uD604\uC7AC \uC18C\uC124: ${title}
+(\uD074\uB9AD\uD558\uC5EC \uC18C\uC124 \uC81C\uBAA9 \uC9C1\uC811 \uC9C0\uC815 \uAC00\uB2A5)`;
+    }
+  }
+  async function promptEditNovelTitle() {
+    const nextTitle = prompt("\uC774 \uC18C\uC124\uC758 \uC81C\uBAA9(\uC2DD\uBCC4\uC790)\uC744 \uC785\uB825\uD558\uC138\uC694:", state.currentNovelTitle || "");
+    if (nextTitle !== null && nextTitle.trim() !== "") {
+      state.currentNovelTitle = nextTitle.trim();
+      updateNovelTitleUI(state.currentNovelTitle);
+      const { loadNovelSeparators: loadNovelSeparators2 } = await Promise.resolve().then(() => (init_separators(), separators_exports));
+      const { renderSeparatorSettingsPanel: renderSeparatorSettingsPanel2 } = await Promise.resolve().then(() => (init_separator_panel(), separator_panel_exports));
+      state.separatorConfig = await loadNovelSeparators2(state.currentNovelTitle);
+      state.activeSeparators = state.separatorConfig.effectiveSeparators;
+      renderSeparatorSettingsPanel2();
+      logToSidebar(`[\uC18C\uC124 \uC804\uD658] '${state.currentNovelTitle}'\uC758 \uAD6C\uBD84\uC120 \uC124\uC815\uC744 \uBD88\uB7EC\uC654\uC2B5\uB2C8\uB2E4.`);
+    }
+  }
+  function updateTurboModeUI(enabled) {
+    const toggle = document.getElementById("sidebar-turbo-toggle");
+    const banner = document.getElementById("sidebar-turbo-banner");
+    const desc = document.getElementById("turbo-desc-text");
+    if (toggle) toggle.checked = !!enabled;
+    if (banner) {
+      if (enabled) {
+        banner.classList.add("active");
+      } else {
+        banner.classList.remove("active");
+      }
+    }
+    if (desc) {
+      if (enabled) {
+        const targetDate = state.turboTargetTimestamp ? new Date(state.turboTargetTimestamp) : null;
+        const timeStr = targetDate ? `${targetDate.getHours()}:${String(targetDate.getMinutes()).padStart(2, "0")} \uC815\uAC01 \uC911\uB2E8` : "\uB300\uAE30: 2\uCD08 / 8\uCD08";
+        desc.textContent = `ON (${timeStr})`;
+      } else {
+        desc.textContent = "OFF (\uAE30\uBCF8 \uC9C0\uC5F0)";
+      }
+    }
+  }
+  function updateTurboBadgeUI() {
+    const badge = document.getElementById("turbo-cutoff-badge");
+    if (!badge) return;
+    const info = detectCutoffInfo(state.turboCutoffHour);
+    badge.textContent = `\uAE30\uC900 ${info.label}`;
+  }
+  async function cycleTurboCutoff() {
+    if (state.turboCutoffHour === null) {
+      state.turboCutoffHour = 16;
+    } else if (state.turboCutoffHour === 16) {
+      state.turboCutoffHour = 17;
+    } else {
+      state.turboCutoffHour = null;
+    }
+    const info = detectCutoffInfo(state.turboCutoffHour);
+    if (state.isTurboMode) {
+      state.turboTargetTimestamp = calculateNextCutoffTimestamp(info.hour);
+    }
+    try {
+      await chrome.storage.local.set({
+        lanovel_turbo_cutoff: state.turboCutoffHour,
+        lanovel_turbo_target: state.turboTargetTimestamp
+      });
+    } catch (e) {
+    }
+    updateTurboBadgeUI();
+    updateTurboModeUI(state.isTurboMode);
+    logToSidebar(`\u23F0 \uCF8C\uC18D\uBAA8\uB4DC \uC815\uAC01 \uC911\uB2E8 \uAE30\uC900\uC774 [${info.label}]\uC73C\uB85C \uBCC0\uACBD\uB418\uC5C8\uC2B5\uB2C8\uB2E4.`);
+  }
+  function updateApplyButtonUI(applied, totalTargetCount) {
+    const dot = document.getElementById("apply-status-dot");
+    const text = document.getElementById("apply-status-text");
+    const count = document.getElementById("apply-stats-count");
+    const btn = document.getElementById("sidebar-apply-toggle-btn");
+    const btnIcon = document.getElementById("apply-btn-icon");
+    const btnText = document.getElementById("apply-btn-text");
+    const totalTarget = totalTargetCount ?? document.querySelectorAll("p[id]:not(.blank)").length;
+    const translatedCount = state.translationCache.size;
+    if (count) {
+      count.textContent = `(\uBC88\uC5ED ${translatedCount}\uAC1C / \uBCF8\uBB38 ${totalTarget}\uAC1C)`;
+    }
+    if (applied) {
+      if (dot) dot.className = "status-dot applied";
+      if (text) {
+        text.className = "apply-status-text applied";
+        text.textContent = "\uBCF8\uBB38 \uBC88\uC5ED \uC801\uC6A9 \uC911";
+      }
+      if (btn) {
+        btn.className = "sidebar-apply-btn applied";
+        btn.title = "\uD074\uB9AD\uD558\uBA74 \uC6F9\uD398\uC774\uC9C0 \uBCF8\uBB38\uC744 \uC6D0\uBB38\uC73C\uB85C \uBCF5\uC6D0\uD569\uB2C8\uB2E4.";
+      }
+      if (btnIcon) btnIcon.textContent = "\u2705";
+      if (btnText) btnText.textContent = "\uC801\uC6A9 \uC911 (\uC6D0\uBB38 \uBCF5\uC6D0)";
+    } else {
+      if (dot) dot.className = "status-dot";
+      if (text) {
+        text.className = "apply-status-text";
+        text.textContent = "\uC6D0\uBB38 \uD45C\uC2DC \uC911";
+      }
+      if (btn) {
+        btn.className = "sidebar-apply-btn";
+        btn.title = "\uD074\uB9AD\uD558\uBA74 \uBC88\uC5ED\uBB38\uC744 \uC6F9\uD398\uC774\uC9C0 \uBCF8\uBB38\uC5D0 \uC801\uC6A9\uD569\uB2C8\uB2E4.";
+      }
+      if (btnIcon) btnIcon.textContent = "\u{1F4C4}";
+      if (btnText) btnText.textContent = "\uD398\uC774\uC9C0\uC5D0 \uC801\uC6A9";
+    }
+  }
+  function bindRowEvents(row, pid, originalText) {
+    const translatedCell = row.querySelector(".translated-text");
+    const saveBtn = row.querySelector(".save-btn");
+    const retranslateBtn = row.querySelector(".retranslate-row-btn");
+    if (translatedCell && saveBtn) {
+      translatedCell.addEventListener("input", () => {
+        saveBtn.disabled = false;
+      });
+      saveBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const newTranslatedText = translatedCell.textContent || "";
+        saveSingleTranslation(pid, originalText, newTranslatedText);
+        saveBtn.disabled = true;
+      });
+    }
+    if (retranslateBtn) {
+      retranslateBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        retranslateSingleRow(pid, originalText);
+      });
+    }
+    row.addEventListener("click", (e) => {
+      handleSidebarRowClick(pid, e);
+    });
+  }
+  function populateSidebar(translations) {
+    const tableBody = document.getElementById("translation-table-body");
+    if (!tableBody) return;
+    tableBody.innerHTML = "";
+    const seenPids = /* @__PURE__ */ new Set();
+    const uniqueTranslations = [];
+    for (let i = translations.length - 1; i >= 0; i--) {
+      const t = translations[i];
+      if (t.pid && !seenPids.has(t.pid)) {
+        seenPids.add(t.pid);
+        uniqueTranslations.unshift(t);
+      }
+    }
+    uniqueTranslations.forEach((t) => {
+      addEntryToSidebar(t);
+    });
+    updateEmptyState();
+  }
+  function addEntryToSidebar(t) {
+    const tableBody = document.getElementById("translation-table-body");
+    if (!tableBody) return;
+    const pid = t.pid || (t.id !== void 0 ? String(t.id) : "");
+    if (!pid) return;
+    let isAutoDeleted = false;
+    if (t.translated && checkIsVerbatimOrParaphrased(t.original, t.translated)) {
+      isAutoDeleted = true;
+      state.translationCache.delete(pid);
+    }
+    const existingRow = tableBody.querySelector(`tr[data-pid="${pid}"]`);
+    const isReviewTarget = state.reviewTargetPids && state.reviewTargetPids.has(pid);
+    const reviewBadgeHtml = isReviewTarget ? `<span class="review-badge">\u26A1\uC7AC\uAC80\uC218</span>` : "";
+    const displayTranslation = isAutoDeleted ? "" : escapeHtml(t.translated || "");
+    if (existingRow) {
+      if (isReviewTarget) existingRow.classList.add("review-target-row");
+      const oriCell = existingRow.querySelector(".original-text");
+      if (oriCell && isReviewTarget && !oriCell.querySelector(".review-badge")) {
+        oriCell.innerHTML = `${reviewBadgeHtml}${escapeHtml(t.original)}`;
+      }
+      const transCell = existingRow.querySelector(".translated-text");
+      if (transCell) {
+        transCell.innerHTML = displayTranslation;
+        transCell.setAttribute("contenteditable", "true");
+      }
+      const saveBtn = existingRow.querySelector(".save-btn");
+      if (saveBtn) saveBtn.disabled = !isAutoDeleted;
+      const retranslateBtn = existingRow.querySelector(".retranslate-row-btn");
+      if (retranslateBtn) retranslateBtn.disabled = false;
+      return;
+    }
+    const row = tableBody.insertRow();
+    row.dataset.pid = pid;
+    if (isReviewTarget) row.classList.add("review-target-row");
+    row.innerHTML = `
+    <td class="original-text">${reviewBadgeHtml}${escapeHtml(t.original)}</td>
+    <td class="translated-text" contenteditable="true">${displayTranslation}</td>
+    <td>
+      <div class="action-btns">
+        <button class="save-btn" disabled title="\uC218\uC815\uD55C \uBC88\uC5ED \uC800\uC7A5">\uC800\uC7A5</button>
+        <button class="retranslate-row-btn" title="\uC774 \uBB38\uC7A5\uB9CC \uC989\uC2DC \uC7AC\uBC88\uC5ED">\u{1F504}</button>
+      </div>
+    </td>
+  `;
+    bindRowEvents(row, pid, t.original);
+  }
+  function addPlaceholderRows(items) {
+    const tableBody = document.getElementById("translation-table-body");
+    if (!tableBody) return;
+    for (let i = items.length - 1; i >= 0; i--) {
+      const item = items[i];
+      if (tableBody.querySelector(`tr[data-pid="${item.id}"]`)) continue;
+      const row = tableBody.insertRow(0);
+      row.dataset.pid = item.id;
+      const isReviewTarget = state.reviewTargetPids && state.reviewTargetPids.has(item.id);
+      if (isReviewTarget) row.classList.add("review-target-row");
+      const reviewBadgeHtml = isReviewTarget ? `<span class="review-badge">\u26A1\uC7AC\uAC80\uC218</span>` : "";
+      row.innerHTML = `
+      <td class="original-text">${reviewBadgeHtml}${escapeHtml(item.text)}</td>
+      <td class="translated-text">\u23F3 \uBC88\uC5ED \uC911...</td>
+      <td>
+        <div class="action-btns">
+          <button class="save-btn" disabled title="\uC218\uC815\uD55C \uBC88\uC5ED \uC800\uC7A5">\uC800\uC7A5</button>
+          <button class="retranslate-row-btn" disabled title="\uC774 \uBB38\uC7A5\uB9CC \uC989\uC2DC \uC7AC\uBC88\uC5ED">\u{1F504}</button>
+        </div>
+      </td>
+    `;
+      bindRowEvents(row, item.id, item.text);
+    }
+    updateEmptyState();
+  }
+  function updateSidebarWithTranslations(translations) {
+    const tableBody = document.getElementById("translation-table-body");
+    if (!tableBody) return;
+    translations.forEach((item) => {
+      let row = tableBody.querySelector(`tr[data-pid="${item.id}"]`);
+      const isReviewTarget = state.reviewTargetPids && state.reviewTargetPids.has(item.id);
+      const reviewBadgeHtml = isReviewTarget ? `<span class="review-badge">\u26A1\uC7AC\uAC80\uC218</span>` : "";
+      if (!row) {
+        row = tableBody.insertRow(0);
+        row.dataset.pid = item.id;
+        if (isReviewTarget) row.classList.add("review-target-row");
+        row.innerHTML = `
+        <td class="original-text">${reviewBadgeHtml}${escapeHtml(item.original)}</td>
+        <td class="translated-text" contenteditable="true">${escapeHtml(item.translated)}</td>
+        <td>
+          <div class="action-btns">
+            <button class="save-btn" disabled title="\uC218\uC815\uD55C \uBC88\uC5ED \uC800\uC7A5">\uC800\uC7A5</button>
+            <button class="retranslate-row-btn" title="\uC774 \uBB38\uC7A5\uB9CC \uC989\uC2DC \uC7AC\uBC88\uC5ED">\u{1F504}</button>
+          </div>
+        </td>
+      `;
+        bindRowEvents(row, item.id, item.original);
+      } else {
+        tableBody.prepend(row);
+        const cell = row.querySelector(".translated-text");
+        if (cell) {
+          cell.textContent = item.translated;
+          cell.setAttribute("contenteditable", "true");
+          cell.style.color = "";
+        }
+        const saveBtn = row.querySelector(".save-btn");
+        if (saveBtn) saveBtn.disabled = true;
+        const retranslateBtn = row.querySelector(".retranslate-row-btn");
+        if (retranslateBtn) retranslateBtn.disabled = false;
+      }
+      if (isReviewTarget) {
+        updateReviewCardTranslation(item.id, `\uBC88\uC5ED: ${item.translated}`, false);
+      }
+    });
+  }
+  function updateSidebarWithCancelled() {
+    const tableBody = document.getElementById("translation-table-body");
+    if (!tableBody) return;
+    const rows = tableBody.querySelectorAll("tr");
+    rows.forEach((row) => {
+      const translatedCell = row.querySelector(".translated-text");
+      if (translatedCell && translatedCell.textContent?.includes("\uBC88\uC5ED \uC911")) {
+        translatedCell.textContent = "";
+        translatedCell.setAttribute("contenteditable", "true");
+        const saveBtn = row.querySelector(".save-btn");
+        if (saveBtn) saveBtn.disabled = false;
+        const retranslateBtn = row.querySelector(".retranslate-row-btn");
+        if (retranslateBtn) retranslateBtn.disabled = false;
+      }
+    });
+  }
+  function sortSidebar(paragraphOrderPids) {
+    const tableBody = document.getElementById("translation-table-body");
+    if (!tableBody) return;
+    const rows = Array.from(tableBody.querySelectorAll("tr[data-pid]"));
+    const pidMap = new Map(rows.map((row) => [row.dataset.pid, row]));
+    tableBody.innerHTML = "";
+    paragraphOrderPids.forEach((pid) => {
+      const row = pidMap.get(pid);
+      if (row) {
+        tableBody.appendChild(row);
+        pidMap.delete(pid);
+      }
+    });
+    pidMap.forEach((row) => tableBody.appendChild(row));
+  }
+  function handleSidebarRowClick(pid, e) {
+    const target = e.target;
+    if (target && (target.closest("button") || target.closest(".translated-text") || target.tagName === "INPUT")) {
+      return;
+    }
+    const targetP = document.getElementById(pid);
+    if (targetP) {
+      targetP.scrollIntoView({ behavior: "smooth", block: "center" });
+      targetP.classList.remove("lanovel-highlight-pulse");
+      void targetP.offsetWidth;
+      targetP.classList.add("lanovel-highlight-pulse");
+      setTimeout(() => {
+        targetP.classList.remove("lanovel-highlight-pulse");
+      }, 1600);
+    }
+  }
+  var init_sidebar = __esm({
+    "src/ui/sidebar.ts"() {
+      "use strict";
+      init_state();
+      init_turbo();
+      init_filters();
+      init_row_actions();
+      init_review_panel();
+      init_separator_panel();
+    }
+  });
 
   // src/ui/hud.ts
   function escapeHtml2(text) {
@@ -2502,7 +2972,6 @@
     };
     return text.replace(/[&<>"']/g, (m) => map[m]);
   }
-  var hudTimer = null;
   function showLanovelHud(message, icon = "\u{1F4D6}", durationMs = 2200) {
     let hud = document.getElementById("lanovel-hud");
     if (!hud) {
@@ -2519,8 +2988,15 @@
       if (hud) hud.classList.remove("visible");
     }, durationMs);
   }
+  var hudTimer;
+  var init_hud = __esm({
+    "src/ui/hud.ts"() {
+      "use strict";
+      hudTimer = null;
+    }
+  });
 
-  // src/core/page_translator.ts
+  // src/core/dom_applier.ts
   function getCleanUrl() {
     return window.location.href.split("#")[0].trim();
   }
@@ -2528,6 +3004,123 @@
     const allParagraphs = document.querySelectorAll("p[id]");
     return Array.from(allParagraphs).filter((p) => !p.classList.contains("blank") && PID_REGEX.test(p.id));
   }
+  function applyTranslationsToPage(translations, logNotification = true) {
+    if (!translations || translations.length === 0) return;
+    const translationMap = new Map(translations.map((t) => [t.pid || t.id, t.translated]));
+    const paragraphs = getTargetParagraphs();
+    let replacementCount = 0;
+    paragraphs.forEach((p) => {
+      if (translationMap.has(p.id)) {
+        const translatedText = translationMap.get(p.id);
+        if (translatedText && !translatedText.includes("\uBC88\uC5ED \uC2E4\uD328") && !translatedText.includes("API \uC624\uB958")) {
+          if (!p.dataset.lanovelOriginalHtml) {
+            p.dataset.lanovelOriginalHtml = p.innerHTML;
+            p.dataset.lanovelOriginalStyle = p.getAttribute("style") || "";
+          }
+          p.innerHTML = translatedText;
+          p.classList.add("lanovel-applied-text");
+          const appliedStyle = { color: "#E2E8F0", fontFamily: "TwoCon" };
+          Object.assign(p.style, appliedStyle);
+          replacementCount++;
+        }
+      }
+    });
+    if (logNotification && replacementCount > 0) {
+      logToSidebar(`\uD398\uC774\uC9C0\uC5D0 \uBC88\uC5ED ${replacementCount}\uAC1C\uB97C \uC801\uC6A9\uD588\uC2B5\uB2C8\uB2E4.`);
+    }
+    updateApplyButtonUI(true, paragraphs.length);
+    setupParagraphInteraction();
+  }
+  function restoreOriginalPage() {
+    const paragraphs = getTargetParagraphs();
+    let restoredCount = 0;
+    paragraphs.forEach((p) => {
+      if (p.dataset.lanovelOriginalHtml) {
+        p.innerHTML = p.dataset.lanovelOriginalHtml;
+        if (p.dataset.lanovelOriginalStyle) {
+          p.setAttribute("style", p.dataset.lanovelOriginalStyle);
+        } else {
+          p.removeAttribute("style");
+        }
+        p.classList.remove("lanovel-applied-text");
+        restoredCount++;
+      }
+    });
+    logToSidebar(`\uBCF8\uBB38\uC744 \uC6D0\uBB38\uC73C\uB85C \uBCF5\uC6D0\uD588\uC2B5\uB2C8\uB2E4 (${restoredCount}\uAC1C \uBB38\uB2E8).`);
+    updateApplyButtonUI(false, paragraphs.length);
+    setupParagraphInteraction();
+  }
+  async function setPageApplyStatus(applied, syncStorageAndServer = true) {
+    state.isPageApplied = applied;
+    if (state.isPageApplied) {
+      const allTranslations = Array.from(state.translationCache.values());
+      applyTranslationsToPage(allTranslations, true);
+    } else {
+      restoreOriginalPage();
+    }
+    const paragraphs = getTargetParagraphs();
+    updateApplyButtonUI(state.isPageApplied, paragraphs.length);
+    if (syncStorageAndServer) {
+      const cleanUrl = getCleanUrl();
+      const currentUrl = window.location.href;
+      try {
+        await fetch("http://127.0.0.1:8001/api/urls/apply", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url: cleanUrl, apply: state.isPageApplied })
+        });
+      } catch (e) {
+        console.warn("[setPageApplyStatus] Failed to sync apply status to server:", e);
+      }
+      try {
+        const statusObj = { applied: state.isPageApplied, timestamp: Date.now() };
+        await chrome.storage.local.set({
+          ["status-" + cleanUrl]: statusObj,
+          ["status-" + currentUrl]: statusObj
+        });
+      } catch (e) {
+        console.warn("[setPageApplyStatus] Failed to sync apply status to chrome storage:", e);
+      }
+    }
+  }
+  function setupParagraphInteraction() {
+    const paragraphs = getTargetParagraphs();
+    paragraphs.forEach((p) => {
+      if (p.dataset.lanovelLinked) return;
+      p.dataset.lanovelLinked = "true";
+      p.addEventListener("click", () => {
+        const selection = window.getSelection();
+        if (selection && selection.toString().trim().length > 0) return;
+        p.classList.remove("lanovel-highlight-pulse");
+        void p.offsetWidth;
+        p.classList.add("lanovel-highlight-pulse");
+        setTimeout(() => {
+          p.classList.remove("lanovel-highlight-pulse");
+        }, 1600);
+        const row = document.querySelector(`tr[data-pid="${p.id}"]`);
+        if (row) {
+          showSidebar();
+          row.scrollIntoView({ behavior: "smooth", block: "center" });
+          row.classList.remove("lanovel-row-highlight");
+          void row.offsetWidth;
+          row.classList.add("lanovel-row-highlight");
+          setTimeout(() => {
+            row.classList.remove("lanovel-row-highlight");
+          }, 1600);
+        }
+      });
+    });
+  }
+  var init_dom_applier = __esm({
+    "src/core/dom_applier.ts"() {
+      "use strict";
+      init_state();
+      init_filters();
+      init_sidebar();
+    }
+  });
+
+  // src/core/page_translator.ts
   function sleepResponsive(getDelayFn) {
     return new Promise((resolve) => {
       state.currentDelayStart = Date.now();
@@ -2734,113 +3327,6 @@
     }
     return false;
   }
-  function applyTranslationsToPage(translations, logNotification = true) {
-    if (!translations || translations.length === 0) return;
-    const translationMap = new Map(translations.map((t) => [t.pid || t.id, t.translated]));
-    const paragraphs = getTargetParagraphs();
-    let replacementCount = 0;
-    paragraphs.forEach((p) => {
-      if (translationMap.has(p.id)) {
-        const translatedText = translationMap.get(p.id);
-        if (translatedText && !translatedText.includes("\uBC88\uC5ED \uC2E4\uD328") && !translatedText.includes("API \uC624\uB958")) {
-          if (!p.dataset.lanovelOriginalHtml) {
-            p.dataset.lanovelOriginalHtml = p.innerHTML;
-            p.dataset.lanovelOriginalStyle = p.getAttribute("style") || "";
-          }
-          p.innerHTML = translatedText;
-          p.classList.add("lanovel-applied-text");
-          const appliedStyle = { color: "#E2E8F0", fontFamily: "TwoCon" };
-          Object.assign(p.style, appliedStyle);
-          replacementCount++;
-        }
-      }
-    });
-    if (logNotification && replacementCount > 0) {
-      logToSidebar(`\uD398\uC774\uC9C0\uC5D0 \uBC88\uC5ED ${replacementCount}\uAC1C\uB97C \uC801\uC6A9\uD588\uC2B5\uB2C8\uB2E4.`);
-    }
-    updateApplyButtonUI(true, paragraphs.length);
-    setupParagraphInteraction();
-  }
-  function restoreOriginalPage() {
-    const paragraphs = getTargetParagraphs();
-    let restoredCount = 0;
-    paragraphs.forEach((p) => {
-      if (p.dataset.lanovelOriginalHtml) {
-        p.innerHTML = p.dataset.lanovelOriginalHtml;
-        if (p.dataset.lanovelOriginalStyle) {
-          p.setAttribute("style", p.dataset.lanovelOriginalStyle);
-        } else {
-          p.removeAttribute("style");
-        }
-        p.classList.remove("lanovel-applied-text");
-        restoredCount++;
-      }
-    });
-    logToSidebar(`\uBCF8\uBB38\uC744 \uC6D0\uBB38\uC73C\uB85C \uBCF5\uC6D0\uD588\uC2B5\uB2C8\uB2E4 (${restoredCount}\uAC1C \uBB38\uB2E8).`);
-    updateApplyButtonUI(false, paragraphs.length);
-    setupParagraphInteraction();
-  }
-  async function setPageApplyStatus(applied, syncStorageAndServer = true) {
-    state.isPageApplied = applied;
-    if (state.isPageApplied) {
-      const allTranslations = Array.from(state.translationCache.values());
-      applyTranslationsToPage(allTranslations, true);
-    } else {
-      restoreOriginalPage();
-    }
-    const paragraphs = getTargetParagraphs();
-    updateApplyButtonUI(state.isPageApplied, paragraphs.length);
-    if (syncStorageAndServer) {
-      const cleanUrl = getCleanUrl();
-      const currentUrl = window.location.href;
-      try {
-        await fetch("http://127.0.0.1:8001/api/urls/apply", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ url: cleanUrl, apply: state.isPageApplied })
-        });
-      } catch (e) {
-        console.warn("[setPageApplyStatus] Failed to sync apply status to server:", e);
-      }
-      try {
-        const statusObj = { applied: state.isPageApplied, timestamp: Date.now() };
-        await chrome.storage.local.set({
-          ["status-" + cleanUrl]: statusObj,
-          ["status-" + currentUrl]: statusObj
-        });
-      } catch (e) {
-        console.warn("[setPageApplyStatus] Failed to sync apply status to chrome storage:", e);
-      }
-    }
-  }
-  function setupParagraphInteraction() {
-    const paragraphs = getTargetParagraphs();
-    paragraphs.forEach((p) => {
-      if (p.dataset.lanovelLinked) return;
-      p.dataset.lanovelLinked = "true";
-      p.addEventListener("click", () => {
-        const selection = window.getSelection();
-        if (selection && selection.toString().trim().length > 0) return;
-        p.classList.remove("lanovel-highlight-pulse");
-        void p.offsetWidth;
-        p.classList.add("lanovel-highlight-pulse");
-        setTimeout(() => {
-          p.classList.remove("lanovel-highlight-pulse");
-        }, 1600);
-        const row = document.querySelector(`tr[data-pid="${p.id}"]`);
-        if (row) {
-          showSidebar();
-          row.scrollIntoView({ behavior: "smooth", block: "center" });
-          row.classList.remove("lanovel-row-highlight");
-          void row.offsetWidth;
-          row.classList.add("lanovel-row-highlight");
-          setTimeout(() => {
-            row.classList.remove("lanovel-row-highlight");
-          }, 1600);
-        }
-      });
-    });
-  }
   async function saveAllTranslations(itemsToSave) {
     const validItems = itemsToSave.filter((item) => item.translated && item.translated.trim());
     if (validItems.length === 0) return;
@@ -2871,96 +3357,17 @@
       logToSidebar(`\uC11C\uBC84\uC5D0 \uC77C\uAD04 \uC800\uC7A5 \uC2E4\uD328: ${error.message}`, "log-error");
     }
   }
-  async function checkAndExcludeSeparatorTranslations(translationsList) {
-    if (!translationsList || !Array.isArray(translationsList) || translationsList.length === 0) return;
-    if (!state.activeSeparators || state.activeSeparators.length === 0) return;
-    const allParagraphs = getTargetParagraphs();
-    const validParagraphs = [];
-    allParagraphs.forEach((p) => {
-      if (!p || p.id === "tagCount" || /^(la|lp)\d+$/i.test(p.id)) return;
-      const text = p.innerHTML.replace(/<br\s*\/?>/gi, " ").replace(/<[^>]*>/g, "").trim();
-      if (text) {
-        validParagraphs.push({ element: p, text, pid: p.id });
-      }
-    });
-    const sepAnalysis = analyzeSeparatorSections(validParagraphs, state.activeSeparators);
-    const targetsToExclude = [];
-    const targetIds = [];
-    translationsList.forEach((t) => {
-      if (!t || !t.id) return;
-      if (state.exclusionSet.has(t.original)) return;
-      let isExcluded = false;
-      if (t.pid && (sepAnalysis.prefacePids.has(t.pid) || sepAnalysis.afterwordPids.has(t.pid) || sepAnalysis.separatorPids.has(t.pid))) {
-        isExcluded = true;
-      } else if (t.original && checkSeparatorMatch(t.original.trim(), state.activeSeparators)) {
-        isExcluded = true;
-      }
-      if (isExcluded && t.translated && t.translated.trim()) {
-        targetsToExclude.push(t);
-        targetIds.push(t.id);
-      }
-    });
-    if (targetsToExclude.length === 0) return;
-    try {
-      const response = await fetch("http://127.0.0.1:8001/translations/exclude", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ids: targetIds })
-      });
-      if (response.ok) {
-        targetsToExclude.forEach((item) => {
-          if (item.pid) {
-            state.userDeletedTranslationPids.add(String(item.pid));
-            state.translationCache.delete(item.pid);
-            const row = document.querySelector(`tr[data-pid="${item.pid}"]`);
-            if (row) row.remove();
-          }
-          if (item.original) {
-            state.exclusionSet.add(item.original);
-          }
-        });
-        logToSidebar(`[\uAD6C\uBD84\uC120/\uD6C4\uAE30 \uAC10\uC9C0] ${targetsToExclude.length}\uAC1C \uB2E8\uB77D\uC744 \uBC88\uC5ED\uC5D0\uC11C \uC790\uB3D9 \uC81C\uC678\uD588\uC2B5\uB2C8\uB2E4.`);
-      }
-    } catch (e) {
-      console.warn("[checkAndExcludeSeparatorTranslations] Server call failed:", e);
-    }
+  function startFullRetranslation() {
+    logToSidebar("\uBC88\uC5ED\uC744 \uCC98\uC74C\uBD80\uD130 \uB2E4\uC2DC \uC2DC\uC791\uD569\uB2C8\uB2E4.");
+    const tableBody = document.getElementById("translation-table-body");
+    if (tableBody) tableBody.innerHTML = "";
+    state.translationCache.clear();
+    state.userDeletedTranslationPids.clear();
+    state.translationsLoadedPromise = null;
+    state.hasScannedForPTags = false;
+    translateAllPTags(true);
+    showSidebar();
   }
-  async function checkAndLoadReviewTargets() {
-    try {
-      const cleanUrl = getCleanUrl();
-      let batchId = null;
-      if (window.location.hash.includes("lanovel_review=")) {
-        state.isReviewSession = true;
-        const hashMatch = window.location.hash.match(/lanovel_review=([^&]+)/);
-        if (hashMatch) {
-          batchId = decodeURIComponent(hashMatch[1]);
-        }
-      } else if (window.location.hash.includes("lanovel_review")) {
-        state.isReviewSession = true;
-      }
-      let apiUrl = `http://127.0.0.1:8001/cleanup/review_targets?url=${encodeURIComponent(cleanUrl)}`;
-      if (batchId) {
-        apiUrl += `&batch_id=${encodeURIComponent(batchId)}`;
-      }
-      const res = await fetch(apiUrl);
-      if (!res.ok) return;
-      const data = await res.json();
-      if (data.has_targets && Array.isArray(data.targets) && data.targets.length > 0) {
-        state.isReviewSession = true;
-        state.reviewTargetsData = data;
-        state.reviewTargetPids = new Set(data.targets.map((t) => t.pid).filter(Boolean));
-        if (window.location.hash.includes("lanovel_review")) {
-          showSidebar();
-          logToSidebar(
-            `\u{1F514} [\uC54C\uB9BC \uC13C\uD130 \uC5F0\uACC4] \uC7AC\uBC88\uC5ED \uAC80\uC218 \uB300\uC0C1 ${data.targets.length}\uAC74\uC774 \uAC10\uC9C0\uB418\uC5C8\uC2B5\uB2C8\uB2E4.`
-          );
-        }
-      }
-    } catch (e) {
-      console.warn("[checkAndLoadReviewTargets] Failed to load review targets:", e);
-    }
-  }
-  var isTranslatingInProgress = false;
   async function translateAllPTags(isRetranslation = false) {
     if (isTranslatingInProgress) {
       console.log("[translateAllPTags] \uC774\uBBF8 \uBC88\uC5ED \uC791\uC5C5\uC774 \uC9C4\uD589 \uC911\uC774\uBBC0\uB85C \uC911\uBCF5 \uC2E4\uD589\uC744 \uCC28\uB2E8\uD569\uB2C8\uB2E4.");
@@ -2971,6 +3378,7 @@
       return;
     }
     isTranslatingInProgress = true;
+    state.hasScannedForPTags = true;
     state.isTranslationCancelled = false;
     state.notifyInflightStart();
     const stopBtn = document.getElementById("stop-translation-btn");
@@ -2985,6 +3393,10 @@
       if (!isRetranslation) {
         await ensureTranslationsLoaded();
       }
+      const prepScraper = getScraper();
+      if (prepScraper.prepareContent) {
+        prepScraper.prepareContent();
+      }
       const allParagraphs = getTargetParagraphs();
       const validParagraphs = [];
       allParagraphs.forEach((p) => {
@@ -2995,6 +3407,16 @@
         }
       });
       const sepAnalysis = analyzeSeparatorSections(validParagraphs, state.activeSeparators);
+      if (sepAnalysis.topSeparator) {
+        logToSidebar(
+          `[\uC0C1\uB2E8 \uAD6C\uBD84\uC120 \uAC10\uC9C0] '${sepAnalysis.topSeparator.sep}' \uC774\uC804 \uC7A1\uAE00 ${sepAnalysis.prefacePids.size}\uAC1C \uBB38\uB2E8(\uAD6C\uBD84\uC120 \uD3EC\uD568)\uC744 \uBC88\uC5ED\uC5D0\uC11C \uC790\uB3D9 \uC81C\uC678\uD569\uB2C8\uB2E4.`
+        );
+      }
+      if (sepAnalysis.bottomSeparator) {
+        logToSidebar(
+          `[\uD558\uB2E8 \uAD6C\uBD84\uC120 \uAC10\uC9C0] '${sepAnalysis.bottomSeparator.sep}' \uC774\uD6C4 \uD6C4\uAE30 ${sepAnalysis.afterwordPids.size}\uAC1C \uBB38\uB2E8(\uAD6C\uBD84\uC120 \uD3EC\uD568)\uC744 \uBC88\uC5ED\uC5D0\uC11C \uC790\uB3D9 \uC81C\uC678\uD569\uB2C8\uB2E4.`
+        );
+      }
       const textsToTranslate = [];
       const instantPunctuationItems = [];
       validParagraphs.forEach((item) => {
@@ -3077,6 +3499,15 @@
                   await abortTurboMode(response.isServerOffline ? "\uC11C\uBC84 \uC624\uD504\uB77C\uC778" : "\uCD08\uAE30\uD654 \uC2DC\uAC04 \uB3C4\uB2EC");
                   return;
                 }
+                items.forEach((item) => {
+                  const row = document.querySelector(`tr[data-pid="${item.id}"]`);
+                  if (row) {
+                    const cell = row.querySelector(".translated-text");
+                    if (cell && cell.textContent?.includes("\uBC88\uC5ED \uC911")) {
+                      cell.textContent = "";
+                    }
+                  }
+                });
                 if (stopBtn) stopBtn.style.display = "none";
                 const resumeBtn = document.getElementById("resume-translation-btn");
                 if (resumeBtn) resumeBtn.style.display = "inline-block";
@@ -3089,9 +3520,55 @@
               return;
             }
             if (response && response.translations) {
+              const censoredItems = response.translations.filter(
+                (t) => t.censored || t.translated && t.translated.includes("[\uAC80\uC5F4\uB85C \uC778\uD574 \uBC88\uC5ED \uC0DD\uB7B5]")
+              );
+              if (censoredItems.length > 0) {
+                censoredItems.forEach((item) => {
+                  const preview = item.original ? item.original.length > 25 ? item.original.slice(0, 25) + "..." : item.original : "";
+                  logToSidebar(`\u26A0\uFE0F [\uAC80\uC5F4 \uAC10\uC9C0] \uBB38\uC7A5(ID: ${item.id}) \uBC88\uC5ED\uC774 \uAC80\uC5F4\uB85C \uC778\uD574 \uC0DD\uB7B5\uB418\uC5C8\uC2B5\uB2C8\uB2E4. (\uC6D0\uBB38: ${preview})`, "log-error");
+                });
+              }
               const verbatimItems = response.translations.filter(
                 (t) => Boolean(t.verbatim) || t.translated && checkIsVerbatimOrParaphrased(t.original, t.translated)
               );
+              if (verbatimItems.length > 0) {
+                verbatimItems.forEach((item) => {
+                  const preview = item.original ? item.original.length > 25 ? item.original.slice(0, 25) + "..." : item.original : "";
+                  logToSidebar(
+                    `\u26A0\uFE0F [\uC6D0\uBB38 \uBCF5\uC81C\xB7\uBCC0\uD615 \uAC10\uC9C0] \uBB38\uC7A5(ID: ${item.id})\uC774 \uC6D0\uBB38\uACFC \uB3D9\uC77C/\uBCC0\uD615\uB418\uC5B4 \uC790\uB3D9 \uC0AD\uC81C \uBC0F \uD734\uC9C0\uD1B5\uC73C\uB85C \uC774\uC804\uB418\uC5C8\uC2B5\uB2C8\uB2E4. (\uC6D0\uBB38: ${preview})`,
+                    "log-error"
+                  );
+                  state.translationCache.delete(item.id);
+                  if (state.isPageApplied) {
+                    const pTag = document.getElementById(item.id);
+                    if (pTag && pTag.dataset.lanovelOriginalHtml) {
+                      pTag.innerHTML = pTag.dataset.lanovelOriginalHtml;
+                      pTag.classList.remove("lanovel-applied-text");
+                      pTag.removeAttribute("style");
+                      if (pTag.dataset.lanovelOriginalStyle) {
+                        pTag.setAttribute("style", pTag.dataset.lanovelOriginalStyle);
+                      }
+                    }
+                  }
+                  const row = document.querySelector(`tr[data-pid="${item.id}"]`);
+                  if (row) {
+                    const cell = row.querySelector(".translated-text");
+                    if (cell) {
+                      cell.textContent = "";
+                      cell.setAttribute("contenteditable", "true");
+                    }
+                    const saveBtnEl = row.querySelector(".save-btn");
+                    if (saveBtnEl) saveBtnEl.disabled = false;
+                    const retransBtnEl = row.querySelector(".retranslate-row-btn");
+                    if (retransBtnEl) retransBtnEl.disabled = false;
+                  }
+                  if (state.reviewTargetPids && state.reviewTargetPids.has(item.id)) {
+                    updateReviewCardTranslation(item.id, "\uBC88\uC5ED: (\uC6D0\uBB38 \uBCF5\uC81C\xB7\uBCC0\uD615 \uAC10\uC9C0\uB418\uC5B4 \uC790\uB3D9 \uC0AD\uC81C\uB428)", true);
+                  }
+                });
+                updateApplyButtonUI(state.isPageApplied);
+              }
               const verbatimIdSet = new Set(verbatimItems.map((v) => String(v.id)));
               const successes = response.translations.filter(
                 (t) => !verbatimIdSet.has(String(t.id)) && t.translated !== null && !t.translated.includes("\uBC88\uC5ED \uC2E4\uD328")
@@ -3259,19 +3736,41 @@
       }
       sortSidebar(allParagraphs.map((p) => p.id));
       logToSidebar("\uBAA8\uB4E0 \uBC88\uC5ED \uC791\uC5C5\uC774 \uC644\uB8CC\uB418\uC5C8\uC2B5\uB2C8\uB2E4.");
-      if (!state.isTranslationCancelled && !state.isReviewSession) {
+      if (!state.isTranslationCancelled) {
+        if (state.isReviewSession || window.location.hash.includes("lanovel_review") || state.reviewTargetPids && state.reviewTargetPids.size > 0) {
+          logToSidebar("\u{1F514} [\uC54C\uB9BC \uC13C\uD130 \uAC80\uC218 \uBAA8\uB4DC] \uC7AC\uBC88\uC5ED \uAC80\uC218 \uD68C\uCC28\uC774\uBBC0\uB85C \uB2E4\uC74C \uD398\uC774\uC9C0 \uC790\uB3D9 \uB118\uAE30\uAE30\uAC00 \uBE44\uD65C\uC131\uD654\uB418\uC5C8\uC2B5\uB2C8\uB2E4.");
+          return;
+        }
         const currentUrl = getCleanUrl();
-        const batchStats = await updateAndGetBatchCount(currentUrl);
+        const scraper = getScraper();
+        const episodeTitle = scraper.extractEpisodeTitle() || document.title || "";
+        const batchStats = await updateAndGetBatchCount(
+          currentUrl,
+          logToSidebar,
+          state.currentNovelTitle,
+          state.turboCutoffHour
+        );
         const consecutiveCount = batchStats.consecutiveCount;
+        const novelTodayCount = batchStats.novelTodayCount;
+        const totalTodayCount = batchStats.totalTodayCount;
+        const totalTodayMsg = totalTodayCount ? ` / \uC804\uCCB4: ${totalTodayCount}\uD654` : "";
+        logToSidebar(
+          `[\uBC88\uC5ED \uC9C4\uD589 \uCE74\uC6B4\uD130] \uD604\uC7AC \uC18C\uC124 \uC774\uBC88 \uC5F0\uC18D: ${consecutiveCount}\uD654 \uC644\uB8CC (\uC624\uB298 \uC774 \uC18C\uC124: ${novelTodayCount}\uD654${totalTodayMsg})`
+        );
         if (consecutiveCount > 0 && consecutiveCount % 10 === 0) {
+          logToSidebar(`\u{1F514} [\uC54C\uB9BC] \uC774\uBC88 \uC5F0\uC18D ${consecutiveCount}\uD654 \uB2EC\uC131! 10\uD654 \uB2E8\uC704 \uBC88\uC5ED \uC9C4\uD589 \uC54C\uB9BC\uC744 \uBC1C\uC1A1\uD569\uB2C8\uB2E4.`);
           sendProgressNotification(
             state.currentNovelTitle,
-            getScraper().extractEpisodeTitle() || document.title,
+            episodeTitle,
             textsToTranslate.length,
             textsToTranslate.length,
             100,
             currentUrl,
             consecutiveCount
+          );
+        } else {
+          logToSidebar(
+            `[\uC54C\uB9BC] 10\uD654 \uB2E8\uC704 \uC54C\uB9BC \uC815\uCC45 \uC801\uC6A9 \uC911 (\uD604\uC7AC \uC774\uBC88 \uC5F0\uC18D: ${consecutiveCount}\uD654, \uB2E4\uC74C \uC54C\uB9BC: ${Math.ceil(consecutiveCount / 10) * 10}\uD654)`
           );
         }
         await recordRecentEpisode(currentUrl);
@@ -3295,24 +3794,50 @@
               `[RPM \uC801\uC751\uD615 \uBCF4\uD638] \uCD5C\uADFC 5\uBD84\uAC04 \uBC88\uC5ED \uD68C\uCC28: ${completedRecentCount}\uD654 \uAC10\uC9C0 \u2192 \uB2E4\uC74C \uD68C\uCC28 \uB300\uAE30 \uC2DC\uAC04\uC744 ${delaySec}\uCD08\uB85C \uC5F0\uC7A5\uD569\uB2C8\uB2E4.`
             );
           } else {
-            logToSidebar(`\uBC88\uC5ED \uC644\uB8CC. ${delaySec}\uCD08 \uD6C4 \uB2E4\uC74C \uD398\uC774\uC9C0\uB85C \uC774\uB3D9\uD569\uB2C8\uB2E4.`);
+            logToSidebar(`\uBC88\uC5ED \uC644\uB8CC. ${delaySec}\uCD08 \uD6C4 \uD398\uC774\uC9C0 \uB05D\uC73C\uB85C \uC790\uB3D9 \uC2A4\uD06C\uB864\uD569\uB2C8\uB2E4.`);
           }
         }
         await sleepResponsive(() => calculateAdaptiveEpisodeDelay(completedRecentCount, state.isTurboMode));
         if (state.isTranslationCancelled) return;
-        const scraper = getScraper();
+        if (state.isTurboMode && checkCutoffTimeReached(state.turboCutoffHour, state.turboTargetTimestamp)) {
+          await abortTurboMode("\uCD08\uAE30\uD654 \uC2DC\uAC04 \uB3C4\uB2EC");
+          return;
+        }
+        logToSidebar("\uD398\uC774\uC9C0 \uB05D\uC73C\uB85C \uC2A4\uD06C\uB864 \uD6C4 \uB2E4\uC74C \uD398\uC774\uC9C0 \uC561\uC158\uC744 \uC2E4\uD589\uD569\uB2C8\uB2E4.");
+        const scrollTarget = Math.max(document.body.scrollHeight, document.documentElement.scrollHeight);
+        window.scrollTo({ top: scrollTarget, behavior: "smooth" });
+        await new Promise((resolve) => {
+          let scrollCheckAttempts = 0;
+          const checkScrollEndInterval = setInterval(() => {
+            if (state.isTranslationCancelled) {
+              clearInterval(checkScrollEndInterval);
+              resolve();
+              return;
+            }
+            scrollCheckAttempts++;
+            const currentScroll = window.innerHeight + window.scrollY;
+            const maxScroll = Math.max(document.body.scrollHeight, document.documentElement.scrollHeight);
+            if (currentScroll >= maxScroll - 50 || scrollCheckAttempts >= 30) {
+              clearInterval(checkScrollEndInterval);
+              resolve();
+            }
+          }, 100);
+        });
+        if (state.isTranslationCancelled) return;
         const nextLink = scraper.findNextEpisodeLink();
         if (nextLink && nextLink.href) {
+          const navDelay = Math.floor(Math.random() * 1e3) + 1500;
+          logToSidebar(`\uB2E4\uC74C \uD398\uC774\uC9C0\uB85C \uC774\uB3D9\uD569\uB2C8\uB2E4 (${(navDelay / 1e3).toFixed(1)}\uCD08 \uB300\uAE30): ${nextLink.href}`);
           sessionStorage.setItem("lanovel_auto_translate_next", "1");
           showLanovelHud("\uB2E4\uC74C \uD654\uB85C \uC790\uB3D9 \uC774\uB3D9...", "\u26A1");
           setTimeout(() => {
             window.location.href = nextLink.href;
-          }, 1500);
+          }, navDelay);
         } else {
-          logToSidebar("\uB2E4\uC74C \uD398\uC774\uC9C0 \uB9C1\uD06C\uB97C \uCC3E\uC744 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4. (\uB9C8\uC9C0\uB9C9 \uD68C\uCC28)");
+          logToSidebar("\uB2E4\uC74C \uD398\uC774\uC9C0 \uBC84\uD2BC\uC744 \uCC3E\uC744 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4. (\uC18C\uC124 \uC5F0\uC18D \uBC88\uC5ED \uC885\uB8CC)");
           sendCompleteNotification(
             state.currentNovelTitle,
-            scraper.extractEpisodeTitle() || document.title,
+            episodeTitle,
             textsToTranslate.length,
             currentUrl,
             consecutiveCount
@@ -3326,8 +3851,41 @@
       if (retryBtn) retryBtn.style.display = "inline-block";
     }
   }
+  var isTranslatingInProgress;
+  var init_page_translator = __esm({
+    "src/core/page_translator.ts"() {
+      "use strict";
+      init_state();
+      init_filters();
+      init_chunker();
+      init_turbo();
+      init_separators();
+      init_adaptive_throttle();
+      init_sidebar();
+      init_hud();
+      init_review_panel();
+      init_scrapers();
+      init_dom_applier();
+      isTranslatingInProgress = false;
+    }
+  });
+
+  // src/content.ts
+  init_state();
+  init_scrapers();
+  init_page_translator();
+  init_separators();
+  init_turbo();
+  init_sidebar();
+  init_review_panel();
+  init_separator_panel();
+
+  // src/ui/key_nav.ts
+  init_state();
+  init_hud();
 
   // src/ui/toc_quick_jump.ts
+  init_hud();
   var EXCLUDED_EPISODES_STORAGE_KEY = "lanovel_excluded_urls";
   function normalizeUrlKey(url) {
     if (!url) return "";
@@ -3770,6 +4328,7 @@
   }
 
   // src/content.ts
+  init_hud();
   var DEFAULT_ALLOWED_DOMAINS = [
     "kakuyomu.jp",
     "syosetu.com",
@@ -3824,7 +4383,7 @@
         showSidebar();
         translateAllPTags(false);
       });
-      if (scraper.isTocPage(window.location.href, window.location.pathname)) {
+      if (scraper.isTocPage(window.location.href, window.location.pathname) && getTargetParagraphs().length === 0) {
         console.log("[LANOVEL] \uBAA9\uCC28(TOC) \uD398\uC774\uC9C0 \uAC10\uC9C0: \uBAA9\uCC28 \uAE30\uB2A5(\uBC30\uC9C0 \uBC0F \uD035 \uC810\uD504 \uC11C\uB78D)\uC744 \uC989\uC2DC \uCD08\uAE30\uD654\uD569\uB2C8\uB2E4.");
         try {
           const title = await scraper.detectNovelTitle() || "\uAE30\uBCF8 \uC18C\uC124";
@@ -3861,6 +4420,7 @@
       }
       checkAutoTranslateNextTrigger(() => {
         showSidebar();
+        translateAllPTags(false);
       });
       const cleanUrl = getCleanUrl();
       let novelTitle = "";
@@ -3884,8 +4444,7 @@
       if (translations) {
         await checkAndExcludeSeparatorTranslations(translations);
       }
-      await checkAndLoadReviewTargets();
-      renderReviewTargetPanel();
+      await checkAndLoadReviewTargets(cleanUrl);
       let initialApplied = false;
       try {
         const resp = await fetch(`http://127.0.0.1:8001/api/urls/apply_status?url=${encodeURIComponent(cleanUrl)}`);
@@ -3928,7 +4487,7 @@
         return { ok: true, message: "\uC774\uC804 \uD654\uB85C \uC774\uB3D9\uD569\uB2C8\uB2E4." };
       };
       state.onRetranslate = () => {
-        translateAllPTags(true);
+        startFullRetranslation();
         return { ok: true, message: "\uC7AC\uBC88\uC5ED\uC744 \uC2DC\uC791\uD569\uB2C8\uB2E4." };
       };
       state.onStartTranslation = async (isRetrans = false) => {
@@ -3945,13 +4504,14 @@
           const retryBtn2 = document.getElementById("retry-translation-btn");
           if (retryBtn2) retryBtn2.style.display = "inline-block";
           logToSidebar("\uBC88\uC5ED\uC774 \uC911\uC9C0\uB418\uC5C8\uC2B5\uB2C8\uB2E4.");
+          updateSidebarWithCancelled();
           state.broadcastStatus();
         });
       }
       const retryBtn = document.getElementById("retry-translation-btn");
       if (retryBtn) {
         retryBtn.addEventListener("click", () => {
-          translateAllPTags(true);
+          startFullRetranslation();
         });
       }
       const resumeBtn = document.getElementById("resume-translation-btn");
@@ -3972,6 +4532,18 @@
           setPageApplyStatus(!state.isPageApplied, true);
         });
       }
+      if (getTargetParagraphs().length === 0) {
+        for (let retry = 0; retry < 3; retry++) {
+          await new Promise((r) => setTimeout(r, 250));
+          if (scraper.prepareContent) {
+            scraper.prepareContent();
+          }
+          if (getTargetParagraphs().length > 0) {
+            setupParagraphInteraction();
+            break;
+          }
+        }
+      }
       if (state.turboAbortedOnLoad || state.isTurboMode && checkCutoffTimeReached(state.turboCutoffHour, state.turboTargetTimestamp)) {
         if (!state.turboAbortedOnLoad) {
           await abortTurboMode("\uCD08\uAE30\uD654 \uC2DC\uAC04 \uB3C4\uB2EC");
@@ -3982,6 +4554,7 @@
           showSidebar();
           translateAllPTags(false);
         } else {
+          if (retryBtn) retryBtn.style.display = "inline-block";
           console.log("[LANOVEL] \uBAA8\uB4E0 \uBB38\uC7A5\uC774 \uC774\uBBF8 \uBC88\uC5ED\uB418\uC5B4 \uC788\uC5B4 \uC790\uB3D9 \uBC88\uC5ED\uC744 \uC0DD\uB7B5\uD569\uB2C8\uB2E4.");
         }
       }

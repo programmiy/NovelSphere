@@ -129,9 +129,16 @@ export class NovelUpScraper implements PlatformScraper {
     }
 
     const rawHtml = epContent.innerHTML;
-    const lines = rawHtml.split(/\r?\n/);
+    let lines = rawHtml.split(/\r?\n/);
     if (lines.length <= 1 && epContent.querySelectorAll('p').length > 1) {
+      epContent.querySelectorAll('p').forEach((p, idx) => {
+        if (!p.id) p.id = `L${idx + 1}`;
+      });
+      epContent.dataset.lanovelPreprocessed = 'true';
       return;
+    }
+    if (lines.length <= 1 && /<br\s*\/?>/i.test(rawHtml)) {
+      lines = rawHtml.split(/<br\s*\/?>/i);
     }
 
     const container = document.createElement('div');
