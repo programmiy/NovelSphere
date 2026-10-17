@@ -8,76 +8,109 @@ sys.stdout.reconfigure(encoding='utf-8')
 
 DB_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'server', 'translations.db')
 
-def restore_punctuation_only(orig: str, trans: str) -> str:
+LETTER_REGEX = re.compile(r'[a-zA-Z\uac00-\ud7a3\u3040-\u309f\u30a0-\u30fb\u30fd-\u30ff\u4e00-\u9faf]', re.UNICODE)
+
+def extract_original_symbol_repeats(orig: str):
     """
-    글자(의성어, 웃음소리, 감탄사 등)는 일절 추가하거나 추정하지 않고,
-    오직 순수 문장부호/기호(말줄임표, 대시 구분선, 다중괄호 찌꺼기, 방점 등)만 안전하게 복원합니다.
-    글자 반복이 포함되어 있어 불완전한 건은 '(반복)'을 남겨 두어 후속 필터에서 걸러냅니다.
+    원문에서 반복된 구간을 추출하되, 글자 반복과 기호 반복을 구분합니다.
+    """
+    repeats = []
+    
+    # 1. 말줄임표 ……
+    for m in re.finditer(r'……+|…{2,}|\.{3,}', orig):
+        repeats.append({'text': m.group(0), 'type': 'symbol', 'start': m.start(), 'end': m.end()})
+        
+    # 2. 방점 기호 (・・・・ 또는 、、、、)
+    for m in re.finditer(r'・{3,}|、{3,}', orig):
+        repeats.append({'text': m.group(0), 'type': 'symbol', 'start': m.start(), 'end': m.end()})
+
+    # 3. 대시/구분선 기호 (―――― 또는 ーーーー 등)
+    for m in re.finditer(r'[―—-]{3,}', orig):
+        repeats.append({'text': m.group(0), 'type': 'symbol', 'start': m.start(), 'end': m.end()})
+
+    # 4. 물결표 (～～～～)
+    for m in re.finditer(r'[~～]{3,}', orig):
+        repeats.append({'text': m.group(0), 'type': 'symbol', 'start': m.start(), 'end': m.end()})
+
+    # 5. 일반 문자 3회 이상 반복
+    for m in re.finditer(r'(.)\1{2,}', orig):
+        if any(r['start'] <= m.start() < r['end'] for r in repeats):
+            continue
+        ch = m.group(1)
+        is_letter = bool(LETTER_REGEX.match(ch))
+        repeats.append({
+            'text': m.group(0),
+            'type': 'letter' if is_letter else 'symbol',
+            'start': m.start(),
+            'end': m.end()
+        })
+
+    repeats.sort(key=lambda x: x['start'])
+    return repeats
+
+def copy_paste_symbols_only(orig: str, trans: str) -> str:
+    """
+    룰베이스 치환(임의 기호 대체 등)을 하지 않고,
+    원문(original)의 기호 문자열을 그대로 복사하여 번역문의 '(반복)' 자리에 1:1로 복붙합니다.
+    글자 반복이거나 의성어/웃음소리 등은 일체 건드리지 않고 원본 그대로 유지합니다.
     """
     res = trans
 
-    # 0. 다중 대시 구분선: ―――――あとがき――――― -> ――――――후기――――――
-    if ('―' in orig or '—' in orig or '-' in orig) and '(반복)' in res:
-        dash_match = re.search(r'([―—-]{4,})', orig)
-        if dash_match:
-            dash_sym = '――――――'
-            if res.startswith('(반복)') and res.endswith('(반복)'):
-                res = dash_sym + res[4:-4] + dash_sym
-            res = res.replace('(반복)', dash_sym)
+    # 1. 다중 괄호 충돌 찌꺼기 제거: 「「「(반복) 또는 (반복)」」」
+    if re.search(r'[「『]{2,}\(반복\)|\(반복\)[」』]{2,}', res):
+        res = re.sub(r'([「『]{2,})\(반복\)', r'\1', res)
+        res = re.sub(r'\(반복\)([」』]{2,})', r'\1', res)
+        if '(반복)' not in res:
+            return res
 
-    # 1. 다중 괄호 충돌 찌꺼기: 「「「(반복) 또는 (반복)」」」
-    res = re.sub(r'([「『]{2,})\(반복\)', r'\1', res)
-    res = re.sub(r'\(반복\)([」』]{2,})', r'\1', res)
-    res = re.sub(r'([「『])\(반복\)(……|[…\.]+)', r'\1\2', res)
-    res = re.sub(r'(……|[…\.]+)\(반복\)([」』])', r'\1\2', res)
+    # 2. 원문이 100% 순수 문장부호/기호로만 이루어진 문장: 원문 그대로 복붙
+    orig_pure_letters = LETTER_REGEX.findall(orig)
+    if not orig_pure_letters or orig_pure_letters in (['っ'], ['ッ']):
+        if '읏' in res or '윽' in res:
+            sym_part = re.sub(r'[「」『』っッ]', '', orig)
+            if orig.startswith('「') and orig.endswith('」'):
+                return f"「읏{sym_part}」" if orig.startswith('「っ') else f"「{sym_part}읏」"
+            return f"읏{sym_part}"
+        else:
+            return orig
 
-    # 2. 방점 표기 충돌: ((반복)) or （(반복)） -> (……)
-    if '((반복))' in res or '（(반복)）' in res:
-        res = res.replace('((반복))', '(……)').replace('（(반복)）', '(……)')
+    # 3. 방점 표기: 원문에 （・・・・） 또는 （、、、、）가 있는 경우 원문 방점 기호 그대로 복붙
+    if '((반복))' in res and '・・・・' in orig:
+        res = res.replace('((반복))', '(・・・・)')
+        if '(반복)' not in res:
+            return res
+    if '((반복))' in res and '、、、、' in orig:
+        res = res.replace('((반복))', '(、、、、)')
+        if '(반복)' not in res:
+            return res
 
-    # 3. 원문이 순수 문장부호/기호로만 구성된 경우 (예: 「……………」 -> 「……」)
-    if re.fullmatch(r'[「『（\(\[\{]*[……\.!?！？~～―ー\-❤\s]+[」』）\)\]\}]*', orig):
-        res = re.sub(r'\(반복\)', '……', res)
-        if '!' in orig or '！' in orig:
-            res = res.replace('……', '!!!!!!')
-        elif '?' in orig or '？' in orig:
-            res = res.replace('……', '??????')
-        elif '―' in orig or 'ー' in orig or '-' in orig:
-            res = res.replace('……', '――――')
+    # 4. 원문에서 반복 구간 추출
+    orig_repeats = extract_original_symbol_repeats(orig)
+    
+    # 원문에 글자 반복이 포함되어 있다면 일체 손대지 않음 (사용자 직접 수정용)
+    if any(r['type'] == 'letter' for r in orig_repeats):
+        return trans
 
-    # 4. 말줄임표 ... / …… 관련 기호 위치 복원
-    if '……' in orig or '…' in orig or '..' in orig:
-        res = re.sub(r'([「『\(（])\(반복\)', r'\1……', res)
-        res = re.sub(r'\(반복\)([」』\)）])', r'……\1', res)
-        res = re.sub(r'^\(반복\)', r'……', res)
-        res = re.sub(r'\(반복\)\s*……', r'……', res)
-        res = re.sub(r'……\s*\(반복\)', r'……', res)
-        # 단어 사이나 뒤에 말줄임표가 있던 자리 (글자 추가 없이 기호만 삽입)
-        res = re.sub(r'([가-힣\w])\(반복\)(\s+[가-힣\w])', r'\1……\2', res)
-        res = re.sub(r'([가-힣\w])\(반복\)$', r'\1……', res)
+    # 오직 순수 기호 반복만 있는 경우
+    symbol_repeats = [r for r in orig_repeats if r['type'] == 'symbol']
+    placeholder_count = res.count('(반복)')
 
-    # 5. 느낌표/물음표/물결표 부호 복원
-    if '!' in orig or '！' in orig:
-        res = re.sub(r'([!！]+)\(반복\)', r'\1!', res)
-        res = re.sub(r'\(반복\)([!！]+)', r'!\1', res)
-        res = re.sub(r'([가-힣\w])\(반복\)([!！]+)', r'\1\2', res)
-    if '?' in orig or '？' in orig:
-        res = re.sub(r'([?？]+)\(반복\)', r'\1?', res)
-        res = re.sub(r'\(반복\)([?？]+)', r'?\1', res)
-    if '~' in orig or '～' in orig:
-        res = re.sub(r'([~～]+)\(반복\)', r'\1~', res)
-        res = re.sub(r'\(반복\)([~～]+)', r'~\1', res)
-
-    # 중복 기호 정리
-    res = re.sub(r'…{3,}', '……', res)
+    # 1:1 개수가 일치하는 경우 원문 기호 텍스트를 그대로 복사하여 삽입
+    if len(symbol_repeats) == placeholder_count and placeholder_count > 0:
+        parts = res.split('(반복)')
+        new_parts = []
+        for i, part in enumerate(parts):
+            new_parts.append(part)
+            if i < len(symbol_repeats):
+                # 원문 기호를 그대로 복붙!
+                new_parts.append(symbol_repeats[i]['text'])
+        res = "".join(new_parts)
 
     return res
 
-def stage_punctuation_fixes_to_special_batch(batch_id: str = "batch_repeat_punct_fix_20261017"):
+def stage_exact_symbol_copypaste(batch_id: str = "batch_repeat_punct_fix_20261017"):
     """
-    실행 시 'translations' 테이블에서 '(반복)'이 포함된 항목을 검색하고,
-    글자 변형 없이 '문장부호만 반복되는 것'만 안전하게 복원하여
-    'special_batch_queue' 테이블에 'staged' 상태로 적재합니다.
+    원문의 순수 기호만 그대로 복붙한 결과만을 special_batch_queue에 적재합니다.
     """
     if not os.path.exists(DB_PATH):
         print(f"Error: DB not found at {DB_PATH}")
@@ -86,32 +119,24 @@ def stage_punctuation_fixes_to_special_batch(batch_id: str = "batch_repeat_punct
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
 
-    # special_batch_queue 테이블 존재 여부 확인
-    c.execute("SELECT count(*) FROM sqlite_master WHERE type='table' AND name='special_batch_queue'")
-    if c.fetchone()[0] == 0:
-        print("Error: 'special_batch_queue' table does not exist.")
-        conn.close()
-        return
-
     c.execute("""
         SELECT id, url, pid, folderName, title, original, translated
         FROM translations
         WHERE translated LIKE '%(반복)%'
     """)
     rows = c.fetchall()
-    print(f"[분석 시작] '(반복)' 포함 문단 총: {len(rows)}건")
+    print(f"[분석 시작] '(반복)' 포함 전체 문단: {len(rows)}건")
 
     staged_records = []
-    skipped_letter_cases = 0
-
+    skipped_count = 0
     now_ms = int(time.time() * 1000)
 
     for r in rows:
         r_id, url, pid, folder_name, title, orig, trans = r
-        fixed = restore_punctuation_only(orig, trans)
+        fixed = copy_paste_symbols_only(orig, trans)
 
-        # 글자/의성어 개입 없이 문장부호만으로 깔끔하게 해소된 건만 선택
-        if '(반복)' not in fixed and fixed != trans:
+        # '(반복)'이 원문 기호로 100% 깔끔하게 대체된 건만 적재
+        if fixed != trans and '(반복)' not in fixed:
             staged_records.append((
                 batch_id,
                 url,
@@ -126,25 +151,19 @@ def stage_punctuation_fixes_to_special_batch(batch_id: str = "batch_repeat_punct
                 None
             ))
         else:
-            skipped_letter_cases += 1
+            skipped_count += 1
 
-    print(f"[필터링 결과]")
-    print(f" - 문장부호 순수 복원 대상 (적재 대상): {len(staged_records)}건")
-    print(f" - 글자/의성어 포함 건 (사용자 직접 수정을 위해 보존 및 스킵): {skipped_letter_cases}건")
+    print(f"[원문 기호 직접 복붙 결과]")
+    print(f" - 순수 원문 기호 복붙 완료 (적재 대상): {len(staged_records)}건")
+    print(f" - 글자/의성어 반복 건 (일체 변경 없이 100% 보존): {skipped_count}건")
 
     if not staged_records:
         print("적재할 대상이 없습니다.")
         conn.close()
         return
 
-    # 이미 동일 batch_id로 적재된 데이터가 있는지 확인
-    c.execute("SELECT count(*) FROM special_batch_queue WHERE batch_id = ?", (batch_id,))
-    existing_in_batch = c.fetchone()[0]
-    if existing_in_batch > 0:
-        print(f"[알림] batch_id='{batch_id}'에 이미 {existing_in_batch}건이 적재되어 있습니다. 기존 데이터를 갱신합니다.")
-        c.execute("DELETE FROM special_batch_queue WHERE batch_id = ?", (batch_id,))
-
-    # 특별적재 큐에 삽입
+    # 기존 배치 큐 초기화 후 신규 적재
+    c.execute("DELETE FROM special_batch_queue WHERE batch_id = ?", (batch_id,))
     c.executemany("""
         INSERT INTO special_batch_queue (
             batch_id, url, folder_name, chapter_title, chapter_index,
@@ -155,9 +174,9 @@ def stage_punctuation_fixes_to_special_batch(batch_id: str = "batch_repeat_punct
 
     c.execute("SELECT count(*) FROM special_batch_queue WHERE batch_id = ?", (batch_id,))
     final_count = c.fetchone()[0]
-    print(f"==> [성공] special_batch_queue에 총 {final_count}건이 성공적으로 적재되었습니다! (batch_id: {batch_id})")
+    print(f"==> [성공] special_batch_queue에 순수 원문 기호 복붙 {final_count}건이 적재되었습니다! (batch_id: {batch_id})")
 
     conn.close()
 
 if __name__ == '__main__':
-    stage_punctuation_fixes_to_special_batch()
+    stage_exact_symbol_copypaste()
