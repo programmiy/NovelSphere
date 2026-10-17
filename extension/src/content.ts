@@ -140,7 +140,6 @@ async function init(): Promise<void> {
 
     checkAutoTranslateNextTrigger(() => {
       showSidebar();
-      translateAllPTags(false);
     });
 
     // 소설 제목 감지 (서버 우선, DOM 폴백)

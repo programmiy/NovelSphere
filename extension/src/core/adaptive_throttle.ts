@@ -1,5 +1,4 @@
-// adaptive_throttle.ts: 최근 번역 회차 연동 적응형 RPM 스로틀링 및 통계 모듈
-import { BatchStats } from '../types/novel';
+import type { BatchStats } from '../types/novel.ts';
 
 export const RECENT_EPISODES_STORAGE_KEY = 'lanovel_recent_episodes';
 let recentEpisodesMemoryCache: Array<{ url: string; timestamp: number }> = [];
@@ -46,29 +45,31 @@ export async function getRecentEpisodeCount(windowMinutes = 5): Promise<number> 
 
 export function calculateAdaptiveEpisodeDelay(recentCount: number, isTurbo: boolean): number {
   if (isTurbo) {
-    if (recentCount <= 2) return 8000; // 8초 (최대 속도, 안전 구간)
-    if (recentCount === 3) return 15000; // 15초 (주의 구간)
-    if (recentCount === 4) return 22000; // 22초 (경고 구간)
-    if (recentCount === 5) return 30000; // 30초 (과열 주의 구간)
-    if (recentCount === 6) return 40000; // 40초 (과열 위험 구간)
-    return 55000; // 55초 (완전 쿨다운, 60초 슬라이딩 윈도우 리셋)
+    // 쾌속모드: 최근 번역한 회차가 많을수록 분당 요청 폭증(RPM 초과)을 막기 위해 점진적/대폭 지연 부여
+    if (recentCount <= 2) return 8000; // 0~2화: 기본 8초 (안전 구간)
+    if (recentCount === 3) return 15000; // 3화: 15초 (주의 구간)
+    if (recentCount === 4) return 22000; // 4화: 22초 (경고 구간)
+    if (recentCount === 5) return 30000; // 5화: 30초 (과열 주의 구간)
+    if (recentCount === 6) return 40000; // 6화: 40초 (과열 위험 구간)
+    return 55000; // 7화 이상: 55초 (완전 쿨다운, 60초 슬라이딩 윈도우 리셋)
   }
 
-  // 일반 모드
-  if (recentCount <= 4) return 8000;
-  if (recentCount === 5) return 18000;
-  if (recentCount === 6) return 28000;
-  return 45000;
+  // 일반 모드: 기본 60초, 회차 급증 시 안전하게 추가 연장
+  if (recentCount <= 4) return 60000;
+  if (recentCount <= 6) return 75000;
+  return 90000;
 }
 
 export function calculateAdaptiveChunkDelay(recentCount: number, isTurbo: boolean): number {
   if (isTurbo) {
-    if (recentCount <= 3) return 2000;
-    if (recentCount === 4) return 2500;
-    if (recentCount === 5) return 3000;
-    return 4000;
+    if (recentCount <= 3) return 2000; // 기본 2초
+    if (recentCount <= 5) return 3000; // 3초 미세 완충
+    return 4500; // 4.5초 과열 완충
   }
-  return 2000;
+
+  // 일반 모드: 기본 5초, 회차 누적 시 6.5초
+  if (recentCount <= 4) return 5000;
+  return 6500;
 }
 
 export async function updateAndGetBatchCount(currentCleanUrl: string): Promise<BatchStats> {

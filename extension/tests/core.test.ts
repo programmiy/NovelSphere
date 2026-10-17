@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert';
 import { chunkArray, createBudgetChunks } from '../src/core/chunker.ts';
 import { isTranslatableText, isPurePunctuationOnly, hasJapaneseText } from '../src/core/filters.ts';
+import { calculateAdaptiveChunkDelay, calculateAdaptiveEpisodeDelay } from '../src/core/adaptive_throttle.ts';
 
 test('chunker: chunkArray splits array by exact size', () => {
   const input = [1, 2, 3, 4, 5];
@@ -71,3 +72,29 @@ test('filters: hasJapaneseText detects kana and kanji', () => {
   assert.strictEqual(hasJapaneseText('한국어 문장'), false);
   assert.strictEqual(hasJapaneseText('12345!'), false);
 });
+
+test('throttle: normal mode defaults to 5s chunk delay and 60s episode delay', () => {
+  // Normal mode (isTurbo = false)
+  assert.strictEqual(calculateAdaptiveChunkDelay(0, false), 5000);
+  assert.strictEqual(calculateAdaptiveChunkDelay(4, false), 5000);
+  assert.strictEqual(calculateAdaptiveChunkDelay(5, false), 6500);
+
+  assert.strictEqual(calculateAdaptiveEpisodeDelay(0, false), 60000);
+  assert.strictEqual(calculateAdaptiveEpisodeDelay(4, false), 60000);
+  assert.strictEqual(calculateAdaptiveEpisodeDelay(5, false), 75000);
+  assert.strictEqual(calculateAdaptiveEpisodeDelay(7, false), 90000);
+});
+
+test('throttle: turbo mode uses fast 2s chunk delay and 8s episode delay with scaling', () => {
+  // Turbo mode (isTurbo = true)
+  assert.strictEqual(calculateAdaptiveChunkDelay(0, true), 2000);
+  assert.strictEqual(calculateAdaptiveChunkDelay(3, true), 2000);
+  assert.strictEqual(calculateAdaptiveChunkDelay(4, true), 3000);
+  assert.strictEqual(calculateAdaptiveChunkDelay(6, true), 4500);
+
+  assert.strictEqual(calculateAdaptiveEpisodeDelay(0, true), 8000);
+  assert.strictEqual(calculateAdaptiveEpisodeDelay(2, true), 8000);
+  assert.strictEqual(calculateAdaptiveEpisodeDelay(3, true), 15000);
+  assert.strictEqual(calculateAdaptiveEpisodeDelay(7, true), 55000);
+});
+

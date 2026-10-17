@@ -138,21 +138,87 @@ export function checkIsVerbatimOrParaphrased(original: string, translated: strin
   return false;
 }
 
-export function isItemEmptyTranslation(item: any): boolean {
+export function isItemEmptyTranslation(
+  item: any,
+  translationCache?: Map<string, any>,
+  userDeletedPids?: Set<string>,
+  exclusionSet?: Set<string>,
+  activeSeparators?: string[]
+): boolean {
   if (!item) return false;
+  const pid = String(item.id || item.pid || '');
+
+  // 1. 사용자가 직접 삭제했거나 제외된 문장인지 확인
+  if (pid && userDeletedPids && userDeletedPids.has(pid)) return false;
+  if (pid && typeof document !== 'undefined') {
+    const row = document.querySelector<HTMLTableRowElement>(`tr[data-pid="${pid}"]`);
+    if (row && (row.dataset.userDeleted === 'true' || row.getAttribute('data-user-deleted') === 'true')) {
+      return false;
+    }
+  }
+
   const original = (item.original || item.text || '').trim();
-  const translated = (item.translated || '').trim();
-
-  // 원문 자체가 비어있거나 번역문이 존재하면 빈칸 대상이 아님
-  if (!original || translated.length > 0) return false;
-
-  // 순수 문장부호/기호 문장은 Fast-Path로 원문이 그대로 채워지므로 빈칸 대상 아님
+  if (!original) return false;
+  if (exclusionSet && exclusionSet.has(original)) return false;
   if (isPurePunctuationOnly(original)) return false;
+
+  // 2. 캐시 내 유효한 번역문 존재 여부 확인
+  let hasValidCached = false;
+  if (pid && translationCache) {
+    const cached = translationCache.get(pid);
+    const cachedText = cached && cached.translated ? String(cached.translated).trim() : '';
+    if (
+      cachedText.length > 0 &&
+      !cachedText.includes('번역 실패') &&
+      !cachedText.includes('API 오류') &&
+      !cachedText.includes('[검열로 인해 번역 생략]')
+    ) {
+      hasValidCached = true;
+    }
+  }
+
+  // 3. 사이드바 DOM 내 유효한 번역문 존재 여부 확인
+  let hasValidDOM = false;
+  if (pid && typeof document !== 'undefined') {
+    const row = document.querySelector<HTMLTableRowElement>(`tr[data-pid="${pid}"]`);
+    if (row) {
+      const cell = row.querySelector('.translated-text');
+      const domText = cell ? (cell.textContent || '').trim() : '';
+      if (
+        domText.length > 0 &&
+        !domText.includes('⏳ 번역 중') &&
+        !domText.includes('⏳ 재번역 중') &&
+        !domText.includes('번역 실패') &&
+        !domText.includes('API 오류') &&
+        !domText.includes('[검열로 인해 번역 생략]')
+      ) {
+        hasValidDOM = true;
+      }
+    }
+  }
+
+  // 4. item 자체에 번역문이 유효한지 확인
+  const itemTranslated = (item.translated || '').trim();
+  const hasValidItem =
+    itemTranslated.length > 0 &&
+    !itemTranslated.includes('번역 실패') &&
+    !itemTranslated.includes('API 오류');
+
+  if (hasValidCached || hasValidDOM || hasValidItem) {
+    return false;
+  }
 
   return true;
 }
 
-export function getPendingEmptyItems(candidateItems: any[], excludeItemIds: Set<string> = new Set()): any[] {
+export function getPendingEmptyItems(
+  candidateItems: any[],
+  excludeItemIds: Set<string> = new Set(),
+  translationCache?: Map<string, any>,
+  userDeletedPids?: Set<string>,
+  exclusionSet?: Set<string>,
+  activeSeparators?: string[]
+): any[] {
   if (!Array.isArray(candidateItems) || candidateItems.length === 0) return [];
 
   const pending: any[] = [];
@@ -163,7 +229,7 @@ export function getPendingEmptyItems(candidateItems: any[], excludeItemIds: Set<
     const pid = String(item.id || item.pid || '');
     if (!pid || excludeItemIds.has(pid) || seenIds.has(pid)) continue;
 
-    if (isItemEmptyTranslation(item)) {
+    if (isItemEmptyTranslation(item, translationCache, userDeletedPids, exclusionSet, activeSeparators)) {
       pending.push({
         id: pid,
         text: (item.original || item.text || '').trim(),

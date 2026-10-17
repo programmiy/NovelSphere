@@ -1,7 +1,7 @@
 // sidebar.ts: 번역 워크스페이스 사이드바 UI 및 뷰어 렌더링 모듈
 import { state } from '../core/state';
 import { TranslationRecord } from '../types/novel';
-import { PRESET_SEPARATORS, saveNovelSeparators } from '../core/separators';
+import { PRESET_SEPARATORS, saveNovelSeparators, loadNovelSeparators } from '../core/separators';
 import { detectCutoffInfo } from '../core/turbo';
 
 export function escapeHtml(text: string): string {
@@ -24,20 +24,21 @@ export function logToSidebar(message: string, level: 'log' | 'log-error' | 'info
   const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
 
   const p = document.createElement('p');
-  if (level === 'log-error') p.className = 'log-error';
-  p.innerHTML = `<span class="log-time">[${timeStr}]</span>${escapeHtml(message)}`;
+  p.className = `log-entry ${level === 'log-error' ? 'log-error' : level === 'info' ? 'log-info' : ''}`;
+  p.innerHTML = `<span class="log-time">[${timeStr}]</span><span class="log-msg">${escapeHtml(message)}</span>`;
 
-  // 진행 순서대로 하단에 누적 스택 (오래된 순 -> 최신 순)
-  consoleEl.appendChild(p);
+  // 최신 알림이 맨 위로 오도록 상단 누적 (내림차순)
+  consoleEl.prepend(p);
 
-  // 최대 80개 보관, 초과 시 상단 오래된 로그 제거
-  if (consoleEl.children.length > 80) {
-    consoleEl.removeChild(consoleEl.firstChild!);
+  // 최대 60개 보관, 초과 시 하단 오래된 로그 제거
+  if (consoleEl.children.length > 60) {
+    consoleEl.removeChild(consoleEl.lastChild!);
   }
 
-  // 스크롤을 가진 상위 컨테이너(.sidebar-footer)를 항상 최신 위치(최하단)로 자동 스크롤
+  // 항상 최신 위치(최상단)로 스크롤 갱신 유지
   const scrollContainer = (consoleEl.closest('.sidebar-footer') || consoleEl) as HTMLElement;
-  scrollContainer.scrollTop = scrollContainer.scrollHeight;
+  scrollContainer.scrollTop = 0;
+  consoleEl.scrollTop = 0;
 
   // 상태 머신에 기록 (검열감지, 지연시간 추출 및 원격 제어 자동 디스패치)
   state.recordLog(message);
@@ -82,6 +83,7 @@ export function injectSidebarStyles(): void {
       min-width: 320px !important;
       height: 100% !important;
       background-color: #f8f9fa !important;
+      color: #212529 !important;
       border-left: 1px solid #dee2e6 !important;
       box-shadow: -2px 0 8px rgba(0,0,0,0.1) !important;
       z-index: 9999 !important;
@@ -94,6 +96,600 @@ export function injectSidebarStyles(): void {
     }
     #jp-translator-sidebar.visible {
       transform: translateX(0) !important;
+    }
+    .sidebar-header {
+      display: flex !important;
+      justify-content: space-between !important;
+      align-items: center !important;
+      padding: 10px 15px !important;
+      background-color: #667eea !important;
+      color: white !important;
+      flex-shrink: 0 !important;
+      box-sizing: border-box !important;
+    }
+    .sidebar-header h3 {
+      margin: 0 !important;
+      font-size: 16px !important;
+      color: white !important;
+      font-weight: 600 !important;
+    }
+    .sidebar-controls {
+      display: flex !important;
+      align-items: center !important;
+      gap: 4px !important;
+    }
+    .sidebar-controls button {
+      background: none !important;
+      border: none !important;
+      color: white !important;
+      font-size: 18px !important;
+      cursor: pointer !important;
+      margin-left: 4px !important;
+      padding: 2px 4px !important;
+      line-height: 1 !important;
+      border-radius: 4px !important;
+      transition: background-color 0.2s !important;
+    }
+    .sidebar-controls button:hover {
+      background-color: rgba(255, 255, 255, 0.2) !important;
+    }
+    .sidebar-novel-banner {
+      display: flex !important;
+      justify-content: space-between !important;
+      align-items: center !important;
+      padding: 7px 12px !important;
+      background: #eef2ff !important;
+      border-bottom: 1px solid #c7d2fe !important;
+      font-size: 12px !important;
+      flex-shrink: 0 !important;
+      box-sizing: border-box !important;
+    }
+    .novel-banner-info {
+      display: flex !important;
+      align-items: center !important;
+      gap: 5px !important;
+      overflow: hidden !important;
+      flex: 1 !important;
+    }
+    .novel-banner-icon {
+      font-size: 14px !important;
+    }
+    .novel-banner-title {
+      font-weight: 600 !important;
+      color: #3730a3 !important;
+      max-width: 220px !important;
+      overflow: hidden !important;
+      text-overflow: ellipsis !important;
+      white-space: nowrap !important;
+      cursor: pointer !important;
+      border-bottom: 1px dashed #6366f1 !important;
+    }
+    .novel-banner-title:hover {
+      color: #4338ca !important;
+      background: #e0e7ff !important;
+    }
+    .novel-banner-btn {
+      background: none !important;
+      border: none !important;
+      cursor: pointer !important;
+      font-size: 12px !important;
+      padding: 0 2px !important;
+      line-height: 1 !important;
+    }
+    .novel-banner-sep-toggle {
+      background: #4f46e5 !important;
+      color: white !important;
+      border: none !important;
+      border-radius: 4px !important;
+      padding: 3px 8px !important;
+      font-size: 11px !important;
+      cursor: pointer !important;
+      font-weight: 500 !important;
+      white-space: nowrap !important;
+      transition: background-color 0.2s !important;
+    }
+    .novel-banner-sep-toggle:hover {
+      background: #4338ca !important;
+    }
+    .sidebar-apply-banner {
+      display: flex !important;
+      justify-content: space-between !important;
+      align-items: center !important;
+      padding: 8px 12px !important;
+      background: #ffffff !important;
+      border-bottom: 1px solid #e2e8f0 !important;
+      font-size: 12px !important;
+      flex-shrink: 0 !important;
+      box-sizing: border-box !important;
+    }
+    .apply-status-info {
+      display: flex !important;
+      align-items: center !important;
+      gap: 6px !important;
+    }
+    .status-dot {
+      width: 8px !important;
+      height: 8px !important;
+      border-radius: 50% !important;
+      background-color: #94a3b8 !important;
+      display: inline-block !important;
+      transition: background-color 0.3s !important;
+    }
+    .status-dot.applied {
+      background-color: #10b981 !important;
+      box-shadow: 0 0 6px rgba(16, 185, 129, 0.6) !important;
+    }
+    .apply-status-text {
+      font-weight: 600 !important;
+      color: #475569 !important;
+    }
+    .apply-status-text.applied {
+      color: #059669 !important;
+    }
+    .apply-stats-count {
+      font-size: 11px !important;
+      color: #64748b !important;
+    }
+    .sidebar-apply-btn {
+      display: inline-flex !important;
+      align-items: center !important;
+      gap: 4px !important;
+      border: 1px solid #cbd5e1 !important;
+      background: #f8fafc !important;
+      color: #334155 !important;
+      padding: 4px 10px !important;
+      border-radius: 5px !important;
+      font-size: 11.5px !important;
+      font-weight: 500 !important;
+      cursor: pointer !important;
+      transition: all 0.2s !important;
+    }
+    .sidebar-apply-btn:hover {
+      background: #f1f5f9 !important;
+      border-color: #94a3b8 !important;
+    }
+    .sidebar-apply-btn.applied {
+      background: #10b981 !important;
+      border-color: #059669 !important;
+      color: white !important;
+    }
+    .sidebar-apply-btn.applied:hover {
+      background: #059669 !important;
+    }
+    .separator-settings-panel {
+      background: #ffffff !important;
+      border-bottom: 2px solid #6366f1 !important;
+      padding: 12px 14px !important;
+      box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1) !important;
+      font-size: 12px !important;
+      max-height: 380px !important;
+      overflow-y: auto !important;
+      flex-shrink: 0 !important;
+      box-sizing: border-box !important;
+    }
+    .sep-panel-header {
+      display: flex !important;
+      justify-content: space-between !important;
+      align-items: center !important;
+      margin-bottom: 8px !important;
+    }
+    .sep-panel-title {
+      font-weight: 600 !important;
+      color: #1e1b4b !important;
+      font-size: 13px !important;
+    }
+    .sep-close-btn {
+      background: none !important;
+      border: none !important;
+      font-size: 18px !important;
+      cursor: pointer !important;
+      color: #64748b !important;
+      line-height: 1 !important;
+    }
+    .sep-info-box {
+      background: #f8f9fa !important;
+      border: 1px solid #e2e8f0 !important;
+      border-radius: 4px !important;
+      padding: 6px 10px !important;
+      margin-bottom: 8px !important;
+      color: #475569 !important;
+      font-size: 11px !important;
+      line-height: 1.4 !important;
+    }
+    .sep-novel-name {
+      font-weight: 600 !important;
+      color: #4f46e5 !important;
+    }
+    .sep-form-group {
+      margin-bottom: 8px !important;
+    }
+    .sep-checkbox-label {
+      display: flex !important;
+      align-items: center !important;
+      gap: 6px !important;
+      cursor: pointer !important;
+      color: #334155 !important;
+      font-size: 11.5px !important;
+    }
+    .sep-section-title {
+      font-size: 11px !important;
+      font-weight: 600 !important;
+      color: #475569 !important;
+      margin: 8px 0 4px !important;
+    }
+    .sep-tags-wrap {
+      display: flex !important;
+      flex-wrap: wrap !important;
+      gap: 5px !important;
+      margin-bottom: 8px !important;
+      min-height: 26px !important;
+    }
+    .sep-tag {
+      display: inline-flex !important;
+      align-items: center !important;
+      background: #e0e7ff !important;
+      color: #3730a3 !important;
+      padding: 2px 7px !important;
+      border-radius: 12px !important;
+      font-size: 11px !important;
+      font-weight: 500 !important;
+    }
+    .sep-tag.is-custom {
+      background: #fef3c7 !important;
+      color: #92400e !important;
+      border: 1px solid #fde68a !important;
+    }
+    .sep-tag-remove {
+      margin-left: 4px !important;
+      cursor: pointer !important;
+      color: #ef4444 !important;
+      font-weight: bold !important;
+      font-size: 13px !important;
+    }
+    .sep-tag-remove:hover {
+      color: #b91c1c !important;
+    }
+    .sep-presets-wrap {
+      display: flex !important;
+      flex-wrap: wrap !important;
+      gap: 4px !important;
+      margin-bottom: 8px !important;
+    }
+    .sep-preset-btn {
+      background: #f1f5f9 !important;
+      border: 1px solid #cbd5e1 !important;
+      border-radius: 4px !important;
+      padding: 2px 6px !important;
+      font-size: 11px !important;
+      cursor: pointer !important;
+      color: #334155 !important;
+      transition: background 0.2s !important;
+    }
+    .sep-preset-btn:hover {
+      background: #e2e8f0 !important;
+    }
+    .sep-input-row {
+      display: flex !important;
+      gap: 4px !important;
+      margin-bottom: 10px !important;
+    }
+    .sep-input {
+      flex: 1 !important;
+      padding: 4px 8px !important;
+      border: 1px solid #cbd5e1 !important;
+      border-radius: 4px !important;
+      font-size: 12px !important;
+      outline: none !important;
+    }
+    .sep-input:focus {
+      border-color: #6366f1 !important;
+    }
+    .sep-add-btn {
+      background: #6366f1 !important;
+      color: white !important;
+      border: none !important;
+      border-radius: 4px !important;
+      padding: 4px 10px !important;
+      font-size: 12px !important;
+      cursor: pointer !important;
+    }
+    .sep-add-btn:hover {
+      background: #4f46e5 !important;
+    }
+    .sep-panel-footer {
+      display: flex !important;
+      justify-content: flex-end !important;
+      gap: 6px !important;
+      border-top: 1px solid #f1f5f9 !important;
+      padding-top: 8px !important;
+    }
+    .sep-save-btn {
+      background: #10b981 !important;
+      color: white !important;
+      border: none !important;
+      border-radius: 4px !important;
+      padding: 5px 12px !important;
+      font-size: 12px !important;
+      cursor: pointer !important;
+      font-weight: 500 !important;
+    }
+    .sep-save-btn:hover {
+      background: #059669 !important;
+    }
+    .sep-reset-btn {
+      background: #94a3b8 !important;
+      color: white !important;
+      border: none !important;
+      border-radius: 4px !important;
+      padding: 5px 10px !important;
+      font-size: 12px !important;
+      cursor: pointer !important;
+    }
+    .sep-reset-btn:hover {
+      background: #64748b !important;
+    }
+    .sidebar-content {
+      flex-grow: 1 !important;
+      overflow-y: auto !important;
+      box-sizing: border-box !important;
+    }
+    #translation-table {
+      width: 100% !important;
+      border-collapse: collapse !important;
+      table-layout: fixed !important;
+    }
+    #translation-table th, #translation-table td {
+      padding: 8px 10px !important;
+      text-align: left !important;
+      border-bottom: 1px solid #e9ecef !important;
+      box-sizing: border-box !important;
+      vertical-align: top !important;
+    }
+    #translation-table th:nth-child(1) {
+      width: 40% !important;
+    }
+    #translation-table th:nth-child(2) {
+      width: 42% !important;
+    }
+    #translation-table th:nth-child(3) {
+      width: 18% !important;
+    }
+    #translation-table th {
+      background-color: #f1f3f5 !important;
+      font-size: 12px !important;
+      font-weight: 600 !important;
+      color: #495057 !important;
+    }
+    #translation-table tbody tr {
+      cursor: pointer !important;
+      transition: background-color 0.2s !important;
+    }
+    #translation-table tbody tr:hover {
+      background-color: #f1f5f9 !important;
+    }
+    #translation-table .original-text {
+      font-size: 13px !important;
+      color: #495057 !important;
+      word-break: break-all !important;
+      line-height: 1.5 !important;
+    }
+    #translation-table .translated-text {
+      font-size: 13px !important;
+      color: #212529 !important;
+      outline: none !important;
+      width: 100% !important;
+      word-break: break-all !important;
+      line-height: 1.5 !important;
+      -webkit-user-modify: read-write-plaintext-only !important;
+    }
+    #translation-table .translated-text:focus {
+      background-color: #e9f7fd !important;
+      border-radius: 3px !important;
+    }
+    #translation-table .action-btns {
+      display: flex !important;
+      gap: 4px !important;
+      align-items: center !important;
+    }
+    #translation-table .save-btn {
+      background-color: #4CAF50 !important;
+      color: white !important;
+      border: none !important;
+      padding: 4px 6px !important;
+      border-radius: 4px !important;
+      cursor: pointer !important;
+      font-size: 11px !important;
+      white-space: nowrap !important;
+      transition: background-color 0.2s !important;
+    }
+    #translation-table .save-btn:hover {
+      background-color: #45a049 !important;
+    }
+    #translation-table .save-btn:disabled {
+      background-color: #cccccc !important;
+      cursor: not-allowed !important;
+    }
+    #translation-table .retranslate-row-btn {
+      background: #ffffff !important;
+      border: 1px solid #cbd5e1 !important;
+      border-radius: 4px !important;
+      padding: 3px 5px !important;
+      cursor: pointer !important;
+      font-size: 11px !important;
+      line-height: 1 !important;
+      display: inline-flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      transition: all 0.2s !important;
+    }
+    #translation-table .retranslate-row-btn:hover {
+      background: #f1f5f9 !important;
+      border-color: #94a3b8 !important;
+    }
+    #translation-table .retranslate-row-btn:disabled {
+      opacity: 0.5 !important;
+      cursor: not-allowed !important;
+    }
+    .lanovel-row-highlight {
+      animation: lanovelRowPulse 1.5s ease-out !important;
+    }
+    @keyframes lanovelRowPulse {
+      0% { background-color: #fef08a !important; }
+      100% { background-color: transparent !important; }
+    }
+    @keyframes lanovelPulse {
+      0% { background-color: rgba(99, 102, 241, 0.4) !important; outline: 2px solid #6366f1 !important; outline-offset: 2px !important; }
+      50% { background-color: rgba(99, 102, 241, 0.18) !important; outline: 2px solid #818cf8 !important; outline-offset: 2px !important; }
+      100% { background-color: transparent !important; outline: none !important; }
+    }
+    .lanovel-highlight-pulse {
+      animation: lanovelPulse 1.5s ease-out !important;
+      border-radius: 4px !important;
+    }
+    .review-target-card {
+      background: #ffffff !important;
+      border: 1px solid #fde68a !important;
+      border-left: 3px solid #f59e0b !important;
+      border-radius: 6px !important;
+      padding: 6px 8px !important;
+      margin-bottom: 6px !important;
+      cursor: pointer !important;
+      transition: all 0.2s !important;
+    }
+    .review-target-card:hover {
+      background: #fffdf5 !important;
+      border-color: #f59e0b !important;
+      transform: translateX(2px) !important;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.05) !important;
+    }
+    .review-target-card .card-top {
+      display: flex !important;
+      justify-content: space-between !important;
+      align-items: center !important;
+      margin-bottom: 4px !important;
+    }
+    .review-target-card .pid-badge {
+      font-size: 10px !important;
+      font-weight: 700 !important;
+      color: #b45309 !important;
+    }
+    .review-target-card .reason-badge {
+      font-size: 10px !important;
+      background: #fef3c7 !important;
+      color: #92400e !important;
+      padding: 1px 5px !important;
+      border-radius: 4px !important;
+    }
+    .review-target-card .card-body .orig-text {
+      color: #4b5563 !important;
+      font-size: 11px !important;
+      white-space: nowrap !important;
+      overflow: hidden !important;
+      text-overflow: ellipsis !important;
+      margin-bottom: 2px !important;
+    }
+    .review-target-card .card-body .trans-text {
+      color: #1f2937 !important;
+      font-weight: 600 !important;
+      font-size: 12px !important;
+      white-space: nowrap !important;
+      overflow: hidden !important;
+      text-overflow: ellipsis !important;
+    }
+    .review-panel-close-btn {
+      background: none !important;
+      border: none !important;
+      font-size: 18px !important;
+      cursor: pointer !important;
+      color: #b45309 !important;
+      line-height: 1 !important;
+    }
+    .sidebar-footer {
+      flex-shrink: 0 !important;
+      border-top: 1px solid #334155 !important;
+      background-color: #0f172a !important;
+      color: #e2e8f0 !important;
+      font-family: Consolas, "Fira Code", Menlo, Monaco, monospace !important;
+      font-size: 11px !important;
+      max-height: 145px !important;
+      display: flex !important;
+      flex-direction: column !important;
+      overflow: hidden !important;
+      box-sizing: border-box !important;
+    }
+    .sidebar-footer-header {
+      display: flex !important;
+      justify-content: space-between !important;
+      align-items: center !important;
+      padding: 4px 10px !important;
+      background: #1e293b !important;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+      flex-shrink: 0 !important;
+      user-select: none !important;
+    }
+    .footer-header-title {
+      font-size: 11px !important;
+      font-weight: 600 !important;
+      color: #94a3b8 !important;
+      letter-spacing: -0.2px !important;
+    }
+    .footer-clear-btn {
+      background: none !important;
+      border: 1px solid rgba(255, 255, 255, 0.15) !important;
+      color: #94a3b8 !important;
+      border-radius: 3px !important;
+      font-size: 10px !important;
+      padding: 1px 6px !important;
+      cursor: pointer !important;
+      line-height: 1.2 !important;
+      transition: all 0.15s ease !important;
+    }
+    .footer-clear-btn:hover {
+      background: rgba(255, 255, 255, 0.1) !important;
+      color: #f1f5f9 !important;
+      border-color: rgba(255, 255, 255, 0.3) !important;
+    }
+    #sidebar-log-console {
+      padding: 6px 10px !important;
+      overflow-y: auto !important;
+      flex: 1 !important;
+      box-sizing: border-box !important;
+    }
+    #sidebar-log-console::-webkit-scrollbar {
+      width: 5px !important;
+    }
+    #sidebar-log-console::-webkit-scrollbar-thumb {
+      background: #334155 !important;
+      border-radius: 3px !important;
+    }
+    #sidebar-log-console p, #sidebar-log-console .log-entry {
+      margin: 0 0 4px !important;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06) !important;
+      padding-bottom: 3px !important;
+      line-height: 1.45 !important;
+      word-break: break-all !important;
+      display: flex !important;
+      align-items: baseline !important;
+      gap: 6px !important;
+      font-size: 11px !important;
+    }
+    .log-time {
+      color: #64748b !important;
+      font-size: 10.5px !important;
+      flex-shrink: 0 !important;
+      user-select: none !important;
+      font-family: inherit !important;
+    }
+    .log-msg {
+      color: #e2e8f0 !important;
+      flex: 1 !important;
+      font-family: inherit !important;
+    }
+    .log-error, .log-error .log-msg {
+      color: #f87171 !important;
+    }
+    .log-info, .log-info .log-msg {
+      color: #38bdf8 !important;
     }
     #jp-translator-toggle-btn {
       position: fixed !important;
@@ -287,6 +883,17 @@ export function renderReviewTargetPanel(): void {
       panel.style.display = 'none';
     });
   }
+
+  const cardList = panel.querySelector<HTMLElement>('.review-panel-list');
+  if (cardList) {
+    cardList.addEventListener('click', (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null;
+      const card = target ? target.closest<HTMLElement>('.review-target-card') : null;
+      if (card && card.dataset.pid) {
+        handleSidebarRowClick(card.dataset.pid);
+      }
+    });
+  }
 }
 
 export function populateSidebar(translations: TranslationRecord[]): void {
@@ -299,6 +906,44 @@ export function populateSidebar(translations: TranslationRecord[]): void {
   updateEmptyState();
 }
 
+export function handleSidebarRowClick(pid: string, e?: MouseEvent): void {
+  if (e) {
+    const target = e.target as HTMLElement | null;
+    if (
+      target &&
+      (target.closest('button') ||
+        target.closest('.translated-text') ||
+        target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA')
+    ) {
+      return;
+    }
+  }
+
+  // 1. 사이드바 테이블 내 해당 행 하이라이트
+  const row = document.querySelector<HTMLTableRowElement>(`tr[data-pid="${pid}"]`);
+  if (row) {
+    row.classList.remove('lanovel-row-highlight');
+    void row.offsetWidth;
+    row.classList.add('lanovel-row-highlight');
+    setTimeout(() => {
+      row.classList.remove('lanovel-row-highlight');
+    }, 1600);
+  }
+
+  // 2. 소설 웹페이지 본문 문단으로 부드럽게 스크롤 & 형광 테두리 강조
+  const targetP = document.getElementById(pid);
+  if (targetP) {
+    targetP.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    targetP.classList.remove('lanovel-highlight-pulse');
+    void targetP.offsetWidth;
+    targetP.classList.add('lanovel-highlight-pulse');
+    setTimeout(() => {
+      targetP.classList.remove('lanovel-highlight-pulse');
+    }, 1600);
+  }
+}
+
 export function addPlaceholderRows(items: Array<{ id: string; text: string }>): void {
   const tableBody = document.getElementById('translation-table-body') as HTMLTableSectionElement | null;
   if (!tableBody) return;
@@ -306,8 +951,9 @@ export function addPlaceholderRows(items: Array<{ id: string; text: string }>): 
   items.forEach((item) => {
     let row = document.querySelector<HTMLTableRowElement>(`tr[data-pid="${item.id}"]`);
     if (!row) {
-      const newRow = tableBody.insertRow();
+      const newRow = tableBody.insertRow(0);
       newRow.setAttribute('data-pid', item.id);
+      newRow.addEventListener('click', (e) => handleSidebarRowClick(item.id, e));
       newRow.innerHTML = `
         <td><div class="original-text">${escapeHtml(item.text)}</div></td>
         <td><div class="translated-text">⏳ 번역 중...</div></td>
@@ -321,6 +967,7 @@ export function addPlaceholderRows(items: Array<{ id: string; text: string }>): 
     } else {
       const cell = row.querySelector('.translated-text');
       if (cell) cell.textContent = '⏳ 번역 중...';
+      tableBody.prepend(row);
     }
   });
   updateEmptyState();
@@ -357,12 +1004,14 @@ export function addEntryToSidebar(translation: TranslationRecord): void {
 
   if (document.querySelector(`tr[data-pid="${translation.pid}"]`)) return;
 
+  const pid = String(translation.pid);
   const row = tableBody.insertRow();
-  row.setAttribute('data-pid', translation.pid);
-  const isReviewTarget = state.reviewTargetPids.has(translation.pid);
+  row.setAttribute('data-pid', pid);
+  row.addEventListener('click', (e) => handleSidebarRowClick(pid, e));
+  const isReviewTarget = state.reviewTargetPids.has(pid);
   if (isReviewTarget) {
     row.classList.add('review-target-row');
-    const p = document.getElementById(translation.pid);
+    const p = document.getElementById(pid);
     if (p) p.classList.add('review-target-dom');
   }
   const badgeHtml = isReviewTarget ? '<span class="review-badge" title="알림 센터 연계 재번역 검수 문장">⚡재검수</span>' : '';
@@ -592,6 +1241,10 @@ export function injectSidebar(): void {
       </div>
     </div>
     <div class="sidebar-footer">
+      <div class="sidebar-footer-header">
+        <span class="footer-header-title">📡 시스템 알림 및 진행 로그</span>
+        <button id="clear-sidebar-log-btn" class="footer-clear-btn" title="로그 지우기">비우기</button>
+      </div>
       <div id="sidebar-log-console"></div>
     </div>
   `;
@@ -606,6 +1259,40 @@ export function injectSidebar(): void {
   toggleButton.addEventListener('click', toggleSidebar);
   const closeBtn = document.getElementById('sidebar-close-btn');
   if (closeBtn) closeBtn.addEventListener('click', hideSidebar);
+
+  const clearLogBtn = document.getElementById('clear-sidebar-log-btn');
+  if (clearLogBtn) {
+    clearLogBtn.addEventListener('click', () => {
+      const consoleEl = document.getElementById('sidebar-log-console');
+      if (consoleEl) consoleEl.innerHTML = '';
+    });
+  }
+
+  const editNovelTitleBtn = document.getElementById('edit-novel-title-btn');
+  const novelTitleDisplay = document.getElementById('current-novel-title-display');
+  const handleEditNovelTitle = async () => {
+    const newTitle = prompt('현재 소설의 제목을 입력하세요 (소설별 구분선 및 폴더 기준이 됩니다):', state.currentNovelTitle);
+    if (newTitle && newTitle.trim() && newTitle.trim() !== state.currentNovelTitle) {
+      state.currentNovelTitle = newTitle.trim();
+      updateNovelTitleUI(state.currentNovelTitle);
+      state.separatorConfig = await loadNovelSeparators(state.currentNovelTitle);
+      state.activeSeparators = state.separatorConfig.effectiveSeparators;
+      renderSeparatorSettingsPanel();
+      logToSidebar(`소설 제목이 '${state.currentNovelTitle}'(으)로 변경되었습니다.`);
+    }
+  };
+  if (editNovelTitleBtn) editNovelTitleBtn.addEventListener('click', handleEditNovelTitle);
+  if (novelTitleDisplay) novelTitleDisplay.addEventListener('click', handleEditNovelTitle);
+
+  const excludedBtn = document.getElementById('sidebar-excluded-list-btn');
+  if (excludedBtn) {
+    excludedBtn.addEventListener('click', () => {
+      const panel = document.getElementById('separator-exclude-panel');
+      if (panel) {
+        panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+      }
+    });
+  }
 
   const toggleSepBtn = document.getElementById('toggle-sep-panel-btn');
   if (toggleSepBtn) toggleSepBtn.addEventListener('click', toggleSeparatorPanel);
@@ -663,6 +1350,26 @@ export function injectSidebar(): void {
       }
       chrome.storage.local.set({ lanovel_turbo_cutoff: state.turboCutoffHour });
       updateTurboBadgeUI();
+    });
+  }
+
+  const tableBody = document.getElementById('translation-table-body');
+  if (tableBody) {
+    tableBody.addEventListener('click', (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (!target) return;
+      if (
+        target.closest('button') ||
+        target.closest('.translated-text') ||
+        target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA'
+      ) {
+        return;
+      }
+      const row = target.closest<HTMLTableRowElement>('tr[data-pid]');
+      if (row && row.dataset.pid) {
+        handleSidebarRowClick(row.dataset.pid, e);
+      }
     });
   }
 }

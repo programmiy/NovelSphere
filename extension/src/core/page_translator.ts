@@ -389,6 +389,13 @@ export function setupParagraphInteraction(): void {
       const selection = window.getSelection();
       if (selection && selection.toString().trim().length > 0) return;
 
+      p.classList.remove('lanovel-highlight-pulse');
+      void p.offsetWidth;
+      p.classList.add('lanovel-highlight-pulse');
+      setTimeout(() => {
+        p.classList.remove('lanovel-highlight-pulse');
+      }, 1600);
+
       const row = document.querySelector<HTMLTableRowElement>(`tr[data-pid="${p.id}"]`);
       if (row) {
         showSidebar();
@@ -540,11 +547,18 @@ export async function checkAndLoadReviewTargets(): Promise<void> {
   }
 }
 
+let isTranslatingInProgress = false;
+
 export async function translateAllPTags(isRetranslation = false): Promise<void> {
+  if (isTranslatingInProgress) {
+    console.log('[translateAllPTags] 이미 번역 작업이 진행 중이므로 중복 실행을 차단합니다.');
+    return;
+  }
   if (state.turboAbortedOnLoad) {
     console.log('[translateAllPTags] 쾌속모드 정각 도달로 번역이 차단되었습니다.');
     return;
   }
+  isTranslatingInProgress = true;
   state.isTranslationCancelled = false;
   state.notifyInflightStart();
 
@@ -626,10 +640,14 @@ export async function translateAllPTags(isRetranslation = false): Promise<void> 
       return;
     }
 
+    const sepCount = state.activeSeparators ? state.activeSeparators.length : 0;
+    const sepPreview = sepCount > 0 ? state.activeSeparators.slice(0, 3).join(', ') + (sepCount > 3 ? ` 외 ${sepCount - 3}개` : '') : '없음';
+    const modelDesc = isRetranslation ? '고성능 모델(Gemini 3.0 Flash)' : '기본 엔진';
+    const turboDesc = state.isTurboMode ? ' ⚡쾌속모드' : '';
     const chunks = createBudgetChunks(textsToTranslate, CHUNK_BUDGET_CHARACTERS, CHUNK_BUDGET_MAX_ITEMS);
     const totalChars = textsToTranslate.reduce((sum, item) => sum + (item.text ? item.text.length : 0), 0);
     logToSidebar(
-      `[소설: ${state.currentNovelTitle || '기본'}] 총 ${textsToTranslate.length}개 문장(약 ${totalChars.toLocaleString()}자)을 ${chunks.length}개 묶음으로 번역 시작합니다.`
+      `[소설: ${state.currentNovelTitle || '기본'}] 총 ${textsToTranslate.length}개 문장(약 ${totalChars.toLocaleString()}자) 글자 수·토큰 예산 기반 ${chunks.length}개 최적 묶음으로 번역을 시작합니다. (${modelDesc}${turboDesc}, 구분선: ${sepPreview})`
     );
 
     addPlaceholderRows(textsToTranslate);
@@ -780,28 +798,100 @@ export async function translateAllPTags(isRetranslation = false): Promise<void> 
     const recentEpCount = await getRecentEpisodeCount(5);
     const chunkDelay = calculateAdaptiveChunkDelay(recentEpCount, state.isTurboMode);
 
+    logToSidebar(
+      state.isTurboMode
+        ? recentEpCount >= 4
+          ? `⚡ [쾌속모드] 최근 번역 회차(${recentEpCount}화) 과열 방지: 묶음 간 대기 시간을 ${(chunkDelay / 1000).toFixed(1)}초로 완충합니다.`
+          : `⚡ [쾌속모드] 번역 묶음 간 대기 시간을 ${(chunkDelay / 1000).toFixed(1)}초로 설정합니다.`
+        : `RPM 제한을 피하기 위해 묶음 간 대기 시간을 ${(chunkDelay / 1000).toFixed(1)}초로 설정합니다.`
+    );
+
+    let progress = 0;
     for (const [index, chunk] of chunks.entries()) {
       if (state.isTranslationCancelled) break;
 
       let currentChunk = chunk;
       const isLastChunk = index === chunks.length - 1;
 
+      // [번역 완료 한스텝전: 이전 꾸러미 빈칸 번역 통합]
       if (isLastChunk) {
         const currentChunkIdSet = new Set(chunk.map((c) => String(c.id)));
-        const emptyItems = getPendingEmptyItems(textsToTranslate, currentChunkIdSet);
+        const emptyItems = getPendingEmptyItems(
+          textsToTranslate,
+          currentChunkIdSet,
+          state.translationCache,
+          state.userDeletedTranslationPids,
+          state.exclusionSet,
+          state.activeSeparators
+        );
         if (emptyItems.length > 0) {
-          logToSidebar(`[마지막 꾸러미 포함] 미완료 문장 ${emptyItems.length}개를 마지막 꾸러미에 통합합니다.`);
+          logToSidebar(
+            `[마지막 꾸러미 포함] 번역 완료 한스텝전, 이전 번역 중 빈칸(미완료) 문장 ${emptyItems.length}개를 마지막 번역꾸러미에 포함하여 함께 번역합니다.`
+          );
+          emptyItems.forEach((item) => {
+            const row = document.querySelector<HTMLTableRowElement>(`tr[data-pid="${item.id}"]`);
+            if (row) {
+              const cell = row.querySelector('.translated-text');
+              if (cell) {
+                cell.textContent = '⏳ 번역 중...';
+                (cell as HTMLElement).style.color = '';
+              }
+            }
+          });
           currentChunk = [...chunk, ...emptyItems];
         }
       }
 
+      const currentChunkChars = currentChunk.reduce((sum, it) => sum + (it.text ? it.text.length : 0), 0);
+      progress += chunk.length;
+      logToSidebar(
+        `(${progress}/${textsToTranslate.length}문장, 묶음 ${index + 1}/${chunks.length} [약 ${currentChunkChars.toLocaleString()}자]) 번역 진행 중...${
+          currentChunk.length > chunk.length ? ` (빈칸 문장 ${currentChunk.length - chunk.length}개 추가 포함)` : ''
+        }`
+      );
+
       await translateChunk(currentChunk, currentChunk.length);
 
       if (index < chunks.length - 1 && !state.isTranslationCancelled) {
+        const currentDelay = calculateAdaptiveChunkDelay(recentEpCount, state.isTurboMode);
+        logToSidebar(`${(currentDelay / 1000).toFixed(1)}초 후 다음 묶음을 번역합니다.`);
         await sleepResponsive(() => calculateAdaptiveChunkDelay(recentEpCount, state.isTurboMode));
+        if (state.isTurboMode && checkCutoffTimeReached(state.turboCutoffHour, state.turboTargetTimestamp)) {
+          await abortTurboMode('초기화 시간 도달');
+          break;
+        }
       }
     }
 
+    // [번역 완료 직전 최종 빈칸 확인 및 보완 마지막 번역꾸러미]
+    if (!state.isTranslationCancelled) {
+      const remainingEmptyItems = getPendingEmptyItems(
+        textsToTranslate,
+        new Set(),
+        state.translationCache,
+        state.userDeletedTranslationPids,
+        state.exclusionSet,
+        state.activeSeparators
+      );
+      if (remainingEmptyItems.length > 0) {
+        logToSidebar(
+          `[보완 번역꾸러미] 번역 완료 직전, 미완료 빈칸 번역 ${remainingEmptyItems.length}개가 감지되어 마지막 번역꾸러미로 추가 번역을 진행합니다.`
+        );
+        remainingEmptyItems.forEach((item) => {
+          const row = document.querySelector<HTMLTableRowElement>(`tr[data-pid="${item.id}"]`);
+          if (row) {
+            const cell = row.querySelector('.translated-text');
+            if (cell) {
+              cell.textContent = '⏳ 번역 중...';
+              (cell as HTMLElement).style.color = '';
+            }
+          }
+        });
+        await translateChunk(remainingEmptyItems, remainingEmptyItems.length);
+      }
+    }
+
+    sortSidebar(allParagraphs.map((p) => p.id));
     logToSidebar('모든 번역 작업이 완료되었습니다.');
 
     // 번역 완료 후 다음 화 자동 이동 및 알림 처리
@@ -827,7 +917,27 @@ export async function translateAllPTags(isRetranslation = false): Promise<void> 
 
       const targetDelay = calculateAdaptiveEpisodeDelay(completedRecentCount, state.isTurboMode);
       const delaySec = Math.round(targetDelay / 1000);
-      logToSidebar(`번역 완료. ${delaySec}초 후 다음 페이지로 이동합니다.`);
+
+      if (state.isTurboMode) {
+        if (completedRecentCount >= 3) {
+          logToSidebar(
+            `⚡ [RPM 적응형 보호] 최근 5분간 번역 회차: ${completedRecentCount}화 감지 (과열 방지 구간) → 다음 회차 대기 시간을 ${delaySec}초로 자동 연장합니다.`
+          );
+          showLanovelHud(`RPM 보호 지연 중... (${delaySec}초)`, '🛡️', 4000);
+        } else {
+          logToSidebar(
+            `⚡ [쾌속모드] 번역 완료 (최근 5분: ${completedRecentCount}화, 안전 구간). ${delaySec}초 후 다음 페이지로 이동합니다.`
+          );
+        }
+      } else {
+        if (completedRecentCount >= 5) {
+          logToSidebar(
+            `[RPM 적응형 보호] 최근 5분간 번역 회차: ${completedRecentCount}화 감지 → 다음 회차 대기 시간을 ${delaySec}초로 연장합니다.`
+          );
+        } else {
+          logToSidebar(`번역 완료. ${delaySec}초 후 다음 페이지로 이동합니다.`);
+        }
+      }
 
       await sleepResponsive(() => calculateAdaptiveEpisodeDelay(completedRecentCount, state.isTurboMode));
       if (state.isTranslationCancelled) return;
@@ -852,6 +962,7 @@ export async function translateAllPTags(isRetranslation = false): Promise<void> 
       }
     }
   } finally {
+    isTranslatingInProgress = false;
     state.notifyInflightEnd();
     if (stopBtn) stopBtn.style.display = 'none';
     if (retryBtn) retryBtn.style.display = 'inline-block';
