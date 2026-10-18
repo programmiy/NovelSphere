@@ -284,6 +284,69 @@ test('kakuyomu & toc: KakuyomuScraper and normalizeUrlKey work accurately', asyn
     getNovelTocUrl(scraper, 'https://kakuyomu.jp/works/1177354054887975130/episodes/1177354054887975145'),
     'https://kakuyomu.jp/works/1177354054887975130'
   );
+
+  // 6. getTocEpisodes with __NEXT_DATA__
+  const mockNextData = {
+    query: { workId: '1177354054887975130' },
+    props: {
+      pageProps: {
+        __APOLLO_STATE__: {
+          'Work:1177354054887975130': {
+            __typename: 'Work',
+            id: '1177354054887975130',
+            tableOfContentsV2: [
+              { __ref: 'TableOfContentsChapter:chap1' },
+              { __ref: 'Episode:ep3' },
+            ],
+          },
+          'TableOfContentsChapter:chap1': {
+            __typename: 'TableOfContentsChapter',
+            id: 'chap1',
+            episodeUnions: [
+              { __ref: 'Episode:ep1' },
+              { __ref: 'Episode:ep2' },
+            ],
+          },
+          'Episode:ep1': {
+            __typename: 'Episode',
+            id: 'ep1',
+            title: '제1화 프롤로그',
+          },
+          'Episode:ep2': {
+            __typename: 'Episode',
+            id: 'ep2',
+            title: '제2화 시작',
+          },
+          'Episode:ep3': {
+            __typename: 'Episode',
+            id: 'ep3',
+            title: '외전',
+          },
+        },
+      },
+    },
+  };
+
+  const fakeRootDoc = {
+    querySelector(selector: string) {
+      if (selector === '#__NEXT_DATA__') {
+        return { textContent: JSON.stringify(mockNextData) };
+      }
+      return null;
+    },
+    querySelectorAll() {
+      return [];
+    },
+  } as any;
+
+  const parsedEpisodes = scraper.getTocEpisodes(fakeRootDoc);
+  assert.strictEqual(parsedEpisodes.length, 3);
+  assert.strictEqual(parsedEpisodes[0].title, '제1화 프롤로그');
+  assert.strictEqual(parsedEpisodes[0].url, 'https://kakuyomu.jp/works/1177354054887975130/episodes/ep1');
+  assert.strictEqual(parsedEpisodes[1].title, '제2화 시작');
+  assert.strictEqual(parsedEpisodes[1].url, 'https://kakuyomu.jp/works/1177354054887975130/episodes/ep2');
+  assert.strictEqual(parsedEpisodes[2].title, '외전');
+  assert.strictEqual(parsedEpisodes[2].url, 'https://kakuyomu.jp/works/1177354054887975130/episodes/ep3');
 });
 
 

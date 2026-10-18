@@ -587,6 +587,76 @@
           return found || null;
         }
         getTocEpisodes(rootDoc = document) {
+          const nextDataScript = rootDoc.querySelector("#__NEXT_DATA__");
+          if (nextDataScript && nextDataScript.textContent) {
+            try {
+              const nextData = JSON.parse(nextDataScript.textContent);
+              const apollo = nextData?.props?.pageProps?.__APOLLO_STATE__ || nextData?.props?.apolloState || {};
+              let workId = nextData?.query?.workId;
+              let mainWork = workId ? apollo[`Work:${workId}`] : null;
+              if (!mainWork || !mainWork.tableOfContentsV2) {
+                for (const key of Object.keys(apollo)) {
+                  if (key.startsWith("Work:") && apollo[key]?.tableOfContentsV2) {
+                    mainWork = apollo[key];
+                    workId = mainWork.id || key.replace("Work:", "");
+                    break;
+                  }
+                }
+              }
+              if (mainWork && mainWork.tableOfContentsV2 && workId) {
+                const episodes = [];
+                const toc = mainWork.tableOfContentsV2;
+                const domElements = Array.from(
+                  rootDoc.querySelectorAll('a[href*="/works/"][href*="/episodes/"]')
+                );
+                const elementMap = /* @__PURE__ */ new Map();
+                domElements.forEach((el) => {
+                  const rawHref = el.getAttribute("href") || el.href || "";
+                  const clean = rawHref.split("#")[0].split("?")[0];
+                  const epMatch = clean.match(/\/episodes\/(\d+)/);
+                  if (epMatch) {
+                    elementMap.set(epMatch[1], el);
+                  }
+                });
+                if (Array.isArray(toc)) {
+                  for (const itemRef of toc) {
+                    const refKey = itemRef?.__ref;
+                    if (!refKey) continue;
+                    const chapterOrEp = apollo[refKey];
+                    if (!chapterOrEp) continue;
+                    if (chapterOrEp.__typename === "TableOfContentsChapter") {
+                      const epUnions = chapterOrEp.episodeUnions || [];
+                      for (const epRef of epUnions) {
+                        const epKey = epRef?.__ref;
+                        if (!epKey) continue;
+                        const ep = apollo[epKey];
+                        if (ep && ep.id) {
+                          const epId = String(ep.id);
+                          episodes.push({
+                            element: elementMap.get(epId),
+                            url: `https://kakuyomu.jp/works/${workId}/episodes/${epId}`,
+                            title: ep.title || "\uC81C\uBAA9 \uC5C6\uC74C"
+                          });
+                        }
+                      }
+                    } else if (chapterOrEp.__typename === "Episode" && chapterOrEp.id) {
+                      const epId = String(chapterOrEp.id);
+                      episodes.push({
+                        element: elementMap.get(epId),
+                        url: `https://kakuyomu.jp/works/${workId}/episodes/${epId}`,
+                        title: chapterOrEp.title || "\uC81C\uBAA9 \uC5C6\uC74C"
+                      });
+                    }
+                  }
+                }
+                if (episodes.length > 0) {
+                  return episodes;
+                }
+              }
+            } catch (e) {
+              console.warn("[LANOVEL] \uCE74\uCFE0\uC694\uBB34 __NEXT_DATA__ \uD30C\uC2F1 \uC2E4\uD328, DOM \uD3F4\uBC31\uC744 \uC2DC\uB3C4\uD569\uB2C8\uB2E4:", e);
+            }
+          }
           let elements = Array.from(
             rootDoc.querySelectorAll(
               'a[class*="WorkTocSection_link"], [class*="WorkTocSection"] a, .widget-toc-episode a, a.widget-toc-episode-episodeTitle, [class*="widget-toc-episode"] a'
@@ -607,9 +677,10 @@
             let title = titleEl && titleEl.textContent ? titleEl.textContent.trim() : (el.textContent || "").trim();
             title = title.replace(/\s*\d{4}年\d{1,2}月\d{1,2}日.*$/, "").trim();
             const rawHref = el.getAttribute("href") || el.href || "";
+            const fullUrl = rawHref.startsWith("http") ? rawHref : `https://kakuyomu.jp${rawHref.startsWith("/") ? "" : "/"}${rawHref}`;
             return {
               element: el,
-              url: rawHref.split("#")[0],
+              url: fullUrl.split("#")[0],
               title: title || "\uC81C\uBAA9 \uC5C6\uC74C"
             };
           });
@@ -2593,7 +2664,7 @@
     const urlSet = /* @__PURE__ */ new Set();
     episodeItems.forEach((item) => {
       if (!item.url) return;
-      const cleanUrl = item.url.split("#")[0];
+      const cleanUrl = new URL(item.url, window.location.href).href.split("#")[0];
       if (!urlSet.has(cleanUrl)) {
         urlSet.add(cleanUrl);
         episodeDataList.push({
@@ -2607,7 +2678,7 @@
     const translatedSet = /* @__PURE__ */ new Set();
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 2500);
+      const timeoutId = setTimeout(() => controller.abort(), 5e3);
       const resp = await fetch("http://127.0.0.1:8001/api/check_translated_urls", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -2619,8 +2690,16 @@
         const data = await resp.json();
         const list = data.translated_urls || [];
         list.forEach((u) => {
-          translatedSet.add(u.replace(/\/$/, ""));
-          translatedSet.add(u.replace(/\/$/, "") + "/");
+          const norm = normalizeUrlKey(u);
+          translatedSet.add(norm);
+          translatedSet.add(norm + "/");
+          if (norm.startsWith("http://") || norm.startsWith("https://")) {
+            const pathOnly = norm.replace(/^https?:\/\/[^\/]+/, "");
+            if (pathOnly) {
+              translatedSet.add(pathOnly);
+              translatedSet.add(pathOnly + "/");
+            }
+          }
         });
       }
     } catch (e) {
@@ -2631,7 +2710,8 @@
     untranslatedEpisodesCache = [];
     episodeDataList.forEach((item, index) => {
       const cleanNoSlash = normalizeUrlKey(item.url);
-      const isTranslated = translatedSet.has(cleanNoSlash) || translatedSet.has(cleanNoSlash + "/");
+      const pathOnly = cleanNoSlash.replace(/^https?:\/\/[^\/]+/, "");
+      const isTranslated = translatedSet.has(cleanNoSlash) || translatedSet.has(cleanNoSlash + "/") || pathOnly && (translatedSet.has(pathOnly) || translatedSet.has(pathOnly + "/"));
       const isExcluded = excludedSet.has(cleanNoSlash);
       const badge = document.createElement("span");
       badge.className = `lanovel-toc-badge ${isTranslated ? "translated" : isExcluded ? "excluded" : "untranslated"}`;
@@ -2645,12 +2725,14 @@
           await toggleExclusionForItem(item.url, item.title);
         });
       }
-      const existingBadge = item.element.parentNode?.querySelector(".lanovel-toc-badge") || item.element.querySelector(".lanovel-toc-badge");
-      if (!existingBadge) {
-        if (item.element.parentNode) {
-          item.element.insertAdjacentElement("afterend", badge);
-        } else {
-          item.element.appendChild(badge);
+      if (item.element) {
+        const existingBadge = item.element.parentNode?.querySelector(".lanovel-toc-badge") || item.element.querySelector(".lanovel-toc-badge");
+        if (!existingBadge) {
+          if (item.element.parentNode) {
+            item.element.insertAdjacentElement("afterend", badge);
+          } else {
+            item.element.appendChild(badge);
+          }
         }
       }
       if (!isTranslated) {
@@ -2665,6 +2747,7 @@
         });
       }
     });
+    console.log(`[LANOVEL] TOC \uCD08\uAE30\uD654 \uC644\uB8CC: \uCD1D ${episodeDataList.length}\uAC1C \uD68C\uCC28 \uC911 ${untranslatedEpisodesCache.length}\uAC1C \uBBF8\uBC88\uC5ED \uBC1C\uACAC`);
     renderQuickJumpPanel(untranslatedEpisodesCache);
   }
   function renderQuickJumpPanel(untranslatedList) {
@@ -2952,7 +3035,7 @@
       const translatedSet = /* @__PURE__ */ new Set();
       try {
         const serverCtrl = new AbortController();
-        const sTimeout = setTimeout(() => serverCtrl.abort(), 2500);
+        const sTimeout = setTimeout(() => serverCtrl.abort(), 5e3);
         const checkResp = await fetch("http://127.0.0.1:8001/api/check_translated_urls", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -2964,8 +3047,16 @@
           const data = await checkResp.json();
           const list = data.translated_urls || [];
           list.forEach((u) => {
-            translatedSet.add(u.replace(/\/$/, ""));
-            translatedSet.add(u.replace(/\/$/, "") + "/");
+            const norm = normalizeUrlKey(u);
+            translatedSet.add(norm);
+            translatedSet.add(norm + "/");
+            if (norm.startsWith("http://") || norm.startsWith("https://")) {
+              const pathOnly = norm.replace(/^https?:\/\/[^\/]+/, "");
+              if (pathOnly) {
+                translatedSet.add(pathOnly);
+                translatedSet.add(pathOnly + "/");
+              }
+            }
           });
         }
       } catch (e) {
@@ -2976,7 +3067,8 @@
       untranslatedEpisodesCache = [];
       episodeDataList.forEach((item, index) => {
         const cleanNoSlash = normalizeUrlKey(item.url);
-        const isTranslated = translatedSet.has(cleanNoSlash) || translatedSet.has(cleanNoSlash + "/");
+        const pathOnly = cleanNoSlash.replace(/^https?:\/\/[^\/]+/, "");
+        const isTranslated = translatedSet.has(cleanNoSlash) || translatedSet.has(cleanNoSlash + "/") || pathOnly && (translatedSet.has(pathOnly) || translatedSet.has(pathOnly + "/"));
         const isExcluded = excludedSet.has(cleanNoSlash);
         if (!isTranslated) {
           untranslatedEpisodesCache.push({
@@ -2989,7 +3081,13 @@
           });
         }
       });
+      console.log(`[LANOVEL] \uC6D0\uACA9 \uBAA9\uCC28 \uB85C\uB4DC \uC644\uB8CC: \uCD1D ${episodeDataList.length}\uAC1C \uD68C\uCC28 \uC911 ${untranslatedEpisodesCache.length}\uAC1C \uBBF8\uBC88\uC5ED \uBC1C\uACAC`);
       renderQuickJumpPanel(untranslatedEpisodesCache);
+      if (untranslatedEpisodesCache.length > 0) {
+        showLanovelHud(`\uBBF8\uBC88\uC5ED \uD68C\uCC28 ${untranslatedEpisodesCache.length}\uD654 \uB85C\uB4DC \uC644\uB8CC`, "\u26A1", 1800);
+      } else {
+        showLanovelHud("\uBAA8\uB4E0 \uD68C\uCC28\uC758 \uBC88\uC5ED\uC774 \uC644\uB8CC\uB418\uC5C8\uC2B5\uB2C8\uB2E4!", "\u{1F389}", 2e3);
+      }
       return true;
     } catch (err) {
       console.error("[LANOVEL] \uBE44\uB3D9\uAE30 \uBAA9\uCC28 \uB85C\uB4DC \uC2E4\uD328:", err);

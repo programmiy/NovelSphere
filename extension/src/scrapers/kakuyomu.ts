@@ -144,6 +144,92 @@ export class KakuyomuScraper implements PlatformScraper {
   }
 
   getTocEpisodes(rootDoc: Document | Element = document): TocEpisodeItem[] {
+    // 1. Next.js __NEXT_DATA__ JSON 기반 전체 목차 추출 (카쿠요무의 아코디언/가상화 목록 완벽 대응)
+    const nextDataScript = rootDoc.querySelector('#__NEXT_DATA__');
+    if (nextDataScript && nextDataScript.textContent) {
+      try {
+        const nextData = JSON.parse(nextDataScript.textContent);
+        const apollo =
+          nextData?.props?.pageProps?.__APOLLO_STATE__ ||
+          nextData?.props?.apolloState ||
+          {};
+
+        // 메인 작품 ID 확인: query.workId 또는 tableOfContentsV2를 가진 Work 탐색
+        let workId = nextData?.query?.workId;
+        let mainWork: any = workId ? apollo[`Work:${workId}`] : null;
+
+        if (!mainWork || !mainWork.tableOfContentsV2) {
+          for (const key of Object.keys(apollo)) {
+            if (key.startsWith('Work:') && apollo[key]?.tableOfContentsV2) {
+              mainWork = apollo[key];
+              workId = mainWork.id || key.replace('Work:', '');
+              break;
+            }
+          }
+        }
+
+        if (mainWork && mainWork.tableOfContentsV2 && workId) {
+          const episodes: TocEpisodeItem[] = [];
+          const toc = mainWork.tableOfContentsV2;
+
+          // 현재 DOM에 존재하는 <a> 태그들을 URL 기준으로 매핑해두기 (있을 경우 element 연결)
+          const domElements = Array.from(
+            rootDoc.querySelectorAll<HTMLAnchorElement>('a[href*="/works/"][href*="/episodes/"]')
+          );
+          const elementMap = new Map<string, HTMLElement>();
+          domElements.forEach((el) => {
+            const rawHref = el.getAttribute('href') || el.href || '';
+            const clean = rawHref.split('#')[0].split('?')[0];
+            const epMatch = clean.match(/\/episodes\/(\d+)/);
+            if (epMatch) {
+              elementMap.set(epMatch[1], el);
+            }
+          });
+
+          // tableOfContentsV2 순회하며 순서대로 회차 추출
+          if (Array.isArray(toc)) {
+            for (const itemRef of toc) {
+              const refKey = itemRef?.__ref;
+              if (!refKey) continue;
+              const chapterOrEp = apollo[refKey];
+              if (!chapterOrEp) continue;
+
+              if (chapterOrEp.__typename === 'TableOfContentsChapter') {
+                const epUnions = chapterOrEp.episodeUnions || [];
+                for (const epRef of epUnions) {
+                  const epKey = epRef?.__ref;
+                  if (!epKey) continue;
+                  const ep = apollo[epKey];
+                  if (ep && ep.id) {
+                    const epId = String(ep.id);
+                    episodes.push({
+                      element: elementMap.get(epId),
+                      url: `https://kakuyomu.jp/works/${workId}/episodes/${epId}`,
+                      title: ep.title || '제목 없음',
+                    });
+                  }
+                }
+              } else if (chapterOrEp.__typename === 'Episode' && chapterOrEp.id) {
+                const epId = String(chapterOrEp.id);
+                episodes.push({
+                  element: elementMap.get(epId),
+                  url: `https://kakuyomu.jp/works/${workId}/episodes/${epId}`,
+                  title: chapterOrEp.title || '제목 없음',
+                });
+              }
+            }
+          }
+
+          if (episodes.length > 0) {
+            return episodes;
+          }
+        }
+      } catch (e) {
+        console.warn('[LANOVEL] 카쿠요무 __NEXT_DATA__ 파싱 실패, DOM 폴백을 시도합니다:', e);
+      }
+    }
+
+    // 2. DOM 기반 폴백 (기존 방식)
     let elements = Array.from(
       rootDoc.querySelectorAll<HTMLAnchorElement>(
         'a[class*="WorkTocSection_link"], [class*="WorkTocSection"] a, .widget-toc-episode a, a.widget-toc-episode-episodeTitle, [class*="widget-toc-episode"] a'
@@ -168,9 +254,12 @@ export class KakuyomuScraper implements PlatformScraper {
       let title = titleEl && titleEl.textContent ? titleEl.textContent.trim() : (el.textContent || '').trim();
       title = title.replace(/\s*\d{4}年\d{1,2}月\d{1,2}日.*$/, '').trim();
       const rawHref = el.getAttribute('href') || el.href || '';
+      const fullUrl = rawHref.startsWith('http')
+        ? rawHref
+        : `https://kakuyomu.jp${rawHref.startsWith('/') ? '' : '/'}${rawHref}`;
       return {
         element: el,
-        url: rawHref.split('#')[0],
+        url: fullUrl.split('#')[0],
         title: title || '제목 없음',
       };
     });

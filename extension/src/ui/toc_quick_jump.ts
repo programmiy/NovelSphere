@@ -91,12 +91,12 @@ export async function initTocPageFeatures(scraper: PlatformScraper): Promise<voi
     return;
   }
 
-  // URL 중복 제거
+  // URL 중복 제거 및 절대 경로 정규화
   const episodeDataList: TocEpisodeItem[] = [];
   const urlSet = new Set<string>();
   episodeItems.forEach((item) => {
     if (!item.url) return;
-    const cleanUrl = item.url.split('#')[0];
+    const cleanUrl = new URL(item.url, window.location.href).href.split('#')[0];
     if (!urlSet.has(cleanUrl)) {
       urlSet.add(cleanUrl);
       episodeDataList.push({
@@ -109,11 +109,11 @@ export async function initTocPageFeatures(scraper: PlatformScraper): Promise<voi
 
   if (!episodeDataList.length) return;
 
-  // 서버에 배치 조회 요청 (2.5초 타임아웃 방어)
+  // 서버에 배치 조회 요청 (5초 타임아웃 방어)
   const translatedSet = new Set<string>();
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 2500);
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
     const resp = await fetch('http://127.0.0.1:8001/api/check_translated_urls', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -125,8 +125,16 @@ export async function initTocPageFeatures(scraper: PlatformScraper): Promise<voi
       const data = await resp.json();
       const list: string[] = data.translated_urls || [];
       list.forEach((u) => {
-        translatedSet.add(u.replace(/\/$/, ''));
-        translatedSet.add(u.replace(/\/$/, '') + '/');
+        const norm = normalizeUrlKey(u);
+        translatedSet.add(norm);
+        translatedSet.add(norm + '/');
+        if (norm.startsWith('http://') || norm.startsWith('https://')) {
+          const pathOnly = norm.replace(/^https?:\/\/[^\/]+/, '');
+          if (pathOnly) {
+            translatedSet.add(pathOnly);
+            translatedSet.add(pathOnly + '/');
+          }
+        }
       });
     }
   } catch (e) {
@@ -141,7 +149,11 @@ export async function initTocPageFeatures(scraper: PlatformScraper): Promise<voi
   untranslatedEpisodesCache = [];
   episodeDataList.forEach((item, index) => {
     const cleanNoSlash = normalizeUrlKey(item.url);
-    const isTranslated = translatedSet.has(cleanNoSlash) || translatedSet.has(cleanNoSlash + '/');
+    const pathOnly = cleanNoSlash.replace(/^https?:\/\/[^\/]+/, '');
+    const isTranslated =
+      translatedSet.has(cleanNoSlash) ||
+      translatedSet.has(cleanNoSlash + '/') ||
+      (pathOnly && (translatedSet.has(pathOnly) || translatedSet.has(pathOnly + '/')));
     const isExcluded = excludedSet.has(cleanNoSlash);
 
     const badge = document.createElement('span');
@@ -158,14 +170,16 @@ export async function initTocPageFeatures(scraper: PlatformScraper): Promise<voi
       });
     }
 
-    const existingBadge =
-      item.element.parentNode?.querySelector('.lanovel-toc-badge') ||
-      item.element.querySelector('.lanovel-toc-badge');
-    if (!existingBadge) {
-      if (item.element.parentNode) {
-        item.element.insertAdjacentElement('afterend', badge);
-      } else {
-        item.element.appendChild(badge);
+    if (item.element) {
+      const existingBadge =
+        item.element.parentNode?.querySelector('.lanovel-toc-badge') ||
+        item.element.querySelector('.lanovel-toc-badge');
+      if (!existingBadge) {
+        if (item.element.parentNode) {
+          item.element.insertAdjacentElement('afterend', badge);
+        } else {
+          item.element.appendChild(badge);
+        }
       }
     }
 
@@ -182,6 +196,7 @@ export async function initTocPageFeatures(scraper: PlatformScraper): Promise<voi
     }
   });
 
+  console.log(`[LANOVEL] TOC 초기화 완료: 총 ${episodeDataList.length}개 회차 중 ${untranslatedEpisodesCache.length}개 미번역 발견`);
   renderQuickJumpPanel(untranslatedEpisodesCache);
 }
 
@@ -520,11 +535,11 @@ export async function loadRemoteTocEpisodes(scraper: PlatformScraper): Promise<b
 
     if (!episodeDataList.length) return false;
 
-    // 서버에 배치 조회 요청 (2.5초 타임아웃)
+    // 서버에 배치 조회 요청 (5초 타임아웃)
     const translatedSet = new Set<string>();
     try {
       const serverCtrl = new AbortController();
-      const sTimeout = setTimeout(() => serverCtrl.abort(), 2500);
+      const sTimeout = setTimeout(() => serverCtrl.abort(), 5000);
       const checkResp = await fetch('http://127.0.0.1:8001/api/check_translated_urls', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -536,8 +551,16 @@ export async function loadRemoteTocEpisodes(scraper: PlatformScraper): Promise<b
         const data = await checkResp.json();
         const list: string[] = data.translated_urls || [];
         list.forEach((u) => {
-          translatedSet.add(u.replace(/\/$/, ''));
-          translatedSet.add(u.replace(/\/$/, '') + '/');
+          const norm = normalizeUrlKey(u);
+          translatedSet.add(norm);
+          translatedSet.add(norm + '/');
+          if (norm.startsWith('http://') || norm.startsWith('https://')) {
+            const pathOnly = norm.replace(/^https?:\/\/[^\/]+/, '');
+            if (pathOnly) {
+              translatedSet.add(pathOnly);
+              translatedSet.add(pathOnly + '/');
+            }
+          }
         });
       }
     } catch (e) {
@@ -551,7 +574,11 @@ export async function loadRemoteTocEpisodes(scraper: PlatformScraper): Promise<b
     untranslatedEpisodesCache = [];
     episodeDataList.forEach((item, index) => {
       const cleanNoSlash = normalizeUrlKey(item.url);
-      const isTranslated = translatedSet.has(cleanNoSlash) || translatedSet.has(cleanNoSlash + '/');
+      const pathOnly = cleanNoSlash.replace(/^https?:\/\/[^\/]+/, '');
+      const isTranslated =
+        translatedSet.has(cleanNoSlash) ||
+        translatedSet.has(cleanNoSlash + '/') ||
+        (pathOnly && (translatedSet.has(pathOnly) || translatedSet.has(pathOnly + '/')));
       const isExcluded = excludedSet.has(cleanNoSlash);
 
       if (!isTranslated) {
@@ -566,7 +593,13 @@ export async function loadRemoteTocEpisodes(scraper: PlatformScraper): Promise<b
       }
     });
 
+    console.log(`[LANOVEL] 원격 목차 로드 완료: 총 ${episodeDataList.length}개 회차 중 ${untranslatedEpisodesCache.length}개 미번역 발견`);
     renderQuickJumpPanel(untranslatedEpisodesCache);
+    if (untranslatedEpisodesCache.length > 0) {
+      showLanovelHud(`미번역 회차 ${untranslatedEpisodesCache.length}화 로드 완료`, '⚡', 1800);
+    } else {
+      showLanovelHud('모든 회차의 번역이 완료되었습니다!', '🎉', 2000);
+    }
     return true;
   } catch (err: any) {
     console.error('[LANOVEL] 비동기 목차 로드 실패:', err);

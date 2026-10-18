@@ -650,7 +650,7 @@ def check_translated_urls(req: CheckUrlsRequest):
     if not req.urls:
         return {"translated_urls": []}
     
-    # URL 정규화 (해시 제거, 슬래시 양방향 비교 준비)
+    # URL 정규화 (해시 제거, 슬래시 양방향 및 상대 경로/절대 경로 상호 매칭 준비)
     normalized_map = {}
     for raw_url in req.urls:
         if not raw_url:
@@ -659,6 +659,13 @@ def check_translated_urls(req: CheckUrlsRequest):
         stripped = clean.rstrip('/')
         normalized_map[stripped] = raw_url
         normalized_map[stripped + '/'] = raw_url
+        if '://' in clean:
+            after_proto = clean.split('://', 1)[1]
+            if '/' in after_proto:
+                path_part = '/' + after_proto.split('/', 1)[1]
+                path_stripped = path_part.rstrip('/')
+                normalized_map[path_stripped] = raw_url
+                normalized_map[path_stripped + '/'] = raw_url
 
     lookup_keys = list(normalized_map.keys())
     if not lookup_keys:
@@ -675,7 +682,18 @@ def check_translated_urls(req: CheckUrlsRequest):
         cursor.execute(f"SELECT DISTINCT url FROM translations WHERE url IN ({placeholders})", chunk)
         for row in cursor.fetchall():
             if row[0]:
-                orig = normalized_map.get(row[0]) or normalized_map.get(row[0].rstrip('/'))
+                val = str(row[0]).strip()
+                val_stripped = val.rstrip('/')
+                orig = (
+                    normalized_map.get(val) or
+                    normalized_map.get(val_stripped) or
+                    normalized_map.get(val_stripped + '/')
+                )
+                if not orig and '://' in val:
+                    after_p = val.split('://', 1)[1]
+                    if '/' in after_p:
+                        pp = ('/' + after_p.split('/', 1)[1]).rstrip('/')
+                        orig = normalized_map.get(pp) or normalized_map.get(pp + '/')
                 if orig:
                     translated_urls.add(orig)
 

@@ -1,7 +1,7 @@
 // base.ts: 웹소설 플랫폼 공통 스크래퍼 인터페이스
 
 export interface TocEpisodeItem {
-  element: HTMLElement;
+  element?: HTMLElement;
   url: string;
   title: string;
 }

@@ -173,6 +173,7 @@ async def lifespan(app: FastAPI):
             connection.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_title ON translations (title)")
             connection.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_folder_title ON translations (folderName, title)")
             connection.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_translations_folder_url ON translations (folderName, url)")
+            connection.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_translations_url ON translations (url)")
 
             row = connection.exec_driver_sql("SELECT sql FROM sqlite_master WHERE type='table' AND name='translations_fts'").fetchone()
             need_recreate = True
