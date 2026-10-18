@@ -1,5 +1,5 @@
 // hameln.ts: 하멜른(syosetu.org) DOM 스크래퍼
-import { PlatformScraper, TocEpisodeItem } from './base';
+import type { PlatformScraper, TocEpisodeItem } from './base.ts';
 
 export class HamelnScraper implements PlatformScraper {
   readonly name = 'hameln';

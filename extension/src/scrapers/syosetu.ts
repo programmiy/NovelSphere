@@ -1,5 +1,5 @@
 // syosetu.ts: 소설가가 되자/녹턴/문라이트/미드나이트(syosetu.com) DOM 스크래퍼
-import { PlatformScraper, TocEpisodeItem } from './base';
+import type { PlatformScraper, TocEpisodeItem } from './base.ts';
 
 export class SyosetuScraper implements PlatformScraper {
   readonly name = 'syosetu';

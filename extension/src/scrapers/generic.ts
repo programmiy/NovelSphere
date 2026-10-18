@@ -1,5 +1,5 @@
 // generic.ts: 기본 폴백 스크래퍼
-import { PlatformScraper, TocEpisodeItem } from './base';
+import type { PlatformScraper, TocEpisodeItem } from './base.ts';
 
 export class GenericScraper implements PlatformScraper {
   readonly name = 'generic';

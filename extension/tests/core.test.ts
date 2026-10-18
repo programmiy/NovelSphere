@@ -254,4 +254,30 @@ test('state & filters: isReviewMode and checkIsVerbatimOrParaphrased work as exp
   assert.strictEqual(checkIsVerbatimOrParaphrased('「おはよう、勇者様」', '「좋은 아침이에요, 용사님」'), false);
 });
 
+test('kakuyomu & toc: KakuyomuScraper and normalizeUrlKey work accurately', async () => {
+  const { KakuyomuScraper } = await import('../src/scrapers/kakuyomu.ts');
+  const { normalizeUrlKey } = await import('../src/ui/toc_quick_jump.ts');
+
+  const scraper = new KakuyomuScraper();
+
+  // 1. matches
+  assert.strictEqual(scraper.matches('https://kakuyomu.jp/works/123', 'kakuyomu.jp'), true);
+  assert.strictEqual(scraper.matches('https://syosetu.com', 'syosetu.com'), false);
+
+  // 2. getWorkKey
+  assert.strictEqual(scraper.getWorkKey('https://kakuyomu.jp/works/1177354054887975130/episodes/123'), 'kakuyomu_1177354054887975130');
+  assert.strictEqual(scraper.getWorkKey('https://kakuyomu.jp/works/1177354054887975130'), 'kakuyomu_1177354054887975130');
+
+  // 3. isTocPage
+  assert.strictEqual(scraper.isTocPage('https://kakuyomu.jp/works/1177354054887975130', '/works/1177354054887975130'), true);
+  assert.strictEqual(scraper.isTocPage('https://kakuyomu.jp/works/1177354054887975130/', '/works/1177354054887975130/'), true);
+  assert.strictEqual(scraper.isTocPage('https://kakuyomu.jp/works/1177354054887975130/episodes/999', '/works/1177354054887975130/episodes/999'), false);
+
+  // 4. normalizeUrlKey
+  assert.strictEqual(normalizeUrlKey('https://kakuyomu.jp/works/123/episodes/456/'), 'https://kakuyomu.jp/works/123/episodes/456');
+  assert.strictEqual(normalizeUrlKey('https://kakuyomu.jp/works/123/episodes/456#comment'), 'https://kakuyomu.jp/works/123/episodes/456');
+  assert.strictEqual(normalizeUrlKey('https://kakuyomu.jp/works/123/episodes/456?ref=top#toc'), 'https://kakuyomu.jp/works/123/episodes/456');
+});
+
+
 

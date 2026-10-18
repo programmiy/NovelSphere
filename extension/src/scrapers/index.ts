@@ -1,11 +1,11 @@
 // index.ts: 플랫폼별 스크래퍼 통합 팩토리
-import { PlatformScraper } from './base';
-import { KakuyomuScraper } from './kakuyomu';
-import { SyosetuScraper } from './syosetu';
-import { NovelUpScraper } from './novelup';
-import { HamelnScraper } from './hameln';
-import { AlphapolisScraper } from './alphapolis';
-import { GenericScraper } from './generic';
+import type { PlatformScraper } from './base.ts';
+import { KakuyomuScraper } from './kakuyomu.ts';
+import { SyosetuScraper } from './syosetu.ts';
+import { NovelUpScraper } from './novelup.ts';
+import { HamelnScraper } from './hameln.ts';
+import { AlphapolisScraper } from './alphapolis.ts';
+import { GenericScraper } from './generic.ts';
 
 const scrapers: PlatformScraper[] = [
   new KakuyomuScraper(),
@@ -32,4 +32,4 @@ export function getScraper(url: string = window.location.href): PlatformScraper 
   return genericScraper;
 }
 
-export * from './base';
+export type * from './base.ts';

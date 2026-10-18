@@ -6,6 +6,7 @@ import { checkIsVerbatimOrParaphrased } from '../core/filters';
 import { saveSingleTranslation, retranslateSingleRow } from '../core/row_actions';
 import { updateReviewCardTranslation } from './review_panel';
 import { bindSeparatorPanelEvents } from './separator_panel';
+import { toggleQuickJumpFromSidebar } from './toc_quick_jump';
 
 export function escapeHtml(text: string): string {
   if (!text) return '';
@@ -85,6 +86,7 @@ export function injectSidebar(): void {
     <div class="sidebar-header">
       <h3>🗾 번역 워크스페이스</h3>
       <div class="sidebar-controls">
+        <button id="sidebar-quick-jump-toggle-btn" title="미번역 회차 목록(퀵 점프 서랍) 띄우기/닫기">⚡</button>
         <button id="sidebar-excluded-list-btn" title="제외된 단락 확인 및 복원">🛡️</button>
         <button id="separator-settings-btn" title="소설별 구분선 설정">⚙️</button>
         <button id="stop-translation-btn" title="번역 중지" style="display:none;">⏹️</button>
@@ -99,7 +101,10 @@ export function injectSidebar(): void {
         <span id="current-novel-title-display" class="novel-banner-title" title="클릭하여 소설 제목 수정">소설 감지 중...</span>
         <button id="edit-novel-title-btn" class="novel-banner-btn" title="소설 제목 직접 변경">✏️</button>
       </div>
-      <button id="toggle-sep-panel-btn" class="novel-banner-sep-toggle" title="이 소설의 구분선 설정">⚙️ 구분선 설정</button>
+      <div style="display: flex; gap: 6px; align-items: center;">
+        <button id="banner-quick-jump-btn" class="novel-banner-btn" style="background: rgba(245, 158, 11, 0.18); border: 1px solid rgba(245, 158, 11, 0.4); color: #f59e0b; border-radius: 4px; padding: 2px 8px; font-size: 11px; cursor: pointer;" title="미번역 회차 목록 띄우기/닫기">⚡ 미번역 목록</button>
+        <button id="toggle-sep-panel-btn" class="novel-banner-sep-toggle" title="이 소설의 구분선 설정">⚙️ 구분선 설정</button>
+      </div>
     </div>
     <div id="separator-settings-panel" class="separator-settings-panel" style="display: none;">
       <div class="sep-panel-header">
@@ -196,6 +201,13 @@ export function injectSidebar(): void {
   document.getElementById('clear-sidebar-log-btn')?.addEventListener('click', () => {
     const consoleEl = document.getElementById('sidebar-log-console');
     if (consoleEl) consoleEl.innerHTML = '';
+  });
+
+  document.getElementById('sidebar-quick-jump-toggle-btn')?.addEventListener('click', () => {
+    toggleQuickJumpFromSidebar();
+  });
+  document.getElementById('banner-quick-jump-btn')?.addEventListener('click', () => {
+    toggleQuickJumpFromSidebar();
   });
 
   bindSeparatorPanelEvents();

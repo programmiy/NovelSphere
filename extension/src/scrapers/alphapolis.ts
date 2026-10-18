@@ -1,5 +1,5 @@
 // alphapolis.ts: 알파폴리스(alphapolis.co.jp) DOM 스크래퍼
-import { PlatformScraper, TocEpisodeItem } from './base';
+import type { PlatformScraper, TocEpisodeItem } from './base.ts';
 
 export class AlphapolisScraper implements PlatformScraper {
   readonly name = 'alphapolis';

@@ -1,5 +1,5 @@
 // novelup.ts: 노벨업플러스(novelup.plus) DOM 스크래퍼
-import { PlatformScraper, TocEpisodeItem } from './base';
+import type { PlatformScraper, TocEpisodeItem } from './base.ts';
 
 export class NovelUpScraper implements PlatformScraper {
   readonly name = 'novelup';

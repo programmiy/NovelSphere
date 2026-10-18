@@ -489,12 +489,18 @@
           return host.includes("kakuyomu.jp");
         }
         detectNovelTitle() {
+          const heading = document.querySelector(
+            'h1[class*="WorkHeader"], h1[class*="Title"], .widget-toc-main-title, header h1, h1'
+          );
+          if (heading && heading.textContent && heading.textContent.trim()) {
+            return heading.textContent.trim();
+          }
           const workLink = Array.from(document.querySelectorAll('header a[href*="/works/"]')).find((a) => {
             const txt = (a.textContent || "").trim();
             const aria = a.getAttribute("aria-label") || "";
             const href = a.getAttribute("href") || "";
             return txt && !txt.includes("\u9589\u3058\u308B") && !aria.includes("\u9589\u3058\u308B") && !txt.includes("\u76EE\u6B21") && !txt.includes("TOP") && /\/works\/\d+$/.test(href.split("?")[0]);
-          }) || document.querySelector(".widget-toc-main-title") || document.querySelector('a[href^="/works/"][class*="Title"]') || document.querySelector('header a[class*="workTitle"]');
+          }) || document.querySelector('a[href^="/works/"][class*="Title"]') || document.querySelector('header a[class*="workTitle"]');
           if (workLink && workLink.textContent && workLink.textContent.trim()) {
             const candidate = workLink.textContent.trim();
             if (candidate && !candidate.includes("\u9589\u3058\u308B")) {
@@ -508,11 +514,15 @@
             novelPart = novelPart.replace(/（[^）]+）$/, "").trim();
             novelPart = novelPart.replace(/\([^)]+\)$/, "").trim();
             if (novelPart && !novelPart.includes("\u9589\u3058\u308B")) return novelPart;
+          } else if (parts.length > 0 && parts[0].trim()) {
+            return parts[0].trim();
           }
           return null;
         }
         extractEpisodeTitle() {
-          const epEl = document.querySelector('.widget-episodeTitle, [class*="widget-episodeTitle"], h1[class*="episodeTitle"]');
+          const epEl = document.querySelector(
+            '.widget-episodeTitle, [class*="widget-episodeTitle"], h1[class*="episodeTitle"], [class*="EpisodeTitle"]'
+          );
           if (epEl && epEl.textContent && epEl.textContent.trim()) {
             return epEl.textContent.trim();
           }
@@ -531,45 +541,74 @@
           return match ? `kakuyomu_${match[1]}` : null;
         }
         isTocPage(_url, path) {
-          if (path.includes("/episodes/") || document.querySelector(".widget-episodeBody, #contentMain-inner p[id]")) {
+          if (path.includes("/episodes/")) {
             return false;
           }
-          return /\/works\/\d+\/?$/.test(path) || !!document.querySelector(".widget-toc-episode");
+          if (typeof document !== "undefined") {
+            if (document.querySelector('.widget-episodeBody, [class*="Episode_body"], [class*="episodeBody"]')) {
+              return false;
+            }
+            if (document.querySelector(
+              '.widget-toc-episode, [class*="WorkTocSection"], [class*="WorkToc"], a[href*="/works/"][href*="/episodes/"]'
+            )) {
+              return true;
+            }
+          }
+          return /\/works\/\d+\/?$/.test(path);
         }
         findNextEpisodeLink() {
-          const direct = document.getElementById("contentMain-nextEpisode") || document.querySelector("a.widget-episodeNavigation-next") || document.querySelector("#contentMain-readNextEpisode") || document.querySelector("a.js-read-next-episode") || document.querySelector('a[data-link-click-action-name="WorksEpisodesEpisodeFooterNextEpisode"]');
+          const direct = document.getElementById("contentMain-nextEpisode") || document.querySelector("a.widget-episodeNavigation-next") || document.querySelector("#contentMain-readNextEpisode") || document.querySelector("a.js-read-next-episode") || document.querySelector('a[data-link-click-action-name="WorksEpisodesEpisodeFooterNextEpisode"]') || document.querySelector('a[class*="nextEpisode"], a[class*="NextEpisode"]');
           if (direct && direct.href) return direct;
           const candidates = Array.from(document.querySelectorAll('a[href*="/episodes/"]'));
-          const found = candidates.find((a) => (a.textContent || "").includes("\u6B21\u306E\u30A8\u30D4\u30BD\u30FC\u30C9"));
+          const found = candidates.find((a) => (a.textContent || "").includes("\u6B21\u306E\u30A8\u30D4\u30BD\u30FC\u30C9") || (a.textContent || "").includes("\u6B21\u3078"));
           if (found && found.href) return found;
           const relNext = document.querySelector('a[rel="next"], link[rel="next"]');
           if (relNext && relNext.href) return relNext;
           return null;
         }
         findPrevEpisodeLink() {
-          const direct = document.getElementById("contentMain-previousEpisode") || document.querySelector("a.widget-episodeNavigation-previous");
+          const direct = document.getElementById("contentMain-previousEpisode") || document.querySelector("a.widget-episodeNavigation-previous") || document.querySelector('a[class*="previousEpisode"], a[class*="PreviousEpisode"]');
           if (direct && direct.href) return direct;
           const candidates = Array.from(document.querySelectorAll('a[href*="/episodes/"]'));
-          const found = candidates.find((a) => (a.textContent || "").includes("\u524D\u306E\u30A8\u30D4\u30BD\u30FC\u30C9"));
+          const found = candidates.find((a) => (a.textContent || "").includes("\u524D\u306E\u30A8\u30D4\u30BD\u30FC\u30C9") || (a.textContent || "").includes("\u524D\u3078"));
           if (found && found.href) return found;
           return null;
         }
         findTocLink() {
           const links = Array.from(
-            document.querySelectorAll('header a[href*="/works/"], a.widget-toc-main-title, a[class*="workTitle"]')
+            document.querySelectorAll(
+              'header a[href*="/works/"], a.widget-toc-main-title, a[class*="workTitle"], a[class*="WorkHeader"], a[href*="/works/"]'
+            )
           );
-          const found = links.find((a) => /\/works\/\d+$/.test((a.getAttribute("href") || "").split("?")[0]));
+          const found = links.find((a) => /\/works\/\d+\/?$/.test((a.getAttribute("href") || "").split("?")[0]));
           return found || null;
         }
         getTocEpisodes() {
-          const elements = Array.from(
-            document.querySelectorAll(".widget-toc-episode a, a.widget-toc-episode-episodeTitle")
+          let elements = Array.from(
+            document.querySelectorAll(
+              'a[class*="WorkTocSection_link"], [class*="WorkTocSection"] a, .widget-toc-episode a, a.widget-toc-episode-episodeTitle, [class*="widget-toc-episode"] a'
+            )
           );
-          return elements.map((el) => ({
-            element: el,
-            url: el.href.split("#")[0],
-            title: (el.textContent || "").trim()
-          }));
+          if (!elements.length) {
+            elements = Array.from(
+              document.querySelectorAll('a[href*="/works/"][href*="/episodes/"]')
+            ).filter((a) => {
+              const isHeaderButton = a.closest("header") || a.closest(".widget-workCard-actions") || a.closest('[class*="ReadButton"]') || (a.textContent || "").includes("1\u8A71\u76EE\u304B\u3089\u8AAD\u3080");
+              return !isHeaderButton && a.href;
+            });
+          }
+          return elements.map((el) => {
+            const titleEl = el.querySelector(
+              '[class*="WorkTocSection_title"], .widget-toc-episode-episodeTitle, [class*="episodeTitle"]'
+            );
+            let title = titleEl && titleEl.textContent ? titleEl.textContent.trim() : (el.textContent || "").trim();
+            title = title.replace(/\s*\d{4}年\d{1,2}月\d{1,2}日.*$/, "").trim();
+            return {
+              element: el,
+              url: el.href.split("#")[0],
+              title: title || "\uC81C\uBAA9 \uC5C6\uC74C"
+            };
+          });
         }
       };
     }
@@ -1060,13 +1099,6 @@
     }
   });
 
-  // src/scrapers/base.ts
-  var init_base = __esm({
-    "src/scrapers/base.ts"() {
-      "use strict";
-    }
-  });
-
   // src/scrapers/index.ts
   function getScraper(url = window.location.href) {
     try {
@@ -1091,7 +1123,6 @@
       init_hameln();
       init_alphapolis();
       init_generic();
-      init_base();
       scrapers = [
         new KakuyomuScraper(),
         new SyosetuScraper(),
@@ -2439,6 +2470,436 @@
     }
   });
 
+  // src/ui/hud.ts
+  function escapeHtml2(text) {
+    const map = {
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#039;"
+    };
+    return text.replace(/[&<>"']/g, (m) => map[m]);
+  }
+  function showLanovelHud(message, icon = "\u{1F4D6}", durationMs = 2200) {
+    let hud = document.getElementById("lanovel-hud");
+    if (!hud) {
+      hud = document.createElement("div");
+      hud.id = "lanovel-hud";
+      document.body.appendChild(hud);
+    }
+    hud.innerHTML = `<span class="hud-icon">${icon}</span><span class="hud-message">${escapeHtml2(message)}</span>`;
+    hud.classList.add("visible");
+    if (hudTimer) {
+      clearTimeout(hudTimer);
+    }
+    hudTimer = setTimeout(() => {
+      if (hud) hud.classList.remove("visible");
+    }, durationMs);
+  }
+  var hudTimer;
+  var init_hud = __esm({
+    "src/ui/hud.ts"() {
+      "use strict";
+      hudTimer = null;
+    }
+  });
+
+  // src/ui/toc_quick_jump.ts
+  function normalizeUrlKey(url) {
+    if (!url) return "";
+    return url.split("#")[0].split("?")[0].replace(/\/$/, "");
+  }
+  async function getExcludedEpisodeUrls() {
+    try {
+      const stored = await chrome.storage.local.get(EXCLUDED_EPISODES_STORAGE_KEY);
+      if (Array.isArray(stored[EXCLUDED_EPISODES_STORAGE_KEY])) {
+        return stored[EXCLUDED_EPISODES_STORAGE_KEY];
+      }
+    } catch (e) {
+      console.warn("[LANOVEL] \uC81C\uC678 \uD68C\uCC28 \uBAA9\uB85D \uC870\uD68C \uC2E4\uD328:", e);
+    }
+    return [];
+  }
+  async function isEpisodeUrlExcluded(targetUrl) {
+    if (!targetUrl) return false;
+    const clean = normalizeUrlKey(targetUrl);
+    const list = await getExcludedEpisodeUrls();
+    const set = new Set(list.map(normalizeUrlKey));
+    return set.has(clean);
+  }
+  async function toggleEpisodeUrlExcluded(targetUrl) {
+    if (!targetUrl) return false;
+    const clean = normalizeUrlKey(targetUrl);
+    const list = await getExcludedEpisodeUrls();
+    const set = new Set(list.map(normalizeUrlKey));
+    let isNowExcluded = false;
+    if (set.has(clean)) {
+      set.delete(clean);
+      isNowExcluded = false;
+    } else {
+      set.add(clean);
+      isNowExcluded = true;
+    }
+    try {
+      await chrome.storage.local.set({ [EXCLUDED_EPISODES_STORAGE_KEY]: Array.from(set) });
+    } catch (e) {
+      console.warn("[LANOVEL] \uC81C\uC678 \uD68C\uCC28 \uBAA9\uB85D \uC800\uC7A5 \uC2E4\uD328:", e);
+    }
+    return isNowExcluded;
+  }
+  function escapeHtml3(text) {
+    const map = {
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#039;"
+    };
+    return text.replace(/[&<>"']/g, (m) => map[m]);
+  }
+  async function initTocPageFeatures(scraper) {
+    if (!scraper.isTocPage(window.location.href, window.location.pathname)) return;
+    console.log("[LANOVEL] \uBAA9\uCC28 \uD398\uC774\uC9C0 \uAC10\uC9C0: \uD68C\uCC28\uBCC4 \uBC88\uC5ED \uC0C1\uD0DC \uBC30\uC9C0 \uBC0F \uD035 \uC810\uD504 \uD328\uB110\uC744 \uCD08\uAE30\uD654\uD569\uB2C8\uB2E4.");
+    let episodeItems = [];
+    for (let retry = 0; retry < 5; retry++) {
+      if (scraper.getTocEpisodes) {
+        episodeItems = scraper.getTocEpisodes();
+      }
+      if (episodeItems.length > 0) break;
+      await new Promise((r) => setTimeout(r, 200));
+    }
+    if (!episodeItems.length) {
+      console.log("[LANOVEL] \uBAA9\uCC28 \uD398\uC774\uC9C0\uC774\uB098 \uD68C\uCC28 \uB9C1\uD06C \uC694\uC18C\uB97C \uBC1C\uACAC\uD558\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4.");
+      return;
+    }
+    const episodeDataList = [];
+    const urlSet = /* @__PURE__ */ new Set();
+    episodeItems.forEach((item) => {
+      if (!item.url) return;
+      const cleanUrl = item.url.split("#")[0];
+      if (!urlSet.has(cleanUrl)) {
+        urlSet.add(cleanUrl);
+        episodeDataList.push({
+          element: item.element,
+          url: cleanUrl,
+          title: item.title
+        });
+      }
+    });
+    if (!episodeDataList.length) return;
+    const translatedSet = /* @__PURE__ */ new Set();
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 2500);
+      const resp = await fetch("http://127.0.0.1:8001/api/check_translated_urls", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ urls: Array.from(urlSet) }),
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+      if (resp.ok) {
+        const data = await resp.json();
+        const list = data.translated_urls || [];
+        list.forEach((u) => {
+          translatedSet.add(u.replace(/\/$/, ""));
+          translatedSet.add(u.replace(/\/$/, "") + "/");
+        });
+      }
+    } catch (e) {
+      console.warn("[LANOVEL] \uC11C\uBC84 \uBC88\uC5ED URL \uD655\uC778 \uC911 \uC624\uB958 \uBC1C\uC0DD (\uAE30\uBCF8 \uC9C4\uD589):", e);
+    }
+    const excludedUrls = await getExcludedEpisodeUrls();
+    const excludedSet = new Set(excludedUrls.map(normalizeUrlKey));
+    untranslatedEpisodesCache = [];
+    episodeDataList.forEach((item, index) => {
+      const cleanNoSlash = normalizeUrlKey(item.url);
+      const isTranslated = translatedSet.has(cleanNoSlash) || translatedSet.has(cleanNoSlash + "/");
+      const isExcluded = excludedSet.has(cleanNoSlash);
+      const badge = document.createElement("span");
+      badge.className = `lanovel-toc-badge ${isTranslated ? "translated" : isExcluded ? "excluded" : "untranslated"}`;
+      badge.innerHTML = `<span class="badge-dot"></span>${isTranslated ? "\uC644\uB8CC" : isExcluded ? "\uC81C\uC678" : "\uBBF8\uBC88\uC5ED"}`;
+      badge.title = isTranslated ? "\uBC88\uC5ED \uC644\uB8CC" : isExcluded ? "\uBC88\uC5ED \uC81C\uC678\uB428 (\uD074\uB9AD\uD558\uC5EC \uD574\uC81C)" : "\uBBF8\uBC88\uC5ED (\uD074\uB9AD\uD558\uC5EC \uBC88\uC5ED \uC81C\uC678)";
+      if (!isTranslated) {
+        badge.style.cursor = "pointer";
+        badge.addEventListener("click", async (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          await toggleExclusionForItem(item.url, item.title);
+        });
+      }
+      const existingBadge = item.element.parentNode?.querySelector(".lanovel-toc-badge") || item.element.querySelector(".lanovel-toc-badge");
+      if (!existingBadge) {
+        if (item.element.parentNode) {
+          item.element.insertAdjacentElement("afterend", badge);
+        } else {
+          item.element.appendChild(badge);
+        }
+      }
+      if (!isTranslated) {
+        untranslatedEpisodesCache.push({
+          index: untranslatedEpisodesCache.length,
+          tocIndex: index,
+          title: item.title,
+          url: item.url,
+          element: item.element,
+          badgeElement: badge,
+          isExcluded
+        });
+      }
+    });
+    renderQuickJumpPanel(untranslatedEpisodesCache);
+  }
+  function renderQuickJumpPanel(untranslatedList) {
+    let container = document.getElementById("lanovel-quick-jump-container");
+    if (container) container.remove();
+    container = document.createElement("div");
+    container.id = "lanovel-quick-jump-container";
+    const activeCount = untranslatedList.filter((ep) => !ep.isExcluded).length;
+    const count = activeCount;
+    const sidebarCtrlBtn = document.getElementById("sidebar-quick-jump-toggle-btn");
+    if (sidebarCtrlBtn) {
+      sidebarCtrlBtn.title = `\uBBF8\uBC88\uC5ED \uD68C\uCC28 \uBAA9\uB85D (${count}\uD654) \uB744\uC6B0\uAE30/\uB2EB\uAE30`;
+    }
+    const bannerBtn = document.getElementById("banner-quick-jump-btn");
+    if (bannerBtn) {
+      bannerBtn.textContent = `\u26A1 \uBBF8\uBC88\uC5ED ${count}\uD654`;
+    }
+    const triggerHtml = `
+    <div id="lanovel-quick-jump-trigger" title="\uD074\uB9AD\uD558\uAC70\uB098 'N' \uD0A4\uB97C \uB20C\uB7EC \uBBF8\uBC88\uC5ED \uD68C\uCC28 \uBAA9\uB85D \uBCF4\uAE30">
+      <span class="trigger-icon">\u26A1</span>
+      <span>\uBBF8\uBC88\uC5ED <strong id="lanovel-trigger-count">${count}</strong>\uD654</span>
+      <span class="trigger-keyhint">N</span>
+    </div>
+  `;
+    const itemsHtml = untranslatedList.length > 0 ? untranslatedList.map(
+      (ep, idx) => `
+      <li class="quick-jump-item ${ep.isExcluded ? "is-excluded" : ""}" data-jump-index="${idx}" data-url="${escapeHtml3(ep.url)}" title="${escapeHtml3(ep.title)}">
+        <span class="item-title ${ep.isExcluded ? "is-excluded" : ""}">${escapeHtml3(ep.title)}</span>
+        <div class="item-actions">
+          <button type="button" class="quick-jump-exclude-btn ${ep.isExcluded ? "is-excluded" : ""}" data-url="${escapeHtml3(ep.url)}" title="${ep.isExcluded ? "\uBC88\uC5ED \uC81C\uC678 \uCDE8\uC18C" : "\uC774 \uD68C\uCC28 \uBC88\uC5ED \uC81C\uC678"}">
+            ${ep.isExcluded ? "\uC81C\uC678\uB428" : "\uC81C\uC678"}
+          </button>
+          <span class="item-action-hint">Enter \uC774\uB3D9</span>
+        </div>
+      </li>
+    `
+    ).join("") : `
+      <li class="quick-jump-item" style="justify-content: center; color: #10b981; cursor: default;">
+        \u{1F389} \uBAA8\uB4E0 \uD68C\uCC28\uC758 \uBC88\uC5ED\uC774 \uC644\uB8CC\uB418\uC5C8\uC2B5\uB2C8\uB2E4!
+      </li>
+    `;
+    const drawerHtml = `
+    <div id="lanovel-quick-jump-drawer">
+      <div class="quick-jump-header">
+        <div class="title-wrap">
+          <span style="color: #f59e0b; font-size: 14px;">\u26A1</span>
+          <h4>\uBBF8\uBC88\uC5ED \uD68C\uCC28 \uBAA9\uB85D</h4>
+          <span class="count-badge" id="lanovel-header-count">${count}</span>
+        </div>
+        <button class="close-btn" id="lanovel-quick-jump-close" title="\uB2EB\uAE30 (ESC)">\u2715</button>
+      </div>
+      <ul class="quick-jump-list" id="lanovel-quick-jump-list">
+        ${itemsHtml}
+      </ul>
+      <div class="quick-jump-footer">
+        <span><kbd>N</kbd> / <kbd>\u2191\u2193</kbd> \uC120\uD0DD</span>
+        <span><kbd>Enter</kbd> \uC790\uB3D9 \uBC88\uC5ED \uC9C4\uC785</span>
+      </div>
+    </div>
+  `;
+    container.innerHTML = triggerHtml + drawerHtml;
+    document.body.appendChild(container);
+    const trigger = document.getElementById("lanovel-quick-jump-trigger");
+    if (trigger) {
+      trigger.addEventListener("click", () => {
+        toggleQuickJumpDrawer();
+      });
+    }
+    const closeBtn = document.getElementById("lanovel-quick-jump-close");
+    if (closeBtn) {
+      closeBtn.addEventListener("click", () => {
+        toggleQuickJumpDrawer(false);
+      });
+    }
+    const listEl = document.getElementById("lanovel-quick-jump-list");
+    if (listEl) {
+      listEl.querySelectorAll(".quick-jump-exclude-btn").forEach((btn) => {
+        btn.addEventListener("click", async (e) => {
+          e.stopPropagation();
+          e.preventDefault();
+          const url = btn.getAttribute("data-url");
+          if (!url) return;
+          const targetEp = untranslatedList.find((it) => it.url === url);
+          await toggleExclusionForItem(url, targetEp ? targetEp.title : "");
+        });
+      });
+      listEl.querySelectorAll(".quick-jump-item").forEach((item) => {
+        item.addEventListener("click", (e) => {
+          if (e.target.closest(".quick-jump-exclude-btn")) return;
+          const idx = parseInt(item.getAttribute("data-jump-index") || "-1", 10);
+          if (!isNaN(idx) && untranslatedList[idx]) {
+            const ep = untranslatedList[idx];
+            if (ep.isExcluded) {
+              showLanovelHud(`'${ep.title}'\uC740(\uB294) \uC81C\uC678\uB41C \uD68C\uCC28\uC785\uB2C8\uB2E4.`, "\u26A0\uFE0F", 2e3);
+              return;
+            }
+            sessionStorage.setItem("lanovel_auto_translate_next", "1");
+            showLanovelHud(`'${ep.title}' \uC9C4\uC785 \uBC0F \uC790\uB3D9 \uBC88\uC5ED...`, "\u26A1");
+            setTimeout(() => {
+              window.location.href = ep.url;
+            }, 150);
+          }
+        });
+      });
+    }
+  }
+  async function toggleExclusionForItem(url, title) {
+    if (!url) return;
+    const targetEp = untranslatedEpisodesCache.find((it) => normalizeUrlKey(it.url) === normalizeUrlKey(url));
+    const nowExcluded = await toggleEpisodeUrlExcluded(url);
+    if (targetEp) {
+      targetEp.isExcluded = nowExcluded;
+      if (targetEp.badgeElement) {
+        targetEp.badgeElement.className = `lanovel-toc-badge ${nowExcluded ? "excluded" : "untranslated"}`;
+        targetEp.badgeElement.innerHTML = `<span class="badge-dot"></span>${nowExcluded ? "\uC81C\uC678" : "\uBBF8\uBC88\uC5ED"}`;
+        targetEp.badgeElement.title = nowExcluded ? "\uBC88\uC5ED \uC81C\uC678\uB428 (\uD074\uB9AD\uD558\uC5EC \uD574\uC81C)" : "\uBBF8\uBC88\uC5ED (\uD074\uB9AD\uD558\uC5EC \uBC88\uC5ED \uC81C\uC678)";
+      }
+    }
+    const listEl = document.getElementById("lanovel-quick-jump-list");
+    if (listEl) {
+      const itemEl = listEl.querySelector(`.quick-jump-item[data-url="${escapeHtml3(url)}"]`);
+      if (itemEl) {
+        itemEl.classList.toggle("is-excluded", nowExcluded);
+        const titleEl = itemEl.querySelector(".item-title");
+        if (titleEl) titleEl.classList.toggle("is-excluded", nowExcluded);
+        const btnEl = itemEl.querySelector(".quick-jump-exclude-btn");
+        if (btnEl) {
+          btnEl.classList.toggle("is-excluded", nowExcluded);
+          btnEl.textContent = nowExcluded ? "\uC81C\uC678\uB428" : "\uC81C\uC678";
+          btnEl.setAttribute("title", nowExcluded ? "\uBC88\uC5ED \uC81C\uC678 \uCDE8\uC18C" : "\uC774 \uD68C\uCC28 \uBC88\uC5ED \uC81C\uC678");
+        }
+      }
+    }
+    const activeCount = untranslatedEpisodesCache.filter((ep) => !ep.isExcluded).length;
+    const headerCount = document.getElementById("lanovel-header-count");
+    if (headerCount) headerCount.textContent = String(activeCount);
+    const triggerCount = document.getElementById("lanovel-trigger-count");
+    if (triggerCount) triggerCount.textContent = String(activeCount);
+    const sidebarCtrlBtn = document.getElementById("sidebar-quick-jump-toggle-btn");
+    if (sidebarCtrlBtn) {
+      sidebarCtrlBtn.title = `\uBBF8\uBC88\uC5ED \uD68C\uCC28 \uBAA9\uB85D (${activeCount}\uD654) \uB744\uC6B0\uAE30/\uB2EB\uAE30`;
+    }
+    const bannerBtn = document.getElementById("banner-quick-jump-btn");
+    if (bannerBtn) {
+      bannerBtn.textContent = `\u26A1 \uBBF8\uBC88\uC5ED ${activeCount}\uD654`;
+    }
+    if (nowExcluded) {
+      showLanovelHud(`'${title || "\uD68C\uCC28"}' \uBC88\uC5ED \uBAA9\uB85D\uC5D0\uC11C \uC81C\uC678\uB418\uC5C8\uC2B5\uB2C8\uB2E4.`, "\u{1F6AB}", 2200);
+    } else {
+      showLanovelHud(`'${title || "\uD68C\uCC28"}' \uBC88\uC5ED \uBAA9\uB85D\uC5D0 \uB2E4\uC2DC \uD3EC\uD568\uB418\uC5C8\uC2B5\uB2C8\uB2E4.`, "\u26A1", 2200);
+    }
+  }
+  function toggleQuickJumpDrawer(open) {
+    const drawer = document.getElementById("lanovel-quick-jump-drawer");
+    if (!drawer) return;
+    if (typeof open === "boolean") {
+      if (open) {
+        drawer.classList.add("open");
+      } else {
+        drawer.classList.remove("open");
+      }
+    } else {
+      drawer.classList.toggle("open");
+    }
+  }
+  function handleQuickJumpNKey() {
+    const activeEpisodes = untranslatedEpisodesCache.map((ep, idx) => ({ ep, idx })).filter((item) => !item.ep.isExcluded);
+    if (!activeEpisodes.length) {
+      showLanovelHud("\uBAA8\uB4E0 \uD68C\uCC28\uAC00 \uC774\uBBF8 \uBC88\uC5ED \uC644\uB8CC \uB610\uB294 \uC81C\uC678\uB418\uC5C8\uC2B5\uB2C8\uB2E4!", "\u{1F389}");
+      return;
+    }
+    const drawer = document.getElementById("lanovel-quick-jump-drawer");
+    if (!drawer) return;
+    if (!drawer.classList.contains("open")) {
+      drawer.classList.add("open");
+      quickJumpFocusedIndex = activeEpisodes[0].idx;
+    } else {
+      const currentPos = activeEpisodes.findIndex((item) => item.idx === quickJumpFocusedIndex);
+      const nextPos = (currentPos + 1) % activeEpisodes.length;
+      quickJumpFocusedIndex = activeEpisodes[nextPos].idx;
+    }
+    updateQuickJumpFocusUI();
+  }
+  function moveQuickJumpFocus(delta) {
+    if (!untranslatedEpisodesCache.length) return;
+    quickJumpFocusedIndex = (quickJumpFocusedIndex + delta + untranslatedEpisodesCache.length) % untranslatedEpisodesCache.length;
+    updateQuickJumpFocusUI();
+  }
+  function updateQuickJumpFocusUI() {
+    const listEl = document.getElementById("lanovel-quick-jump-list");
+    if (!listEl) return;
+    const items = listEl.querySelectorAll(".quick-jump-item");
+    items.forEach((item, idx) => {
+      if (idx === quickJumpFocusedIndex) {
+        item.classList.add("focused");
+        item.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      } else {
+        item.classList.remove("focused");
+      }
+    });
+    const targetEp = untranslatedEpisodesCache[quickJumpFocusedIndex];
+    if (targetEp && targetEp.element) {
+      targetEp.element.scrollIntoView({ block: "center", behavior: "smooth" });
+    }
+  }
+  async function toggleQuickJumpFromSidebar() {
+    const drawer = document.getElementById("lanovel-quick-jump-drawer");
+    const container = document.getElementById("lanovel-quick-jump-container");
+    if (drawer && drawer.classList.contains("open")) {
+      toggleQuickJumpDrawer(false);
+      showLanovelHud("\uBBF8\uBC88\uC5ED \uD68C\uCC28 \uC11C\uB78D\uC744 \uB2EB\uC558\uC2B5\uB2C8\uB2E4.", "\u26A1", 1500);
+      return;
+    }
+    if (drawer && container) {
+      toggleQuickJumpDrawer(true);
+      showLanovelHud("\uBBF8\uBC88\uC5ED \uD68C\uCC28 \uC11C\uB78D\uC744 \uC5F4\uC5C8\uC2B5\uB2C8\uB2E4.", "\u26A1", 1500);
+      return;
+    }
+    const scraper = getScraper();
+    if (scraper.isTocPage(window.location.href, window.location.pathname)) {
+      showLanovelHud("\uBAA9\uCC28 \uD68C\uCC28 \uBAA9\uB85D\uC744 \uBD88\uB7EC\uC624\uB294 \uC911...", "\u23F3", 1500);
+      await initTocPageFeatures(scraper);
+      const newDrawer = document.getElementById("lanovel-quick-jump-drawer");
+      if (newDrawer) {
+        toggleQuickJumpDrawer(true);
+        showLanovelHud("\uBBF8\uBC88\uC5ED \uD68C\uCC28 \uC11C\uB78D\uC744 \uC5F4\uC5C8\uC2B5\uB2C8\uB2E4.", "\u26A1", 1500);
+      }
+    } else {
+      const tocLink = scraper.findTocLink ? scraper.findTocLink() : null;
+      if (tocLink && tocLink.href) {
+        showLanovelHud("\uC18C\uC124 \uBAA9\uCC28 \uD398\uC774\uC9C0\uB85C \uC774\uB3D9\uD558\uC5EC \uBBF8\uBC88\uC5ED \uBAA9\uB85D\uC744 \uC5FD\uB2C8\uB2E4...", "\u{1F4D1}", 2e3);
+        setTimeout(() => {
+          window.location.href = tocLink.href;
+        }, 300);
+      } else {
+        showLanovelHud("\uC18C\uC124 \uBAA9\uCC28 \uD398\uC774\uC9C0\uC5D0\uC11C \uBBF8\uBC88\uC5ED \uBAA9\uB85D\uC744 \uD655\uC778\uD560 \uC218 \uC788\uC2B5\uB2C8\uB2E4.", "\u26A0\uFE0F", 2500);
+      }
+    }
+  }
+  var EXCLUDED_EPISODES_STORAGE_KEY, quickJumpFocusedIndex, untranslatedEpisodesCache;
+  var init_toc_quick_jump = __esm({
+    "src/ui/toc_quick_jump.ts"() {
+      "use strict";
+      init_scrapers();
+      init_hud();
+      EXCLUDED_EPISODES_STORAGE_KEY = "lanovel_excluded_urls";
+      quickJumpFocusedIndex = -1;
+      untranslatedEpisodesCache = [];
+    }
+  });
+
   // src/ui/sidebar.ts
   function escapeHtml(text) {
     if (!text) return "";
@@ -2502,6 +2963,7 @@
     <div class="sidebar-header">
       <h3>\u{1F5FE} \uBC88\uC5ED \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4</h3>
       <div class="sidebar-controls">
+        <button id="sidebar-quick-jump-toggle-btn" title="\uBBF8\uBC88\uC5ED \uD68C\uCC28 \uBAA9\uB85D(\uD035 \uC810\uD504 \uC11C\uB78D) \uB744\uC6B0\uAE30/\uB2EB\uAE30">\u26A1</button>
         <button id="sidebar-excluded-list-btn" title="\uC81C\uC678\uB41C \uB2E8\uB77D \uD655\uC778 \uBC0F \uBCF5\uC6D0">\u{1F6E1}\uFE0F</button>
         <button id="separator-settings-btn" title="\uC18C\uC124\uBCC4 \uAD6C\uBD84\uC120 \uC124\uC815">\u2699\uFE0F</button>
         <button id="stop-translation-btn" title="\uBC88\uC5ED \uC911\uC9C0" style="display:none;">\u23F9\uFE0F</button>
@@ -2516,7 +2978,10 @@
         <span id="current-novel-title-display" class="novel-banner-title" title="\uD074\uB9AD\uD558\uC5EC \uC18C\uC124 \uC81C\uBAA9 \uC218\uC815">\uC18C\uC124 \uAC10\uC9C0 \uC911...</span>
         <button id="edit-novel-title-btn" class="novel-banner-btn" title="\uC18C\uC124 \uC81C\uBAA9 \uC9C1\uC811 \uBCC0\uACBD">\u270F\uFE0F</button>
       </div>
-      <button id="toggle-sep-panel-btn" class="novel-banner-sep-toggle" title="\uC774 \uC18C\uC124\uC758 \uAD6C\uBD84\uC120 \uC124\uC815">\u2699\uFE0F \uAD6C\uBD84\uC120 \uC124\uC815</button>
+      <div style="display: flex; gap: 6px; align-items: center;">
+        <button id="banner-quick-jump-btn" class="novel-banner-btn" style="background: rgba(245, 158, 11, 0.18); border: 1px solid rgba(245, 158, 11, 0.4); color: #f59e0b; border-radius: 4px; padding: 2px 8px; font-size: 11px; cursor: pointer;" title="\uBBF8\uBC88\uC5ED \uD68C\uCC28 \uBAA9\uB85D \uB744\uC6B0\uAE30/\uB2EB\uAE30">\u26A1 \uBBF8\uBC88\uC5ED \uBAA9\uB85D</button>
+        <button id="toggle-sep-panel-btn" class="novel-banner-sep-toggle" title="\uC774 \uC18C\uC124\uC758 \uAD6C\uBD84\uC120 \uC124\uC815">\u2699\uFE0F \uAD6C\uBD84\uC120 \uC124\uC815</button>
+      </div>
     </div>
     <div id="separator-settings-panel" class="separator-settings-panel" style="display: none;">
       <div class="sep-panel-header">
@@ -2609,6 +3074,12 @@
     document.getElementById("clear-sidebar-log-btn")?.addEventListener("click", () => {
       const consoleEl = document.getElementById("sidebar-log-console");
       if (consoleEl) consoleEl.innerHTML = "";
+    });
+    document.getElementById("sidebar-quick-jump-toggle-btn")?.addEventListener("click", () => {
+      toggleQuickJumpFromSidebar();
+    });
+    document.getElementById("banner-quick-jump-btn")?.addEventListener("click", () => {
+      toggleQuickJumpFromSidebar();
     });
     bindSeparatorPanelEvents();
     const editTitleBtn = document.getElementById("edit-novel-title-btn");
@@ -2958,41 +3429,7 @@
       init_row_actions();
       init_review_panel();
       init_separator_panel();
-    }
-  });
-
-  // src/ui/hud.ts
-  function escapeHtml2(text) {
-    const map = {
-      "&": "&amp;",
-      "<": "&lt;",
-      ">": "&gt;",
-      '"': "&quot;",
-      "'": "&#039;"
-    };
-    return text.replace(/[&<>"']/g, (m) => map[m]);
-  }
-  function showLanovelHud(message, icon = "\u{1F4D6}", durationMs = 2200) {
-    let hud = document.getElementById("lanovel-hud");
-    if (!hud) {
-      hud = document.createElement("div");
-      hud.id = "lanovel-hud";
-      document.body.appendChild(hud);
-    }
-    hud.innerHTML = `<span class="hud-icon">${icon}</span><span class="hud-message">${escapeHtml2(message)}</span>`;
-    hud.classList.add("visible");
-    if (hudTimer) {
-      clearTimeout(hudTimer);
-    }
-    hudTimer = setTimeout(() => {
-      if (hud) hud.classList.remove("visible");
-    }, durationMs);
-  }
-  var hudTimer;
-  var init_hud = __esm({
-    "src/ui/hud.ts"() {
-      "use strict";
-      hudTimer = null;
+      init_toc_quick_jump();
     }
   });
 
@@ -3883,342 +4320,7 @@
   // src/ui/key_nav.ts
   init_state();
   init_hud();
-
-  // src/ui/toc_quick_jump.ts
-  init_hud();
-  var EXCLUDED_EPISODES_STORAGE_KEY = "lanovel_excluded_urls";
-  function normalizeUrlKey(url) {
-    if (!url) return "";
-    return url.split("#")[0].split("?")[0].replace(/\/$/, "");
-  }
-  async function getExcludedEpisodeUrls() {
-    try {
-      const stored = await chrome.storage.local.get(EXCLUDED_EPISODES_STORAGE_KEY);
-      if (Array.isArray(stored[EXCLUDED_EPISODES_STORAGE_KEY])) {
-        return stored[EXCLUDED_EPISODES_STORAGE_KEY];
-      }
-    } catch (e) {
-      console.warn("[LANOVEL] \uC81C\uC678 \uD68C\uCC28 \uBAA9\uB85D \uC870\uD68C \uC2E4\uD328:", e);
-    }
-    return [];
-  }
-  async function isEpisodeUrlExcluded(targetUrl) {
-    if (!targetUrl) return false;
-    const clean = normalizeUrlKey(targetUrl);
-    const list = await getExcludedEpisodeUrls();
-    const set = new Set(list.map(normalizeUrlKey));
-    return set.has(clean);
-  }
-  async function toggleEpisodeUrlExcluded(targetUrl) {
-    if (!targetUrl) return false;
-    const clean = normalizeUrlKey(targetUrl);
-    const list = await getExcludedEpisodeUrls();
-    const set = new Set(list.map(normalizeUrlKey));
-    let isNowExcluded = false;
-    if (set.has(clean)) {
-      set.delete(clean);
-      isNowExcluded = false;
-    } else {
-      set.add(clean);
-      isNowExcluded = true;
-    }
-    try {
-      await chrome.storage.local.set({ [EXCLUDED_EPISODES_STORAGE_KEY]: Array.from(set) });
-    } catch (e) {
-      console.warn("[LANOVEL] \uC81C\uC678 \uD68C\uCC28 \uBAA9\uB85D \uC800\uC7A5 \uC2E4\uD328:", e);
-    }
-    return isNowExcluded;
-  }
-  var quickJumpFocusedIndex = -1;
-  var untranslatedEpisodesCache = [];
-  function escapeHtml3(text) {
-    const map = {
-      "&": "&amp;",
-      "<": "&lt;",
-      ">": "&gt;",
-      '"': "&quot;",
-      "'": "&#039;"
-    };
-    return text.replace(/[&<>"']/g, (m) => map[m]);
-  }
-  async function initTocPageFeatures(scraper) {
-    if (!scraper.isTocPage(window.location.href, window.location.pathname)) return;
-    console.log("[LANOVEL] \uBAA9\uCC28 \uD398\uC774\uC9C0 \uAC10\uC9C0: \uD68C\uCC28\uBCC4 \uBC88\uC5ED \uC0C1\uD0DC \uBC30\uC9C0 \uBC0F \uD035 \uC810\uD504 \uD328\uB110\uC744 \uCD08\uAE30\uD654\uD569\uB2C8\uB2E4.");
-    let episodeItems = [];
-    if (scraper.getTocEpisodes) {
-      episodeItems = scraper.getTocEpisodes();
-    }
-    if (!episodeItems.length) {
-      await new Promise((r) => setTimeout(r, 250));
-      if (scraper.getTocEpisodes) {
-        episodeItems = scraper.getTocEpisodes();
-      }
-    }
-    if (!episodeItems.length) {
-      console.log("[LANOVEL] \uBAA9\uCC28 \uD398\uC774\uC9C0\uC774\uB098 \uD68C\uCC28 \uB9C1\uD06C \uC694\uC18C\uB97C \uBC1C\uACAC\uD558\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4.");
-      return;
-    }
-    const episodeDataList = [];
-    const urlSet = /* @__PURE__ */ new Set();
-    episodeItems.forEach((item) => {
-      if (!item.url) return;
-      const cleanUrl = item.url.split("#")[0];
-      if (!urlSet.has(cleanUrl)) {
-        urlSet.add(cleanUrl);
-        episodeDataList.push({
-          element: item.element,
-          url: cleanUrl,
-          title: item.title
-        });
-      }
-    });
-    if (!episodeDataList.length) return;
-    const translatedSet = /* @__PURE__ */ new Set();
-    try {
-      const resp = await fetch("http://127.0.0.1:8001/api/check_translated_urls", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ urls: Array.from(urlSet) })
-      });
-      if (resp.ok) {
-        const data = await resp.json();
-        const list = data.translated_urls || [];
-        list.forEach((u) => {
-          translatedSet.add(u.replace(/\/$/, ""));
-          translatedSet.add(u.replace(/\/$/, "") + "/");
-        });
-      }
-    } catch (e) {
-      console.warn("[LANOVEL] \uC11C\uBC84 \uBC88\uC5ED URL \uD655\uC778 \uC911 \uC624\uB958 \uBC1C\uC0DD:", e);
-    }
-    const excludedUrls = await getExcludedEpisodeUrls();
-    const excludedSet = new Set(excludedUrls.map(normalizeUrlKey));
-    untranslatedEpisodesCache = [];
-    episodeDataList.forEach((item, index) => {
-      const cleanNoSlash = normalizeUrlKey(item.url);
-      const isTranslated = translatedSet.has(cleanNoSlash) || translatedSet.has(cleanNoSlash + "/");
-      const isExcluded = excludedSet.has(cleanNoSlash);
-      const badge = document.createElement("span");
-      badge.className = `lanovel-toc-badge ${isTranslated ? "translated" : isExcluded ? "excluded" : "untranslated"}`;
-      badge.innerHTML = `<span class="badge-dot"></span>${isTranslated ? "\uC644\uB8CC" : isExcluded ? "\uC81C\uC678" : "\uBBF8\uBC88\uC5ED"}`;
-      badge.title = isTranslated ? "\uBC88\uC5ED \uC644\uB8CC" : isExcluded ? "\uBC88\uC5ED \uC81C\uC678\uB428 (\uD074\uB9AD\uD558\uC5EC \uD574\uC81C)" : "\uBBF8\uBC88\uC5ED (\uD074\uB9AD\uD558\uC5EC \uBC88\uC5ED \uC81C\uC678)";
-      if (!isTranslated) {
-        badge.style.cursor = "pointer";
-        badge.addEventListener("click", async (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          await toggleExclusionForItem(item.url, item.title);
-        });
-      }
-      if (item.element.parentNode) {
-        const existingBadge = item.element.parentNode.querySelector(".lanovel-toc-badge");
-        if (!existingBadge) {
-          item.element.parentNode.appendChild(badge);
-        }
-      }
-      if (!isTranslated) {
-        untranslatedEpisodesCache.push({
-          index: untranslatedEpisodesCache.length,
-          tocIndex: index,
-          title: item.title,
-          url: item.url,
-          element: item.element,
-          badgeElement: badge,
-          isExcluded
-        });
-      }
-    });
-    renderQuickJumpPanel(untranslatedEpisodesCache);
-  }
-  function renderQuickJumpPanel(untranslatedList) {
-    let container = document.getElementById("lanovel-quick-jump-container");
-    if (container) container.remove();
-    container = document.createElement("div");
-    container.id = "lanovel-quick-jump-container";
-    const activeCount = untranslatedList.filter((ep) => !ep.isExcluded).length;
-    const count = activeCount;
-    const triggerHtml = `
-    <div id="lanovel-quick-jump-trigger" title="\uD074\uB9AD\uD558\uAC70\uB098 'N' \uD0A4\uB97C \uB20C\uB7EC \uBBF8\uBC88\uC5ED \uD68C\uCC28 \uBAA9\uB85D \uBCF4\uAE30">
-      <span class="trigger-icon">\u26A1</span>
-      <span>\uBBF8\uBC88\uC5ED <strong id="lanovel-trigger-count">${count}</strong>\uD654</span>
-      <span class="trigger-keyhint">N</span>
-    </div>
-  `;
-    const itemsHtml = untranslatedList.length > 0 ? untranslatedList.map(
-      (ep, idx) => `
-      <li class="quick-jump-item ${ep.isExcluded ? "is-excluded" : ""}" data-jump-index="${idx}" data-url="${escapeHtml3(ep.url)}" title="${escapeHtml3(ep.title)}">
-        <span class="item-title ${ep.isExcluded ? "is-excluded" : ""}">${escapeHtml3(ep.title)}</span>
-        <div class="item-actions">
-          <button type="button" class="quick-jump-exclude-btn ${ep.isExcluded ? "is-excluded" : ""}" data-url="${escapeHtml3(ep.url)}" title="${ep.isExcluded ? "\uBC88\uC5ED \uC81C\uC678 \uCDE8\uC18C" : "\uC774 \uD68C\uCC28 \uBC88\uC5ED \uC81C\uC678"}">
-            ${ep.isExcluded ? "\uC81C\uC678\uB428" : "\uC81C\uC678"}
-          </button>
-          <span class="item-action-hint">Enter \uC774\uB3D9</span>
-        </div>
-      </li>
-    `
-    ).join("") : `
-      <li class="quick-jump-item" style="justify-content: center; color: #10b981; cursor: default;">
-        \u{1F389} \uBAA8\uB4E0 \uD68C\uCC28\uC758 \uBC88\uC5ED\uC774 \uC644\uB8CC\uB418\uC5C8\uC2B5\uB2C8\uB2E4!
-      </li>
-    `;
-    const drawerHtml = `
-    <div id="lanovel-quick-jump-drawer">
-      <div class="quick-jump-header">
-        <div class="title-wrap">
-          <span style="color: #f59e0b; font-size: 14px;">\u26A1</span>
-          <h4>\uBBF8\uBC88\uC5ED \uD68C\uCC28 \uBAA9\uB85D</h4>
-          <span class="count-badge" id="lanovel-header-count">${count}</span>
-        </div>
-        <button class="close-btn" id="lanovel-quick-jump-close" title="\uB2EB\uAE30 (ESC)">\u2715</button>
-      </div>
-      <ul class="quick-jump-list" id="lanovel-quick-jump-list">
-        ${itemsHtml}
-      </ul>
-      <div class="quick-jump-footer">
-        <span><kbd>N</kbd> / <kbd>\u2191\u2193</kbd> \uC120\uD0DD</span>
-        <span><kbd>Enter</kbd> \uC790\uB3D9 \uBC88\uC5ED \uC9C4\uC785</span>
-      </div>
-    </div>
-  `;
-    container.innerHTML = triggerHtml + drawerHtml;
-    document.body.appendChild(container);
-    const trigger = document.getElementById("lanovel-quick-jump-trigger");
-    if (trigger) {
-      trigger.addEventListener("click", () => {
-        toggleQuickJumpDrawer();
-      });
-    }
-    const closeBtn = document.getElementById("lanovel-quick-jump-close");
-    if (closeBtn) {
-      closeBtn.addEventListener("click", () => {
-        toggleQuickJumpDrawer(false);
-      });
-    }
-    const listEl = document.getElementById("lanovel-quick-jump-list");
-    if (listEl) {
-      listEl.querySelectorAll(".quick-jump-exclude-btn").forEach((btn) => {
-        btn.addEventListener("click", async (e) => {
-          e.stopPropagation();
-          e.preventDefault();
-          const url = btn.getAttribute("data-url");
-          if (!url) return;
-          const targetEp = untranslatedList.find((it) => it.url === url);
-          await toggleExclusionForItem(url, targetEp ? targetEp.title : "");
-        });
-      });
-      listEl.querySelectorAll(".quick-jump-item").forEach((item) => {
-        item.addEventListener("click", (e) => {
-          if (e.target.closest(".quick-jump-exclude-btn")) return;
-          const idx = parseInt(item.getAttribute("data-jump-index") || "-1", 10);
-          if (!isNaN(idx) && untranslatedList[idx]) {
-            const ep = untranslatedList[idx];
-            if (ep.isExcluded) {
-              showLanovelHud(`'${ep.title}'\uC740(\uB294) \uC81C\uC678\uB41C \uD68C\uCC28\uC785\uB2C8\uB2E4.`, "\u26A0\uFE0F", 2e3);
-              return;
-            }
-            sessionStorage.setItem("lanovel_auto_translate_next", "1");
-            showLanovelHud(`'${ep.title}' \uC9C4\uC785 \uBC0F \uC790\uB3D9 \uBC88\uC5ED...`, "\u26A1");
-            setTimeout(() => {
-              window.location.href = ep.url;
-            }, 150);
-          }
-        });
-      });
-    }
-  }
-  async function toggleExclusionForItem(url, title) {
-    if (!url) return;
-    const targetEp = untranslatedEpisodesCache.find((it) => normalizeUrlKey(it.url) === normalizeUrlKey(url));
-    const nowExcluded = await toggleEpisodeUrlExcluded(url);
-    if (targetEp) {
-      targetEp.isExcluded = nowExcluded;
-      if (targetEp.badgeElement) {
-        targetEp.badgeElement.className = `lanovel-toc-badge ${nowExcluded ? "excluded" : "untranslated"}`;
-        targetEp.badgeElement.innerHTML = `<span class="badge-dot"></span>${nowExcluded ? "\uC81C\uC678" : "\uBBF8\uBC88\uC5ED"}`;
-        targetEp.badgeElement.title = nowExcluded ? "\uBC88\uC5ED \uC81C\uC678\uB428 (\uD074\uB9AD\uD558\uC5EC \uD574\uC81C)" : "\uBBF8\uBC88\uC5ED (\uD074\uB9AD\uD558\uC5EC \uBC88\uC5ED \uC81C\uC678)";
-      }
-    }
-    const listEl = document.getElementById("lanovel-quick-jump-list");
-    if (listEl) {
-      const itemEl = listEl.querySelector(`.quick-jump-item[data-url="${escapeHtml3(url)}"]`);
-      if (itemEl) {
-        itemEl.classList.toggle("is-excluded", nowExcluded);
-        const titleEl = itemEl.querySelector(".item-title");
-        if (titleEl) titleEl.classList.toggle("is-excluded", nowExcluded);
-        const btnEl = itemEl.querySelector(".quick-jump-exclude-btn");
-        if (btnEl) {
-          btnEl.classList.toggle("is-excluded", nowExcluded);
-          btnEl.textContent = nowExcluded ? "\uC81C\uC678\uB428" : "\uC81C\uC678";
-          btnEl.setAttribute("title", nowExcluded ? "\uBC88\uC5ED \uC81C\uC678 \uCDE8\uC18C" : "\uC774 \uD68C\uCC28 \uBC88\uC5ED \uC81C\uC678");
-        }
-      }
-    }
-    const activeCount = untranslatedEpisodesCache.filter((ep) => !ep.isExcluded).length;
-    const headerCount = document.getElementById("lanovel-header-count");
-    if (headerCount) headerCount.textContent = String(activeCount);
-    const triggerCount = document.getElementById("lanovel-trigger-count");
-    if (triggerCount) triggerCount.textContent = String(activeCount);
-    if (nowExcluded) {
-      showLanovelHud(`'${title || "\uD68C\uCC28"}' \uBC88\uC5ED \uBAA9\uB85D\uC5D0\uC11C \uC81C\uC678\uB418\uC5C8\uC2B5\uB2C8\uB2E4.`, "\u{1F6AB}", 2200);
-    } else {
-      showLanovelHud(`'${title || "\uD68C\uCC28"}' \uBC88\uC5ED \uBAA9\uB85D\uC5D0 \uB2E4\uC2DC \uD3EC\uD568\uB418\uC5C8\uC2B5\uB2C8\uB2E4.`, "\u26A1", 2200);
-    }
-  }
-  function toggleQuickJumpDrawer(open) {
-    const drawer = document.getElementById("lanovel-quick-jump-drawer");
-    if (!drawer) return;
-    if (typeof open === "boolean") {
-      if (open) {
-        drawer.classList.add("open");
-      } else {
-        drawer.classList.remove("open");
-      }
-    } else {
-      drawer.classList.toggle("open");
-    }
-  }
-  function handleQuickJumpNKey() {
-    const activeEpisodes = untranslatedEpisodesCache.map((ep, idx) => ({ ep, idx })).filter((item) => !item.ep.isExcluded);
-    if (!activeEpisodes.length) {
-      showLanovelHud("\uBAA8\uB4E0 \uD68C\uCC28\uAC00 \uC774\uBBF8 \uBC88\uC5ED \uC644\uB8CC \uB610\uB294 \uC81C\uC678\uB418\uC5C8\uC2B5\uB2C8\uB2E4!", "\u{1F389}");
-      return;
-    }
-    const drawer = document.getElementById("lanovel-quick-jump-drawer");
-    if (!drawer) return;
-    if (!drawer.classList.contains("open")) {
-      drawer.classList.add("open");
-      quickJumpFocusedIndex = activeEpisodes[0].idx;
-    } else {
-      const currentPos = activeEpisodes.findIndex((item) => item.idx === quickJumpFocusedIndex);
-      const nextPos = (currentPos + 1) % activeEpisodes.length;
-      quickJumpFocusedIndex = activeEpisodes[nextPos].idx;
-    }
-    updateQuickJumpFocusUI();
-  }
-  function moveQuickJumpFocus(delta) {
-    if (!untranslatedEpisodesCache.length) return;
-    quickJumpFocusedIndex = (quickJumpFocusedIndex + delta + untranslatedEpisodesCache.length) % untranslatedEpisodesCache.length;
-    updateQuickJumpFocusUI();
-  }
-  function updateQuickJumpFocusUI() {
-    const listEl = document.getElementById("lanovel-quick-jump-list");
-    if (!listEl) return;
-    const items = listEl.querySelectorAll(".quick-jump-item");
-    items.forEach((item, idx) => {
-      if (idx === quickJumpFocusedIndex) {
-        item.classList.add("focused");
-        item.scrollIntoView({ block: "nearest", behavior: "smooth" });
-      } else {
-        item.classList.remove("focused");
-      }
-    });
-    const targetEp = untranslatedEpisodesCache[quickJumpFocusedIndex];
-    if (targetEp && targetEp.element) {
-      targetEp.element.scrollIntoView({ block: "center", behavior: "smooth" });
-    }
-  }
-
-  // src/ui/key_nav.ts
+  init_toc_quick_jump();
   function setupLanovelKeyboardNavigation(scraper, onShowSidebar) {
     document.addEventListener("keydown", (e) => {
       const target = e.target;
@@ -4328,6 +4430,7 @@
   }
 
   // src/content.ts
+  init_toc_quick_jump();
   init_hud();
   var DEFAULT_ALLOWED_DOMAINS = [
     "kakuyomu.jp",
@@ -4383,7 +4486,7 @@
         showSidebar();
         translateAllPTags(false);
       });
-      if (scraper.isTocPage(window.location.href, window.location.pathname) && getTargetParagraphs().length === 0) {
+      if (scraper.isTocPage(window.location.href, window.location.pathname)) {
         console.log("[LANOVEL] \uBAA9\uCC28(TOC) \uD398\uC774\uC9C0 \uAC10\uC9C0: \uBAA9\uCC28 \uAE30\uB2A5(\uBC30\uC9C0 \uBC0F \uD035 \uC810\uD504 \uC11C\uB78D)\uC744 \uC989\uC2DC \uCD08\uAE30\uD654\uD569\uB2C8\uB2E4.");
         try {
           const title = await scraper.detectNovelTitle() || "\uAE30\uBCF8 \uC18C\uC124";

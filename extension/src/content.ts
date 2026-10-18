@@ -101,8 +101,8 @@ async function init(): Promise<void> {
       translateAllPTags(false);
     });
 
-    // 0.1. 목차(TOC) 페이지 감지 시 배지 및 퀵 점프 서랍 즉시 초기화 후 조기 복귀 (본문 문단이 없을 때만)
-    if (scraper.isTocPage(window.location.href, window.location.pathname) && getTargetParagraphs().length === 0) {
+    // 0.1. 목차(TOC) 페이지 감지 시 배지 및 퀵 점프 서랍 즉시 초기화 후 조기 복귀
+    if (scraper.isTocPage(window.location.href, window.location.pathname)) {
       console.log('[LANOVEL] 목차(TOC) 페이지 감지: 목차 기능(배지 및 퀵 점프 서랍)을 즉시 초기화합니다.');
       try {
         const title = (await scraper.detectNovelTitle()) || '기본 소설';

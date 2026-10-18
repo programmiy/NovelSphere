@@ -1,6 +1,7 @@
 // toc_quick_jump.ts: 목차 페이지 상태 배지 및 퀵 점프 패널 모듈
-import { PlatformScraper, TocEpisodeItem } from '../scrapers/base';
-import { showLanovelHud } from './hud';
+import type { PlatformScraper, TocEpisodeItem } from '../scrapers/base.ts';
+import { getScraper } from '../scrapers/index.ts';
+import { showLanovelHud } from './hud.ts';
 
 export interface UntranslatedEpisode extends TocEpisodeItem {
   index: number;
@@ -76,15 +77,13 @@ export async function initTocPageFeatures(scraper: PlatformScraper): Promise<voi
   console.log('[LANOVEL] 목차 페이지 감지: 회차별 번역 상태 배지 및 퀵 점프 패널을 초기화합니다.');
 
   let episodeItems: TocEpisodeItem[] = [];
-  if (scraper.getTocEpisodes) {
-    episodeItems = scraper.getTocEpisodes();
-  }
-
-  if (!episodeItems.length) {
-    await new Promise((r) => setTimeout(r, 250));
+  // Next.js 및 동적 렌더링 사이트 대응: 최대 5회 재시도 (총 약 1초)
+  for (let retry = 0; retry < 5; retry++) {
     if (scraper.getTocEpisodes) {
       episodeItems = scraper.getTocEpisodes();
     }
+    if (episodeItems.length > 0) break;
+    await new Promise((r) => setTimeout(r, 200));
   }
 
   if (!episodeItems.length) {
@@ -110,14 +109,18 @@ export async function initTocPageFeatures(scraper: PlatformScraper): Promise<voi
 
   if (!episodeDataList.length) return;
 
-  // 서버에 배치 조회 요청
+  // 서버에 배치 조회 요청 (2.5초 타임아웃 방어)
   const translatedSet = new Set<string>();
   try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 2500);
     const resp = await fetch('http://127.0.0.1:8001/api/check_translated_urls', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ urls: Array.from(urlSet) }),
+      signal: controller.signal,
     });
+    clearTimeout(timeoutId);
     if (resp.ok) {
       const data = await resp.json();
       const list: string[] = data.translated_urls || [];
@@ -127,7 +130,7 @@ export async function initTocPageFeatures(scraper: PlatformScraper): Promise<voi
       });
     }
   } catch (e) {
-    console.warn('[LANOVEL] 서버 번역 URL 확인 중 오류 발생:', e);
+    console.warn('[LANOVEL] 서버 번역 URL 확인 중 오류 발생 (기본 진행):', e);
   }
 
   // 제외 회차 목록 조회
@@ -155,10 +158,14 @@ export async function initTocPageFeatures(scraper: PlatformScraper): Promise<voi
       });
     }
 
-    if (item.element.parentNode) {
-      const existingBadge = item.element.parentNode.querySelector('.lanovel-toc-badge');
-      if (!existingBadge) {
-        item.element.parentNode.appendChild(badge);
+    const existingBadge =
+      item.element.parentNode?.querySelector('.lanovel-toc-badge') ||
+      item.element.querySelector('.lanovel-toc-badge');
+    if (!existingBadge) {
+      if (item.element.parentNode) {
+        item.element.insertAdjacentElement('afterend', badge);
+      } else {
+        item.element.appendChild(badge);
       }
     }
 
@@ -187,6 +194,16 @@ export function renderQuickJumpPanel(untranslatedList: UntranslatedEpisode[]): v
 
   const activeCount = untranslatedList.filter((ep) => !ep.isExcluded).length;
   const count = activeCount;
+
+  // 사이드바 상단 및 배너 버튼 상태 동기화
+  const sidebarCtrlBtn = document.getElementById('sidebar-quick-jump-toggle-btn');
+  if (sidebarCtrlBtn) {
+    sidebarCtrlBtn.title = `미번역 회차 목록 (${count}화) 띄우기/닫기`;
+  }
+  const bannerBtn = document.getElementById('banner-quick-jump-btn');
+  if (bannerBtn) {
+    bannerBtn.textContent = `⚡ 미번역 ${count}화`;
+  }
   const triggerHtml = `
     <div id="lanovel-quick-jump-trigger" title="클릭하거나 'N' 키를 눌러 미번역 회차 목록 보기">
       <span class="trigger-icon">⚡</span>
@@ -325,6 +342,16 @@ export async function toggleExclusionForItem(url: string, title?: string): Promi
   const triggerCount = document.getElementById('lanovel-trigger-count');
   if (triggerCount) triggerCount.textContent = String(activeCount);
 
+  // 사이드바 상단 및 배너 버튼 상태 동기화
+  const sidebarCtrlBtn = document.getElementById('sidebar-quick-jump-toggle-btn');
+  if (sidebarCtrlBtn) {
+    sidebarCtrlBtn.title = `미번역 회차 목록 (${activeCount}화) 띄우기/닫기`;
+  }
+  const bannerBtn = document.getElementById('banner-quick-jump-btn');
+  if (bannerBtn) {
+    bannerBtn.textContent = `⚡ 미번역 ${activeCount}화`;
+  }
+
   if (nowExcluded) {
     showLanovelHud(`'${title || '회차'}' 번역 목록에서 제외되었습니다.`, '🚫', 2200);
   } else {
@@ -394,5 +421,48 @@ export function updateQuickJumpFocusUI(): void {
   const targetEp = untranslatedEpisodesCache[quickJumpFocusedIndex];
   if (targetEp && targetEp.element) {
     targetEp.element.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }
+}
+
+// 사이드바 버튼을 통해 미번역 회차 서랍을 동적으로 띄우고 지우는 토글 함수
+export async function toggleQuickJumpFromSidebar(): Promise<void> {
+  const drawer = document.getElementById('lanovel-quick-jump-drawer');
+  const container = document.getElementById('lanovel-quick-jump-container');
+
+  // 1. 이미 서랍이 열려 있는 경우 -> 닫기 (지우기)
+  if (drawer && drawer.classList.contains('open')) {
+    toggleQuickJumpDrawer(false);
+    showLanovelHud('미번역 회차 서랍을 닫았습니다.', '⚡', 1500);
+    return;
+  }
+
+  // 2. 서랍 요소가 존재하고 닫혀 있는 경우 -> 열기 (띄우기)
+  if (drawer && container) {
+    toggleQuickJumpDrawer(true);
+    showLanovelHud('미번역 회차 서랍을 열었습니다.', '⚡', 1500);
+    return;
+  }
+
+  // 3. 목차 페이지이나 아직 퀵 점프 서랍이 초기화되지 않은 경우 -> 초기화 후 즉시 열기
+  const scraper = getScraper();
+  if (scraper.isTocPage(window.location.href, window.location.pathname)) {
+    showLanovelHud('목차 회차 목록을 불러오는 중...', '⏳', 1500);
+    await initTocPageFeatures(scraper);
+    const newDrawer = document.getElementById('lanovel-quick-jump-drawer');
+    if (newDrawer) {
+      toggleQuickJumpDrawer(true);
+      showLanovelHud('미번역 회차 서랍을 열었습니다.', '⚡', 1500);
+    }
+  } else {
+    // 4. 본문 회차 페이지인 경우 -> 목차 페이지로 이동 안내 또는 이동
+    const tocLink = scraper.findTocLink ? scraper.findTocLink() : null;
+    if (tocLink && tocLink.href) {
+      showLanovelHud('소설 목차 페이지로 이동하여 미번역 목록을 엽니다...', '📑', 2000);
+      setTimeout(() => {
+        window.location.href = tocLink.href;
+      }, 300);
+    } else {
+      showLanovelHud('소설 목차 페이지에서 미번역 목록을 확인할 수 있습니다.', '⚠️', 2500);
+    }
   }
 }
