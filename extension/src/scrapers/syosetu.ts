@@ -29,8 +29,8 @@ export class SyosetuScraper implements PlatformScraper {
   }
 
   extractEpisodeTitle(): string {
-    const epEl = document.querySelector('.p-novel__title, .novel_subtitle, [class*="novel__title"]');
-    if (epEl && epEl.textContent && epEl.textContent.trim()) {
+    const epEl = document.querySelector<HTMLElement>('.p-novel__title, .novel_subtitle, [class*="novel__title"]');
+    if (epEl && !epEl.closest('a') && epEl.textContent && epEl.textContent.trim()) {
       return epEl.textContent.trim();
     }
     if (document.title) {

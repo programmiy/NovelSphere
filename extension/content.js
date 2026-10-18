@@ -520,11 +520,16 @@
           return null;
         }
         extractEpisodeTitle() {
-          const epEl = document.querySelector(
-            '.widget-episodeTitle, [class*="widget-episodeTitle"], h1[class*="episodeTitle"], [class*="EpisodeTitle"]'
+          const candidates = Array.from(
+            document.querySelectorAll(
+              '#contentMain-header .widget-episodeTitle, #contentMain-header p, .widget-episodeTitle, [class*="widget-episodeTitle"], h2.widget-episodeTitle, h2[class*="episodeTitle"]'
+            )
           );
-          if (epEl && epEl.textContent && epEl.textContent.trim()) {
-            return epEl.textContent.trim();
+          for (const el of candidates) {
+            if (!el.closest("a") && !el.closest("#contentMain-readPreviousEpisode") && !el.closest("#contentMain-readNextEpisode") && !el.closest('[class*="pager"]') && !el.closest('[class*="episodeNavigation"]')) {
+              const txt = (el.textContent || "").trim();
+              if (txt) return txt;
+            }
           }
           if (document.title) {
             const clean = document.title.replace(/\s*-\s*カクヨム.*$/i, "").trim();
@@ -714,7 +719,7 @@
         }
         extractEpisodeTitle() {
           const epEl = document.querySelector('.p-novel__title, .novel_subtitle, [class*="novel__title"]');
-          if (epEl && epEl.textContent && epEl.textContent.trim()) {
+          if (epEl && !epEl.closest("a") && epEl.textContent && epEl.textContent.trim()) {
             return epEl.textContent.trim();
           }
           if (document.title) {
@@ -805,7 +810,7 @@
         }
         extractEpisodeTitle() {
           const epEl = document.querySelector(".episode_title, #section_episode .episode_title, h1");
-          if (epEl && epEl.textContent && epEl.textContent.trim()) {
+          if (epEl && !epEl.closest("a") && epEl.textContent && epEl.textContent.trim()) {
             return epEl.textContent.trim();
           }
           if (document.title) {
@@ -952,7 +957,7 @@
         }
         extractEpisodeTitle() {
           const epEl = document.querySelector('span[style*="font-size:120%"], h2, .ss');
-          if (epEl && epEl.textContent && epEl.textContent.trim()) {
+          if (epEl && !epEl.closest("a") && epEl.textContent && epEl.textContent.trim()) {
             return epEl.textContent.trim();
           }
           const parts = document.title.split(/\s*-\s*/);
@@ -1039,7 +1044,7 @@
         }
         extractEpisodeTitle() {
           const epEl = document.querySelector(".episode-title, h2.title, .novel-sub-title, .sub-title");
-          if (epEl && epEl.textContent && epEl.textContent.trim()) {
+          if (epEl && !epEl.closest("a") && epEl.textContent && epEl.textContent.trim()) {
             return epEl.textContent.trim();
           }
           const parts = document.title.split(/\s*[\/|-]\s*/);
@@ -4716,6 +4721,7 @@
       }
       console.log("[LANOVEL] \uC6F9\uC18C\uC124 \uBC88\uC5ED \uD655\uC7A5 \uD504\uB85C\uADF8\uB7A8 \uCD08\uAE30\uD654 \uC2DC\uC791...");
       const scraper = getScraper();
+      state.onExtractEpisodeTitle = () => scraper.extractEpisodeTitle();
       if (scraper.prepareContent) {
         scraper.prepareContent();
       }

@@ -30,8 +30,8 @@ export class NovelUpScraper implements PlatformScraper {
   }
 
   extractEpisodeTitle(): string {
-    const epEl = document.querySelector('.episode_title, #section_episode .episode_title, h1');
-    if (epEl && epEl.textContent && epEl.textContent.trim()) {
+    const epEl = document.querySelector<HTMLElement>('.episode_title, #section_episode .episode_title, h1');
+    if (epEl && !epEl.closest('a') && epEl.textContent && epEl.textContent.trim()) {
       return epEl.textContent.trim();
     }
     if (document.title) {

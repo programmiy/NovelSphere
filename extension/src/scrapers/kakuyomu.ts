@@ -55,12 +55,27 @@ export class KakuyomuScraper implements PlatformScraper {
   }
 
   extractEpisodeTitle(): string {
-    const epEl = document.querySelector(
-      '.widget-episodeTitle, [class*="widget-episodeTitle"], h1[class*="episodeTitle"], [class*="EpisodeTitle"]'
+    // 1. 카쿠요무 본문 상단 헤더(#contentMain-header) 내 에피소드 제목 전용 셀렉터 우선
+    // 주의: 이전/다음화 네비게이션(#contentMain-readPreviousEpisode, a.widget-episodeNavigation-previous 등) 내
+    // .contentMain-pagerEpisodeTitle이 [class*="EpisodeTitle"]에 오탐되어 전 회차 제목이 추출되던 버그 방지 (a 태그 및 pager 제외)
+    const candidates = Array.from(
+      document.querySelectorAll<HTMLElement>(
+        '#contentMain-header .widget-episodeTitle, #contentMain-header p, .widget-episodeTitle, [class*="widget-episodeTitle"], h2.widget-episodeTitle, h2[class*="episodeTitle"]'
+      )
     );
-    if (epEl && epEl.textContent && epEl.textContent.trim()) {
-      return epEl.textContent.trim();
+    for (const el of candidates) {
+      if (
+        !el.closest('a') &&
+        !el.closest('#contentMain-readPreviousEpisode') &&
+        !el.closest('#contentMain-readNextEpisode') &&
+        !el.closest('[class*="pager"]') &&
+        !el.closest('[class*="episodeNavigation"]')
+      ) {
+        const txt = (el.textContent || '').trim();
+        if (txt) return txt;
+      }
     }
+
     if (document.title) {
       const clean = document.title.replace(/\s*-\s*カクヨム.*$/i, '').trim();
       const parts = clean.split(/\s*-\s*/);

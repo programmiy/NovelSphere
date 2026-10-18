@@ -88,6 +88,7 @@ async function init(): Promise<void> {
 
     console.log('[LANOVEL] 웹소설 번역 확장 프로그램 초기화 시작...');
     const scraper = getScraper();
+    state.onExtractEpisodeTitle = () => scraper.extractEpisodeTitle();
 
     // 플랫폼별 본문 전처리 (노벨업 등 div 정규화)
     if (scraper.prepareContent) {

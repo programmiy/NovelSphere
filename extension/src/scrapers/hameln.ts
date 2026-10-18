@@ -21,8 +21,8 @@ export class HamelnScraper implements PlatformScraper {
   }
 
   extractEpisodeTitle(): string {
-    const epEl = document.querySelector('span[style*="font-size:120%"], h2, .ss');
-    if (epEl && epEl.textContent && epEl.textContent.trim()) {
+    const epEl = document.querySelector<HTMLElement>('span[style*="font-size:120%"], h2, .ss');
+    if (epEl && !epEl.closest('a') && epEl.textContent && epEl.textContent.trim()) {
       return epEl.textContent.trim();
     }
     const parts = document.title.split(/\s*-\s*/);

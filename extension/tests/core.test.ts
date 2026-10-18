@@ -349,5 +349,41 @@ test('kakuyomu & toc: KakuyomuScraper and normalizeUrlKey work accurately', asyn
   assert.strictEqual(parsedEpisodes[2].url, 'https://kakuyomu.jp/works/1177354054887975130/episodes/ep3');
 });
 
+test('kakuyomu: extractEpisodeTitle ignores previous episode pager link and picks current episode title', async () => {
+  const { KakuyomuScraper } = await import('../src/scrapers/kakuyomu.ts');
+  const scraper = new KakuyomuScraper();
+
+  const prevPager = {
+    textContent: '第２１５話　이전화',
+    closest(sel: string) {
+      if (sel === 'a' || sel === '#contentMain-readPreviousEpisode' || sel.includes('pager')) return true;
+      return false;
+    },
+  };
+  const headerTitle = {
+    textContent: '第２１６話　현재화',
+    closest(_sel: string) {
+      return false;
+    },
+  };
+
+  (globalThis as any).document = {
+    title: '第２１６話　현재화 - 소설제목 - カクヨム',
+    querySelectorAll(_sel: string) {
+      return [prevPager, headerTitle];
+    },
+    querySelector(_sel: string) {
+      return null;
+    },
+  };
+
+  try {
+    const title = scraper.extractEpisodeTitle();
+    assert.strictEqual(title, '第２１６話　현재화');
+  } finally {
+    delete (globalThis as any).document;
+  }
+});
+
 
 

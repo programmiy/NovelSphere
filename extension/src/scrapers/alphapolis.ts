@@ -22,7 +22,7 @@ export class AlphapolisScraper implements PlatformScraper {
 
   extractEpisodeTitle(): string {
     const epEl = document.querySelector<HTMLElement>('.episode-title, h2.title, .novel-sub-title, .sub-title');
-    if (epEl && epEl.textContent && epEl.textContent.trim()) {
+    if (epEl && !epEl.closest('a') && epEl.textContent && epEl.textContent.trim()) {
       return epEl.textContent.trim();
     }
     const parts = document.title.split(/\s*[\/|-]\s*/);
