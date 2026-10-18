@@ -75,15 +75,17 @@ export function setupLanovelKeyboardNavigation(
       return;
     }
 
-    // [목차 페이지 전용 단축키] N / 화살표 / Enter / ESC
-    if (scraper.isTocPage(window.location.href, window.location.pathname)) {
+    // [미번역 서랍 및 목차 단축키] N / 화살표 / Enter / ESC
+    const quickJumpDrawer = document.getElementById('lanovel-quick-jump-drawer');
+    const isDrawerOpen = quickJumpDrawer && quickJumpDrawer.classList.contains('open');
+
+    if (scraper.isTocPage(window.location.href, window.location.pathname) || isDrawerOpen) {
       if (lowerKey === 'n') {
         e.preventDefault();
         handleQuickJumpNKey();
         return;
       }
-      const drawer = document.getElementById('lanovel-quick-jump-drawer');
-      if (drawer && drawer.classList.contains('open')) {
+      if (isDrawerOpen) {
         if (key === 'ArrowDown') {
           e.preventDefault();
           moveQuickJumpFocus(1);

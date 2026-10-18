@@ -419,8 +419,159 @@ export function updateQuickJumpFocusUI(): void {
   });
 
   const targetEp = untranslatedEpisodesCache[quickJumpFocusedIndex];
-  if (targetEp && targetEp.element) {
+  if (targetEp && targetEp.element && targetEp.element.isConnected) {
     targetEp.element.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }
+}
+
+// 소설 목차 URL 역산 헬퍼 (본문 회차 페이지에서도 목차 URL 추출)
+export function getNovelTocUrl(scraper: PlatformScraper, currentUrl: string = window.location.href): string | null {
+  // 1. live DOM 내 목차 링크 우선 탐색
+  if (scraper.findTocLink) {
+    const link = scraper.findTocLink();
+    if (link && link.href) {
+      const clean = link.href.split('#')[0].split('?')[0];
+      if (clean) return clean;
+    }
+  }
+
+  // 2. URL 패턴 기반 목차 URL 역산
+  try {
+    const parsed = new URL(currentUrl);
+    const host = parsed.hostname;
+    const path = parsed.pathname;
+
+    if (host.includes('kakuyomu.jp')) {
+      const m = path.match(/\/works\/(\d+)/);
+      if (m) return `https://kakuyomu.jp/works/${m[1]}`;
+    }
+    if (host.includes('syosetu.com')) {
+      const m = path.match(/\/(n[a-z0-9]+)/i);
+      if (m) return `${parsed.origin}/${m[1].toLowerCase()}/`;
+    }
+    if (host.includes('novelup.plus')) {
+      const m = path.match(/\/story\/(\d+)/);
+      if (m) return `https://novelup.plus/story/${m[1]}`;
+    }
+    if (host.includes('alphapolis.co.jp')) {
+      const m = path.match(/\/novel\/(\d+\/\d+)/);
+      if (m) return `https://www.alphapolis.co.jp/novel/${m[1]}`;
+    }
+    if (host.includes('syosetu.org')) {
+      const m = path.match(/\/novel\/(\d+)/);
+      if (m) return `https://syosetu.org/novel/${m[1]}/`;
+    }
+  } catch (e) {
+    console.warn('[LANOVEL] 목차 URL 역산 실패:', e);
+  }
+  return null;
+}
+
+// 본문 회차 페이지에서 페이지 이동 없이 백그라운드로 목차를 조회하여 미번역 서랍 로드
+export async function loadRemoteTocEpisodes(scraper: PlatformScraper): Promise<boolean> {
+  const tocUrl = getNovelTocUrl(scraper);
+  if (!tocUrl) {
+    showLanovelHud('소설 목차 URL을 확인할 수 없습니다.', '⚠️', 2500);
+    return false;
+  }
+
+  showLanovelHud('소설 목차 및 번역 상태를 불러오는 중...', '⏳', 3000);
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 6000);
+    const resp = await fetch(tocUrl, { signal: controller.signal });
+    clearTimeout(timeoutId);
+
+    if (!resp.ok) {
+      showLanovelHud(`목차 요청 실패 (HTTP ${resp.status})`, '⚠️', 2500);
+      return false;
+    }
+
+    const html = await resp.text();
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+
+    let episodeItems: TocEpisodeItem[] = [];
+    if (scraper.getTocEpisodes) {
+      episodeItems = scraper.getTocEpisodes(doc);
+    }
+
+    if (!episodeItems.length) {
+      showLanovelHud('목차에서 회차 목록을 찾지 못했습니다.', '⚠️', 2500);
+      return false;
+    }
+
+    // URL 중복 제거 및 절대 경로 정규화
+    const episodeDataList: TocEpisodeItem[] = [];
+    const urlSet = new Set<string>();
+    episodeItems.forEach((item) => {
+      if (!item.url) return;
+      const cleanUrl = new URL(item.url, tocUrl).href.split('#')[0];
+      if (!urlSet.has(cleanUrl)) {
+        urlSet.add(cleanUrl);
+        episodeDataList.push({
+          element: item.element,
+          url: cleanUrl,
+          title: item.title,
+        });
+      }
+    });
+
+    if (!episodeDataList.length) return false;
+
+    // 서버에 배치 조회 요청 (2.5초 타임아웃)
+    const translatedSet = new Set<string>();
+    try {
+      const serverCtrl = new AbortController();
+      const sTimeout = setTimeout(() => serverCtrl.abort(), 2500);
+      const checkResp = await fetch('http://127.0.0.1:8001/api/check_translated_urls', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ urls: Array.from(urlSet) }),
+        signal: serverCtrl.signal,
+      });
+      clearTimeout(sTimeout);
+      if (checkResp.ok) {
+        const data = await checkResp.json();
+        const list: string[] = data.translated_urls || [];
+        list.forEach((u) => {
+          translatedSet.add(u.replace(/\/$/, ''));
+          translatedSet.add(u.replace(/\/$/, '') + '/');
+        });
+      }
+    } catch (e) {
+      console.warn('[LANOVEL] 서버 번역 URL 확인 중 오류 발생:', e);
+    }
+
+    // 제외 회차 목록 조회
+    const excludedUrls = await getExcludedEpisodeUrls();
+    const excludedSet = new Set(excludedUrls.map(normalizeUrlKey));
+
+    untranslatedEpisodesCache = [];
+    episodeDataList.forEach((item, index) => {
+      const cleanNoSlash = normalizeUrlKey(item.url);
+      const isTranslated = translatedSet.has(cleanNoSlash) || translatedSet.has(cleanNoSlash + '/');
+      const isExcluded = excludedSet.has(cleanNoSlash);
+
+      if (!isTranslated) {
+        untranslatedEpisodesCache.push({
+          index: untranslatedEpisodesCache.length,
+          tocIndex: index,
+          title: item.title,
+          url: item.url,
+          element: item.element,
+          isExcluded: isExcluded,
+        });
+      }
+    });
+
+    renderQuickJumpPanel(untranslatedEpisodesCache);
+    return true;
+  } catch (err: any) {
+    console.error('[LANOVEL] 비동기 목차 로드 실패:', err);
+    showLanovelHud('목차를 불러오는 중 오류가 발생했습니다.', '❌', 2500);
+    return false;
   }
 }
 
@@ -443,7 +594,7 @@ export async function toggleQuickJumpFromSidebar(): Promise<void> {
     return;
   }
 
-  // 3. 목차 페이지이나 아직 퀵 점프 서랍이 초기화되지 않은 경우 -> 초기화 후 즉시 열기
+  // 3. 목차 페이지이나 아직 퀵 점프 서랍이 초기화되지 않은 경우 -> DOM에서 스캔 후 즉시 열기
   const scraper = getScraper();
   if (scraper.isTocPage(window.location.href, window.location.pathname)) {
     showLanovelHud('목차 회차 목록을 불러오는 중...', '⏳', 1500);
@@ -454,15 +605,11 @@ export async function toggleQuickJumpFromSidebar(): Promise<void> {
       showLanovelHud('미번역 회차 서랍을 열었습니다.', '⚡', 1500);
     }
   } else {
-    // 4. 본문 회차 페이지인 경우 -> 목차 페이지로 이동 안내 또는 이동
-    const tocLink = scraper.findTocLink ? scraper.findTocLink() : null;
-    if (tocLink && tocLink.href) {
-      showLanovelHud('소설 목차 페이지로 이동하여 미번역 목록을 엽니다...', '📑', 2000);
-      setTimeout(() => {
-        window.location.href = tocLink.href;
-      }, 300);
-    } else {
-      showLanovelHud('소설 목차 페이지에서 미번역 목록을 확인할 수 있습니다.', '⚠️', 2500);
+    // 4. 본문 회차 페이지인 경우 -> 페이지를 절대 이동하지 않고, 백그라운드 fetch로 목차를 가져와 서랍 표시!
+    const ok = await loadRemoteTocEpisodes(scraper);
+    if (ok) {
+      toggleQuickJumpDrawer(true);
+      showLanovelHud('미번역 회차 서랍을 열었습니다.', '⚡', 1500);
     }
   }
 }

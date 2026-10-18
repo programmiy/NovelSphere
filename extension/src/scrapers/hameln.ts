@@ -83,12 +83,15 @@ export class HamelnScraper implements PlatformScraper {
     );
   }
 
-  getTocEpisodes(): TocEpisodeItem[] {
-    const elements = Array.from(document.querySelectorAll<HTMLAnchorElement>('table a[href*="/novel/"]'));
-    return elements.map((el) => ({
-      element: el,
-      url: el.href.split('#')[0],
-      title: (el.textContent || '').trim(),
-    }));
+  getTocEpisodes(rootDoc: Document | Element = document): TocEpisodeItem[] {
+    const elements = Array.from(rootDoc.querySelectorAll<HTMLAnchorElement>('table a[href*="/novel/"]'));
+    return elements.map((el) => {
+      const rawHref = el.getAttribute('href') || el.href || '';
+      return {
+        element: el,
+        url: rawHref.split('#')[0],
+        title: (el.textContent || '').trim(),
+      };
+    });
   }
 }

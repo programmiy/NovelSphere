@@ -97,6 +97,7 @@ export class KakuyomuScraper implements PlatformScraper {
   }
 
   findNextEpisodeLink(): HTMLAnchorElement | null {
+    if (typeof document === 'undefined') return null;
     const direct =
       document.getElementById('contentMain-nextEpisode') ||
       document.querySelector('a.widget-episodeNavigation-next') ||
@@ -117,6 +118,7 @@ export class KakuyomuScraper implements PlatformScraper {
   }
 
   findPrevEpisodeLink(): HTMLAnchorElement | null {
+    if (typeof document === 'undefined') return null;
     const direct =
       document.getElementById('contentMain-previousEpisode') ||
       document.querySelector('a.widget-episodeNavigation-previous') ||
@@ -131,6 +133,7 @@ export class KakuyomuScraper implements PlatformScraper {
   }
 
   findTocLink(): HTMLAnchorElement | null {
+    if (typeof document === 'undefined') return null;
     const links = Array.from(
       document.querySelectorAll<HTMLAnchorElement>(
         'header a[href*="/works/"], a.widget-toc-main-title, a[class*="workTitle"], a[class*="WorkHeader"], a[href*="/works/"]'
@@ -140,22 +143,22 @@ export class KakuyomuScraper implements PlatformScraper {
     return found || null;
   }
 
-  getTocEpisodes(): TocEpisodeItem[] {
+  getTocEpisodes(rootDoc: Document | Element = document): TocEpisodeItem[] {
     let elements = Array.from(
-      document.querySelectorAll<HTMLAnchorElement>(
+      rootDoc.querySelectorAll<HTMLAnchorElement>(
         'a[class*="WorkTocSection_link"], [class*="WorkTocSection"] a, .widget-toc-episode a, a.widget-toc-episode-episodeTitle, [class*="widget-toc-episode"] a'
       )
     );
     if (!elements.length) {
       elements = Array.from(
-        document.querySelectorAll<HTMLAnchorElement>('a[href*="/works/"][href*="/episodes/"]')
+        rootDoc.querySelectorAll<HTMLAnchorElement>('a[href*="/works/"][href*="/episodes/"]')
       ).filter((a) => {
         const isHeaderButton =
           a.closest('header') ||
           a.closest('.widget-workCard-actions') ||
           a.closest('[class*="ReadButton"]') ||
           (a.textContent || '').includes('1話目から読む');
-        return !isHeaderButton && a.href;
+        return !isHeaderButton && (a.getAttribute('href') || a.href);
       });
     }
     return elements.map((el) => {
@@ -164,9 +167,10 @@ export class KakuyomuScraper implements PlatformScraper {
       );
       let title = titleEl && titleEl.textContent ? titleEl.textContent.trim() : (el.textContent || '').trim();
       title = title.replace(/\s*\d{4}年\d{1,2}月\d{1,2}日.*$/, '').trim();
+      const rawHref = el.getAttribute('href') || el.href || '';
       return {
         element: el,
-        url: el.href.split('#')[0],
+        url: rawHref.split('#')[0],
         title: title || '제목 없음',
       };
     });

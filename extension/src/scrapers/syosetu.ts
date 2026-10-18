@@ -92,20 +92,23 @@ export class SyosetuScraper implements PlatformScraper {
     return (direct && direct.href) ? direct : null;
   }
 
-  getTocEpisodes(): TocEpisodeItem[] {
+  getTocEpisodes(rootDoc: Document | Element = document): TocEpisodeItem[] {
     const elements = Array.from(
-      document.querySelectorAll<HTMLAnchorElement>(
+      rootDoc.querySelectorAll<HTMLAnchorElement>(
         'a.p-eplist__subtitle, .p-eplist a.p-eplist__subtitle, .p-eplist__sublist a, .p-eplist a, .index_box .subtitle a, .subtitle a'
       )
     ).filter((el) => {
-      const rawHref = el.getAttribute('href') || '';
+      const rawHref = el.getAttribute('href') || el.href || '';
       const cleanHref = rawHref.split('#')[0].split('?')[0];
       return /\/\d+\/?$/.test(cleanHref);
     });
-    return elements.map((el) => ({
-      element: el,
-      url: el.href.split('#')[0],
-      title: (el.textContent || '').trim(),
-    }));
+    return elements.map((el) => {
+      const rawHref = el.getAttribute('href') || el.href || '';
+      return {
+        element: el,
+        url: rawHref.split('#')[0],
+        title: (el.textContent || '').trim(),
+      };
+    });
   }
 }

@@ -106,14 +106,17 @@ export class AlphapolisScraper implements PlatformScraper {
     return (direct && direct.href) ? direct : null;
   }
 
-  getTocEpisodes(): TocEpisodeItem[] {
+  getTocEpisodes(rootDoc: Document | Element = document): TocEpisodeItem[] {
     const elements = Array.from(
-      document.querySelectorAll<HTMLAnchorElement>('.episode a, .episode-list a, .episodes a')
+      rootDoc.querySelectorAll<HTMLAnchorElement>('.episode a, .episode-list a, .episodes a')
     );
-    return elements.map((el) => ({
-      element: el,
-      url: el.href.split('#')[0],
-      title: (el.textContent || '').trim(),
-    }));
+    return elements.map((el) => {
+      const rawHref = el.getAttribute('href') || el.href || '';
+      return {
+        element: el,
+        url: rawHref.split('#')[0],
+        title: (el.textContent || '').trim(),
+      };
+    });
   }
 }

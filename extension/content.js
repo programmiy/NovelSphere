@@ -557,6 +557,7 @@
           return /\/works\/\d+\/?$/.test(path);
         }
         findNextEpisodeLink() {
+          if (typeof document === "undefined") return null;
           const direct = document.getElementById("contentMain-nextEpisode") || document.querySelector("a.widget-episodeNavigation-next") || document.querySelector("#contentMain-readNextEpisode") || document.querySelector("a.js-read-next-episode") || document.querySelector('a[data-link-click-action-name="WorksEpisodesEpisodeFooterNextEpisode"]') || document.querySelector('a[class*="nextEpisode"], a[class*="NextEpisode"]');
           if (direct && direct.href) return direct;
           const candidates = Array.from(document.querySelectorAll('a[href*="/episodes/"]'));
@@ -567,6 +568,7 @@
           return null;
         }
         findPrevEpisodeLink() {
+          if (typeof document === "undefined") return null;
           const direct = document.getElementById("contentMain-previousEpisode") || document.querySelector("a.widget-episodeNavigation-previous") || document.querySelector('a[class*="previousEpisode"], a[class*="PreviousEpisode"]');
           if (direct && direct.href) return direct;
           const candidates = Array.from(document.querySelectorAll('a[href*="/episodes/"]'));
@@ -575,6 +577,7 @@
           return null;
         }
         findTocLink() {
+          if (typeof document === "undefined") return null;
           const links = Array.from(
             document.querySelectorAll(
               'header a[href*="/works/"], a.widget-toc-main-title, a[class*="workTitle"], a[class*="WorkHeader"], a[href*="/works/"]'
@@ -583,18 +586,18 @@
           const found = links.find((a) => /\/works\/\d+\/?$/.test((a.getAttribute("href") || "").split("?")[0]));
           return found || null;
         }
-        getTocEpisodes() {
+        getTocEpisodes(rootDoc = document) {
           let elements = Array.from(
-            document.querySelectorAll(
+            rootDoc.querySelectorAll(
               'a[class*="WorkTocSection_link"], [class*="WorkTocSection"] a, .widget-toc-episode a, a.widget-toc-episode-episodeTitle, [class*="widget-toc-episode"] a'
             )
           );
           if (!elements.length) {
             elements = Array.from(
-              document.querySelectorAll('a[href*="/works/"][href*="/episodes/"]')
+              rootDoc.querySelectorAll('a[href*="/works/"][href*="/episodes/"]')
             ).filter((a) => {
               const isHeaderButton = a.closest("header") || a.closest(".widget-workCard-actions") || a.closest('[class*="ReadButton"]') || (a.textContent || "").includes("1\u8A71\u76EE\u304B\u3089\u8AAD\u3080");
-              return !isHeaderButton && a.href;
+              return !isHeaderButton && (a.getAttribute("href") || a.href);
             });
           }
           return elements.map((el) => {
@@ -603,9 +606,10 @@
             );
             let title = titleEl && titleEl.textContent ? titleEl.textContent.trim() : (el.textContent || "").trim();
             title = title.replace(/\s*\d{4}年\d{1,2}月\d{1,2}日.*$/, "").trim();
+            const rawHref = el.getAttribute("href") || el.href || "";
             return {
               element: el,
-              url: el.href.split("#")[0],
+              url: rawHref.split("#")[0],
               title: title || "\uC81C\uBAA9 \uC5C6\uC74C"
             };
           });
@@ -680,21 +684,24 @@
           const direct = document.querySelector('.c-announce a[href*="/n"]') || document.querySelector(".p-novel__series-link a") || document.querySelector("a.p-novel__series-link") || document.querySelector(".novel_title a");
           return direct && direct.href ? direct : null;
         }
-        getTocEpisodes() {
+        getTocEpisodes(rootDoc = document) {
           const elements = Array.from(
-            document.querySelectorAll(
+            rootDoc.querySelectorAll(
               "a.p-eplist__subtitle, .p-eplist a.p-eplist__subtitle, .p-eplist__sublist a, .p-eplist a, .index_box .subtitle a, .subtitle a"
             )
           ).filter((el) => {
-            const rawHref = el.getAttribute("href") || "";
+            const rawHref = el.getAttribute("href") || el.href || "";
             const cleanHref = rawHref.split("#")[0].split("?")[0];
             return /\/\d+\/?$/.test(cleanHref);
           });
-          return elements.map((el) => ({
-            element: el,
-            url: el.href.split("#")[0],
-            title: (el.textContent || "").trim()
-          }));
+          return elements.map((el) => {
+            const rawHref = el.getAttribute("href") || el.href || "";
+            return {
+              element: el,
+              url: rawHref.split("#")[0],
+              title: (el.textContent || "").trim()
+            };
+          });
         }
       };
     }
@@ -821,28 +828,31 @@
           epContent.replaceWith(container);
           console.log(`[LANOVEL] NovelUp content transformed into ${lines.length} paragraphs for translation.`);
         }
-        getTocEpisodes() {
+        getTocEpisodes(rootDoc = document) {
           let elements = Array.from(
-            document.querySelectorAll(
+            rootDoc.querySelectorAll(
               '.episodeListItem a.episodeTitle, #section_episode a.episodeTitle, .episodeListItem a, a.episodeTitle, .storyList .episode a, .episode_list a, .storyList a[href*="/story/"]'
             )
           ).filter((el) => {
-            const rawHref = el.getAttribute("href") || "";
+            const rawHref = el.getAttribute("href") || el.href || "";
             const cleanHref = rawHref.split("#")[0].split("?")[0];
             return /\/story\/\d+\/\d+\/?$/.test(cleanHref);
           });
           if (!elements.length) {
-            elements = Array.from(document.querySelectorAll('a[href*="/story/"]')).filter((el) => {
-              const rawHref = el.getAttribute("href") || "";
+            elements = Array.from(rootDoc.querySelectorAll('a[href*="/story/"]')).filter((el) => {
+              const rawHref = el.getAttribute("href") || el.href || "";
               const cleanHref = rawHref.split("#")[0].split("?")[0];
               return /\/story\/\d+\/\d+\/?$/.test(cleanHref);
             });
           }
-          return elements.map((el) => ({
-            element: el,
-            url: el.href.split("#")[0],
-            title: (el.textContent || "").trim()
-          }));
+          return elements.map((el) => {
+            const rawHref = el.getAttribute("href") || el.href || "";
+            return {
+              element: el,
+              url: rawHref.split("#")[0],
+              title: (el.textContent || "").trim()
+            };
+          });
         }
       };
     }
@@ -920,13 +930,16 @@
             return (txt === "\u76EE\u6B21" || txt === "TOP") && a.href;
           }) || null;
         }
-        getTocEpisodes() {
-          const elements = Array.from(document.querySelectorAll('table a[href*="/novel/"]'));
-          return elements.map((el) => ({
-            element: el,
-            url: el.href.split("#")[0],
-            title: (el.textContent || "").trim()
-          }));
+        getTocEpisodes(rootDoc = document) {
+          const elements = Array.from(rootDoc.querySelectorAll('table a[href*="/novel/"]'));
+          return elements.map((el) => {
+            const rawHref = el.getAttribute("href") || el.href || "";
+            return {
+              element: el,
+              url: rawHref.split("#")[0],
+              title: (el.textContent || "").trim()
+            };
+          });
         }
       };
     }
@@ -1016,15 +1029,18 @@
           const direct = document.querySelector(".header-novel-title a") || document.querySelector('a[href*="/novel/"]');
           return direct && direct.href ? direct : null;
         }
-        getTocEpisodes() {
+        getTocEpisodes(rootDoc = document) {
           const elements = Array.from(
-            document.querySelectorAll(".episode a, .episode-list a, .episodes a")
+            rootDoc.querySelectorAll(".episode a, .episode-list a, .episodes a")
           );
-          return elements.map((el) => ({
-            element: el,
-            url: el.href.split("#")[0],
-            title: (el.textContent || "").trim()
-          }));
+          return elements.map((el) => {
+            const rawHref = el.getAttribute("href") || el.href || "";
+            return {
+              element: el,
+              url: rawHref.split("#")[0],
+              title: (el.textContent || "").trim()
+            };
+          });
         }
       };
     }
@@ -2850,8 +2866,135 @@
       }
     });
     const targetEp = untranslatedEpisodesCache[quickJumpFocusedIndex];
-    if (targetEp && targetEp.element) {
+    if (targetEp && targetEp.element && targetEp.element.isConnected) {
       targetEp.element.scrollIntoView({ block: "center", behavior: "smooth" });
+    }
+  }
+  function getNovelTocUrl(scraper, currentUrl = window.location.href) {
+    if (scraper.findTocLink) {
+      const link = scraper.findTocLink();
+      if (link && link.href) {
+        const clean = link.href.split("#")[0].split("?")[0];
+        if (clean) return clean;
+      }
+    }
+    try {
+      const parsed = new URL(currentUrl);
+      const host = parsed.hostname;
+      const path = parsed.pathname;
+      if (host.includes("kakuyomu.jp")) {
+        const m = path.match(/\/works\/(\d+)/);
+        if (m) return `https://kakuyomu.jp/works/${m[1]}`;
+      }
+      if (host.includes("syosetu.com")) {
+        const m = path.match(/\/(n[a-z0-9]+)/i);
+        if (m) return `${parsed.origin}/${m[1].toLowerCase()}/`;
+      }
+      if (host.includes("novelup.plus")) {
+        const m = path.match(/\/story\/(\d+)/);
+        if (m) return `https://novelup.plus/story/${m[1]}`;
+      }
+      if (host.includes("alphapolis.co.jp")) {
+        const m = path.match(/\/novel\/(\d+\/\d+)/);
+        if (m) return `https://www.alphapolis.co.jp/novel/${m[1]}`;
+      }
+      if (host.includes("syosetu.org")) {
+        const m = path.match(/\/novel\/(\d+)/);
+        if (m) return `https://syosetu.org/novel/${m[1]}/`;
+      }
+    } catch (e) {
+      console.warn("[LANOVEL] \uBAA9\uCC28 URL \uC5ED\uC0B0 \uC2E4\uD328:", e);
+    }
+    return null;
+  }
+  async function loadRemoteTocEpisodes(scraper) {
+    const tocUrl = getNovelTocUrl(scraper);
+    if (!tocUrl) {
+      showLanovelHud("\uC18C\uC124 \uBAA9\uCC28 URL\uC744 \uD655\uC778\uD560 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4.", "\u26A0\uFE0F", 2500);
+      return false;
+    }
+    showLanovelHud("\uC18C\uC124 \uBAA9\uCC28 \uBC0F \uBC88\uC5ED \uC0C1\uD0DC\uB97C \uBD88\uB7EC\uC624\uB294 \uC911...", "\u23F3", 3e3);
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 6e3);
+      const resp = await fetch(tocUrl, { signal: controller.signal });
+      clearTimeout(timeoutId);
+      if (!resp.ok) {
+        showLanovelHud(`\uBAA9\uCC28 \uC694\uCCAD \uC2E4\uD328 (HTTP ${resp.status})`, "\u26A0\uFE0F", 2500);
+        return false;
+      }
+      const html = await resp.text();
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(html, "text/html");
+      let episodeItems = [];
+      if (scraper.getTocEpisodes) {
+        episodeItems = scraper.getTocEpisodes(doc);
+      }
+      if (!episodeItems.length) {
+        showLanovelHud("\uBAA9\uCC28\uC5D0\uC11C \uD68C\uCC28 \uBAA9\uB85D\uC744 \uCC3E\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4.", "\u26A0\uFE0F", 2500);
+        return false;
+      }
+      const episodeDataList = [];
+      const urlSet = /* @__PURE__ */ new Set();
+      episodeItems.forEach((item) => {
+        if (!item.url) return;
+        const cleanUrl = new URL(item.url, tocUrl).href.split("#")[0];
+        if (!urlSet.has(cleanUrl)) {
+          urlSet.add(cleanUrl);
+          episodeDataList.push({
+            element: item.element,
+            url: cleanUrl,
+            title: item.title
+          });
+        }
+      });
+      if (!episodeDataList.length) return false;
+      const translatedSet = /* @__PURE__ */ new Set();
+      try {
+        const serverCtrl = new AbortController();
+        const sTimeout = setTimeout(() => serverCtrl.abort(), 2500);
+        const checkResp = await fetch("http://127.0.0.1:8001/api/check_translated_urls", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ urls: Array.from(urlSet) }),
+          signal: serverCtrl.signal
+        });
+        clearTimeout(sTimeout);
+        if (checkResp.ok) {
+          const data = await checkResp.json();
+          const list = data.translated_urls || [];
+          list.forEach((u) => {
+            translatedSet.add(u.replace(/\/$/, ""));
+            translatedSet.add(u.replace(/\/$/, "") + "/");
+          });
+        }
+      } catch (e) {
+        console.warn("[LANOVEL] \uC11C\uBC84 \uBC88\uC5ED URL \uD655\uC778 \uC911 \uC624\uB958 \uBC1C\uC0DD:", e);
+      }
+      const excludedUrls = await getExcludedEpisodeUrls();
+      const excludedSet = new Set(excludedUrls.map(normalizeUrlKey));
+      untranslatedEpisodesCache = [];
+      episodeDataList.forEach((item, index) => {
+        const cleanNoSlash = normalizeUrlKey(item.url);
+        const isTranslated = translatedSet.has(cleanNoSlash) || translatedSet.has(cleanNoSlash + "/");
+        const isExcluded = excludedSet.has(cleanNoSlash);
+        if (!isTranslated) {
+          untranslatedEpisodesCache.push({
+            index: untranslatedEpisodesCache.length,
+            tocIndex: index,
+            title: item.title,
+            url: item.url,
+            element: item.element,
+            isExcluded
+          });
+        }
+      });
+      renderQuickJumpPanel(untranslatedEpisodesCache);
+      return true;
+    } catch (err) {
+      console.error("[LANOVEL] \uBE44\uB3D9\uAE30 \uBAA9\uCC28 \uB85C\uB4DC \uC2E4\uD328:", err);
+      showLanovelHud("\uBAA9\uCC28\uB97C \uBD88\uB7EC\uC624\uB294 \uC911 \uC624\uB958\uAC00 \uBC1C\uC0DD\uD588\uC2B5\uB2C8\uB2E4.", "\u274C", 2500);
+      return false;
     }
   }
   async function toggleQuickJumpFromSidebar() {
@@ -2877,14 +3020,10 @@
         showLanovelHud("\uBBF8\uBC88\uC5ED \uD68C\uCC28 \uC11C\uB78D\uC744 \uC5F4\uC5C8\uC2B5\uB2C8\uB2E4.", "\u26A1", 1500);
       }
     } else {
-      const tocLink = scraper.findTocLink ? scraper.findTocLink() : null;
-      if (tocLink && tocLink.href) {
-        showLanovelHud("\uC18C\uC124 \uBAA9\uCC28 \uD398\uC774\uC9C0\uB85C \uC774\uB3D9\uD558\uC5EC \uBBF8\uBC88\uC5ED \uBAA9\uB85D\uC744 \uC5FD\uB2C8\uB2E4...", "\u{1F4D1}", 2e3);
-        setTimeout(() => {
-          window.location.href = tocLink.href;
-        }, 300);
-      } else {
-        showLanovelHud("\uC18C\uC124 \uBAA9\uCC28 \uD398\uC774\uC9C0\uC5D0\uC11C \uBBF8\uBC88\uC5ED \uBAA9\uB85D\uC744 \uD655\uC778\uD560 \uC218 \uC788\uC2B5\uB2C8\uB2E4.", "\u26A0\uFE0F", 2500);
+      const ok = await loadRemoteTocEpisodes(scraper);
+      if (ok) {
+        toggleQuickJumpDrawer(true);
+        showLanovelHud("\uBBF8\uBC88\uC5ED \uD68C\uCC28 \uC11C\uB78D\uC744 \uC5F4\uC5C8\uC2B5\uB2C8\uB2E4.", "\u26A1", 1500);
       }
     }
   }
@@ -4375,14 +4514,15 @@
         }
         return;
       }
-      if (scraper.isTocPage(window.location.href, window.location.pathname)) {
+      const quickJumpDrawer = document.getElementById("lanovel-quick-jump-drawer");
+      const isDrawerOpen = quickJumpDrawer && quickJumpDrawer.classList.contains("open");
+      if (scraper.isTocPage(window.location.href, window.location.pathname) || isDrawerOpen) {
         if (lowerKey === "n") {
           e.preventDefault();
           handleQuickJumpNKey();
           return;
         }
-        const drawer = document.getElementById("lanovel-quick-jump-drawer");
-        if (drawer && drawer.classList.contains("open")) {
+        if (isDrawerOpen) {
           if (key === "ArrowDown") {
             e.preventDefault();
             moveQuickJumpFocus(1);

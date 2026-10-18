@@ -166,29 +166,32 @@ export class NovelUpScraper implements PlatformScraper {
     console.log(`[LANOVEL] NovelUp content transformed into ${lines.length} paragraphs for translation.`);
   }
 
-  getTocEpisodes(): TocEpisodeItem[] {
+  getTocEpisodes(rootDoc: Document | Element = document): TocEpisodeItem[] {
     let elements = Array.from(
-      document.querySelectorAll<HTMLAnchorElement>(
+      rootDoc.querySelectorAll<HTMLAnchorElement>(
         '.episodeListItem a.episodeTitle, #section_episode a.episodeTitle, .episodeListItem a, a.episodeTitle, .storyList .episode a, .episode_list a, .storyList a[href*="/story/"]'
       )
     ).filter((el) => {
-      const rawHref = el.getAttribute('href') || '';
+      const rawHref = el.getAttribute('href') || el.href || '';
       const cleanHref = rawHref.split('#')[0].split('?')[0];
       return /\/story\/\d+\/\d+\/?$/.test(cleanHref);
     });
 
     if (!elements.length) {
-      elements = Array.from(document.querySelectorAll<HTMLAnchorElement>('a[href*="/story/"]')).filter((el) => {
-        const rawHref = el.getAttribute('href') || '';
+      elements = Array.from(rootDoc.querySelectorAll<HTMLAnchorElement>('a[href*="/story/"]')).filter((el) => {
+        const rawHref = el.getAttribute('href') || el.href || '';
         const cleanHref = rawHref.split('#')[0].split('?')[0];
         return /\/story\/\d+\/\d+\/?$/.test(cleanHref);
       });
     }
 
-    return elements.map((el) => ({
-      element: el,
-      url: el.href.split('#')[0],
-      title: (el.textContent || '').trim(),
-    }));
+    return elements.map((el) => {
+      const rawHref = el.getAttribute('href') || el.href || '';
+      return {
+        element: el,
+        url: rawHref.split('#')[0],
+        title: (el.textContent || '').trim(),
+      };
+    });
   }
 }

@@ -277,6 +277,13 @@ test('kakuyomu & toc: KakuyomuScraper and normalizeUrlKey work accurately', asyn
   assert.strictEqual(normalizeUrlKey('https://kakuyomu.jp/works/123/episodes/456/'), 'https://kakuyomu.jp/works/123/episodes/456');
   assert.strictEqual(normalizeUrlKey('https://kakuyomu.jp/works/123/episodes/456#comment'), 'https://kakuyomu.jp/works/123/episodes/456');
   assert.strictEqual(normalizeUrlKey('https://kakuyomu.jp/works/123/episodes/456?ref=top#toc'), 'https://kakuyomu.jp/works/123/episodes/456');
+
+  // 5. getNovelTocUrl
+  const { getNovelTocUrl } = await import('../src/ui/toc_quick_jump.ts');
+  assert.strictEqual(
+    getNovelTocUrl(scraper, 'https://kakuyomu.jp/works/1177354054887975130/episodes/1177354054887975145'),
+    'https://kakuyomu.jp/works/1177354054887975130'
+  );
 });
 
 

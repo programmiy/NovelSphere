@@ -17,5 +17,5 @@ export interface PlatformScraper {
   findPrevEpisodeLink(): HTMLAnchorElement | null;
   findTocLink(): HTMLAnchorElement | null;
   prepareContent?(): void;
-  getTocEpisodes?(): TocEpisodeItem[];
+  getTocEpisodes?(rootDoc?: Document | Element): TocEpisodeItem[];
 }
