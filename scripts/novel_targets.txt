@@ -1,0 +1,7 @@
+# LANOVEL 다중 소설 번역 플레이리스트 (Multi-Novel Playlist)
+# 번역할 소설들의 목차(TOC) URL을 한 줄에 하나씩 입력하세요.
+# 앞 소설이 마지막화까지 완료되면 자동으로 다음 소설의 1화로 전이하여 배치를 이어갑니다.
+#
+# 예시:
+# https://novel18.syosetu.com/n4913gc/
+# https://kakuyomu.jp/works/16817330652758113427

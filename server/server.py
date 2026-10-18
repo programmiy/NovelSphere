@@ -404,7 +404,7 @@ async def redirect_service_worker():
     return RedirectResponse(url="/service-worker.js")
 
 # --- Routers ---
-from server.routers import ui, translation, data_crud, books, system, tasks, admin, url_config, db_editor, toc_importer, separators, notifications, sync, app_release, unclassified, dictionary, corpus_ai, ai_review, remote
+from server.routers import ui, translation, data_crud, books, system, tasks, admin, url_config, db_editor, toc_importer, separators, notifications, sync, app_release, unclassified, dictionary, corpus_ai, ai_review, remote, special_batch
 app.include_router(ui.router)
 app.include_router(translation.router)
 app.include_router(data_crud.router)
@@ -424,6 +424,7 @@ app.include_router(dictionary.router)
 app.include_router(corpus_ai.router)
 app.include_router(ai_review.router)
 app.include_router(remote.router)
+app.include_router(special_batch.router)
 
 @app.get("/api/status/summary", tags=["Status"])
 def get_api_status_summary():

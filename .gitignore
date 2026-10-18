@@ -47,6 +47,7 @@ scripts/*_inspect.txt
 scripts/*_raw.json
 scripts/*_translations.json
 scripts/unreviewed_temp.json
+scripts/special_staging/
 scripts/maid_summary.txt
 scripts/novel_inspector/output/
 search_*.txt

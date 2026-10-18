@@ -195,3 +195,25 @@ class SystemTask(Base):
         Index('ix_system_tasks_created_at', 'created_at'),
     )
 
+
+class SpecialBatchQueue(Base):
+    __tablename__ = 'special_batch_queue'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    batch_id = Column(String(64), index=True, nullable=False)
+    url = Column(Text, index=True, nullable=False)
+    folder_name = Column(Text, index=True, nullable=False)
+    chapter_title = Column(Text, default="")
+    chapter_index = Column(Integer, default=0)
+    pid = Column(String(64), nullable=False)
+    original_text = Column(Text, nullable=False)
+    translated_text = Column(Text, nullable=False)
+    status = Column(String(32), default="staged", index=True)  # staged, approved, skipped
+    created_at = Column(BigInteger, nullable=False)
+    promoted_at = Column(BigInteger, nullable=True)
+
+    __table_args__ = (
+        Index('ix_special_batch_folder_status', 'folder_name', 'status'),
+        Index('ix_special_batch_url_pid', 'url', 'pid'),
+    )
+
