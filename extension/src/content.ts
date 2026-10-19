@@ -143,11 +143,6 @@ async function init(): Promise<void> {
       }
     }
 
-    checkAutoTranslateNextTrigger(() => {
-      showSidebar();
-      translateAllPTags(false);
-    });
-
     // 소설 제목 감지 (서버 우선, DOM 폴백)
     const cleanUrl = getCleanUrl();
     let novelTitle = '';
@@ -177,6 +172,11 @@ async function init(): Promise<void> {
     if (translations) {
       await checkAndExcludeSeparatorTranslations(translations);
     }
+
+    checkAutoTranslateNextTrigger(() => {
+      showSidebar();
+      translateAllPTags(false);
+    });
 
     // 재번역 검수 대상 조회
     await checkAndLoadReviewTargets(cleanUrl);

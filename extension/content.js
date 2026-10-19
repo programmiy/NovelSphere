@@ -59,11 +59,9 @@
     }
     const firstHit = separatorHits[0];
     const firstIndex = firstHit.index;
-    const isExplicitAfterwordKeyword = DEFAULT_GLOBAL_SEPARATORS.includes(firstHit.sep);
     const maxPrefaceCount = Math.max(5, Math.min(15, Math.floor(N * 0.2)));
     const remainingAfterFirst = N - 1 - firstIndex;
-    const isTopSeparator = !isExplicitAfterwordKeyword && firstIndex <= maxPrefaceCount && remainingAfterFirst >= 5 && remainingAfterFirst > firstIndex;
-    const maxAfterwordCount = Math.max(5, Math.min(25, Math.floor(N * 0.25)));
+    const isTopSeparator = firstIndex <= maxPrefaceCount && remainingAfterFirst >= 5 && remainingAfterFirst > firstIndex;
     if (isTopSeparator) {
       result.topSeparator = { index: firstIndex, sep: firstHit.sep, pid: firstHit.item.pid };
       result.separatorPids.add(firstHit.item.pid);
@@ -85,9 +83,7 @@
       if (remainingHits.length > 0) {
         const lastHit = remainingHits[remainingHits.length - 1];
         const lastIndex = lastHit.index;
-        const remainingAfterLast = N - 1 - lastIndex;
-        const isLastExplicitAfterword = DEFAULT_GLOBAL_SEPARATORS.includes(lastHit.sep);
-        if ((isLastExplicitAfterword || remainingAfterLast <= maxAfterwordCount) && lastIndex > firstIndex) {
+        if (lastIndex > firstIndex) {
           result.bottomSeparator = { index: lastIndex, sep: lastHit.sep, pid: lastHit.item.pid };
           result.separatorPids.add(lastHit.item.pid);
           result.excludedPidMap.set(lastHit.item.pid, {
@@ -107,34 +103,24 @@
         }
       }
     } else {
-      const bottomCandidate = separatorHits.find((h) => DEFAULT_GLOBAL_SEPARATORS.includes(h.sep) && h.index > 0) || [...separatorHits].reverse().find((h) => N - 1 - h.index <= maxAfterwordCount && h.index > 0);
-      if (bottomCandidate) {
-        const lastIndex = bottomCandidate.index;
-        result.bottomSeparator = { index: lastIndex, sep: bottomCandidate.sep, pid: bottomCandidate.item.pid };
-        result.separatorPids.add(bottomCandidate.item.pid);
-        result.excludedPidMap.set(bottomCandidate.item.pid, {
-          matchedSep: bottomCandidate.sep,
-          isSubsequent: false,
-          isPreface: false
-        });
+      const lastIndex = firstHit.index;
+      result.bottomSeparator = { index: lastIndex, sep: firstHit.sep, pid: firstHit.item.pid };
+      result.separatorPids.add(firstHit.item.pid);
+      result.excludedPidMap.set(firstHit.item.pid, {
+        matchedSep: firstHit.sep,
+        isSubsequent: false,
+        isPreface: false
+      });
+      if (lastIndex > 0) {
         for (let j = lastIndex + 1; j < N; j++) {
           const nextItem = validParagraphs[j];
           result.afterwordPids.add(nextItem.pid);
           result.excludedPidMap.set(nextItem.pid, {
-            matchedSep: bottomCandidate.sep,
+            matchedSep: firstHit.sep,
             isSubsequent: true,
             isPreface: false
           });
         }
-      } else {
-        separatorHits.forEach((h) => {
-          result.separatorPids.add(h.item.pid);
-          result.excludedPidMap.set(h.item.pid, {
-            matchedSep: h.sep,
-            isSubsequent: false,
-            isPreface: false
-          });
-        });
       }
     }
     return result;
@@ -3577,13 +3563,14 @@
   }
   function updateSidebarWithTranslations(translations) {
     const tableBody = document.getElementById("translation-table-body");
-    if (!tableBody) return;
+    if (!tableBody || !translations || translations.length === 0) return;
+    const rowsToPrepend = [];
     translations.forEach((item) => {
       let row = tableBody.querySelector(`tr[data-pid="${item.id}"]`);
       const isReviewTarget = state.reviewTargetPids && state.reviewTargetPids.has(item.id);
       const reviewBadgeHtml = isReviewTarget ? `<span class="review-badge">\u26A1\uC7AC\uAC80\uC218</span>` : "";
       if (!row) {
-        row = tableBody.insertRow(0);
+        row = document.createElement("tr");
         row.dataset.pid = item.id;
         if (isReviewTarget) row.classList.add("review-target-row");
         row.innerHTML = `
@@ -3598,7 +3585,6 @@
       `;
         bindRowEvents(row, item.id, item.original);
       } else {
-        tableBody.prepend(row);
         const cell = row.querySelector(".translated-text");
         if (cell) {
           cell.textContent = item.translated;
@@ -3613,7 +3599,11 @@
       if (isReviewTarget) {
         updateReviewCardTranslation(item.id, `\uBC88\uC5ED: ${item.translated}`, false);
       }
+      rowsToPrepend.push(row);
     });
+    for (let i = rowsToPrepend.length - 1; i >= 0; i--) {
+      tableBody.prepend(rowsToPrepend[i]);
+    }
   }
   function updateSidebarWithCancelled() {
     const tableBody = document.getElementById("translation-table-body");
@@ -4765,10 +4755,6 @@
           return;
         }
       }
-      checkAutoTranslateNextTrigger(() => {
-        showSidebar();
-        translateAllPTags(false);
-      });
       const cleanUrl = getCleanUrl();
       let novelTitle = "";
       try {
@@ -4791,6 +4777,10 @@
       if (translations) {
         await checkAndExcludeSeparatorTranslations(translations);
       }
+      checkAutoTranslateNextTrigger(() => {
+        showSidebar();
+        translateAllPTags(false);
+      });
       await checkAndLoadReviewTargets(cleanUrl);
       let initialApplied = false;
       try {

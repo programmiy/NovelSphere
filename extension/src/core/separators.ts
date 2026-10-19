@@ -68,24 +68,20 @@ export function analyzeSeparatorSections(validParagraphs: ParagraphItem[], separ
   const firstIndex = firstHit.index;
 
   // 상단 머리말 구분선 판정:
-  // 1) 전체 문단 수 대비 앞쪽 20% 이내 (최대 15문단 상한선 Cap 적용)
+  // 1) 전체 문단 수 대비 앞쪽 15~20% 이내 (최대 15문단 상한선 Cap 적용)
   // 2) 잔여 본문 단락 수가 5개 이상이고, 머리말 문단 수보다 본문이 더 길 것
-  // 3) 명백한 후기 전용 키워드(DEFAULT_GLOBAL_SEPARATORS)는 상단 머리말 구분선으로 취급하지 않음
-  const isExplicitAfterwordKeyword = DEFAULT_GLOBAL_SEPARATORS.includes(firstHit.sep);
   const maxPrefaceCount = Math.max(5, Math.min(15, Math.floor(N * 0.20)));
   const remainingAfterFirst = N - 1 - firstIndex;
   const isTopSeparator =
-    !isExplicitAfterwordKeyword &&
     firstIndex <= maxPrefaceCount &&
     remainingAfterFirst >= 5 &&
     remainingAfterFirst > firstIndex;
-
-  const maxAfterwordCount = Math.max(5, Math.min(25, Math.floor(N * 0.25)));
 
   if (isTopSeparator) {
     result.topSeparator = { index: firstIndex, sep: firstHit.sep, pid: firstHit.item.pid };
     result.separatorPids.add(firstHit.item.pid);
 
+    // 상단 구분선 이전 단락들 (머리말/잡글)
     for (let i = 0; i < firstIndex; i++) {
       const pItem = validParagraphs[i];
       result.prefacePids.add(pItem.pid);
@@ -96,29 +92,31 @@ export function analyzeSeparatorSections(validParagraphs: ParagraphItem[], separ
       });
     }
 
+    // 상단 구분선 단락 자체
     result.excludedPidMap.set(firstHit.item.pid, {
       matchedSep: firstHit.sep,
       isSubsequent: false,
       isPreface: false,
     });
 
+    // 상단 구분선 이후에 또 다른 구분선이 존재하는지 확인 (하단 후기 구분선)
     const remainingHits = separatorHits.slice(1);
     if (remainingHits.length > 0) {
       const lastHit = remainingHits[remainingHits.length - 1];
       const lastIndex = lastHit.index;
-      const remainingAfterLast = N - 1 - lastIndex;
-      const isLastExplicitAfterword = DEFAULT_GLOBAL_SEPARATORS.includes(lastHit.sep);
 
-      if ((isLastExplicitAfterword || remainingAfterLast <= maxAfterwordCount) && lastIndex > firstIndex) {
+      if (lastIndex > firstIndex) {
         result.bottomSeparator = { index: lastIndex, sep: lastHit.sep, pid: lastHit.item.pid };
         result.separatorPids.add(lastHit.item.pid);
 
+        // 하단 구분선 단락 자체
         result.excludedPidMap.set(lastHit.item.pid, {
           matchedSep: lastHit.sep,
           isSubsequent: false,
           isPreface: false,
         });
 
+        // 하단 구분선 이후 단락들 (후기/작가의 말)
         for (let j = lastIndex + 1; j < N; j++) {
           const nextItem = validParagraphs[j];
           result.afterwordPids.add(nextItem.pid);
@@ -131,42 +129,29 @@ export function analyzeSeparatorSections(validParagraphs: ParagraphItem[], separ
       }
     }
   } else {
-    // 첫 번째 구분선이 상단이 아닌 경우:
-    // 명백한 후기 키워드이거나 후반부(끝에서 25% 또는 25문단 이내)에 위치한 구분선을 하단 후기 시작선으로 채택
-    const bottomCandidate =
-      separatorHits.find((h) => DEFAULT_GLOBAL_SEPARATORS.includes(h.sep) && h.index > 0) ||
-      [...separatorHits].reverse().find((h) => N - 1 - h.index <= maxAfterwordCount && h.index > 0);
+    // 첫 번째 구분선이 상단이 아닌 경우 -> 하단 후기 시작선으로 취급 (레거시 동작 100% 복원)
+    const lastIndex = firstHit.index;
+    result.bottomSeparator = { index: lastIndex, sep: firstHit.sep, pid: firstHit.item.pid };
+    result.separatorPids.add(firstHit.item.pid);
 
-    if (bottomCandidate) {
-      const lastIndex = bottomCandidate.index;
-      result.bottomSeparator = { index: lastIndex, sep: bottomCandidate.sep, pid: bottomCandidate.item.pid };
-      result.separatorPids.add(bottomCandidate.item.pid);
+    // 하단 구분선 단락 자체
+    result.excludedPidMap.set(firstHit.item.pid, {
+      matchedSep: firstHit.sep,
+      isSubsequent: false,
+      isPreface: false,
+    });
 
-      result.excludedPidMap.set(bottomCandidate.item.pid, {
-        matchedSep: bottomCandidate.sep,
-        isSubsequent: false,
-        isPreface: false,
-      });
-
+    // 첫 번째 유효 단락(lastIndex === 0)이 아닐 때만 그 이후의 모든 단락들을 같이 제외 대상에 포함
+    if (lastIndex > 0) {
       for (let j = lastIndex + 1; j < N; j++) {
         const nextItem = validParagraphs[j];
         result.afterwordPids.add(nextItem.pid);
         result.excludedPidMap.set(nextItem.pid, {
-          matchedSep: bottomCandidate.sep,
+          matchedSep: firstHit.sep,
           isSubsequent: true,
           isPreface: false,
         });
       }
-    } else {
-      // 본문 중간의 장면 전환 기호인 경우 해당 구분선 줄만 제외하고 본문은 보존
-      separatorHits.forEach((h) => {
-        result.separatorPids.add(h.item.pid);
-        result.excludedPidMap.set(h.item.pid, {
-          matchedSep: h.sep,
-          isSubsequent: false,
-          isPreface: false,
-        });
-      });
     }
   }
 

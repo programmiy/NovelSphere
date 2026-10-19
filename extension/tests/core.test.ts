@@ -166,26 +166,44 @@ test('notifications: sendProgressNotification and sendCompleteNotification call 
   }
 });
 
-test('separators: analyzeSeparatorSections preserves body paragraphs when scene breaks appear in the middle', async () => {
+test('separators: analyzeSeparatorSections correctly excludes preface on top and afterword on bottom', async () => {
   const { analyzeSeparatorSections, DEFAULT_GLOBAL_SEPARATORS } = await import('../src/core/separators.ts');
 
-  const paragraphs = Array.from({ length: 50 }, (_, idx) => ({
+  // 1) 기본 구분선(DEFAULT_GLOBAL_SEPARATORS) 미등록 기호는 제외되지 않음
+  const pNoSep = Array.from({ length: 50 }, (_, idx) => ({
     pid: `p${idx + 1}`,
-    text: idx === 20 || idx === 30 ? '***' : `본문 문장 ${idx + 1}`,
+    text: idx === 20 ? '***' : `본문 문장 ${idx + 1}`,
     element: {} as any,
   }));
-
-  // 1) 기본 구분선(DEFAULT_GLOBAL_SEPARATORS) 사용 시 중간의 '***'는 전혀 제외되지 않아야 함
-  const resDefault = analyzeSeparatorSections(paragraphs, DEFAULT_GLOBAL_SEPARATORS);
+  const resDefault = analyzeSeparatorSections(pNoSep, DEFAULT_GLOBAL_SEPARATORS);
   assert.strictEqual(resDefault.prefacePids.size, 0);
   assert.strictEqual(resDefault.afterwordPids.size, 0);
 
-  // 2) 커스텀 구분선에 '***'가 있더라도 본문 한가운데(21번째, 31번째)에 있으면 앞뒤 본문을 통째로 날리지 않아야 함
-  const resCustom = analyzeSeparatorSections(paragraphs, [...DEFAULT_GLOBAL_SEPARATORS, '***']);
-  assert.strictEqual(resCustom.prefacePids.size, 0);
-  assert.strictEqual(resCustom.afterwordPids.size, 0);
-  assert.strictEqual(resCustom.separatorPids.has('p21'), true);
-  assert.strictEqual(resCustom.separatorPids.has('p31'), true);
+  // 2) 상단에 구분선이 1개만 있는 경우 (idx 2): 상단(p1, p2)과 구분선(p3)만 제외되고 본문(p4~p50)은 보존
+  const pTopOnly = Array.from({ length: 50 }, (_, idx) => ({
+    pid: `p${idx + 1}`,
+    text: idx === 2 ? '――――' : `본문 문장 ${idx + 1}`,
+    element: {} as any,
+  }));
+  const resTop = analyzeSeparatorSections(pTopOnly, [...DEFAULT_GLOBAL_SEPARATORS, '――――']);
+  assert.strictEqual(resTop.prefacePids.size, 2);
+  assert.strictEqual(resTop.prefacePids.has('p1'), true);
+  assert.strictEqual(resTop.prefacePids.has('p2'), true);
+  assert.strictEqual(resTop.separatorPids.has('p3'), true);
+  assert.strictEqual(resTop.afterwordPids.size, 0);
+
+  // 3) 하단에 구분선이 1개 있는 경우 (idx 20): 구분선(p21) 및 밑의 모든 후기 문단(p22~p50, 총 29문단) 제외
+  const pBottomOnly = Array.from({ length: 50 }, (_, idx) => ({
+    pid: `p${idx + 1}`,
+    text: idx === 20 ? '――――' : `본문 문장 ${idx + 1}`,
+    element: {} as any,
+  }));
+  const resBottom = analyzeSeparatorSections(pBottomOnly, [...DEFAULT_GLOBAL_SEPARATORS, '――――']);
+  assert.strictEqual(resBottom.prefacePids.size, 0);
+  assert.strictEqual(resBottom.separatorPids.has('p21'), true);
+  assert.strictEqual(resBottom.afterwordPids.size, 29);
+  assert.strictEqual(resBottom.afterwordPids.has('p22'), true);
+  assert.strictEqual(resBottom.afterwordPids.has('p50'), true);
 });
 
 test('separators: analyzeSeparatorSections populates excludedPidMap with preface, separator, and afterword metadata', async () => {

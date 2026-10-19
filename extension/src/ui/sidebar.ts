@@ -508,7 +508,9 @@ export function updateSidebarWithTranslations(
   translations: Array<{ id: string; original: string; translated: string }>
 ): void {
   const tableBody = document.getElementById('translation-table-body') as HTMLTableSectionElement | null;
-  if (!tableBody) return;
+  if (!tableBody || !translations || translations.length === 0) return;
+
+  const rowsToPrepend: HTMLTableRowElement[] = [];
 
   translations.forEach((item) => {
     let row = tableBody.querySelector<HTMLTableRowElement>(`tr[data-pid="${item.id}"]`);
@@ -516,7 +518,7 @@ export function updateSidebarWithTranslations(
     const reviewBadgeHtml = isReviewTarget ? `<span class="review-badge">⚡재검수</span>` : '';
 
     if (!row) {
-      row = tableBody.insertRow(0);
+      row = document.createElement('tr');
       row.dataset.pid = item.id;
       if (isReviewTarget) row.classList.add('review-target-row');
       row.innerHTML = `
@@ -531,7 +533,6 @@ export function updateSidebarWithTranslations(
       `;
       bindRowEvents(row, item.id, item.original);
     } else {
-      tableBody.prepend(row);
       const cell = row.querySelector('.translated-text');
       if (cell) {
         cell.textContent = item.translated;
@@ -547,7 +548,14 @@ export function updateSidebarWithTranslations(
     if (isReviewTarget) {
       updateReviewCardTranslation(item.id, `번역: ${item.translated}`, false);
     }
+
+    rowsToPrepend.push(row);
   });
+
+  // 번역 완료된 묶음을 사이드바 최상단에 올리되, 묶음 내부 단락들은 원문 순서(1->2->3)를 유지하도록 역순 prepend
+  for (let i = rowsToPrepend.length - 1; i >= 0; i--) {
+    tableBody.prepend(rowsToPrepend[i]);
+  }
 }
 
 export function updateSidebarWithCancelled(): void {
