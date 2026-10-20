@@ -598,13 +598,15 @@
 
             data.novels.forEach(n => {
                 const opt = document.createElement("option");
-                opt.value = n.folder_name;
-                opt.textContent = `${n.folder_name} (대기: ${n.staged_count} / 전체: ${n.total_count})`;
+                const folderVal = n.folder_name && n.folder_name !== "Unknown" ? n.folder_name : "미분류";
+                opt.value = folderVal;
+                opt.textContent = `${folderVal} (대기: ${n.staged_count} / 전체: ${n.total_count})`;
                 novelSelect.appendChild(opt);
             });
 
             if (!state.currentFolder && data.novels.length > 0) {
-                state.currentFolder = data.novels[0].folder_name;
+                const firstVal = data.novels[0].folder_name && data.novels[0].folder_name !== "Unknown" ? data.novels[0].folder_name : "미분류";
+                state.currentFolder = firstVal;
             }
             novelSelect.value = state.currentFolder;
 
@@ -690,7 +692,8 @@
         if (state.currentIndex >= state.items.length) state.currentIndex = state.items.length - 1;
 
         const it = state.items[state.currentIndex];
-        cardNovelChapter.textContent = `${it.folder_name} - 제 ${it.chapter_index}화 ${it.chapter_title ? '「' + it.chapter_title + '」' : ''}`;
+        const novelLabel = (it.folder_name && it.folder_name !== 'Unknown') ? it.folder_name : '미분류';
+        cardNovelChapter.textContent = `${novelLabel} - 제 ${it.chapter_index}화 ${it.chapter_title ? '「' + it.chapter_title + '」' : ''}`;
         cardPid.textContent = `PID: ${it.pid}`;
         cardIndexIndicator.textContent = `${state.currentIndex + 1} / ${state.items.length}`;
 

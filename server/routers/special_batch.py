@@ -46,6 +46,30 @@ class UpdateTextRequest(BaseModel):
     translated_text: str
 
 
+def resolve_clean_folder_name(db: Session, clean_url: str, explicit_folder: Optional[str]) -> Optional[str]:
+    """
+    폴더명을 안전하게 결정합니다:
+    1. explicit_folder가 유효하고 'Unknown'이 아니면 우선 사용
+    2. 동일 URL(회차)의 다른 Translation 레코드 중 이미 유효한 folderName이 지정되어 있다면 상속
+    3. 어디에도 없으면 임의 폴더를 절대 생성하지 않고 None(미분류 보관함 규격)을 반환
+    """
+    if explicit_folder and explicit_folder.strip() and explicit_folder.strip() != "Unknown":
+        return explicit_folder.strip()
+
+    inherited = (
+        db.query(Translation.folderName)
+        .filter(Translation.url == clean_url)
+        .filter(Translation.folderName.isnot(None))
+        .filter(Translation.folderName != "")
+        .filter(Translation.folderName != "Unknown")
+        .first()
+    )
+    if inherited and inherited[0] and inherited[0].strip():
+        return inherited[0].strip()
+
+    return None
+
+
 @router.get("/special_batch", response_class=HTMLResponse)
 async def serve_special_batch_page(request: Request):
     """특별 적재 검수기 전용 UI 페이지"""
@@ -74,8 +98,12 @@ def get_staged_novels(db: Session = Depends(get_db)):
 
     result = []
     for row in novels:
+        # None, 빈 문자열, Unknown은 '미분류'로 정규화 표기
+        f_name = row.folder_name
+        if not f_name or f_name.strip() in ("", "Unknown"):
+            f_name = None
         result.append({
-            "folder_name": row.folder_name,
+            "folder_name": f_name,
             "total_count": row.total_count or 0,
             "staged_count": row.staged_count or 0,
             "approved_count": row.approved_count or 0,
@@ -85,18 +113,28 @@ def get_staged_novels(db: Session = Depends(get_db)):
 
 
 @router.get("/api/special_batch/chapters")
-def get_staged_chapters(folder_name: str, db: Session = Depends(get_db)):
+def get_staged_chapters(folder_name: Optional[str] = None, db: Session = Depends(get_db)):
     """특정 소설의 회차 목록 반환"""
-    chapters = (
-        db.query(
-            SpecialBatchQueue.url,
-            SpecialBatchQueue.chapter_title,
-            SpecialBatchQueue.chapter_index,
-            func.count(SpecialBatchQueue.id).label("total_count"),
-            func.sum(case((SpecialBatchQueue.status == 'staged', 1), else_=0)).label("staged_count"),
-            func.sum(case((SpecialBatchQueue.status == 'approved', 1), else_=0)).label("approved_count"),
+    query = db.query(
+        SpecialBatchQueue.url,
+        SpecialBatchQueue.chapter_title,
+        SpecialBatchQueue.chapter_index,
+        func.count(SpecialBatchQueue.id).label("total_count"),
+        func.sum(case((SpecialBatchQueue.status == 'staged', 1), else_=0)).label("staged_count"),
+        func.sum(case((SpecialBatchQueue.status == 'approved', 1), else_=0)).label("approved_count"),
+    )
+
+    if folder_name and folder_name not in ("미분류", "__unclassified__", "null", "None"):
+        query = query.filter(SpecialBatchQueue.folder_name == folder_name)
+    elif folder_name in ("미분류", "__unclassified__", "null", "None") or folder_name == "":
+        query = query.filter(
+            SpecialBatchQueue.folder_name.is_(None)
+            | (SpecialBatchQueue.folder_name == "")
+            | (SpecialBatchQueue.folder_name == "Unknown")
         )
-        .filter(SpecialBatchQueue.folder_name == folder_name)
+
+    chapters = (
+        query
         .group_by(SpecialBatchQueue.url, SpecialBatchQueue.chapter_title, SpecialBatchQueue.chapter_index)
         .order_by(SpecialBatchQueue.chapter_index.asc())
         .all()
@@ -129,7 +167,14 @@ def get_staged_items(
     query = db.query(SpecialBatchQueue)
 
     if folder_name:
-        query = query.filter(SpecialBatchQueue.folder_name == folder_name)
+        if folder_name in ("미분류", "__unclassified__", "null", "None") or folder_name == "":
+            query = query.filter(
+                SpecialBatchQueue.folder_name.is_(None)
+                | (SpecialBatchQueue.folder_name == "")
+                | (SpecialBatchQueue.folder_name == "Unknown")
+            )
+        else:
+            query = query.filter(SpecialBatchQueue.folder_name == folder_name)
     if chapter_url:
         query = query.filter(SpecialBatchQueue.url == chapter_url)
     if batch_id:
@@ -147,7 +192,14 @@ def get_staged_items(
         func.sum(case((SpecialBatchQueue.status == 'skipped', 1), else_=0)).label("skipped"),
     )
     if folder_name:
-        counts_query = counts_query.filter(SpecialBatchQueue.folder_name == folder_name)
+        if folder_name in ("미분류", "__unclassified__", "null", "None") or folder_name == "":
+            counts_query = counts_query.filter(
+                SpecialBatchQueue.folder_name.is_(None)
+                | (SpecialBatchQueue.folder_name == "")
+                | (SpecialBatchQueue.folder_name == "Unknown")
+            )
+        else:
+            counts_query = counts_query.filter(SpecialBatchQueue.folder_name == folder_name)
     if chapter_url:
         counts_query = counts_query.filter(SpecialBatchQueue.url == chapter_url)
     
@@ -209,12 +261,15 @@ def approve_staged_item(req: ApproveRequest, db: Session = Depends(get_db)):
         .first()
     )
 
+    resolved_folder = resolve_clean_folder_name(db, clean_url, item.folder_name)
+
     if existing_trans:
         existing_trans.translated = final_text
         existing_trans.original = item.original_text
         existing_trans.timestamp = now
-        if not existing_trans.folderName:
-            existing_trans.folderName = item.folder_name
+        # 기존 번역의 folderName이 없거나 'Unknown'인 경우에만 상속받고, 이미 정상 폴더명이 있으면 보존
+        if not existing_trans.folderName or existing_trans.folderName.strip() in ("", "Unknown"):
+            existing_trans.folderName = resolved_folder
         if not existing_trans.title and item.chapter_title:
             existing_trans.title = item.chapter_title
     else:
@@ -224,7 +279,7 @@ def approve_staged_item(req: ApproveRequest, db: Session = Depends(get_db)):
             original=item.original_text,
             translated=final_text,
             timestamp=now,
-            folderName=item.folder_name,
+            folderName=resolved_folder,
             title=item.chapter_title or f"제 {item.chapter_index}화",
         )
         db.add(new_trans)
@@ -310,6 +365,13 @@ def batch_approve_staged(req: BatchApproveRequest, db: Session = Depends(get_db)
     existing_translations = db.query(Translation).filter(Translation.url.in_(urls)).all()
     trans_map = {(t.url, t.pid): t for t in existing_translations}
 
+    # URL별 유효 소설 폴더명 매핑 구축 (동일 URL에 이미 지정된 정상 폴더가 있다면 상속)
+    url_to_inherited_folder = {}
+    for t in existing_translations:
+        if t.url and t.folderName and t.folderName.strip() and t.folderName.strip() != "Unknown":
+            if t.url not in url_to_inherited_folder:
+                url_to_inherited_folder[t.url] = t.folderName.strip()
+
     approved_count = 0
     for item in staged_items:
         clean_url = item.url.split('#')[0].strip()
@@ -320,12 +382,18 @@ def batch_approve_staged(req: BatchApproveRequest, db: Session = Depends(get_db)
         item.status = "approved"
         item.promoted_at = now
 
+        # 폴더명 결정: explicit(유효한 경우) -> 동일 URL 상속 -> None(미분류 보관함 규격)
+        clean_folder = item.folder_name.strip() if item.folder_name and item.folder_name.strip() and item.folder_name.strip() != "Unknown" else None
+        resolved_folder = clean_folder or url_to_inherited_folder.get(clean_url)
+
         key = (clean_url, item.pid)
         if key in trans_map:
             t = trans_map[key]
             t.translated = t_text
             t.original = item.original_text
             t.timestamp = now
+            if not t.folderName or t.folderName.strip() in ("", "Unknown"):
+                t.folderName = resolved_folder
         else:
             new_t = Translation(
                 url=clean_url,
@@ -333,7 +401,7 @@ def batch_approve_staged(req: BatchApproveRequest, db: Session = Depends(get_db)
                 original=item.original_text,
                 translated=t_text,
                 timestamp=now,
-                folderName=item.folder_name,
+                folderName=resolved_folder,
                 title=item.chapter_title or f"제 {item.chapter_index}화",
             )
             db.add(new_t)

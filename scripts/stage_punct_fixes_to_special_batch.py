@@ -127,6 +127,19 @@ def stage_exact_symbol_copypaste(batch_id: str = "batch_repeat_punct_fix_2026101
     rows = c.fetchall()
     print(f"[분석 시작] '(반복)' 포함 전체 문단: {len(rows)}건")
 
+    # 동일 URL을 공유하는 다른 문단에서 유효한 소설 폴더명 매핑 구축
+    c.execute("""
+        SELECT url, folderName
+        FROM translations
+        WHERE folderName IS NOT NULL 
+          AND TRIM(folderName) != '' 
+          AND folderName != 'Unknown'
+    """)
+    url_to_folder = {}
+    for u, f in c.fetchall():
+        if u and f and u not in url_to_folder:
+            url_to_folder[u] = f.strip()
+
     staged_records = []
     skipped_count = 0
     now_ms = int(time.time() * 1000)
@@ -137,10 +150,16 @@ def stage_exact_symbol_copypaste(batch_id: str = "batch_repeat_punct_fix_2026101
 
         # '(반복)'이 원문 기호로 100% 깔끔하게 대체된 건만 적재
         if fixed != trans and '(반복)' not in fixed:
+            # 1. 기존 문단의 folder_name이 유효하면 사용
+            # 2. 비어있으면 동일 URL의 다른 문단에서 소설 폴더명 자동 상속
+            # 3. 그래도 없으면 절대 'Unknown' 같은 가상 폴더를 만들지 않고 None(미분류)으로 보존
+            clean_folder = folder_name.strip() if folder_name and folder_name.strip() and folder_name.strip() != "Unknown" else None
+            resolved_folder = clean_folder or url_to_folder.get(url)
+
             staged_records.append((
                 batch_id,
                 url,
-                folder_name or "Unknown",
+                resolved_folder,
                 title or "",
                 0,
                 pid,

@@ -202,7 +202,7 @@ class SpecialBatchQueue(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     batch_id = Column(String(64), index=True, nullable=False)
     url = Column(Text, index=True, nullable=False)
-    folder_name = Column(Text, index=True, nullable=False)
+    folder_name = Column(Text, index=True, nullable=True, default=None)
     chapter_title = Column(Text, default="")
     chapter_index = Column(Integer, default=0)
     pid = Column(String(64), nullable=False)
@@ -217,3 +217,39 @@ class SpecialBatchQueue(Base):
         Index('ix_special_batch_url_pid', 'url', 'pid'),
     )
 
+class NovelQueueItem(Base):
+    """다음에 번역할 소설 목록 (소설 개요 페이지 URL 1개 = 1행)"""
+    __tablename__ = 'novel_queue_items'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    url = Column(Text, nullable=False, unique=True)          # 정규화된 개요 페이지 URL
+    site = Column(String(32), nullable=False)                # kakuyomu / ncode / nocturne
+    title = Column(Text, default="")
+    position = Column(Integer, nullable=False, default=0)    # 작은 값이 먼저
+    status = Column(String(16), nullable=False, default="pending", index=True)  # pending, running, done, failed
+    fail_reason = Column(Text, default="")
+    attempts = Column(Integer, default=0)                    # 시작 URL 계산/접속 실패 누적 횟수
+    next_attempt_at = Column(BigInteger, nullable=True)      # 다음 재시도 시각(epoch 초)
+    start_url = Column(Text, default="")                     # 마지막으로 계산된 시작 회차 URL
+    created_at = Column(BigInteger, nullable=False)
+    started_at = Column(BigInteger, nullable=True)
+    finished_at = Column(BigInteger, nullable=True)
+
+
+class NovelQueueEvent(Base):
+    """목록 진행 이력 (리모컨 '최근 이슈' 표시용)"""
+    __tablename__ = 'novel_queue_events'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    ts = Column(BigInteger, nullable=False, index=True)
+    kind = Column(String(24), nullable=False)   # novel_done, novel_start, failed, skipped, cinderella, list_done, halted
+    message = Column(Text, nullable=False)
+    item_id = Column(Integer, nullable=True)
+
+
+class RemoteSetting(Base):
+    """원격 제어/목록 설정 key-value (예: cinderella, queue_running)"""
+    __tablename__ = 'remote_settings'
+
+    key = Column(String(64), primary_key=True)
+    value = Column(Text, nullable=False, default="")
