@@ -10,12 +10,24 @@ export class SyosetuScraper implements PlatformScraper {
 
   detectNovelTitle(): string | null {
     if (typeof document === 'undefined') return null;
-    // 1. 공지 배너(.c-announce) 오매칭 방지: 빵부스러기 및 N코드 패턴 링크 우선
-    const breadcrumbLink = document.querySelector<HTMLElement>('.c-breadcrumbs a[href*="/n"]');
-    if (breadcrumbLink) {
-      const href = breadcrumbLink.getAttribute('href') || '';
-      if (/\/n\d+[a-z]+(\/|$|\?)/i.test(href) && breadcrumbLink.textContent?.trim()) {
-        return breadcrumbLink.textContent.trim();
+
+    // 1. 소설 상단 배너(.c-announce) 중 로그인 배너(.c-announce--note) 제외하고 순수 소설 목차 링크 추출
+    const candidates = Array.from(
+      document.querySelectorAll<HTMLAnchorElement>(
+        '.c-announce:not(.c-announce--note) a, .novel_title a, a.p-novel__series-link, .p-novel__series-link a, a.margin_r20'
+      )
+    );
+
+    for (const a of candidates) {
+      const rawHref = a.getAttribute('href') || a.href || '';
+      const clean = rawHref.split('?')[0].split('#')[0];
+      // login, novelview, infotop, notice, mypage 제외 및 순수 /nXXXXXX/ 패턴 검증
+      if (
+        !/(login|novelview|infotop|notice|mypage)/i.test(clean) &&
+        /^\/?(https?:\/\/[^\/]+)?\/?n\d+[a-z]+\/?$/i.test(clean)
+      ) {
+        const text = (a.textContent || '').trim();
+        if (text) return text;
       }
     }
 
@@ -65,7 +77,10 @@ export class SyosetuScraper implements PlatformScraper {
     if (typeof document !== 'undefined' && document.querySelector('.p-novel__body, #novel_honbun, .p-novel__text')) {
       return false;
     }
-    return (/\/n[a-z0-9]+\/?$/i.test(path) && !/\/\d+\/?$/.test(path)) || (typeof document !== 'undefined' && !!document.querySelector('.p-eplist, .index_box'));
+    return (
+      (/\/n[a-z0-9]+\/?$/i.test(path) && !/\/\d+\/?$/.test(path)) ||
+      (typeof document !== 'undefined' && !!document.querySelector('.p-eplist, .index_box'))
+    );
   }
 
   findNextEpisodeLink(): HTMLAnchorElement | null {
@@ -97,34 +112,36 @@ export class SyosetuScraper implements PlatformScraper {
 
   findTocLink(): HTMLAnchorElement | null {
     if (typeof document === 'undefined') return null;
-    // 1. 유효한 N코드 목차 링크 셀렉터 후보군 (.c-announce 공지 배너 완전 제외로 공지/작품정보 오매칭 차단)
-    const selectors = [
-      '.c-breadcrumbs a[href*="/n"]',
-      '.p-novel__series-link a',
-      'a.p-novel__series-link',
-      '.novel_title a',
-      'a.novel_title',
-      'a.margin_r20[href*="/n"]',
-    ];
 
-    for (const sel of selectors) {
-      const el = document.querySelector<HTMLAnchorElement>(sel);
-      if (el && el.href) {
-        const cleanHref = el.getAttribute('href') || el.href;
-        // 쇼세츠 N코드 패턴 (/nXXXXXX/ 또는 /nXXXXXX) 검증하여 공지/뉴스/작품정보 오매칭 방지
-        if (/\/n\d+[a-z]+(\/|$|\?)/i.test(cleanHref)) {
-          return el;
-        }
+    // 1. 회차 하단/상단 목차 직접 링크 (예: 目次 텍스트를 포함하는 페이저 링크)
+    const pagerLinks = Array.from(
+      document.querySelectorAll<HTMLAnchorElement>('.c-pager a, a.c-pager__item, .novel_bn a')
+    );
+    const tocPagerLink = pagerLinks.find((a) => (a.textContent || '').includes('目次'));
+    if (tocPagerLink && tocPagerLink.href) {
+      return tocPagerLink;
+    }
+
+    // 2. 상단 소설 헤더(.c-announce:not(.c-announce--note)) 중 순수 N코드 목차 링크
+    const candidates = Array.from(
+      document.querySelectorAll<HTMLAnchorElement>(
+        '.c-announce:not(.c-announce--note) a, .novel_title a, a.p-novel__series-link, .p-novel__series-link a'
+      )
+    );
+
+    for (const a of candidates) {
+      const rawHref = a.getAttribute('href') || a.href || '';
+      const clean = rawHref.split('?')[0].split('#')[0];
+      // login, novelview, infotop, notice, mypage 오매칭 차단
+      if (
+        !/(login|novelview|infotop|notice|mypage)/i.test(clean) &&
+        /^\/?(https?:\/\/[^\/]+)?\/?n\d+[a-z]+\/?$/i.test(clean)
+      ) {
+        return a;
       }
     }
 
-    // 2. 본문 페이지 DOM 전체에서 N코드 목차 형태의 앵커 탐색
-    const allLinks = Array.from(document.querySelectorAll<HTMLAnchorElement>('a[href]'));
-    const matched = allLinks.find((a) => {
-      const raw = a.getAttribute('href') || a.href || '';
-      return /\/n\d+[a-z]+\/?$/i.test(raw.split('?')[0].split('#')[0]);
-    });
-    return matched || null;
+    return null;
   }
 
   getTocEpisodes(rootDoc?: Document | Element): TocEpisodeItem[] {

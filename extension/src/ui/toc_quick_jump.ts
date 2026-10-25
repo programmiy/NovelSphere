@@ -443,19 +443,8 @@ export function updateQuickJumpFocusUI(): void {
 // 소설 목차 URL 역산 헬퍼 (본문 회차 페이지에서도 목차 URL 추출)
 export function getNovelTocUrl(scraper: PlatformScraper, currentUrl: string = typeof window !== 'undefined' ? window.location.href : ''): string | null {
   if (!currentUrl) return null;
-  // 1. live DOM 내 목차 링크 우선 탐색 (플랫폼별 유효 N코드 URL 패턴 재검증)
-  if (scraper.findTocLink) {
-    const link = scraper.findTocLink();
-    if (link && link.href) {
-      const clean = link.href.split('#')[0].split('?')[0];
-      // Syosetu의 경우 공지/뉴스/작품정보 오매칭 방지용 N코드 검증
-      if (!currentUrl.includes('syosetu.com') || /\/n\d+[a-z]+(\/|$)/i.test(clean)) {
-        if (clean) return clean;
-      }
-    }
-  }
 
-  // 2. URL 패턴 기반 목차 URL 역산
+  // 1. URL 패턴 기반 목차 URL 역산 우선 시도 (DOM 간섭/공지/작품정보 오매칭 0%, 0ms 초고속 추출)
   try {
     const parsed = new URL(currentUrl);
     const host = parsed.hostname;
@@ -482,8 +471,21 @@ export function getNovelTocUrl(scraper: PlatformScraper, currentUrl: string = ty
       if (m) return `https://syosetu.org/novel/${m[1]}/`;
     }
   } catch (e) {
-    console.warn('[LANOVEL] 목차 URL 역산 실패:', e);
+    console.warn('[LANOVEL] URL 패턴 기반 목차 역산 실패:', e);
   }
+
+  // 2. live DOM 내 목차 링크 탐색 fallback
+  if (scraper.findTocLink) {
+    const link = scraper.findTocLink();
+    if (link && link.href) {
+      const clean = link.href.split('#')[0].split('?')[0];
+      // Syosetu의 경우 공지/뉴스/작품정보 오매칭 방지용 순수 N코드 검증
+      if (!currentUrl.includes('syosetu.com') || /^\/?(https?:\/\/[^\/]+)?\/?n\d+[a-z]+\/?$/i.test(clean)) {
+        if (clean) return clean;
+      }
+    }
+  }
+
   return null;
 }
 

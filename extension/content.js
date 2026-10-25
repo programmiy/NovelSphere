@@ -769,11 +769,17 @@
         }
         detectNovelTitle() {
           if (typeof document === "undefined") return null;
-          const breadcrumbLink = document.querySelector('.c-breadcrumbs a[href*="/n"]');
-          if (breadcrumbLink) {
-            const href = breadcrumbLink.getAttribute("href") || "";
-            if (/\/n\d+[a-z]+(\/|$|\?)/i.test(href) && breadcrumbLink.textContent?.trim()) {
-              return breadcrumbLink.textContent.trim();
+          const candidates = Array.from(
+            document.querySelectorAll(
+              ".c-announce:not(.c-announce--note) a, .novel_title a, a.p-novel__series-link, .p-novel__series-link a, a.margin_r20"
+            )
+          );
+          for (const a of candidates) {
+            const rawHref = a.getAttribute("href") || a.href || "";
+            const clean = rawHref.split("?")[0].split("#")[0];
+            if (!/(login|novelview|infotop|notice|mypage)/i.test(clean) && /^\/?(https?:\/\/[^\/]+)?\/?n\d+[a-z]+\/?$/i.test(clean)) {
+              const text = (a.textContent || "").trim();
+              if (text) return text;
             }
           }
           const novelLink = document.querySelector(".p-novel__series-link") || document.querySelector(".novel_title") || document.querySelector("a.margin_r20");
@@ -832,29 +838,26 @@
         }
         findTocLink() {
           if (typeof document === "undefined") return null;
-          const selectors = [
-            '.c-breadcrumbs a[href*="/n"]',
-            ".p-novel__series-link a",
-            "a.p-novel__series-link",
-            ".novel_title a",
-            "a.novel_title",
-            'a.margin_r20[href*="/n"]'
-          ];
-          for (const sel of selectors) {
-            const el = document.querySelector(sel);
-            if (el && el.href) {
-              const cleanHref = el.getAttribute("href") || el.href;
-              if (/\/n\d+[a-z]+(\/|$|\?)/i.test(cleanHref)) {
-                return el;
-              }
+          const pagerLinks = Array.from(
+            document.querySelectorAll(".c-pager a, a.c-pager__item, .novel_bn a")
+          );
+          const tocPagerLink = pagerLinks.find((a) => (a.textContent || "").includes("\u76EE\u6B21"));
+          if (tocPagerLink && tocPagerLink.href) {
+            return tocPagerLink;
+          }
+          const candidates = Array.from(
+            document.querySelectorAll(
+              ".c-announce:not(.c-announce--note) a, .novel_title a, a.p-novel__series-link, .p-novel__series-link a"
+            )
+          );
+          for (const a of candidates) {
+            const rawHref = a.getAttribute("href") || a.href || "";
+            const clean = rawHref.split("?")[0].split("#")[0];
+            if (!/(login|novelview|infotop|notice|mypage)/i.test(clean) && /^\/?(https?:\/\/[^\/]+)?\/?n\d+[a-z]+\/?$/i.test(clean)) {
+              return a;
             }
           }
-          const allLinks = Array.from(document.querySelectorAll("a[href]"));
-          const matched = allLinks.find((a) => {
-            const raw = a.getAttribute("href") || a.href || "";
-            return /\/n\d+[a-z]+\/?$/i.test(raw.split("?")[0].split("#")[0]);
-          });
-          return matched || null;
+          return null;
         }
         getTocEpisodes(rootDoc) {
           const doc = rootDoc || (typeof document !== "undefined" ? document : null);
@@ -3069,15 +3072,6 @@
   }
   function getNovelTocUrl(scraper, currentUrl = typeof window !== "undefined" ? window.location.href : "") {
     if (!currentUrl) return null;
-    if (scraper.findTocLink) {
-      const link = scraper.findTocLink();
-      if (link && link.href) {
-        const clean = link.href.split("#")[0].split("?")[0];
-        if (!currentUrl.includes("syosetu.com") || /\/n\d+[a-z]+(\/|$)/i.test(clean)) {
-          if (clean) return clean;
-        }
-      }
-    }
     try {
       const parsed = new URL(currentUrl);
       const host = parsed.hostname;
@@ -3103,7 +3097,16 @@
         if (m) return `https://syosetu.org/novel/${m[1]}/`;
       }
     } catch (e) {
-      console.warn("[LANOVEL] \uBAA9\uCC28 URL \uC5ED\uC0B0 \uC2E4\uD328:", e);
+      console.warn("[LANOVEL] URL \uD328\uD134 \uAE30\uBC18 \uBAA9\uCC28 \uC5ED\uC0B0 \uC2E4\uD328:", e);
+    }
+    if (scraper.findTocLink) {
+      const link = scraper.findTocLink();
+      if (link && link.href) {
+        const clean = link.href.split("#")[0].split("?")[0];
+        if (!currentUrl.includes("syosetu.com") || /^\/?(https?:\/\/[^\/]+)?\/?n\d+[a-z]+\/?$/i.test(clean)) {
+          if (clean) return clean;
+        }
+      }
     }
     return null;
   }
