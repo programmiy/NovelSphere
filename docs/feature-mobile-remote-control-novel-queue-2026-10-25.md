@@ -47,3 +47,17 @@
 - **Pytest 단위 테스트**: `tests/test_novel_queue.py`, `tests/test_remote_control.py` 총 53개 항목 100% Pass
 - **TypeScript 타입 검사 & 번들 빌드**: `npm run typecheck`, `npm run build` 통과
 - **Flutter 릴리즈 빌드**: Gradle `assembleRelease` 정상 완료 (23.5MB APK 생성)
+
+---
+
+## 4. 후속 작업 (2026-10-26): 앱 목록 관리 UI 연결
+
+- **`mobile_app/lib/services/remote_control_service.dart`**
+  - 모델 추가: `QueueItem`, `QueueEvent`, `QueueOverview`, `QueueAddResult`
+  - API 래퍼 추가: `fetchQueue`(GET `/queue`), `addQueueUrls`(POST `/queue`), `removeQueueItem`(DELETE `/queue/{id}`), `reorderQueue`(POST `/queue/reorder`), `retryQueueItem`(POST `/queue/{id}/retry`), `setQueueConfig`(PUT `/queue/config`, `running`/`cinderella`)
+- **`mobile_app/lib/ui/remote/remote_control_screen.dart`**
+  - 기존 '다음에 번역할 사이트(준비 중)' 섹션을 `_queueSection`으로 교체
+  - 기능: URL 붙여넣기 추가(여러 줄/쉼표 구분), 삭제(확인 후), 실패·완료 항목 다시 시도, 드래그 순서 변경(`ReorderableListView`, 즉시 반영 후 서버 동기화), 목록 자동 진행 스위치, 신데렐라 스위치, 최근 이슈 3개 표시
+  - 2초 폴링(`_refresh`)에 `fetchQueue`를 포함. 목록 조회 실패는 리모컨 상태 표시에 영향 없음
+- **검증**: `flutter analyze` 이슈 0건, `npm run typecheck/build/test`(17개) 통과, pytest 263 통과 / 1 실패(`test_corpus_ai_service::test_synthesize_translation_tier2`, 50ms 성능 임계 초과로 부하에 따른 시간 의존 불안정 테스트이며 본 변경과 무관)
+- **주의**: 앱 실기기 동작과 APK 재빌드는 미수행. 반영하려면 앱 재빌드(`scripts/setup_mobile.ps1 -BuildApk`)가 필요

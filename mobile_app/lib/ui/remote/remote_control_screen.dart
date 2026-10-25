@@ -23,7 +23,7 @@ class _RemoteControlScreenState extends State<RemoteControlScreen> {
   bool _offline = false;
   bool _busy = false;
   Timer? _timer;
-  List<SiteQueueItem> _siteQueue = [];
+  QueueOverview? _queue;
 
   @override
   void initState() {
@@ -41,16 +41,14 @@ class _RemoteControlScreenState extends State<RemoteControlScreen> {
   Future<void> _refresh() async {
     try {
       final s = await RemoteControlService.fetchStatus();
-      List<SiteQueueItem> queue = _siteQueue;
-      if (s.siteQueueSupported) {
-        try {
-          queue = await RemoteControlService.fetchSiteQueue();
-        } catch (_) {}
-      }
+      QueueOverview? queue = _queue;
+      try {
+        queue = await RemoteControlService.fetchQueue();
+      } catch (_) {}
       if (!mounted) return;
       setState(() {
         _status = s;
-        _siteQueue = queue;
+        _queue = queue;
         _error = null;
         _offline = false;
       });
@@ -345,8 +343,149 @@ class _RemoteControlScreenState extends State<RemoteControlScreen> {
     );
   }
 
-  Widget _siteQueueSection(ReaderThemeData theme) {
-    final supported = _status?.siteQueueSupported ?? false;
+  // ------------------------------------------------------------ 연속 번역 목록
+  Future<void> _queueAction(Future<void> Function() action, {String? okMessage}) async {
+    try {
+      await action();
+      if (okMessage != null) _toast(okMessage);
+      await _refresh();
+    } on RemoteException catch (e) {
+      _toast(e.message, error: true);
+    }
+  }
+
+  Future<void> _addQueueUrlsDialog() async {
+    final controller = TextEditingController();
+    final text = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.fromLTRB(20, 20, 20, 20 + MediaQuery.of(ctx).viewInsets.bottom),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('번역 목록에 소설 추가', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 4),
+            const Text('소설 개요(목차) 페이지 주소를 붙여넣으세요. 여러 개는 줄바꿈으로 구분해요.',
+                style: TextStyle(fontSize: 12)),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              autofocus: true,
+              keyboardType: TextInputType.multiline,
+              minLines: 3,
+              maxLines: 8,
+              decoration: const InputDecoration(
+                hintText: 'https://ncode.syosetu.com/n0000a/',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Align(
+              alignment: Alignment.centerRight,
+              child: FilledButton(
+                onPressed: () => Navigator.pop(ctx, controller.text),
+                child: const Text('추가'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (text == null) return;
+    final urls = text.split(RegExp(r'[\n,]')).map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+    if (urls.isEmpty) return;
+    try {
+      final r = await RemoteControlService.addQueueUrls(urls);
+      final parts = <String>[
+        if (r.added > 0) '${r.added}개 추가',
+        if (r.requeued > 0) '${r.requeued}개 다시 대기',
+        if (r.rejectedReasons.isNotEmpty) '${r.rejectedReasons.length}개 제외 (${r.rejectedReasons.first})',
+      ];
+      _toast(parts.isEmpty ? '추가된 항목이 없어요' : parts.join(' · '), error: r.added + r.requeued == 0);
+      await _refresh();
+    } on RemoteException catch (e) {
+      _toast(e.message, error: true);
+    }
+  }
+
+  Future<void> _reorderQueue(int oldIndex, int newIndex) async {
+    final q = _queue;
+    if (q == null) return;
+    if (newIndex > oldIndex) newIndex -= 1;
+    final items = [...q.items];
+    final moved = items.removeAt(oldIndex);
+    items.insert(newIndex, moved);
+    // 서버 응답 전에도 바로 반영해 끌어놓은 자리에 머물게 한다.
+    setState(() => _queue = QueueOverview(
+          items: items,
+          running: q.running,
+          cinderella: q.cinderella,
+          pendingCount: q.pendingCount,
+          failedCount: q.failedCount,
+          recentEvents: q.recentEvents,
+        ));
+    await _queueAction(() => RemoteControlService.reorderQueue(items.map((e) => e.id).toList()));
+  }
+
+  String _statusIcon(String st) => switch (st) {
+        'running' => '▶️',
+        'done' => '✅',
+        'failed' => '❌',
+        _ => '⏳',
+      };
+
+  Widget _queueItemTile(QueueItem it, int index, ReaderThemeData theme) {
+    final title = it.title.isEmpty ? it.url : it.title;
+    final isRunning = it.status == 'running';
+    return ListTile(
+      key: ValueKey(it.id),
+      dense: true,
+      contentPadding: EdgeInsets.zero,
+      leading: Text(_statusIcon(it.status), style: const TextStyle(fontSize: 18)),
+      title: Text(title,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(color: theme.textColor, fontSize: 13, fontWeight: isRunning ? FontWeight.bold : FontWeight.normal)),
+      subtitle: it.status == 'failed' && it.failReason.isNotEmpty
+          ? Text(it.failReason, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.redAccent, fontSize: 11))
+          : (it.title.isNotEmpty
+              ? Text(it.url, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: theme.subTextColor, fontSize: 11))
+              : null),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (it.status == 'failed' || it.status == 'done')
+            IconButton(
+              tooltip: '다시 시도',
+              icon: const Icon(Icons.replay_rounded, size: 20),
+              onPressed: () => _queueAction(() => RemoteControlService.retryQueueItem(it.id), okMessage: '다시 대기열에 넣었어요'),
+            ),
+          IconButton(
+            tooltip: '삭제',
+            icon: const Icon(Icons.delete_outline_rounded, size: 20),
+            onPressed: () async {
+              if (await _confirm('목록에서 삭제할까요?', title)) {
+                await _queueAction(() => RemoteControlService.removeQueueItem(it.id));
+              }
+            },
+          ),
+          ReorderableDragStartListener(index: index, child: const Icon(Icons.drag_handle_rounded, size: 20)),
+        ],
+      ),
+    );
+  }
+
+  Widget _queueSection(ReaderThemeData theme) {
+    final q = _queue;
+    final events = (q?.recentEvents ?? []).take(3).toList();
+    String fmtTime(int ts) {
+      final d = DateTime.fromMillisecondsSinceEpoch(ts * 1000);
+      String two(int n) => n.toString().padLeft(2, '0');
+      return '${two(d.month)}/${two(d.day)} ${two(d.hour)}:${two(d.minute)}';
+    }
+
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -356,20 +495,68 @@ class _RemoteControlScreenState extends State<RemoteControlScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('다음에 번역할 사이트', style: TextStyle(color: theme.textColor, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 6),
-          if (!supported)
-            Text('준비 중인 기능이에요.', style: TextStyle(color: theme.subTextColor, fontSize: 12))
-          else if (_siteQueue.isEmpty)
-            Text('목록이 비어 있어요.', style: TextStyle(color: theme.subTextColor, fontSize: 12))
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '연속 번역 목록'
+                  '${q != null ? ' · 대기 ${q.pendingCount}' : ''}'
+                  '${q != null && q.failedCount > 0 ? ' · 실패 ${q.failedCount}' : ''}',
+                  style: TextStyle(color: theme.textColor, fontWeight: FontWeight.bold),
+                ),
+              ),
+              IconButton(
+                tooltip: '소설 추가',
+                icon: const Icon(Icons.add_circle_outline_rounded),
+                onPressed: _error != null && _offline ? null : _addQueueUrlsDialog,
+              ),
+            ],
+          ),
+          if (q == null)
+            Text('불러오는 중...', style: TextStyle(color: theme.subTextColor, fontSize: 12))
           else ...[
-            ..._siteQueue.take(5).map((e) => Text('• ${e.title.isEmpty ? e.url : e.title}',
-                style: TextStyle(color: theme.textColor, fontSize: 12), maxLines: 1, overflow: TextOverflow.ellipsis)),
-            const SizedBox(height: 8),
-            FilledButton.tonal(
-              onPressed: _busy ? null : () => _send('go_next_site', okMessage: '다음 사이트로 이동 명령을 보냈어요'),
-              child: const Text('다음 사이트로 이동'),
+            SwitchListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              title: Text('목록 자동 진행', style: TextStyle(color: theme.textColor, fontSize: 13)),
+              subtitle: Text(q.running ? '켜짐 · 앞에서부터 차례로 번역해요' : '꺼짐 · 멈춰 있어요',
+                  style: TextStyle(color: theme.subTextColor, fontSize: 11)),
+              value: q.running,
+              onChanged: (v) => _queueAction(() => RemoteControlService.setQueueConfig(running: v),
+                  okMessage: v ? '목록 진행을 시작했어요' : '목록 진행을 멈췄어요'),
             ),
+            SwitchListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              title: Text('신데렐라 모드', style: TextStyle(color: theme.textColor, fontSize: 13)),
+              subtitle: Text('17시 쿼터 중단 후 다음 날 자동 재개 · 문제가 있는 소설은 건너뛰어요',
+                  style: TextStyle(color: theme.subTextColor, fontSize: 11)),
+              value: q.cinderella,
+              onChanged: (v) => _queueAction(() => RemoteControlService.setQueueConfig(cinderella: v)),
+            ),
+            const Divider(height: 16),
+            if (q.items.isEmpty)
+              Text('목록이 비어 있어요. 오른쪽 위 + 로 소설을 추가하세요.',
+                  style: TextStyle(color: theme.subTextColor, fontSize: 12))
+            else
+              ReorderableListView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                buildDefaultDragHandles: false,
+                itemCount: q.items.length,
+                onReorder: _reorderQueue,
+                itemBuilder: (_, i) => _queueItemTile(q.items[i], i, theme),
+              ),
+            if (events.isNotEmpty) ...[
+              const Divider(height: 16),
+              Text('최근 이슈', style: TextStyle(color: theme.textColor, fontWeight: FontWeight.bold, fontSize: 12)),
+              const SizedBox(height: 4),
+              ...events.map((e) => Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 2),
+                    child: Text('${fmtTime(e.ts)}  ${e.message}',
+                        style: TextStyle(color: theme.subTextColor, fontSize: 11), maxLines: 2, overflow: TextOverflow.ellipsis),
+                  )),
+            ],
           ],
         ],
       ),
@@ -419,7 +606,7 @@ class _RemoteControlScreenState extends State<RemoteControlScreen> {
             const SizedBox(height: 16),
             _recentCommands(theme),
             const SizedBox(height: 16),
-            _siteQueueSection(theme),
+            _queueSection(theme),
           ],
         ),
       ),

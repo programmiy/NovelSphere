@@ -98,6 +98,90 @@ class SiteQueueItem {
   SiteQueueItem({required this.title, required this.url});
 }
 
+/// 연속 번역 목록 항목 (서버 `/api/remote/queue`)
+class QueueItem {
+  final int id;
+  final String url;
+  final String site;
+  final String title;
+  final String status; // pending / running / done / failed
+  final String failReason;
+  final int attempts;
+
+  QueueItem({
+    required this.id,
+    required this.url,
+    required this.site,
+    required this.title,
+    required this.status,
+    required this.failReason,
+    required this.attempts,
+  });
+
+  factory QueueItem.fromJson(Map<String, dynamic> j) => QueueItem(
+        id: (j['id'] as num?)?.toInt() ?? 0,
+        url: j['url'] as String? ?? '',
+        site: j['site'] as String? ?? '',
+        title: j['title'] as String? ?? '',
+        status: j['status'] as String? ?? 'pending',
+        failReason: j['fail_reason'] as String? ?? '',
+        attempts: (j['attempts'] as num?)?.toInt() ?? 0,
+      );
+}
+
+class QueueEvent {
+  final int ts;
+  final String kind;
+  final String message;
+  QueueEvent({required this.ts, required this.kind, required this.message});
+
+  factory QueueEvent.fromJson(Map<String, dynamic> j) => QueueEvent(
+        ts: (j['ts'] as num?)?.toInt() ?? 0,
+        kind: j['kind'] as String? ?? '',
+        message: j['message'] as String? ?? '',
+      );
+}
+
+/// 목록 전체 상태 (항목 + 설정 + 최근 이슈)
+class QueueOverview {
+  final List<QueueItem> items;
+  final bool running;
+  final bool cinderella;
+  final int pendingCount;
+  final int failedCount;
+  final List<QueueEvent> recentEvents;
+
+  QueueOverview({
+    required this.items,
+    required this.running,
+    required this.cinderella,
+    required this.pendingCount,
+    required this.failedCount,
+    required this.recentEvents,
+  });
+
+  factory QueueOverview.fromJson(Map<String, dynamic> j) => QueueOverview(
+        items: ((j['items'] as List?) ?? [])
+            .map((e) => QueueItem.fromJson(e as Map<String, dynamic>))
+            .toList(),
+        running: j['running'] as bool? ?? false,
+        cinderella: j['cinderella'] as bool? ?? false,
+        pendingCount: (j['pending_count'] as num?)?.toInt() ?? 0,
+        failedCount: (j['failed_count'] as num?)?.toInt() ?? 0,
+        recentEvents: ((j['recent_events'] as List?) ?? [])
+            .map((e) => QueueEvent.fromJson(e as Map<String, dynamic>))
+            .toList(),
+      );
+}
+
+/// URL 추가 결과
+class QueueAddResult {
+  final int added;
+  final int requeued;
+  final List<String> rejectedReasons;
+  QueueAddResult({required this.added, required this.requeued, required this.rejectedReasons});
+}
+
 class RemoteControlService {
   static const _timeout = Duration(seconds: 5);
 
@@ -144,6 +228,57 @@ class RemoteControlService {
       deliveredViaWs: json['delivered_via_ws'] as bool? ?? false,
       extensionOnline: json['extension_online'] as bool? ?? false,
     );
+  }
+
+  // ----------------------------- 연속 번역 목록 -----------------------------
+  static Future<QueueOverview> fetchQueue() async {
+    final res = await _request(() => http.get(_uri('/queue'), headers: _headers));
+    return QueueOverview.fromJson(jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>);
+  }
+
+  static Future<QueueAddResult> addQueueUrls(List<String> urls) async {
+    final res = await _request(() => http.post(
+          _uri('/queue'),
+          headers: _headers,
+          body: jsonEncode({'urls': urls}),
+        ));
+    final j = jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
+    return QueueAddResult(
+      added: ((j['added'] as List?) ?? []).length,
+      requeued: ((j['requeued'] as List?) ?? []).length,
+      rejectedReasons: ((j['rejected'] as List?) ?? [])
+          .map((e) => (e as Map)['reason']?.toString() ?? '')
+          .where((s) => s.isNotEmpty)
+          .toList(),
+    );
+  }
+
+  static Future<void> removeQueueItem(int id) async {
+    await _request(() => http.delete(_uri('/queue/$id'), headers: _headers));
+  }
+
+  static Future<void> reorderQueue(List<int> ids) async {
+    await _request(() => http.post(
+          _uri('/queue/reorder'),
+          headers: _headers,
+          body: jsonEncode({'ids': ids}),
+        ));
+  }
+
+  static Future<void> retryQueueItem(int id) async {
+    await _request(() => http.post(_uri('/queue/$id/retry'), headers: _headers));
+  }
+
+  /// 시작/정지(`running`)와 신데렐라(`cinderella`) 설정. null인 값은 바꾸지 않는다.
+  static Future<void> setQueueConfig({bool? running, bool? cinderella}) async {
+    await _request(() => http.put(
+          _uri('/queue/config'),
+          headers: _headers,
+          body: jsonEncode({
+            if (running != null) 'running': running,
+            if (cinderella != null) 'cinderella': cinderella,
+          }),
+        ));
   }
 
   /// [예약] 다음에 번역할 사이트 목록. 서버가 아직 지원하지 않으면 빈 목록을 돌려준다.
