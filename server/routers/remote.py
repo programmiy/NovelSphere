@@ -6,17 +6,23 @@
 모든 엔드포인트는 REMOTE_TOKEN 검사 (헤더 X-Remote-Token 또는 쿼리 token).
 """
 
+import asyncio
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 
+from server.novel_queue import QueueRunner
 from server.remote_control import hub
 from server.settings import settings
 
 router = APIRouter(prefix="/api/remote", tags=["Remote"])
 logger = logging.getLogger(__name__)
+
+# '다음에 번역할 소설' 목록 진행기. 허브의 site_queue 자리에 꽂아 기존 인터페이스와 호환시킨다.
+runner = QueueRunner(hub)
+hub.site_queue = runner
 
 
 LOOPBACK_HOSTS = ("127.0.0.1", "::1", "localhost")
@@ -79,6 +85,14 @@ class AckRequest(BaseModel):
 # ----------------------------- 앱용 -----------------------------
 @router.post("/command")
 async def send_command(req: CommandRequest, _: None = Depends(require_token)):
+    if req.type == "go_next_site":
+        started = await asyncio.to_thread(runner.advance_manual)
+        if not started:
+            raise HTTPException(status_code=400, detail="다음에 번역할 소설이 없거나 확장이 연결되어 있지 않습니다.")
+        delivered_ws = await _push_pending_to_ws()
+        return {"ok": True, "command": (hub.recent_commands(1) or [None])[0], "delivered_via_ws": delivered_ws,
+                "extension_online": hub.is_extension_online()}
+
     try:
         cmd = hub.enqueue(req.type, req.params)
     except ValueError as e:
@@ -91,13 +105,122 @@ async def send_command(req: CommandRequest, _: None = Depends(require_token)):
 
 @router.get("/status")
 async def get_status(_: None = Depends(require_token)):
-    return hub.snapshot()
+    snap = hub.snapshot()
+    snap["queue"] = await asyncio.to_thread(_queue_snapshot)
+    return snap
+
+
+def _queue_snapshot() -> Dict[str, Any]:
+    return {**runner.summary(), "recent_events": runner.recent_events()}
 
 
 @router.get("/site_queue")
 async def get_site_queue(_: None = Depends(require_token)):
-    """[예약] 다음에 번역할 사이트 목록. 아직은 빈 목록."""
-    return {"supported": bool(getattr(hub.site_queue, "supported", True)), "items": hub.site_queue.list_items()}
+    """다음에 번역할 소설 목록 (간단 조회용). 관리는 /api/remote/queue 를 사용."""
+    items = await asyncio.to_thread(runner.list_items)
+    return {"supported": True, "items": items}
+
+
+# ----------------------------- 목록 (앱/PC 공용) -----------------------------
+class QueueAddRequest(BaseModel):
+    urls: List[str] = Field(default_factory=list, description="소설 개요 페이지 URL들 (여러 개 가능)")
+
+
+class QueueReorderRequest(BaseModel):
+    ids: List[int]
+
+
+class QueueConfigRequest(BaseModel):
+    running: Optional[bool] = None
+    cinderella: Optional[bool] = None
+
+
+class QueueEventRequest(BaseModel):
+    kind: str
+    queue_item_id: Optional[int] = None
+
+
+@router.get("/queue")
+async def queue_overview(_: None = Depends(require_token)):
+    items = await asyncio.to_thread(runner.list_items)
+    summary = await asyncio.to_thread(_queue_snapshot)
+    return {"items": items, **summary}
+
+
+@router.post("/queue")
+async def queue_add(req: QueueAddRequest, _: None = Depends(require_token)):
+    # 줄바꿈으로 이어 붙여 보낸 경우도 처리
+    urls = [u for raw in req.urls for u in raw.replace(",", "\n").splitlines() if u.strip()]
+    if not urls:
+        raise HTTPException(status_code=400, detail="추가할 주소가 없습니다.")
+    result = await asyncio.to_thread(runner.add_urls, urls)
+    return result
+
+
+@router.delete("/queue/{item_id}")
+async def queue_remove(item_id: int, _: None = Depends(require_token)):
+    if not await asyncio.to_thread(runner.remove, item_id):
+        raise HTTPException(status_code=404, detail="목록에 없는 항목입니다.")
+    return {"ok": True}
+
+
+@router.post("/queue/reorder")
+async def queue_reorder(req: QueueReorderRequest, _: None = Depends(require_token)):
+    await asyncio.to_thread(runner.reorder, req.ids)
+    return {"ok": True}
+
+
+@router.post("/queue/{item_id}/retry")
+async def queue_retry(item_id: int, _: None = Depends(require_token)):
+    if not await asyncio.to_thread(runner.retry, item_id):
+        raise HTTPException(status_code=400, detail="다시 시도할 수 없는 항목입니다.")
+    return {"ok": True}
+
+
+@router.put("/queue/config")
+async def queue_config(req: QueueConfigRequest, _: None = Depends(require_token)):
+    config = await asyncio.to_thread(runner.set_config, req.running, req.cinderella)
+    await _push_config_to_ws(config)
+    if req.running:
+        await _tick_and_push()
+    return config
+
+
+@router.post("/queue/event")
+async def queue_event(req: QueueEventRequest, _: None = Depends(require_token)):
+    """확장이 소설 완료 등을 알릴 때 (WebSocket이 안 될 때의 HTTP 대체 경로)."""
+    await _handle_queue_event(req.model_dump())
+    return {"ok": True}
+
+
+async def _handle_queue_event(ev: Dict[str, Any]) -> None:
+    started = await asyncio.to_thread(runner.handle_extension_event, ev)
+    if started:
+        await _push_pending_to_ws()
+
+
+async def _tick_and_push() -> None:
+    started = await asyncio.to_thread(runner.tick)
+    if started:
+        await _push_pending_to_ws()
+
+
+async def _push_config_to_ws(config: Dict[str, Any]) -> None:
+    for ws in list(hub.ws_clients):
+        try:
+            await ws.send_json({"type": "config", "config": config})
+        except Exception:
+            hub.ws_clients.discard(ws)
+
+
+async def queue_tick_loop(interval_seconds: int = 10) -> None:
+    """lifespan 에서 create_task 로 실행. 다음 소설 시작/재시도 시각 확인."""
+    while True:
+        try:
+            await _tick_and_push()
+        except Exception as e:
+            logger.error(f"[queue] 진행 루프 오류: {e}")
+        await asyncio.sleep(interval_seconds)
 
 
 # ----------------------------- 확장용 -----------------------------
@@ -105,7 +228,8 @@ async def get_site_queue(_: None = Depends(require_token)):
 async def poll_commands(_: None = Depends(require_token)):
     """WebSocket이 끊겼을 때 확장이 주기적으로 호출. 호출 자체가 생존 신호."""
     hub.touch("poll")
-    return {"commands": [c.to_dict() for c in hub.take_pending()]}
+    config = await asyncio.to_thread(runner.get_config)
+    return {"commands": [c.to_dict() for c in hub.take_pending()], "config": config}
 
 
 @router.post("/report")
@@ -154,6 +278,7 @@ async def extension_ws(ws: WebSocket):
     hub.touch("ws")
     logger.info("[remote] 확장 WebSocket 연결됨")
     try:
+        await ws.send_json({"type": "config", "config": await asyncio.to_thread(runner.get_config)})
         await _push_pending_to_ws()   # 접속 직후 밀린 명령 전달
         while True:
             msg = await ws.receive_json()
@@ -163,6 +288,8 @@ async def extension_ws(ws: WebSocket):
                 hub.update_status(msg.get("data") or {}, channel="ws")
             elif kind == "ack":
                 hub.ack(str(msg.get("id", "")), bool(msg.get("ok", True)), str(msg.get("message", "")))
+            elif kind == "queue_event":
+                await _handle_queue_event(msg.get("data") or {})
             elif kind == "ping":
                 await ws.send_json({"type": "pong"})
             await _push_pending_to_ws()

@@ -28,7 +28,7 @@ def import_toc(item: TocUrl):
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
     }
     cookies = {}
-    if "novel18.syosetu.com" in toc_url:
+    if "novel18.syosetu.com" in toc_url or "noc.syosetu.com" in toc_url:
         cookies['over18'] = 'yes'
 
     if "kakuyomu.jp" in toc_url:

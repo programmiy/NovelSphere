@@ -24,7 +24,8 @@ import {
     excludeSelectedTranslations,
     deselectAll,
     createFolder,
-    renderGroupedHistory
+    renderGroupedHistory,
+    jumpToMatchingNovel
 } from './admin-tree.js';
 
 import {
@@ -93,20 +94,123 @@ export function loadDarkModePreference() {
 
 // Master event listeners
 export function setupEventListeners() {
-    if (dom.searchBox) {
+    /* OLD_SEARCH_DEPRECATED_BLOCK:
         dom.searchBox.addEventListener('input', (e) => {
             clearTimeout(state.searchTimeout);
             state.searchTimeout = setTimeout(() => {
-                state.currentSearch = e.target.value.toLowerCase();
+                state.currentSearch = e.target.value.toLowerCase().trim();
                 const selectedFolder = dom.folderFilterDropdown ? dom.folderFilterDropdown.value : '';
-                if (state.isFindingEmpty && state.rawAbnormalData) {
-                    renderGroupedHistory(state.rawAbnormalData, selectedFolder);
-                } else if (state.isCleanupQueue && state.rawCleanupData) {
-                    renderGroupedHistory(state.rawCleanupData, selectedFolder);
-                } else {
-                    renderGroupedHistory(state.groupedTranslations, selectedFolder);
-                }
+                const currentData = getCurrentDataSource();
+                renderGroupedHistory(currentData, selectedFolder);
             }, 300);
+        });
+
+        // Enter 키: 첫 번째 일치 소설(또는 Shift+Enter 시 이전 소설, 재입력 시 다음 소설)로 빠른 이동
+        dom.searchBox.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                // 아직 디바운스 대기 중인 검색이 있다면 즉시 실행
+                if (state.searchTimeout) {
+                    clearTimeout(state.searchTimeout);
+                    state.searchTimeout = null;
+                    state.currentSearch = e.target.value.toLowerCase().trim();
+                    const selectedFolder = dom.folderFilterDropdown ? dom.folderFilterDropdown.value : '';
+                    const currentData = getCurrentDataSource();
+                    renderGroupedHistory(currentData, selectedFolder);
+                }
+                if (e.shiftKey) {
+                    jumpToMatchingNovel('prev');
+                } else {
+                    jumpToMatchingNovel(state.currentMatchFolderIndex === -1 ? 0 : 'next');
+                }
+            }
+        });
+    }
+
+    */
+
+    function performSearch(jumpImmediately = true) {
+        if (!dom.searchBox) return;
+        const query = dom.searchBox.value.toLowerCase().trim();
+        state.currentSearch = query;
+        const selectedFolder = dom.folderFilterDropdown ? dom.folderFilterDropdown.value : '';
+        const currentData = getCurrentDataSource();
+        renderGroupedHistory(currentData, selectedFolder);
+
+        if (query && jumpImmediately) {
+            jumpToMatchingNovel(0);
+        }
+    }
+
+    function clearSearch() {
+        if (dom.searchBox) {
+            dom.searchBox.value = '';
+        }
+        if (state.currentSearch) {
+            state.currentSearch = '';
+            const selectedFolder = dom.folderFilterDropdown ? dom.folderFilterDropdown.value : '';
+            const currentData = getCurrentDataSource();
+            renderGroupedHistory(currentData, selectedFolder);
+        }
+        if (dom.searchBox) {
+            dom.searchBox.focus();
+        }
+    }
+
+    if (dom.searchBox) {
+        // 검색창 텍스트가 완전히 지워졌을 때 기존 검색 상태가 남아있다면 자동 초기화
+        dom.searchBox.addEventListener('input', (e) => {
+            if (e.target.value.trim() === '' && state.currentSearch !== '') {
+                clearSearch();
+            }
+        });
+
+        // Enter 키: 검색 실행 및 일치 소설 순환 이동 (Shift+Enter: 이전 소설, Esc: 검색 초기화)
+        dom.searchBox.addEventListener('keydown', (e) => {
+            if (e.isComposing) return; // 한글 IME 조합 중 중복 트리거 방어
+
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                const inputQuery = dom.searchBox.value.toLowerCase().trim();
+
+                // 1. 새 검색어이거나 검색어가 변경된 경우: 검색 실행 후 첫 소설로 점프
+                if (inputQuery !== state.currentSearch) {
+                    performSearch(true);
+                } else if (state.matchedFolders && state.matchedFolders.length > 0) {
+                    // 2. 이미 검색된 상태에서 재차 Enter 입력: 다음/이전 일치 소설로 순환 이동
+                    if (e.shiftKey) {
+                        jumpToMatchingNovel('prev');
+                    } else {
+                        jumpToMatchingNovel(state.currentMatchFolderIndex === -1 ? 0 : 'next');
+                    }
+                } else if (inputQuery === '') {
+                    clearSearch();
+                }
+            } else if (e.key === 'Escape') {
+                e.preventDefault();
+                clearSearch();
+            }
+        });
+    }
+
+    if (dom.searchSubmitBtn) {
+        dom.searchSubmitBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            performSearch(true);
+        });
+    }
+
+    if (dom.searchClearBtn) {
+        dom.searchClearBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            clearSearch();
+        });
+    }
+
+    if (dom.jumpFirstNovelBtn) {
+        dom.jumpFirstNovelBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            jumpToMatchingNovel(state.currentMatchFolderIndex === -1 ? 0 : 'next');
         });
     }
 

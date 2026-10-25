@@ -9,6 +9,7 @@
 
 import asyncio
 import logging
+import threading
 import time
 import uuid
 from dataclasses import dataclass
@@ -118,6 +119,7 @@ class ExtensionStatus:
 
 class RemoteHub:
     def __init__(self) -> None:
+        self._lock = threading.RLock()   # 목록 진행기가 다른 스레드에서 명령을 넣을 수 있어 보호
         self.commands: Dict[str, RemoteCommand] = {}
         self.status = ExtensionStatus()
         self.ws_clients: set = set()     # 연결된 확장 WebSocket
@@ -140,30 +142,33 @@ class RemoteHub:
                 raise ValueError("다음에 번역할 사이트 목록이 비어 있거나 아직 지원되지 않습니다.")
             cmd_type, params = "goto", {"url": url, "from_site_queue": True}
 
-        self._purge_old()
-        cmd = RemoteCommand(id=uuid.uuid4().hex[:12], type=cmd_type, params=params, created_at=time.time())
-        self.commands[cmd.id] = cmd
-        return cmd
+        with self._lock:
+            self._purge_old()
+            cmd = RemoteCommand(id=uuid.uuid4().hex[:12], type=cmd_type, params=params, created_at=time.time())
+            self.commands[cmd.id] = cmd
+            return cmd
 
     def take_pending(self) -> List[RemoteCommand]:
         """아직 전달 안 된 명령을 꺼내며 sent 로 표시(폴링/WS 공용)."""
-        self._purge_old()
-        out = []
-        now = time.time()
-        for cmd in sorted(self.commands.values(), key=lambda c: c.created_at):
-            if cmd.status == "pending":
-                cmd.status = "sent"
-                cmd.sent_at = now
-                out.append(cmd)
-        return out
+        with self._lock:
+            self._purge_old()
+            out = []
+            now = time.time()
+            for cmd in sorted(self.commands.values(), key=lambda c: c.created_at):
+                if cmd.status == "pending":
+                    cmd.status = "sent"
+                    cmd.sent_at = now
+                    out.append(cmd)
+            return out
 
     def ack(self, cmd_id: str, ok: bool, message: str = "") -> bool:
-        cmd = self.commands.get(cmd_id)
-        if not cmd:
-            return False
-        cmd.status = "done" if ok else "failed"
-        cmd.result_message = message
-        return True
+        with self._lock:
+            cmd = self.commands.get(cmd_id)
+            if not cmd:
+                return False
+            cmd.status = "done" if ok else "failed"
+            cmd.result_message = message
+            return True
 
     def _purge_old(self) -> None:
         now = time.time()
@@ -175,8 +180,9 @@ class RemoteHub:
             self.commands = {c.id: c for c in keep}
 
     def recent_commands(self, limit: int = 10) -> List[Dict[str, Any]]:
-        items = sorted(self.commands.values(), key=lambda c: c.created_at, reverse=True)[:limit]
-        return [c.to_dict() for c in items]
+        with self._lock:
+            items = sorted(self.commands.values(), key=lambda c: c.created_at, reverse=True)[:limit]
+            return [c.to_dict() for c in items]
 
     # --- 상태 ---
     def touch(self, channel: str) -> None:

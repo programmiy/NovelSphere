@@ -121,8 +121,45 @@
                     <div class="search-deck-controls">
                         <div class="search-input-wrapper">
                             <span class="material-icons search-icon">search</span>
-                            <input type="text" class="form-input search-box font-mono" id="searchBox" placeholder="번역 데이터 검색 (원문, 번역문, 제목)...">
+                            <input type="text" class="form-input search-box font-mono" id="searchBox" placeholder="번역 데이터 검색 (원문, 번역문, 제목) - Enter 또는 검색 버튼">
+                            <div id="searchJumpControls" class="search-jump-controls" style="display: none;">
+                                <span id="searchMatchCountBadge" class="search-match-count-badge">0개 소설</span>
+                                <button type="button" id="jumpFirstNovelBtn" class="btn-jump-novel" title="첫 번째 일치 소설로 빠른 이동 (Enter)">
+
+                                    <span class="material-icons">arrow_downward</span>
+                                    <span class="jump-btn-text font-hud">첫 소설</span>
+                                </button>
+                                <button type="button" id="searchClearBtn" class="btn-search-clear" title="검색 초기화 (Esc)"><span class="material-icons search-clear-icon">close</span></button>
+                            </div>
                         </div>
+                        <button type="button" id="searchSubmitBtn" class="btn btn-cyber-primary search-submit-btn" title="검색 실행 (Enter)">
+                            <span class="material-icons" style="font-size: 16px;">search</span>
+                            <span class="search-btn-text">검색</span>
+                        </button>
+                        <!-- OLD_DUPLICATES_REMOVED:
+
+
+                                    <span class="material-icons">arrow_downward</span>
+
+
+                                </button>
+
+                                    <span class="material-icons">arrow_downward</span>
+
+                                </button>
+                                <button type="button" id="searchClearBtn" class="btn-search-clear" title="검색 초기화 (Esc)"><span class="material-icons search-clear-icon">close</span></button>
+
+                                </button>
+
+
+                                </button>
+                            </div>
+                        </div>
+                        <button type="button" id="searchSubmitBtn" class="btn btn-cyber-primary search-submit-btn" title="검색 실행 (Enter)">
+                            <span class="material-icons" style="font-size: 16px;">search</span>
+                            <span class="search-btn-text">검색</span>
+                        </button>
+                        -->
                         <select id="folderFilterDropdown" class="form-select cyber-select" title="소설/작품별 필터">
                             <option value="">📁 모든 폴더</option>
                         </select>

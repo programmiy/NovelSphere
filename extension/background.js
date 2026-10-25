@@ -1,5 +1,112 @@
 "use strict";
 (() => {
+  // src/background/queue_tabs.ts
+  var QUEUE_TABS_KEY = "lanovelQueueTabs";
+  var OUTBOX_KEY = "lanovelQueueOutbox";
+  var CONFIG_KEY = "lanovelRemoteConfig";
+  var MAX_OUTBOX = 50;
+  var memoryTabs = /* @__PURE__ */ new Map();
+  var lockChain = Promise.resolve();
+  function withLock(fn) {
+    const run = lockChain.then(fn, fn);
+    lockChain = run.catch(() => void 0);
+    return run;
+  }
+  async function readTabs() {
+    try {
+      const r = await chrome.storage.session.get(QUEUE_TABS_KEY);
+      return r[QUEUE_TABS_KEY] || {};
+    } catch (e) {
+      const out = {};
+      memoryTabs.forEach((v, k) => {
+        out[String(k)] = v;
+      });
+      return out;
+    }
+  }
+  async function writeTabs(tabs) {
+    memoryTabs.clear();
+    Object.keys(tabs).forEach((k) => memoryTabs.set(Number(k), tabs[k]));
+    try {
+      await chrome.storage.session.set({ [QUEUE_TABS_KEY]: tabs });
+    } catch (e) {
+    }
+  }
+  async function getQueueSession(tabId) {
+    if (tabId == null) return null;
+    const tabs = await readTabs();
+    return tabs[String(tabId)] || null;
+  }
+  function setQueueSession(tabId, session) {
+    return withLock(async () => {
+      const tabs = await readTabs();
+      if (session) tabs[String(tabId)] = session;
+      else delete tabs[String(tabId)];
+      await writeTabs(tabs);
+    });
+  }
+  async function remoteQueueGoto(cmd, tabId) {
+    const params = cmd.params || {};
+    const url = params.url;
+    if (!url || !/^https?:\/\//.test(url)) return { ok: false, message: "\uC62C\uBC14\uB974\uC9C0 \uC54A\uC740 URL" };
+    const session = {
+      queue_item_id: typeof params.queue_item_id === "number" ? params.queue_item_id : null,
+      skip_translated: !!params.skip_translated
+    };
+    if (tabId != null) {
+      try {
+        await setQueueSession(tabId, session);
+        await chrome.tabs.update(tabId, { url });
+        return { ok: true, message: `\uBAA9\uB85D: \uC774\uB3D9 ${url}` };
+      } catch (e) {
+        await setQueueSession(tabId, null);
+      }
+    }
+    const tab = await chrome.tabs.create({ url, active: true });
+    if (tab.id != null) await setQueueSession(tab.id, session);
+    return { ok: true, message: `\uBAA9\uB85D: \uC0C8 \uD0ED\uC5D0\uC11C \uC5F4\uAE30 ${url}` };
+  }
+  async function readOutbox() {
+    try {
+      const r = await chrome.storage.local.get(OUTBOX_KEY);
+      return r[OUTBOX_KEY] || [];
+    } catch (e) {
+      return [];
+    }
+  }
+  function enqueueQueueEvent(data) {
+    return withLock(async () => {
+      const items = await readOutbox();
+      items.push(data);
+      await chrome.storage.local.set({ [OUTBOX_KEY]: items.slice(-MAX_OUTBOX) });
+    });
+  }
+  var flushing = false;
+  async function flushQueueOutbox(send) {
+    if (flushing) return;
+    flushing = true;
+    try {
+      for (; ; ) {
+        const items = await readOutbox();
+        if (!items.length) break;
+        const ok = await send(items[0]);
+        if (!ok) break;
+        await withLock(async () => {
+          const latest = await readOutbox();
+          latest.shift();
+          await chrome.storage.local.set({ [OUTBOX_KEY]: latest });
+        });
+      }
+    } finally {
+      flushing = false;
+    }
+  }
+  function saveRemoteConfig(cfg) {
+    if (!cfg || typeof cfg !== "object") return;
+    const clean = { running: !!cfg.running, cinderella: !!cfg.cinderella };
+    chrome.storage.local.set({ [CONFIG_KEY]: clean }).catch(() => void 0);
+  }
+
   // src/background/remote_ws.ts
   var REMOTE_BASE_HTTP = "http://127.0.0.1:8001";
   var REMOTE_BASE_WS = "ws://127.0.0.1:8001";
@@ -67,6 +174,9 @@
   }
   async function remoteExecute(cmd) {
     const tabId = remoteTargetTabId ?? (remotePickTarget() || {}).tabId;
+    if (cmd.type === "goto" && cmd.params && cmd.params.queue_session) {
+      return remoteQueueGoto(cmd, tabId ?? null);
+    }
     if (tabId == null) return { ok: false, message: "\uC870\uC885\uD560 \uBC88\uC5ED \uD0ED\uC744 \uCC3E\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4." };
     if (cmd.type === "reload") {
       await remoteSetAutoTranslateFlag(tabId);
@@ -77,6 +187,7 @@
       const url = cmd.params && cmd.params.url;
       if (!url || !/^https?:\/\//.test(url)) return { ok: false, message: "\uC62C\uBC14\uB974\uC9C0 \uC54A\uC740 URL" };
       await remoteSetAutoTranslateFlag(tabId);
+      await setQueueSession(tabId, null);
       await chrome.tabs.update(tabId, { url });
       return { ok: true, message: `\uC774\uB3D9: ${url}` };
     }
@@ -89,6 +200,24 @@
     } catch (e) {
       return { ok: false, message: `\uD0ED\uC774 \uC751\uB2F5\uD558\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4 (${e.message}). \uC0C8\uB85C\uACE0\uCE68\uC744 \uC2DC\uB3C4\uD574 \uBCF4\uC138\uC694.` };
     }
+  }
+  async function sendQueueEvent(data) {
+    if (remoteWs && remoteWs.readyState === WebSocket.OPEN) {
+      remoteWs.send(JSON.stringify({ type: "queue_event", data }));
+      return true;
+    }
+    try {
+      const res = await remoteFetch("/queue/event", { method: "POST", body: JSON.stringify(data) });
+      return res.ok;
+    } catch (e) {
+      return false;
+    }
+  }
+  function handleQueueEventFromTab(data, tabId) {
+    if (tabId != null && (data.kind === "novel_finished" || data.kind === "page_problem")) {
+      void setQueueSession(tabId, null);
+    }
+    void enqueueQueueEvent(data).then(() => flushQueueOutbox(sendQueueEvent));
   }
   async function remoteAck(id, result) {
     if (!id) return;
@@ -121,6 +250,8 @@
         const res = await remoteFetch("/poll");
         if (res.ok) {
           const json = await res.json();
+          saveRemoteConfig(json.config);
+          void flushQueueOutbox(sendQueueEvent);
           await remoteHandleCommands(json.commands);
         }
       } catch (e) {
@@ -160,11 +291,14 @@
           }
         }, REMOTE_PING_INTERVAL_MS);
         console.log("[LANOVEL Remote] WebSocket connected to server.");
+        void flushQueueOutbox(sendQueueEvent);
       };
       ws.onmessage = (ev) => {
         try {
           const msg = JSON.parse(ev.data);
-          if (msg.type === "commands") {
+          if (msg.type === "config") {
+            saveRemoteConfig(msg.config);
+          } else if (msg.type === "commands") {
             remoteHandleCommands(msg.commands);
           }
         } catch (e) {
@@ -187,7 +321,16 @@
     }
   }
   function initRemoteControl() {
-    chrome.runtime.onMessage.addListener((request, sender) => {
+    chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+      if (request && request.action === "remoteQueueSession") {
+        const tid = sender.tab && sender.tab.id != null ? sender.tab.id : null;
+        getQueueSession(tid).then((session) => sendResponse({ session }));
+        return true;
+      }
+      if (request && request.action === "remoteQueueEvent" && request.data) {
+        handleQueueEventFromTab(request.data, sender.tab && sender.tab.id != null ? sender.tab.id : null);
+        return false;
+      }
       if (request && request.action === "remoteStatus" && sender.tab && sender.tab.id != null) {
         const now = Date.now();
         const prev = remoteReports.get(sender.tab.id);
@@ -203,6 +346,7 @@
       return false;
     });
     chrome.tabs.onRemoved.addListener((tabId) => {
+      void setQueueSession(tabId, null);
       if (remoteReports.delete(tabId)) {
         remoteSendStatus();
       }
@@ -366,6 +510,73 @@
               console.error("Error sending title error response:", e);
             }
           }
+        }
+      })();
+      return true;
+    } else if (request.action === "upsertTranslations") {
+      (async () => {
+        try {
+          const response = await fetch("http://127.0.0.1:8001/translations/upsert", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(request.records)
+          });
+          if (!response.ok) {
+            const errData = await response.json().catch(() => ({ detail: `Server error: ${response.status}` }));
+            throw new Error(errData.detail || `Server returned status ${response.status}`);
+          }
+          const data = await response.json();
+          sendResponse({ success: true, data });
+        } catch (error) {
+          console.error("Error in background upsertTranslations:", error);
+          sendResponse({ success: false, error: error.message });
+        }
+      })();
+      return true;
+    } else if (request.action === "serverFetch") {
+      (async () => {
+        try {
+          const rawUrl = request.url;
+          const targetUrl = rawUrl.startsWith("http") ? rawUrl : `http://127.0.0.1:8001${rawUrl.startsWith("/") ? "" : "/"}${rawUrl}`;
+          const fetchInit = {
+            method: request.options && request.options.method || "GET"
+          };
+          const headers = Object.assign({}, request.options && request.options.headers || {});
+          if (request.options && request.options.body !== void 0 && request.options.body !== null) {
+            if (typeof request.options.body === "string") {
+              fetchInit.body = request.options.body;
+            } else {
+              fetchInit.body = JSON.stringify(request.options.body);
+              if (!headers["Content-Type"] && !headers["content-type"]) {
+                headers["Content-Type"] = "application/json";
+              }
+            }
+          }
+          fetchInit.headers = headers;
+          const response = await fetch(targetUrl, fetchInit);
+          const text = await response.text();
+          let data = null;
+          try {
+            data = JSON.parse(text);
+          } catch (_) {
+          }
+          sendResponse({
+            ok: response.ok,
+            status: response.status,
+            statusText: response.statusText,
+            data,
+            text
+          });
+        } catch (error) {
+          console.error("[serverFetch] Background fetch error:", error);
+          sendResponse({
+            ok: false,
+            status: 0,
+            statusText: error.message || "Network error",
+            error: error.message || "Network error",
+            data: null,
+            text: ""
+          });
         }
       })();
       return true;

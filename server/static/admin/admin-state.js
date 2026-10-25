@@ -48,7 +48,11 @@ export const state = {
     modalAutoRefreshTimer: null,
     searchTimeout: null,
     findReplaceCountTimeout: null,
-    dragSearchTimeout: null
+    dragSearchTimeout: null,
+
+    // Search Jump Navigation state
+    matchedFolders: [],
+    currentMatchFolderIndex: -1
 };
 
 // DOM elements cache
@@ -58,6 +62,11 @@ export function cacheDOMElements() {
     dom.historyContainer = document.getElementById('history-container');
     dom.emptyState = document.getElementById('emptyState');
     dom.searchBox = document.getElementById('searchBox');
+    dom.searchJumpControls = document.getElementById('searchJumpControls');
+    dom.searchMatchCountBadge = document.getElementById('searchMatchCountBadge');
+    dom.jumpFirstNovelBtn = document.getElementById('jumpFirstNovelBtn');
+    dom.searchSubmitBtn = document.getElementById('searchSubmitBtn');
+    dom.searchClearBtn = document.getElementById('searchClearBtn');
     dom.darkModeToggle = document.getElementById('darkModeToggle');
     dom.bulkActionsPanel = document.getElementById('bulk-actions');
     dom.selectionCount = document.getElementById('selection-count');

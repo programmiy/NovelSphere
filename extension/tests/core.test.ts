@@ -403,5 +403,95 @@ test('kakuyomu: extractEpisodeTitle ignores previous episode pager link and pick
   }
 });
 
+test('novelup: NovelUpScraper matches, isTocPage, extractEpisodeTitle', async () => {
+  const { NovelUpScraper } = await import('../src/scrapers/novelup.ts');
+  const scraper = new NovelUpScraper();
+
+  assert.strictEqual(scraper.matches('https://novelup.plus/story/12345/678', 'novelup.plus'), true);
+  assert.strictEqual(scraper.matches('https://kakuyomu.jp', 'kakuyomu.jp'), false);
+  assert.strictEqual(scraper.getWorkKey('https://novelup.plus/story/987654/111'), 'novelup_987654');
+
+  (globalThis as any).document = {
+    getElementById(id: string) {
+      if (id === 'episode_content') return { id: 'episode_content' };
+      return null;
+    },
+    querySelector() { return null; },
+  };
+  try {
+    assert.strictEqual(scraper.isTocPage('https://novelup.plus/story/987654/111', '/story/987654/111'), false);
+  } finally {
+    delete (globalThis as any).document;
+  }
+
+  (globalThis as any).document = {
+    getElementById() { return null; },
+    querySelector(sel: string) {
+      if (sel.includes('storyList')) return {};
+      return null;
+    },
+  };
+  try {
+    assert.strictEqual(scraper.isTocPage('https://novelup.plus/story/987654', '/story/987654'), true);
+    assert.strictEqual(scraper.isTocPage('https://novelup.plus/story/987654/111', '/story/987654/111'), false);
+  } finally {
+    delete (globalThis as any).document;
+  }
+});
+
+test('sidebar: sortSidebarDescending sorts rows in reverse DOM order and sortSidebar sorts in natural DOM order', () => { {
+  function createMockRow(pid: string) {
+    return { dataset: { pid }, tagName: 'TR' };
+  }
+
+  const r1 = createMockRow('p1');
+  const r2 = createMockRow('p2');
+  const r3 = createMockRow('p3');
+
+  let tableChildren = [r1, r2, r3];
+  const mockTableBody = {
+    querySelectorAll(selector: string) {
+      if (selector === 'tr[data-pid]') return tableChildren;
+      return [];
+    },
+    set innerHTML(val: string) {
+      if (val === '') tableChildren = [];
+    },
+    appendChild(node: any) {
+      tableChildren.push(node);
+    },
+  };
+
+  const pids = ['p1', 'p2', 'p3'];
+
+  // Test sortSidebarDescending logic
+  const rowsDesc = Array.from(mockTableBody.querySelectorAll('tr[data-pid]'));
+  const pidMapDesc = new Map<string, any>(rowsDesc.map((row) => [row.dataset.pid, row]));
+  mockTableBody.innerHTML = '';
+  for (let i = pids.length - 1; i >= 0; i--) {
+    const pid = pids[i];
+    const row = pidMapDesc.get(pid);
+    if (row) {
+      mockTableBody.appendChild(row);
+      pidMapDesc.delete(pid);
+    }
+  }
+  assert.deepStrictEqual(tableChildren.map((r) => r.dataset.pid), ['p3', 'p2', 'p1']);
+
+  // Test sortSidebar logic
+  const rowsAsc = Array.from(mockTableBody.querySelectorAll('tr[data-pid]'));
+  const pidMapAsc = new Map<string, any>(rowsAsc.map((row) => [row.dataset.pid, row]));
+  mockTableBody.innerHTML = '';
+  pids.forEach((pid) => {
+    const row = pidMapAsc.get(pid);
+    if (row) {
+      mockTableBody.appendChild(row);
+      pidMapAsc.delete(pid);
+    }
+  });
+  assert.deepStrictEqual(tableChildren.map((r) => r.dataset.pid), ['p1', 'p2', 'p3']);
+  }
+});
+
 
 

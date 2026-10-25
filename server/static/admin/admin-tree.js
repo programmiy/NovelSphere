@@ -221,6 +221,7 @@ function renderGroupedHistory(dataToRender, selectedFolder = '') {
     dom.historyContainer.innerHTML = '';
     const fragment = document.createDocumentFragment();
     sortableInstances = []; // Clear instances on re-render
+    const matchedFolders = [];
     
     let folderNames = Array.from(new Set([...state.allFolders.map(f => f.name), ...Object.keys(dataToRender)])).sort();
 
@@ -262,9 +263,13 @@ function renderGroupedHistory(dataToRender, selectedFolder = '') {
             const title = filteredTranslations[0]?.title || url;
             const isApplied = state.appliedUrlsSet.has(url.split('#')[0].replace(/\/$/, ''));
 
-            const shouldRenderImmediately = Boolean(state.currentSearch);
-            const isUrlGroupCollapsed = shouldRenderImmediately ? false : true;
-            const groupItemsHtml = shouldRenderImmediately ? filteredTranslations.map(t => renderItem(t)).join('') : '';
+            // [성능 최적화 1순위: 검색 시에도 회차 내부 테이블은 지연 로딩(Lazy Loading) 유지]
+            // 검색 시 수만 개 DOM 요소(테이블 행/버튼 7종/입력창)가 한 번에 폭발 생성되어
+            // 브라우저가 수 초간 프리징(Stutter & Lag)되던 구조적 결함을 원천 제거합니다.
+            // 회차 아코디언은 기본 접힘(isUrlGroupCollapsed = true)을 유지하며,
+            // 사용자가 특정 회차를 클릭할 때만 renderUrlGroupContent()가 0.01초 내에 즉시 렌더링합니다.
+            const isUrlGroupCollapsed = true;
+            const groupItemsHtml = '';
 
             urlGroupsHtml += `
                 <div class="list-group fade-in" data-url="${escapeHtml(url)}" data-folder-name="${escapeHtml(folderName)}">
@@ -272,7 +277,7 @@ function renderGroupedHistory(dataToRender, selectedFolder = '') {
                         <span class="list-group-toggle ${isUrlGroupCollapsed ? 'collapsed' : ''} material-icons">${isUrlGroupCollapsed ? 'chevron_right' : 'expand_more'}</span>
                         <div class="list-group-title-container">
                             <h3 class="list-group-title">${escapeHtml(title)}</h3>
-                            <span class="episode-count-badge">${filteredTranslations.length}개 단락</span>
+                            <span class="episode-count-badge ${state.currentSearch ? 'search-match' : ''}">${filteredTranslations.length}개 단락${state.currentSearch ? ' 일치' : ''}</span>
                         </div>
                         <div class="list-group-actions">
                             <a href="${url}" target="_blank" class="btn btn-outline btn-sm ext-link-btn" title="소설 원본 웹페이지 새 창으로 열기">🔗 원본 ↗</a>
@@ -309,15 +314,50 @@ function renderGroupedHistory(dataToRender, selectedFolder = '') {
             continue;
         }
 
-        // 특정 폴더 선택 시 자동 펼침, 그 외 기본 접힘
-        const isFolderCollapsed = (selectedFolder && selectedFolder !== '__all__') ? false : (Boolean(state.currentSearch) ? false : true);
+        // [사용자 요구사항] 검색 시에도 소설 폴더를 자동으로 펼치지 않고 접힘(isFolderCollapsed = true) 상태를 강제 유지하여 렉을 방지.
+        // 회차 목록을 펼치는 대신, 검색 결과가 있는 소설 헤더에 네온 표시등(novel-match-lamp)을 띄워 사용자가 직접 펼치도록 유도합니다.
+        let isFolderCollapsed = true;
+        if (selectedFolder && selectedFolder !== '__all__') {
+            isFolderCollapsed = false;
+        } else {
+            isFolderCollapsed = true;
+        }
+
+        const hasSearchMatches = Boolean(state.currentSearch && totalTranslationsInFolder > 0);
+        const isSearchNoMatch = Boolean(state.currentSearch && totalTranslationsInFolder === 0);
+
+        if (hasSearchMatches) {
+            folderContainer.classList.add('has-search-matches');
+            matchedFolders.push({
+                folderName: folderName,
+                element: folderContainer,
+                matchCount: totalTranslationsInFolder,
+                episodeCount: validEpisodeCount
+            });
+        } else if (isSearchNoMatch) {
+            folderContainer.classList.add('no-search-matches');
+        }
+
+        const matchLampHtml = hasSearchMatches ? `
+            <span class="novel-match-lamp" title="${validEpisodeCount}개 회차에서 ${totalTranslationsInFolder.toLocaleString()}개 일치 단락 발견">
+                <span class="match-pulse-dot"></span>
+                <span class="match-lamp-text">일치 ${totalTranslationsInFolder.toLocaleString()}단락 (${validEpisodeCount}화)</span>
+            </span>
+        ` : '';
+
+        const statsBadgeHtml = hasSearchMatches ? `
+            <span class="folder-stats-badge search-match">${validEpisodeCount}개 회차 / ${totalTranslationsInFolder.toLocaleString()}개 단락</span>
+        ` : `
+            <span class="folder-stats-badge">${validEpisodeCount}개 회차 / ${totalTranslationsInFolder.toLocaleString()}개 단락</span>
+        `;
 
         folderContainer.innerHTML = `
             <div class="folder-group-header">
                 <span class="folder-group-toggle material-icons ${isFolderCollapsed ? 'collapsed' : ''}">expand_more</span>
                 <div class="folder-title-wrapper">
                     <h2 class="folder-group-title">${escapeHtml(folderName)}</h2>
-                    <span class="folder-stats-badge">${validEpisodeCount}개 회차 / ${totalTranslationsInFolder.toLocaleString()}개 단락</span>
+                    ${matchLampHtml}
+                    ${statsBadgeHtml}
                 </div>
                 <div class="list-group-actions">
                     <button class="btn btn-outline btn-sm toggle-all-episodes-btn" title="이 소설의 모든 회차를 한 번에 펼치거나 접습니다.">모든 회차 펼치기</button>
@@ -335,6 +375,95 @@ function renderGroupedHistory(dataToRender, selectedFolder = '') {
         fragment.appendChild(folderContainer);
     }
     dom.historyContainer.appendChild(fragment);
+    updateSearchJumpUI(matchedFolders);
+}
+
+function updateSearchJumpUI(matchedFolders = []) {
+    state.matchedFolders = matchedFolders;
+    state.currentMatchFolderIndex = matchedFolders.length > 0 ? 0 : -1;
+
+    const wrapper = dom.searchBox ? dom.searchBox.closest('.search-input-wrapper') : null;
+    const jumpControls = document.getElementById('searchJumpControls');
+    const matchCountBadge = document.getElementById('searchMatchCountBadge');
+    const jumpFirstBtn = document.getElementById('jumpFirstNovelBtn');
+
+    if (!jumpControls) return;
+
+    if (!state.currentSearch) {
+        jumpControls.style.display = 'none';
+        if (wrapper) wrapper.classList.remove('has-jump-controls');
+        return;
+    }
+
+    jumpControls.style.display = 'flex';
+    if (wrapper) wrapper.classList.add('has-jump-controls');
+
+    if (matchedFolders.length > 0) {
+        if (matchCountBadge) {
+            matchCountBadge.textContent = `${matchedFolders.length}개 소설 일치`;
+            matchCountBadge.className = 'search-match-count-badge has-matches';
+        }
+        if (jumpFirstBtn) {
+            jumpFirstBtn.disabled = false;
+            jumpFirstBtn.style.opacity = '1';
+            jumpFirstBtn.title = `첫 번째 일치 소설(${matchedFolders[0].folderName})로 빠른 이동 (Enter)`;
+        }
+    } else {
+        if (matchCountBadge) {
+            matchCountBadge.textContent = '일치 소설 없음';
+            matchCountBadge.className = 'search-match-count-badge no-matches';
+        }
+        if (jumpFirstBtn) {
+            jumpFirstBtn.disabled = true;
+            jumpFirstBtn.style.opacity = '0.4';
+            jumpFirstBtn.title = '일치하는 소설이 없습니다';
+        }
+    }
+}
+
+function jumpToMatchingNovel(targetIndex = 0) {
+    const matched = state.matchedFolders || [];
+    if (!matched || matched.length === 0) {
+        showToast("일치하는 소설이 없습니다.", "info");
+        return;
+    }
+
+    let nextIndex = 0;
+    if (targetIndex === 'next') {
+        const cur = (typeof state.currentMatchFolderIndex === 'number' && state.currentMatchFolderIndex >= 0)
+            ? state.currentMatchFolderIndex : -1;
+        nextIndex = (cur + 1) % matched.length;
+    } else if (targetIndex === 'prev') {
+        const cur = (typeof state.currentMatchFolderIndex === 'number' && state.currentMatchFolderIndex >= 0)
+            ? state.currentMatchFolderIndex : 0;
+        nextIndex = (cur - 1 + matched.length) % matched.length;
+    } else if (typeof targetIndex === 'number') {
+        nextIndex = Math.max(0, Math.min(targetIndex, matched.length - 1));
+    }
+
+    state.currentMatchFolderIndex = nextIndex;
+    const targetFolder = matched[nextIndex];
+    if (!targetFolder || !targetFolder.element) return;
+
+    // 검색 점프 시에도 폴더를 자동 전개하지 않고 접힌 채로 헤더 하이라이트 안내 (렉 방지)
+
+    // 부드럽게 스크롤 이동
+    targetFolder.element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+    // 헤더에 네온 펄스 애니메이션 부여
+    const header = targetFolder.element.querySelector('.folder-group-header');
+    if (header) {
+        header.classList.remove('jump-highlight');
+        void header.offsetWidth; // Trigger reflow
+        header.classList.add('jump-highlight');
+        setTimeout(() => header.classList.remove('jump-highlight'), 1800);
+    }
+
+    // 뱃지 텍스트 갱신 (예: 1/3 (소설명))
+    const matchCountBadge = document.getElementById('searchMatchCountBadge');
+    if (matchCountBadge && matched.length > 1) {
+        matchCountBadge.textContent = `${nextIndex + 1}/${matched.length} (${targetFolder.folderName})`;
+    }
 }
 
 function renderUrlGroupContent(listGroupEl) {
@@ -1197,5 +1326,7 @@ export {
     deleteSelectedTranslations,
     moveSelectedTranslationsToFolder,
     renameFolder,
-    createFolder
+    createFolder,
+    updateSearchJumpUI,
+    jumpToMatchingNovel
 };

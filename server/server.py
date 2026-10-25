@@ -165,6 +165,8 @@ async def lifespan(app: FastAPI):
     bracket_task = asyncio.create_task(periodic_bracket_restoration_task(interval_seconds=1800))
     from server.remote_control import alert_monitor_loop
     remote_alert_task = asyncio.create_task(alert_monitor_loop())
+    from server.routers.remote import queue_tick_loop
+    queue_task = asyncio.create_task(queue_tick_loop())
 
     Base.metadata.create_all(bind=engine)
     try:
@@ -245,8 +247,9 @@ async def lifespan(app: FastAPI):
     backup_task.cancel()
     bracket_task.cancel()
     remote_alert_task.cancel()
+    queue_task.cancel()
     try:
-        await asyncio.gather(backup_task, bracket_task, remote_alert_task, return_exceptions=True)
+        await asyncio.gather(backup_task, bracket_task, remote_alert_task, queue_task, return_exceptions=True)
     except Exception:
         pass
 

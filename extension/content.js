@@ -10,6 +10,82 @@
       __defProp(target, name, { get: all[name], enumerable: true });
   };
 
+  // src/core/api_client.ts
+  async function serverFetch(urlOrPath, options) {
+    const targetUrl = urlOrPath.startsWith("http") ? urlOrPath : `http://127.0.0.1:8001${urlOrPath.startsWith("/") ? "" : "/"}${urlOrPath}`;
+    if (typeof chrome !== "undefined" && chrome.runtime && typeof chrome.runtime.sendMessage === "function") {
+      return new Promise((resolve) => {
+        chrome.runtime.sendMessage(
+          {
+            action: "serverFetch",
+            url: targetUrl,
+            options: {
+              method: options?.method || "GET",
+              headers: options?.headers,
+              body: options?.body
+            }
+          },
+          (resp) => {
+            if (chrome.runtime.lastError) {
+              const errMsg = chrome.runtime.lastError.message || "Background communication error";
+              resolve({
+                ok: false,
+                status: 0,
+                statusText: errMsg,
+                error: errMsg,
+                json: async () => {
+                  throw new Error(errMsg);
+                },
+                text: async () => errMsg
+              });
+              return;
+            }
+            if (!resp) {
+              const errMsg = "No response from background service worker";
+              resolve({
+                ok: false,
+                status: 0,
+                statusText: errMsg,
+                error: errMsg,
+                json: async () => {
+                  throw new Error(errMsg);
+                },
+                text: async () => errMsg
+              });
+              return;
+            }
+            resolve({
+              ok: resp.ok,
+              status: resp.status,
+              statusText: resp.statusText || "",
+              error: resp.error,
+              json: async () => {
+                if (resp.data !== null && resp.data !== void 0) {
+                  return resp.data;
+                }
+                return JSON.parse(resp.text || "{}");
+              },
+              text: async () => resp.text || ""
+            });
+          }
+        );
+      });
+    }
+    const directResponse = await fetch(targetUrl, options);
+    return {
+      ok: directResponse.ok,
+      status: directResponse.status,
+      statusText: directResponse.statusText,
+      json: async () => await directResponse.json(),
+      text: async () => await directResponse.text()
+    };
+  }
+  var init_api_client = __esm({
+    "src/core/api_client.ts"() {
+      "use strict";
+    }
+  });
+
   // src/core/separators.ts
   var separators_exports = {};
   __export(separators_exports, {
@@ -128,7 +204,7 @@
   async function loadNovelSeparators(novelTitle) {
     const title = novelTitle || "\uAE30\uBCF8 \uC18C\uC124";
     try {
-      const resp = await fetch(`http://127.0.0.1:8001/api/separators?novel_title=${encodeURIComponent(title)}`);
+      const resp = await serverFetch(`http://127.0.0.1:8001/api/separators?novel_title=${encodeURIComponent(title)}`);
       if (resp.ok) {
         const data = await resp.json();
         const config = {
@@ -179,7 +255,7 @@
     const cacheKey = `separators_${novelTitle}`;
     await chrome.storage.local.set({ [cacheKey]: config });
     try {
-      const resp = await fetch("http://127.0.0.1:8001/api/separators", {
+      const resp = await serverFetch("http://127.0.0.1:8001/api/separators", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
@@ -194,7 +270,7 @@
   }
   async function resetNovelSeparators(novelTitle) {
     try {
-      await fetch(`http://127.0.0.1:8001/api/separators?novel_title=${encodeURIComponent(novelTitle)}`, {
+      await serverFetch(`http://127.0.0.1:8001/api/separators?novel_title=${encodeURIComponent(novelTitle)}`, {
         method: "DELETE"
       });
     } catch (e) {
@@ -215,6 +291,7 @@
   var init_separators = __esm({
     "src/core/separators.ts"() {
       "use strict";
+      init_api_client();
       DEFAULT_GLOBAL_SEPARATORS = [
         "\uFF1C\u3042\u3068\u304C\u304D\uFF1E",
         "&lt;\u3042\u3068\u304C\u304D&gt;",
@@ -814,10 +891,10 @@
           return match ? `novelup_${match[1]}` : null;
         }
         isTocPage(_url, path) {
-          if (document.getElementById("episode_content")) {
+          if (document.getElementById("episode_content") || /\/story\/\d+\/\d+/.test(path)) {
             return false;
           }
-          return /\/story\/\d+\/?$/.test(path) && !/\/\d+\/\d+/.test(path) || !!document.querySelector("#section_episode, .episodeListItem, a.episodeTitle, .storyList");
+          return /\/story\/\d+\/?$/.test(path) && !/\/\d+\/\d+/.test(path) || !!document.querySelector(".storyList, .episodeListItem, a.episodeTitle");
         }
         findNextEpisodeLink() {
           const direct = document.querySelector(".episodeNavi .nextEpisode a") || document.querySelector(".btn_next") || document.querySelector(".episode_navigation .next a");
@@ -858,7 +935,7 @@
           }
           const rawHtml = epContent.innerHTML;
           let lines = rawHtml.split(/\r?\n/);
-          if (lines.length <= 1 && epContent.querySelectorAll("p").length > 1) {
+          if (epContent.querySelectorAll("p").length > 1) {
             epContent.querySelectorAll("p").forEach((p, idx) => {
               if (!p.id) p.id = `L${idx + 1}`;
             });
@@ -1638,7 +1715,7 @@
     let totalTodayCount = cachedTodayTotalEpisodes || 0;
     try {
       const syncUrl = `http://127.0.0.1:8001/api/translation_session_count?url=${encodeURIComponent(currentCleanUrl)}&work_key=${encodeURIComponent(workKey)}&novel_title=${encodeURIComponent(novelTitle || "")}`;
-      const serverResp = await fetch(syncUrl);
+      const serverResp = await serverFetch(syncUrl);
       if (serverResp.ok) {
         const serverData = await serverResp.json();
         if (typeof serverData.total_today_count === "number") {
@@ -1670,7 +1747,7 @@
       if (episodeCount !== null && episodeCount !== void 0) {
         payload.episode_count = episodeCount;
       }
-      await fetch("http://127.0.0.1:8001/api/notifications/progress", {
+      await serverFetch("http://127.0.0.1:8001/api/notifications/progress", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
@@ -1689,7 +1766,7 @@
       if (episodeCount !== null && episodeCount !== void 0) {
         payload.episode_count = episodeCount;
       }
-      await fetch("http://127.0.0.1:8001/api/notifications/complete", {
+      await serverFetch("http://127.0.0.1:8001/api/notifications/complete", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
@@ -1701,6 +1778,7 @@
   var init_adaptive_throttle = __esm({
     "src/core/adaptive_throttle.ts"() {
       "use strict";
+      init_api_client();
       init_turbo();
       RECENT_EPISODES_STORAGE_KEY = "lanovel_recent_episodes";
       recentEpisodesMemoryCache = [];
@@ -1826,7 +1904,7 @@
         try {
           dismissBtn.disabled = true;
           dismissBtn.textContent = "\uCC98\uB9AC \uC911...";
-          await fetch(`http://127.0.0.1:8001/cleanup/notifications/${notifId}/dismiss`, {
+          await serverFetch(`http://127.0.0.1:8001/cleanup/notifications/${notifId}/dismiss`, {
             method: "POST"
           });
           try {
@@ -1860,7 +1938,7 @@
       if (batchId) {
         apiUrl += `&batch_id=${encodeURIComponent(batchId)}`;
       }
-      const res = await fetch(apiUrl);
+      const res = await serverFetch(apiUrl);
       if (!res.ok) return;
       const data = await res.json();
       if (data.has_targets && Array.isArray(data.targets) && data.targets.length > 0) {
@@ -1888,6 +1966,7 @@
   var init_review_panel = __esm({
     "src/ui/review_panel.ts"() {
       "use strict";
+      init_api_client();
       init_state();
       init_sidebar();
     }
@@ -1950,7 +2029,7 @@
       }
     }
     try {
-      const response = await fetch("http://127.0.0.1:8001/translations/upsert", {
+      const response = await serverFetch("http://127.0.0.1:8001/translations/upsert", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify([record])
@@ -2082,6 +2161,7 @@
   var init_row_actions = __esm({
     "src/core/row_actions.ts"() {
       "use strict";
+      init_api_client();
       init_state();
       init_filters();
       init_page_translator();
@@ -2304,7 +2384,7 @@
     });
     if (targetsToExclude.length === 0) return;
     try {
-      const response = await fetch("http://127.0.0.1:8001/translations/exclude", {
+      const response = await serverFetch("http://127.0.0.1:8001/translations/exclude", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ids: targetIds })
@@ -2349,7 +2429,7 @@
     if (!itemsToRestore || itemsToRestore.length === 0) return;
     const cleanUrl = getCleanUrl();
     try {
-      const response = await fetch("http://127.0.0.1:8001/translations/restore_excluded", {
+      const response = await serverFetch("http://127.0.0.1:8001/translations/restore_excluded", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -2409,7 +2489,7 @@
   async function openExcludedManager() {
     const cleanUrl = getCleanUrl();
     try {
-      const resp = await fetch(
+      const resp = await serverFetch(
         `http://127.0.0.1:8001/translations/excluded_details?url=${encodeURIComponent(cleanUrl)}`
       );
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
@@ -2540,6 +2620,7 @@
   var init_separator_panel = __esm({
     "src/ui/separator_panel.ts"() {
       "use strict";
+      init_api_client();
       init_state();
       init_separators();
       init_page_translator();
@@ -2670,7 +2751,7 @@
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 5e3);
-      const resp = await fetch("http://127.0.0.1:8001/api/check_translated_urls", {
+      const resp = await serverFetch("http://127.0.0.1:8001/api/check_translated_urls", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ urls: Array.from(urlSet) }),
@@ -3027,7 +3108,7 @@
       try {
         const serverCtrl = new AbortController();
         const sTimeout = setTimeout(() => serverCtrl.abort(), 5e3);
-        const checkResp = await fetch("http://127.0.0.1:8001/api/check_translated_urls", {
+        const checkResp = await serverFetch("http://127.0.0.1:8001/api/check_translated_urls", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ urls: Array.from(urlSet) }),
@@ -3120,6 +3201,7 @@
   var init_toc_quick_jump = __esm({
     "src/ui/toc_quick_jump.ts"() {
       "use strict";
+      init_api_client();
       init_scrapers();
       init_hud();
       EXCLUDED_EPISODES_STORAGE_KEY = "lanovel_excluded_urls";
@@ -3539,9 +3621,8 @@
   function addPlaceholderRows(items) {
     const tableBody = document.getElementById("translation-table-body");
     if (!tableBody) return;
-    for (let i = items.length - 1; i >= 0; i--) {
-      const item = items[i];
-      if (tableBody.querySelector(`tr[data-pid="${item.id}"]`)) continue;
+    items.forEach((item) => {
+      if (tableBody.querySelector(`tr[data-pid="${item.id}"]`)) return;
       const row = tableBody.insertRow(0);
       row.dataset.pid = item.id;
       const isReviewTarget = state.reviewTargetPids && state.reviewTargetPids.has(item.id);
@@ -3558,19 +3639,18 @@
       </td>
     `;
       bindRowEvents(row, item.id, item.text);
-    }
+    });
     updateEmptyState();
   }
   function updateSidebarWithTranslations(translations) {
     const tableBody = document.getElementById("translation-table-body");
     if (!tableBody || !translations || translations.length === 0) return;
-    const rowsToPrepend = [];
     translations.forEach((item) => {
       let row = tableBody.querySelector(`tr[data-pid="${item.id}"]`);
       const isReviewTarget = state.reviewTargetPids && state.reviewTargetPids.has(item.id);
       const reviewBadgeHtml = isReviewTarget ? `<span class="review-badge">\u26A1\uC7AC\uAC80\uC218</span>` : "";
       if (!row) {
-        row = document.createElement("tr");
+        row = tableBody.insertRow(0);
         row.dataset.pid = item.id;
         if (isReviewTarget) row.classList.add("review-target-row");
         row.innerHTML = `
@@ -3599,11 +3679,7 @@
       if (isReviewTarget) {
         updateReviewCardTranslation(item.id, `\uBC88\uC5ED: ${item.translated}`, false);
       }
-      rowsToPrepend.push(row);
     });
-    for (let i = rowsToPrepend.length - 1; i >= 0; i--) {
-      tableBody.prepend(rowsToPrepend[i]);
-    }
   }
   function updateSidebarWithCancelled() {
     const tableBody = document.getElementById("translation-table-body");
@@ -3636,6 +3712,22 @@
     });
     pidMap.forEach((row) => tableBody.appendChild(row));
   }
+  function sortSidebarDescending(paragraphOrderPids) {
+    const tableBody = document.getElementById("translation-table-body");
+    if (!tableBody) return;
+    const rows = Array.from(tableBody.querySelectorAll("tr[data-pid]"));
+    const pidMap = new Map(rows.map((row) => [row.dataset.pid, row]));
+    tableBody.innerHTML = "";
+    for (let i = paragraphOrderPids.length - 1; i >= 0; i--) {
+      const pid = paragraphOrderPids[i];
+      const row = pidMap.get(pid);
+      if (row) {
+        tableBody.appendChild(row);
+        pidMap.delete(pid);
+      }
+    }
+    pidMap.forEach((row) => tableBody.appendChild(row));
+  }
   function handleSidebarRowClick(pid, e) {
     const target = e.target;
     if (target && (target.closest("button") || target.closest(".translated-text") || target.tagName === "INPUT")) {
@@ -3662,6 +3754,145 @@
       init_review_panel();
       init_separator_panel();
       init_toc_quick_jump();
+    }
+  });
+
+  // src/core/queue_session.ts
+  function sendEvent(kind, extra = {}) {
+    const data = { kind, queue_item_id: session ? session.queue_item_id : null, ...extra };
+    try {
+      chrome.runtime.sendMessage({ action: "remoteQueueEvent", data }, () => {
+        void chrome.runtime.lastError;
+      });
+    } catch (e) {
+    }
+  }
+  async function loadQueueSession() {
+    try {
+      const res = await chrome.runtime.sendMessage({ action: "remoteQueueSession" });
+      session = res && res.session ? res.session : null;
+    } catch (e) {
+      session = null;
+    }
+    if (!session) return;
+    console.log("[LANOVEL] \uBAA9\uB85D \uC791\uC5C5 \uD0ED\uC785\uB2C8\uB2E4:", session);
+    const timer = setTimeout(() => {
+      if (!decided && !state.hasScannedForPTags && state.inflight === 0 && !state.isTranslationCancelled) {
+        reportPageProblem("\uD398\uC774\uC9C0\uAC00 \uC2DC\uAC04 \uC548\uC5D0 \uC900\uBE44\uB418\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4. (\uB85C\uADF8\uC778/\uC5F0\uB839 \uD655\uC778 \uD654\uBA74\uC77C \uC218 \uC788\uC5B4\uC694)");
+      }
+    }, WATCHDOG_MS);
+    if (typeof timer.unref === "function") timer.unref();
+  }
+  function afterInit() {
+    let pending = false;
+    let wasTurbo = false;
+    try {
+      pending = sessionStorage.getItem("lanovel_cinderella_pending") === "1";
+      wasTurbo = sessionStorage.getItem("lanovel_cinderella_turbo") === "1";
+      sessionStorage.removeItem("lanovel_cinderella_pending");
+      sessionStorage.removeItem("lanovel_cinderella_turbo");
+    } catch (e) {
+      return;
+    }
+    if (!pending || !session) return;
+    sendEvent("cinderella");
+    logToSidebar("\u{1F319} [\uC2E0\uB370\uB810\uB77C] \uCD08\uAE30\uD654 \uC2DC\uAC04\uC744 \uB118\uACA8 \uBC88\uC5ED\uC744 \uC774\uC5B4\uAC11\uB2C8\uB2E4.");
+    if (wasTurbo && !state.isTurboMode && state.onToggleTurboMode) {
+      state.onToggleTurboMode(true, false);
+    }
+  }
+  function reportNovelFinished(reason) {
+    if (!session || reportedEnd) return;
+    reportedEnd = true;
+    decided = true;
+    logToSidebar(`[\uBAA9\uB85D] \uC18C\uC124 \uBC88\uC5ED\uC774 \uB05D\uB0AC\uC2B5\uB2C8\uB2E4 (${reason}). \uB2E4\uC74C \uC18C\uC124\uB85C \uB118\uC5B4\uAC11\uB2C8\uB2E4.`);
+    showLanovelHud("\uBAA9\uB85D: \uC774 \uC18C\uC124 \uC644\uB8CC \u2192 \uB2E4\uC74C \uC18C\uC124", "\u{1F4DA}", 3e3);
+    sendEvent("novel_finished");
+  }
+  function reportPageProblem(reason) {
+    if (!session || reportedEnd) return;
+    reportedEnd = true;
+    decided = true;
+    logToSidebar(`[\uBAA9\uB85D] \uD398\uC774\uC9C0 \uBB38\uC81C: ${reason}`, "log-error");
+    sendEvent("page_problem", { reason });
+  }
+  function onNothingToTranslate(paragraphCount) {
+    if (!session || !session.skip_translated) return false;
+    if (skipScheduled || reportedEnd) return true;
+    skipScheduled = true;
+    decided = true;
+    const scraper = getScraper();
+    if (paragraphCount === 0) {
+      reportPageProblem("\uBCF8\uBB38\uC744 \uCC3E\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4.");
+      return true;
+    }
+    const delay = 2e3 + Math.floor(Math.random() * 2e3);
+    logToSidebar("[\uBAA9\uB85D] \uC774\uBBF8 \uBC88\uC5ED\uB41C \uD68C\uCC28\uC785\uB2C8\uB2E4. \uB2E4\uC74C \uD654\uB85C \uAC74\uB108\uB701\uB2C8\uB2E4.");
+    setTimeout(async () => {
+      if (state.isTranslationCancelled) {
+        skipScheduled = false;
+        return;
+      }
+      let link = scraper.findNextEpisodeLink();
+      if (!link) {
+        await new Promise((r) => setTimeout(r, 300));
+        link = scraper.findNextEpisodeLink();
+      }
+      if (link && link.href) {
+        showLanovelHud("\uBAA9\uB85D: \uBC88\uC5ED\uB41C \uD68C\uCC28 \uAC74\uB108\uB6F0\uAE30", "\u23ED\uFE0F", 1500);
+        window.location.href = link.href;
+      } else {
+        reportNovelFinished("\uB9C8\uC9C0\uB9C9 \uD654");
+      }
+    }, delay);
+    return true;
+  }
+  async function onAbortTurbo(reason, wasTurbo) {
+    if (!session || cinderellaScheduled || reason !== RESET_STOP_REASON) return;
+    let config;
+    try {
+      const stored = await chrome.storage.local.get("lanovelRemoteConfig");
+      config = stored.lanovelRemoteConfig;
+    } catch (e) {
+      return;
+    }
+    if (!config || !config.cinderella) return;
+    let last = 0;
+    try {
+      last = Number(sessionStorage.getItem("lanovel_cinderella_at") || 0);
+    } catch (e) {
+    }
+    if (Date.now() - last < CINDERELLA_COOLDOWN_MS) {
+      logToSidebar("\u{1F319} [\uC2E0\uB370\uB810\uB77C] \uBC29\uAE08 \uC774\uC5B4\uD558\uAE30\uB97C \uD588\uB294\uB370 \uB2E4\uC2DC \uC815\uC9C0\uB418\uC5B4, \uC774\uBC88\uC5D0\uB294 \uC0C8\uB85C\uACE0\uCE68\uD558\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.", "log-error");
+      return;
+    }
+    cinderellaScheduled = true;
+    try {
+      sessionStorage.setItem("lanovel_cinderella_at", String(Date.now()));
+      sessionStorage.setItem("lanovel_cinderella_pending", "1");
+      sessionStorage.setItem("lanovel_cinderella_turbo", wasTurbo ? "1" : "0");
+    } catch (e) {
+    }
+    logToSidebar(`\u{1F319} [\uC2E0\uB370\uB810\uB77C] \uCD08\uAE30\uD654 \uC2DC\uAC04\uC744 \uB118\uAE30\uAE30 \uC704\uD574 ${CINDERELLA_RELOAD_DELAY_MS / 1e3}\uCD08 \uB4A4 \uC0C8\uB85C\uACE0\uCE68\uD569\uB2C8\uB2E4.`);
+    setTimeout(() => window.location.reload(), CINDERELLA_RELOAD_DELAY_MS);
+  }
+  var RESET_STOP_REASON, CINDERELLA_COOLDOWN_MS, CINDERELLA_RELOAD_DELAY_MS, WATCHDOG_MS, session, decided, reportedEnd, skipScheduled, cinderellaScheduled;
+  var init_queue_session = __esm({
+    "src/core/queue_session.ts"() {
+      "use strict";
+      init_state();
+      init_scrapers();
+      init_hud();
+      init_sidebar();
+      RESET_STOP_REASON = "\uCD08\uAE30\uD654 \uC2DC\uAC04 \uB3C4\uB2EC";
+      CINDERELLA_COOLDOWN_MS = 12e4;
+      CINDERELLA_RELOAD_DELAY_MS = 5e3;
+      WATCHDOG_MS = 12e4;
+      session = null;
+      decided = false;
+      reportedEnd = false;
+      skipScheduled = false;
+      cinderellaScheduled = false;
     }
   });
 
@@ -3733,7 +3964,7 @@
       const cleanUrl = getCleanUrl();
       const currentUrl = window.location.href;
       try {
-        await fetch("http://127.0.0.1:8001/api/urls/apply", {
+        await serverFetch("http://127.0.0.1:8001/api/urls/apply", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ url: cleanUrl, apply: state.isPageApplied })
@@ -3783,6 +4014,7 @@
   var init_dom_applier = __esm({
     "src/core/dom_applier.ts"() {
       "use strict";
+      init_api_client();
       init_state();
       init_filters();
       init_sidebar();
@@ -3883,6 +4115,7 @@
     state.broadcastStatus();
   }
   async function abortTurboMode(reason = "\uCD08\uAE30\uD654 \uC2DC\uAC04 \uB3C4\uB2EC") {
+    const wasTurbo = state.isTurboMode;
     state.isTranslationCancelled = true;
     state.isTurboMode = false;
     state.turboTargetTimestamp = 0;
@@ -3900,12 +4133,13 @@
     if (retryBtn) retryBtn.style.display = "inline-block";
     logToSidebar(`\u23F0 [\uCF8C\uC18D\uBAA8\uB4DC \uC790\uB3D9 \uC911\uB2E8] \uC0AC\uC720: ${reason}. \uC790\uB3D9 \uBC88\uC5ED \uBC0F \uB2E4\uC74C \uD654 \uC774\uB3D9\uC774 \uCC28\uB2E8\uB418\uC5C8\uC2B5\uB2C8\uB2E4.`, "log-error");
     showLanovelHud(`\uCF8C\uC18D\uBAA8\uB4DC \uC790\uB3D9 \uC911\uB2E8 (${reason})`, "\u23F0", 3500);
+    void onAbortTurbo(reason, wasTurbo);
     state.broadcastStatus();
   }
   async function fetchTranslationsForUrl(url) {
     try {
       const fetchUrl = `http://127.0.0.1:8001/translations?url=${encodeURIComponent(url)}&limit=5000`;
-      const response = await fetch(fetchUrl);
+      const response = await serverFetch(fetchUrl);
       if (!response.ok) {
         console.warn(`[fetchTranslationsForUrl] Server responded with ${response.status}`);
         return null;
@@ -3921,7 +4155,7 @@
   async function fetchExclusionsForUrl(url) {
     try {
       const fetchUrl = `http://127.0.0.1:8001/excluded_sentences?url=${encodeURIComponent(url)}`;
-      const response = await fetch(fetchUrl);
+      const response = await serverFetch(fetchUrl);
       if (!response.ok) {
         console.warn(`[fetchExclusionsForUrl] Server responded with ${response.status}`);
         return null;
@@ -4012,7 +4246,7 @@
       title
     }));
     try {
-      const response = await fetch("http://127.0.0.1:8001/translations/upsert", {
+      const response = await serverFetch("http://127.0.0.1:8001/translations/upsert", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(records)
@@ -4113,7 +4347,6 @@
           addEntryToSidebar({ pid: item.id, original: item.original, translated: item.translated });
         });
         updateSidebarWithTranslations(instantPunctuationItems);
-        sortSidebar(allParagraphs.map((p) => p.id));
         if (state.isPageApplied) {
           applyTranslationsToPage(instantPunctuationItems, false);
         }
@@ -4122,9 +4355,13 @@
       }
       if (textsToTranslate.length === 0) {
         if (instantPunctuationItems.length > 0) {
+          sortSidebar(allParagraphs.map((p) => p.id));
           logToSidebar("\uBAA8\uB4E0 \uBC88\uC5ED \uC791\uC5C5\uC774 \uC644\uB8CC\uB418\uC5C8\uC2B5\uB2C8\uB2E4. (\uC21C\uC218 \uBB38\uC7A5\uBD80\uD638 \uC989\uC2DC \uB300\uC785 \uC644\uB8CC)");
+          onNothingToTranslate(validParagraphs.length);
         } else {
+          sortSidebar(allParagraphs.map((p) => p.id));
           logToSidebar("\uBC88\uC5ED\uD560 \uC0C8\uB85C\uC6B4 \uB0B4\uC6A9\uC774 \uC5C6\uC2B5\uB2C8\uB2E4.");
+          onNothingToTranslate(validParagraphs.length);
         }
         if (stopBtn) stopBtn.style.display = "none";
         if (retryBtn) retryBtn.style.display = "inline-block";
@@ -4140,6 +4377,7 @@
         `[\uC18C\uC124: ${state.currentNovelTitle || "\uAE30\uBCF8"}] \uCD1D ${textsToTranslate.length}\uAC1C \uBB38\uC7A5(\uC57D ${totalChars.toLocaleString()}\uC790) \uAE00\uC790 \uC218\xB7\uD1A0\uD070 \uC608\uC0B0 \uAE30\uBC18 ${chunks.length}\uAC1C \uCD5C\uC801 \uBB36\uC74C\uC73C\uB85C \uBC88\uC5ED\uC744 \uC2DC\uC791\uD569\uB2C8\uB2E4. (${modelDesc}${turboDesc}, \uAD6C\uBD84\uC120: ${sepPreview})`
       );
       addPlaceholderRows(textsToTranslate);
+      sortSidebarDescending(allParagraphs.map((p) => p.id));
       async function translateChunk(items, chunkSize) {
         if (state.isTranslationCancelled) return;
         const MAX_MESSAGE_RETRIES = 5;
@@ -4504,6 +4742,7 @@
           }, navDelay);
         } else {
           logToSidebar("\uB2E4\uC74C \uD398\uC774\uC9C0 \uBC84\uD2BC\uC744 \uCC3E\uC744 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4. (\uC18C\uC124 \uC5F0\uC18D \uBC88\uC5ED \uC885\uB8CC)");
+          reportNovelFinished("\uB9C8\uC9C0\uB9C9 \uD654");
           sendCompleteNotification(
             state.currentNovelTitle,
             episodeTitle,
@@ -4524,6 +4763,7 @@
   var init_page_translator = __esm({
     "src/core/page_translator.ts"() {
       "use strict";
+      init_api_client();
       init_state();
       init_filters();
       init_chunker();
@@ -4534,12 +4774,14 @@
       init_hud();
       init_review_panel();
       init_scrapers();
+      init_queue_session();
       init_dom_applier();
       isTranslatingInProgress = false;
     }
   });
 
   // src/content.ts
+  init_api_client();
   init_state();
   init_scrapers();
   init_page_translator();
@@ -4665,6 +4907,7 @@
   // src/content.ts
   init_toc_quick_jump();
   init_hud();
+  init_queue_session();
   var DEFAULT_ALLOWED_DOMAINS = [
     "kakuyomu.jp",
     "syosetu.com",
@@ -4688,7 +4931,7 @@
       try {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 1200);
-        const response = await fetch("http://127.0.0.1:8001/api/allowed_origins", { signal: controller.signal });
+        const response = await serverFetch("http://127.0.0.1:8001/api/allowed_origins", { signal: controller.signal });
         clearTimeout(timeoutId);
         if (response.ok) {
           const allowedOrigins = await response.json();
@@ -4731,6 +4974,7 @@
         await initTocPageFeatures(scraper);
         return;
       }
+      await loadQueueSession();
       await loadTurboModeState();
       const currentCleanUrl = getCleanUrl();
       const isExcluded = await isEpisodeUrlExcluded(currentCleanUrl);
@@ -4752,13 +4996,14 @@
           sessionStorage.removeItem("lanovel_auto_translate_next");
           showLanovelHud("\uB9C8\uC9C0\uB9C9 \uD398\uC774\uC9C0\uC785\uB2C8\uB2E4. (\uC18C\uC124 \uC5F0\uC18D \uBC88\uC5ED \uC885\uB8CC)", "\u{1F3C1}", 5e3);
           logToSidebar("\uB2E4\uC74C \uD398\uC774\uC9C0 \uBC84\uD2BC\uC744 \uCC3E\uC744 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4. (\uB9C8\uC9C0\uB9C9 \uD398\uC774\uC9C0\uC785\uB2C8\uB2E4)");
+          reportNovelFinished("\uB9C8\uC9C0\uB9C9 \uD654");
           return;
         }
       }
       const cleanUrl = getCleanUrl();
       let novelTitle = "";
       try {
-        const resp = await fetch(`http://127.0.0.1:8001/api/novel_info?url=${encodeURIComponent(cleanUrl)}`);
+        const resp = await serverFetch(`http://127.0.0.1:8001/api/novel_info?url=${encodeURIComponent(cleanUrl)}`);
         if (resp.ok) {
           const data = await resp.json();
           if (data.folderName) novelTitle = data.folderName;
@@ -4784,7 +5029,7 @@
       await checkAndLoadReviewTargets(cleanUrl);
       let initialApplied = false;
       try {
-        const resp = await fetch(`http://127.0.0.1:8001/api/urls/apply_status?url=${encodeURIComponent(cleanUrl)}`);
+        const resp = await serverFetch(`http://127.0.0.1:8001/api/urls/apply_status?url=${encodeURIComponent(cleanUrl)}`);
         if (resp.ok) {
           const status = await resp.json();
           initialApplied = !!status.applied;
@@ -4833,6 +5078,7 @@
       state.onToggleTurboMode = (enabled, save) => {
         setTurboMode(enabled, save);
       };
+      afterInit();
       const stopBtn = document.getElementById("stop-translation-btn");
       if (stopBtn) {
         stopBtn.addEventListener("click", () => {
@@ -4881,6 +5127,9 @@
           }
         }
       }
+      if (getTargetParagraphs().length === 0) {
+        reportPageProblem("\uBCF8\uBB38 \uBB38\uB2E8\uC744 \uCC3E\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4. (\uB85C\uADF8\uC778/\uC5F0\uB839 \uD655\uC778 \uD654\uBA74\uC77C \uC218 \uC788\uC5B4\uC694)");
+      }
       if (state.turboAbortedOnLoad || state.isTurboMode && checkCutoffTimeReached(state.turboCutoffHour, state.turboTargetTimestamp)) {
         if (!state.turboAbortedOnLoad) {
           await abortTurboMode("\uCD08\uAE30\uD654 \uC2DC\uAC04 \uB3C4\uB2EC");
@@ -4893,6 +5142,7 @@
         } else {
           if (retryBtn) retryBtn.style.display = "inline-block";
           console.log("[LANOVEL] \uBAA8\uB4E0 \uBB38\uC7A5\uC774 \uC774\uBBF8 \uBC88\uC5ED\uB418\uC5B4 \uC788\uC5B4 \uC790\uB3D9 \uBC88\uC5ED\uC744 \uC0DD\uB7B5\uD569\uB2C8\uB2E4.");
+          onNothingToTranslate(getTargetParagraphs().length);
         }
       }
       await initTocPageFeatures(scraper);
