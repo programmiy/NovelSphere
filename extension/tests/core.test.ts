@@ -42,6 +42,34 @@ test('chunker: createBudgetChunks respects character budget and max item limit',
   assert.deepStrictEqual(createBudgetChunks([]), []);
 });
 
+test('chunker: dynamic budget chunks expands item limit for short dialogue sentences', () => {
+  // 1. 짧은 대화문 70개 (문장당 10자, 총 700자): 45개에서 끊기지 않고 1개 청크(70개)로 결합
+  const shortDialogueItems = Array.from({ length: 70 }, (_, i) => ({
+    text: '「대화문_' + i + '」'
+  }));
+  const chunksShort = createBudgetChunks(shortDialogueItems);
+  assert.strictEqual(chunksShort.length, 1, '짧은 대화문 70개는 45개에서 끊기지 않고 1개 청크로 묶여야 함');
+  assert.strictEqual(chunksShort[0].length, 70);
+
+  // 2. 짧은 대화문 80개: 절대 상한인 75개에서 안전하게 1회 분할 (75개 + 5개 = 2개 청크)
+  const eightyDialogueItems = Array.from({ length: 80 }, (_, i) => ({
+    text: '「단문_' + i + '」'
+  }));
+  const chunksEighty = createBudgetChunks(eightyDialogueItems);
+  assert.strictEqual(chunksEighty.length, 2, '절대 상한 75개에서 1회 분할되어야 함');
+  assert.strictEqual(chunksEighty[0].length, 75);
+  assert.strictEqual(chunksEighty[1].length, 5);
+
+  // 3. 밀도 높은 서술문: 문장당 35자 (45개 시점에 1,575자 >= 1,300자): 45개 시점에 정상 분할
+  const denseProseItems = Array.from({ length: 50 }, (_, i) => ({
+    text: 'A'.repeat(35)
+  }));
+  const chunksDense = createBudgetChunks(denseProseItems);
+  assert.strictEqual(chunksDense.length, 2, '1,300자 이상의 밀도 높은 문장은 45개에서 분할되어야 함');
+  assert.strictEqual(chunksDense[0].length, 45);
+  assert.strictEqual(chunksDense[1].length, 5);
+});
+
 test('filters: isTranslatableText accurately detects Japanese dialogue and prose', () => {
   // 1. Japanese content
   assert.strictEqual(isTranslatableText('こんにちは世界'), true);

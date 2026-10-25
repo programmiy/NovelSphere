@@ -1479,14 +1479,19 @@
     }
     return chunks;
   }
-  function createBudgetChunks(items, maxChars = CHUNK_BUDGET_CHARACTERS, maxItems = CHUNK_BUDGET_MAX_ITEMS) {
+  function createBudgetChunks(items, maxChars = CHUNK_BUDGET_CHARACTERS, maxItems = CHUNK_BUDGET_MAX_ITEMS, hardMaxItems, denseCharsThreshold) {
     if (!items || items.length === 0) return [];
+    const resolvedHardLimit = hardMaxItems ?? (maxItems !== CHUNK_BUDGET_MAX_ITEMS ? maxItems : CHUNK_HARD_MAX_ITEMS);
+    const resolvedDenseThreshold = denseCharsThreshold ?? (maxItems !== CHUNK_BUDGET_MAX_ITEMS ? 0 : CHUNK_DENSE_CHARS_THRESHOLD);
     const chunks = [];
     let currentChunk = [];
     let currentChars = 0;
     for (const item of items) {
       const itemLength = item.text ? item.text.length : 0;
-      if (currentChunk.length > 0 && (currentChars + itemLength > maxChars || currentChunk.length >= maxItems)) {
+      const isCharOverflow = currentChars + itemLength > maxChars;
+      const isHardItemLimit = currentChunk.length >= resolvedHardLimit;
+      const isStandardItemLimit = currentChunk.length >= maxItems && currentChars >= resolvedDenseThreshold;
+      if (currentChunk.length > 0 && (isCharOverflow || isHardItemLimit || isStandardItemLimit)) {
         chunks.push(currentChunk);
         currentChunk = [];
         currentChars = 0;
@@ -1499,12 +1504,14 @@
     }
     return chunks;
   }
-  var CHUNK_BUDGET_CHARACTERS, CHUNK_BUDGET_MAX_ITEMS;
+  var CHUNK_BUDGET_CHARACTERS, CHUNK_BUDGET_MAX_ITEMS, CHUNK_HARD_MAX_ITEMS, CHUNK_DENSE_CHARS_THRESHOLD;
   var init_chunker = __esm({
     "src/core/chunker.ts"() {
       "use strict";
       CHUNK_BUDGET_CHARACTERS = 2e3;
-      CHUNK_BUDGET_MAX_ITEMS = 40;
+      CHUNK_BUDGET_MAX_ITEMS = 45;
+      CHUNK_HARD_MAX_ITEMS = 75;
+      CHUNK_DENSE_CHARS_THRESHOLD = 1300;
     }
   });
 
