@@ -1,3 +1,4 @@
+import { serverFetch } from './core/api_client';
 // content.ts: LANOVEL 웹소설 번역 확장 콘텐츠 스크립트 메인 진입점
 import { state } from './core/state';
 import { getScraper } from './scrapers';
@@ -35,6 +36,13 @@ import {
 import { setupLanovelKeyboardNavigation, checkAutoTranslateNextTrigger } from './ui/key_nav';
 import { initTocPageFeatures, isEpisodeUrlExcluded } from './ui/toc_quick_jump';
 import { showLanovelHud } from './ui/hud';
+import {
+  loadQueueSession,
+  afterInit as queueAfterInit,
+  onNothingToTranslate as queueNothingToTranslate,
+  reportNovelFinished as queueNovelFinished,
+  reportPageProblem as queuePageProblem,
+} from './core/queue_session';
 
 const DEFAULT_ALLOWED_DOMAINS = [
   'kakuyomu.jp',
@@ -62,7 +70,7 @@ async function init(): Promise<void> {
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 1200);
-      const response = await fetch('http://127.0.0.1:8001/api/allowed_origins', { signal: controller.signal });
+      const response = await serverFetch('http://127.0.0.1:8001/api/allowed_origins', { signal: controller.signal });
       clearTimeout(timeoutId);
       if (response.ok) {
         const allowedOrigins: string[] = await response.json();
@@ -115,6 +123,8 @@ async function init(): Promise<void> {
     }
 
     // 쾌속모드 상태 및 정각 도달 검사
+    // 이 탭이 '다음에 번역할 소설' 목록 작업 중인지 확인 (쾌속모드 정각 검사보다 먼저)
+    await loadQueueSession();
     await loadTurboModeState();
 
     // 0.3. 제외 회차 감지 시 번역 생략 및 다음 회차 자동 건너뛰기 / 마지막 페이지 판별
@@ -139,6 +149,7 @@ async function init(): Promise<void> {
         sessionStorage.removeItem('lanovel_auto_translate_next');
         showLanovelHud('마지막 페이지입니다. (소설 연속 번역 종료)', '🏁', 5000);
         logToSidebar('다음 페이지 버튼을 찾을 수 없습니다. (마지막 페이지입니다)');
+        queueNovelFinished('마지막 화');
         return;
       }
     }
@@ -147,7 +158,7 @@ async function init(): Promise<void> {
     const cleanUrl = getCleanUrl();
     let novelTitle = '';
     try {
-      const resp = await fetch(`http://127.0.0.1:8001/api/novel_info?url=${encodeURIComponent(cleanUrl)}`);
+      const resp = await serverFetch(`http://127.0.0.1:8001/api/novel_info?url=${encodeURIComponent(cleanUrl)}`);
       if (resp.ok) {
         const data = await resp.json();
         if (data.folderName) novelTitle = data.folderName;
@@ -184,7 +195,7 @@ async function init(): Promise<void> {
     // 본문 적용(Apply) 상태 조회 및 복원
     let initialApplied = false;
     try {
-      const resp = await fetch(`http://127.0.0.1:8001/api/urls/apply_status?url=${encodeURIComponent(cleanUrl)}`);
+      const resp = await serverFetch(`http://127.0.0.1:8001/api/urls/apply_status?url=${encodeURIComponent(cleanUrl)}`);
       if (resp.ok) {
         const status = await resp.json();
         initialApplied = !!status.applied;
@@ -238,6 +249,8 @@ async function init(): Promise<void> {
     state.onToggleTurboMode = (enabled, save) => {
       setTurboMode(enabled, save);
     };
+
+    queueAfterInit();   // 신데렐라 새로고침 직후라면 이어하기 이력 보고 + 쾌속모드 복원
 
     // UI 버튼 이벤트 바인딩
     const stopBtn = document.getElementById('stop-translation-btn');
@@ -294,6 +307,11 @@ async function init(): Promise<void> {
       }
     }
 
+    // 목록 작업 탭인데 본문이 끝내 없으면 로딩/연령 확인 화면 문제로 서버에 알린다
+    if (getTargetParagraphs().length === 0) {
+      queuePageProblem('본문 문단을 찾지 못했습니다. (로그인/연령 확인 화면일 수 있어요)');
+    }
+
     // 미번역 문단이 존재하면 번역 실행
     if (state.turboAbortedOnLoad || (state.isTurboMode && checkCutoffTimeReached(state.turboCutoffHour, state.turboTargetTimestamp))) {
       if (!state.turboAbortedOnLoad) {
@@ -307,6 +325,7 @@ async function init(): Promise<void> {
       } else {
         if (retryBtn) retryBtn.style.display = 'inline-block';
         console.log('[LANOVEL] 모든 문장이 이미 번역되어 있어 자동 번역을 생략합니다.');
+        queueNothingToTranslate(getTargetParagraphs().length);   // 목록 작업이면 다음 화로 건너뜀
       }
     }
 

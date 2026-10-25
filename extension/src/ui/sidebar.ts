@@ -478,9 +478,8 @@ export function addPlaceholderRows(items: Array<{ id: string; text: string }>): 
   const tableBody = document.getElementById('translation-table-body') as HTMLTableSectionElement | null;
   if (!tableBody) return;
 
-  for (let i = items.length - 1; i >= 0; i--) {
-    const item = items[i];
-    if (tableBody.querySelector(`tr[data-pid="${item.id}"]`)) continue;
+  items.forEach((item) => {
+    if (tableBody.querySelector(`tr[data-pid="${item.id}"]`)) return;
 
     const row = tableBody.insertRow(0);
     row.dataset.pid = item.id;
@@ -500,7 +499,7 @@ export function addPlaceholderRows(items: Array<{ id: string; text: string }>): 
     `;
 
     bindRowEvents(row, item.id, item.text);
-  }
+  });
   updateEmptyState();
 }
 
@@ -510,15 +509,13 @@ export function updateSidebarWithTranslations(
   const tableBody = document.getElementById('translation-table-body') as HTMLTableSectionElement | null;
   if (!tableBody || !translations || translations.length === 0) return;
 
-  const rowsToPrepend: HTMLTableRowElement[] = [];
-
   translations.forEach((item) => {
     let row = tableBody.querySelector<HTMLTableRowElement>(`tr[data-pid="${item.id}"]`);
     const isReviewTarget = state.reviewTargetPids && state.reviewTargetPids.has(item.id);
     const reviewBadgeHtml = isReviewTarget ? `<span class="review-badge">⚡재검수</span>` : '';
 
     if (!row) {
-      row = document.createElement('tr');
+      row = tableBody.insertRow(0);
       row.dataset.pid = item.id;
       if (isReviewTarget) row.classList.add('review-target-row');
       row.innerHTML = `
@@ -548,14 +545,7 @@ export function updateSidebarWithTranslations(
     if (isReviewTarget) {
       updateReviewCardTranslation(item.id, `번역: ${item.translated}`, false);
     }
-
-    rowsToPrepend.push(row);
   });
-
-  // 번역 완료된 묶음을 사이드바 최상단에 올리되, 묶음 내부 단락들은 원문 순서(1->2->3)를 유지하도록 역순 prepend
-  for (let i = rowsToPrepend.length - 1; i >= 0; i--) {
-    tableBody.prepend(rowsToPrepend[i]);
-  }
 }
 
 export function updateSidebarWithCancelled(): void {
@@ -591,6 +581,25 @@ export function sortSidebar(paragraphOrderPids: string[]): void {
       pidMap.delete(pid);
     }
   });
+  pidMap.forEach((row) => tableBody.appendChild(row));
+}
+
+export function sortSidebarDescending(paragraphOrderPids: string[]): void {
+  const tableBody = document.getElementById('translation-table-body');
+  if (!tableBody) return;
+
+  const rows = Array.from(tableBody.querySelectorAll<HTMLTableRowElement>('tr[data-pid]'));
+  const pidMap = new Map(rows.map((row) => [row.dataset.pid!, row]));
+
+  tableBody.innerHTML = '';
+  for (let i = paragraphOrderPids.length - 1; i >= 0; i--) {
+    const pid = paragraphOrderPids[i];
+    const row = pidMap.get(pid);
+    if (row) {
+      tableBody.appendChild(row);
+      pidMap.delete(pid);
+    }
+  }
   pidMap.forEach((row) => tableBody.appendChild(row));
 }
 

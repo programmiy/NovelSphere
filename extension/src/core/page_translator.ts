@@ -1,3 +1,4 @@
+import { serverFetch } from './api_client';
 // page_translator.ts: 웹소설 페이지 번역 실행, 청크 전송, 재시도, DOM 주입 및 서버 동기화 코어 엔진
 import { state } from './state';
 import { TranslationRecord, ParagraphItem } from '../types/novel';
@@ -30,6 +31,7 @@ import {
   addEntryToSidebar,
   addPlaceholderRows,
   sortSidebar,
+  sortSidebarDescending,
   updateEmptyState,
   populateSidebar,
   updateApplyButtonUI,
@@ -40,6 +42,7 @@ import {
 import { showLanovelHud } from '../ui/hud';
 import { updateReviewCardTranslation } from '../ui/review_panel';
 import { getScraper } from '../scrapers';
+import { onNothingToTranslate, reportNovelFinished, onAbortTurbo } from './queue_session';
 import {
   getCleanUrl,
   getTargetParagraphs,
@@ -165,6 +168,7 @@ export async function setTurboMode(enabled: boolean, manual = true): Promise<voi
 }
 
 export async function abortTurboMode(reason = '초기화 시간 도달'): Promise<void> {
+  const wasTurbo = state.isTurboMode;   // 신데렐라 새로고침 후 쾌속모드 복원용
   state.isTranslationCancelled = true;
   state.isTurboMode = false;
   state.turboTargetTimestamp = 0;
@@ -184,13 +188,14 @@ export async function abortTurboMode(reason = '초기화 시간 도달'): Promis
 
   logToSidebar(`⏰ [쾌속모드 자동 중단] 사유: ${reason}. 자동 번역 및 다음 화 이동이 차단되었습니다.`, 'log-error');
   showLanovelHud(`쾌속모드 자동 중단 (${reason})`, '⏰', 3500);
+  void onAbortTurbo(reason, wasTurbo);   // 목록 작업 + 신데렐라 ON이면 새로고침으로 이어가기
   state.broadcastStatus();
 }
 
 export async function fetchTranslationsForUrl(url: string): Promise<TranslationRecord[] | null> {
   try {
     const fetchUrl = `http://127.0.0.1:8001/translations?url=${encodeURIComponent(url)}&limit=5000`;
-    const response = await fetch(fetchUrl);
+    const response = await serverFetch(fetchUrl);
     if (!response.ok) {
       console.warn(`[fetchTranslationsForUrl] Server responded with ${response.status}`);
       return null;
@@ -207,7 +212,7 @@ export async function fetchTranslationsForUrl(url: string): Promise<TranslationR
 export async function fetchExclusionsForUrl(url: string): Promise<string[] | null> {
   try {
     const fetchUrl = `http://127.0.0.1:8001/excluded_sentences?url=${encodeURIComponent(url)}`;
-    const response = await fetch(fetchUrl);
+    const response = await serverFetch(fetchUrl);
     if (!response.ok) {
       console.warn(`[fetchExclusionsForUrl] Server responded with ${response.status}`);
       return null;
@@ -312,7 +317,7 @@ export async function saveAllTranslations(itemsToSave: any[]): Promise<void> {
   }));
 
   try {
-    const response = await fetch('http://127.0.0.1:8001/translations/upsert', {
+    const response = await serverFetch('http://127.0.0.1:8001/translations/upsert', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(records),
@@ -433,7 +438,7 @@ export async function translateAllPTags(isRetranslation = false): Promise<void> 
         addEntryToSidebar({ pid: item.id, original: item.original, translated: item.translated });
       });
       updateSidebarWithTranslations(instantPunctuationItems);
-      sortSidebar(allParagraphs.map((p) => p.id));
+      // sortSidebar deferred until completion
       if (state.isPageApplied) {
         applyTranslationsToPage(instantPunctuationItems, false);
       }
@@ -443,9 +448,13 @@ export async function translateAllPTags(isRetranslation = false): Promise<void> 
 
     if (textsToTranslate.length === 0) {
       if (instantPunctuationItems.length > 0) {
+        sortSidebar(allParagraphs.map((p) => p.id));
         logToSidebar('모든 번역 작업이 완료되었습니다. (순수 문장부호 즉시 대입 완료)');
+        onNothingToTranslate(validParagraphs.length);
       } else {
+        sortSidebar(allParagraphs.map((p) => p.id));
         logToSidebar('번역할 새로운 내용이 없습니다.');
+        onNothingToTranslate(validParagraphs.length);
       }
       if (stopBtn) stopBtn.style.display = 'none';
       if (retryBtn) retryBtn.style.display = 'inline-block';
@@ -463,6 +472,7 @@ export async function translateAllPTags(isRetranslation = false): Promise<void> 
     );
 
     addPlaceholderRows(textsToTranslate);
+    sortSidebarDescending(allParagraphs.map((p) => p.id));
 
     // 묶음 번역 헬퍼
     async function translateChunk(items: Array<{ id: string; text: string }>, chunkSize: number): Promise<void> {
@@ -759,6 +769,7 @@ export async function translateAllPTags(isRetranslation = false): Promise<void> 
       }
     }
 
+    // sortSidebar deferred until completion
     sortSidebar(allParagraphs.map((p) => p.id));
     logToSidebar('모든 번역 작업이 완료되었습니다.');
 
@@ -882,6 +893,7 @@ export async function translateAllPTags(isRetranslation = false): Promise<void> 
         }, navDelay);
       } else {
         logToSidebar('다음 페이지 버튼을 찾을 수 없습니다. (소설 연속 번역 종료)');
+        reportNovelFinished('마지막 화');
         sendCompleteNotification(
           state.currentNovelTitle,
           episodeTitle,

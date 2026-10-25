@@ -1,3 +1,4 @@
+import { serverFetch } from './api_client';
 // row_actions.ts: 사이드바 개별 행 저장(saveSingleTranslation) 및 단일 문장 즉시 재번역(retranslateSingleRow) 모듈
 import { state } from './state';
 import { checkIsVerbatimOrParaphrased } from './filters';
@@ -72,7 +73,7 @@ export async function saveSingleTranslation(
   }
 
   try {
-    const response = await fetch('http://127.0.0.1:8001/translations/upsert', {
+    const response = await serverFetch('http://127.0.0.1:8001/translations/upsert', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify([record]),

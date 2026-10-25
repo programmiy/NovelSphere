@@ -190,6 +190,77 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       }
     })();
     return true;
+  } else if (request.action === 'upsertTranslations') {
+    (async () => {
+      try {
+        const response = await fetch('http://127.0.0.1:8001/translations/upsert', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(request.records),
+        });
+        if (!response.ok) {
+          const errData = await response.json().catch(() => ({ detail: `Server error: ${response.status}` }));
+          throw new Error(errData.detail || `Server returned status ${response.status}`);
+        }
+        const data = await response.json();
+        sendResponse({ success: true, data });
+      } catch (error: any) {
+        console.error('Error in background upsertTranslations:', error);
+        sendResponse({ success: false, error: error.message });
+      }
+    })();
+    return true;
+  } else if (request.action === 'serverFetch') {
+    (async () => {
+      try {
+        const rawUrl = request.url;
+        const targetUrl = rawUrl.startsWith('http')
+          ? rawUrl
+          : `http://127.0.0.1:8001${rawUrl.startsWith('/') ? '' : '/'}${rawUrl}`;
+        const fetchInit: RequestInit = {
+          method: (request.options && request.options.method) || 'GET',
+        };
+        const headers: Record<string, string> = Object.assign({}, (request.options && request.options.headers) || {});
+
+        if (request.options && request.options.body !== undefined && request.options.body !== null) {
+          if (typeof request.options.body === 'string') {
+            fetchInit.body = request.options.body;
+          } else {
+            fetchInit.body = JSON.stringify(request.options.body);
+            if (!headers['Content-Type'] && !headers['content-type']) {
+              headers['Content-Type'] = 'application/json';
+            }
+          }
+        }
+        fetchInit.headers = headers;
+
+        const response = await fetch(targetUrl, fetchInit);
+        const text = await response.text();
+        let data = null;
+        try {
+          data = JSON.parse(text);
+        } catch (_) {}
+
+        sendResponse({
+          ok: response.ok,
+          status: response.status,
+          statusText: response.statusText,
+          data,
+          text,
+        });
+      } catch (error: any) {
+        console.error('[serverFetch] Background fetch error:', error);
+        sendResponse({
+          ok: false,
+          status: 0,
+          statusText: error.message || 'Network error',
+          error: error.message || 'Network error',
+          data: null,
+          text: '',
+        });
+      }
+    })();
+    return true;
   }
   return false;
 });

@@ -1,3 +1,4 @@
+import { serverFetch } from '../core/api_client';
 // toc_quick_jump.ts: 목차 페이지 상태 배지 및 퀵 점프 패널 모듈
 import type { PlatformScraper, TocEpisodeItem } from '../scrapers/base.ts';
 import { getScraper } from '../scrapers/index.ts';
@@ -114,7 +115,7 @@ export async function initTocPageFeatures(scraper: PlatformScraper): Promise<voi
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 5000);
-    const resp = await fetch('http://127.0.0.1:8001/api/check_translated_urls', {
+    const resp = await serverFetch('http://127.0.0.1:8001/api/check_translated_urls', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ urls: Array.from(urlSet) }),
@@ -540,7 +541,7 @@ export async function loadRemoteTocEpisodes(scraper: PlatformScraper): Promise<b
     try {
       const serverCtrl = new AbortController();
       const sTimeout = setTimeout(() => serverCtrl.abort(), 5000);
-      const checkResp = await fetch('http://127.0.0.1:8001/api/check_translated_urls', {
+      const checkResp = await serverFetch('http://127.0.0.1:8001/api/check_translated_urls', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ urls: Array.from(urlSet) }),

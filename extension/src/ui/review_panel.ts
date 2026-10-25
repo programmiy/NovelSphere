@@ -1,3 +1,4 @@
+import { serverFetch } from '../core/api_client';
 // review_panel.ts: 알림 센터 연계 재번역 검수 패널 및 본문/사이드바 하이라이트 모듈
 import { state } from '../core/state';
 import { escapeHtml, logToSidebar, showSidebar } from './sidebar';
@@ -151,7 +152,7 @@ export function renderReviewTargetPanel(): void {
       try {
         dismissBtn.disabled = true;
         dismissBtn.textContent = '처리 중...';
-        await fetch(`http://127.0.0.1:8001/cleanup/notifications/${notifId}/dismiss`, {
+        await serverFetch(`http://127.0.0.1:8001/cleanup/notifications/${notifId}/dismiss`, {
           method: 'POST',
         });
         try {
@@ -191,7 +192,7 @@ export async function checkAndLoadReviewTargets(cleanUrl: string): Promise<void>
       apiUrl += `&batch_id=${encodeURIComponent(batchId)}`;
     }
 
-    const res = await fetch(apiUrl);
+    const res = await serverFetch(apiUrl);
     if (!res.ok) return;
     const data = await res.json();
 

@@ -39,6 +39,27 @@ export interface RemoteCommandResult {
   message?: string;
 }
 
+// ---- '다음에 번역할 소설' 목록 작업 ----
+
+/** 서버가 목록에서 시작시킨 탭에 붙는 표시 (탭 기준이라 사이트가 바뀌어도 유지됨) */
+export interface QueueSession {
+  queue_item_id: number | null;
+  skip_translated: boolean;
+}
+
+/** 콘텐츠 스크립트 → 서버로 전달되는 목록 이벤트 */
+export interface QueueEventData {
+  kind: 'novel_finished' | 'page_problem' | 'cinderella';
+  queue_item_id?: number | null;
+  reason?: string;
+}
+
+/** 서버가 확장에 내려주는 목록 설정 */
+export interface RemoteConfig {
+  running: boolean;
+  cinderella: boolean;
+}
+
 export interface RemoteTabReport {
   data: RemoteStatusPayload;
   at: number;

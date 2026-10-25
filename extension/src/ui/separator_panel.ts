@@ -1,3 +1,4 @@
+import { serverFetch } from '../core/api_client';
 // separator_panel.ts: 소설별 구분선 설정 패널 및 구분선 기반 자동 제외/복원 검수 패널 모듈
 import { state } from '../core/state';
 import { ParagraphItem, SeparatorExcludedItem } from '../types/novel';
@@ -260,7 +261,7 @@ export async function checkAndExcludeSeparatorTranslations(translationsList: any
   if (targetsToExclude.length === 0) return;
 
   try {
-    const response = await fetch('http://127.0.0.1:8001/translations/exclude', {
+    const response = await serverFetch('http://127.0.0.1:8001/translations/exclude', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ids: targetIds }),
@@ -316,7 +317,7 @@ export async function restoreExcludedItems(itemsToRestore: SeparatorExcludedItem
   const cleanUrl = getCleanUrl();
 
   try {
-    const response = await fetch('http://127.0.0.1:8001/translations/restore_excluded', {
+    const response = await serverFetch('http://127.0.0.1:8001/translations/restore_excluded', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -387,7 +388,7 @@ export async function restoreExcludedItems(itemsToRestore: SeparatorExcludedItem
 export async function openExcludedManager(): Promise<void> {
   const cleanUrl = getCleanUrl();
   try {
-    const resp = await fetch(
+    const resp = await serverFetch(
       `http://127.0.0.1:8001/translations/excluded_details?url=${encodeURIComponent(cleanUrl)}`
     );
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);

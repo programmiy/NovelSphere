@@ -1,3 +1,4 @@
+import { serverFetch } from './api_client';
 // dom_applier.ts: 웹소설 본문 DOM 번역문 주입, 원문 복원 및 문단 클릭 상호작용 모듈
 import { state } from './state';
 import { PID_REGEX } from './filters';
@@ -83,7 +84,7 @@ export async function setPageApplyStatus(applied: boolean, syncStorageAndServer 
     const currentUrl = window.location.href;
 
     try {
-      await fetch('http://127.0.0.1:8001/api/urls/apply', {
+      await serverFetch('http://127.0.0.1:8001/api/urls/apply', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url: cleanUrl, apply: state.isPageApplied }),

@@ -1,5 +1,13 @@
 // remote_ws.ts: 백그라운드 원격 제어 모듈 (WebSocket + HTTP 폴링 장애대응)
-import { RemoteStatusPayload, RemoteCommand, RemoteCommandResult, RemoteTabReport } from '../types/remote';
+import { RemoteStatusPayload, RemoteCommand, RemoteCommandResult, RemoteTabReport, QueueEventData } from '../types/remote';
+import {
+  getQueueSession,
+  setQueueSession,
+  remoteQueueGoto,
+  enqueueQueueEvent,
+  flushQueueOutbox,
+  saveRemoteConfig,
+} from './queue_tabs';
 
 const REMOTE_BASE_HTTP = 'http://127.0.0.1:8001';
 const REMOTE_BASE_WS = 'ws://127.0.0.1:8001';
@@ -80,6 +88,10 @@ async function remoteSetAutoTranslateFlag(tabId: number): Promise<void> {
 
 async function remoteExecute(cmd: RemoteCommand): Promise<RemoteCommandResult> {
   const tabId = remoteTargetTabId ?? (remotePickTarget() || {}).tabId;
+  // 목록 작업의 이동 명령은 탭이 없어도(닫혔어도) 새 탭으로 열어 이어간다
+  if (cmd.type === 'goto' && cmd.params && cmd.params.queue_session) {
+    return remoteQueueGoto(cmd, tabId ?? null);
+  }
   if (tabId == null) return { ok: false, message: '조종할 번역 탭을 찾지 못했습니다.' };
 
   if (cmd.type === 'reload') {
@@ -91,6 +103,7 @@ async function remoteExecute(cmd: RemoteCommand): Promise<RemoteCommandResult> {
     const url = cmd.params && cmd.params.url;
     if (!url || !/^https?:\/\//.test(url)) return { ok: false, message: '올바르지 않은 URL' };
     await remoteSetAutoTranslateFlag(tabId);
+    await setQueueSession(tabId, null); // 수동 이동은 목록 작업에서 벗어난다
     await chrome.tabs.update(tabId, { url });
     return { ok: true, message: `이동: ${url}` };
   }
@@ -104,6 +117,28 @@ async function remoteExecute(cmd: RemoteCommand): Promise<RemoteCommandResult> {
   } catch (e: any) {
     return { ok: false, message: `탭이 응답하지 않습니다 (${e.message}). 새로고침을 시도해 보세요.` };
   }
+}
+
+/** 목록 이벤트를 서버로 전송. 성공하면 true (실패하면 보관함에 남아 나중에 다시 보낸다) */
+async function sendQueueEvent(data: QueueEventData): Promise<boolean> {
+  if (remoteWs && remoteWs.readyState === WebSocket.OPEN) {
+    remoteWs.send(JSON.stringify({ type: 'queue_event', data }));
+    return true;
+  }
+  try {
+    const res = await remoteFetch('/queue/event', { method: 'POST', body: JSON.stringify(data) });
+    return res.ok;
+  } catch (e) {
+    return false;
+  }
+}
+
+function handleQueueEventFromTab(data: QueueEventData, tabId: number | null): void {
+  // 소설 완료/페이지 문제를 보낸 탭의 목록 표시는 해제한다 (다음 소설 명령이 오면 새로 붙는다)
+  if (tabId != null && (data.kind === 'novel_finished' || data.kind === 'page_problem')) {
+    void setQueueSession(tabId, null);
+  }
+  void enqueueQueueEvent(data).then(() => flushQueueOutbox(sendQueueEvent));
 }
 
 async function remoteAck(id: string | undefined, result: RemoteCommandResult): Promise<void> {
@@ -141,6 +176,8 @@ function remoteStartPolling(): void {
       const res = await remoteFetch('/poll');
       if (res.ok) {
         const json = await res.json();
+        saveRemoteConfig(json.config);
+        void flushQueueOutbox(sendQueueEvent);
         await remoteHandleCommands(json.commands);
       }
     } catch (e) {
@@ -185,12 +222,15 @@ export async function remoteConnect(): Promise<void> {
         }
       }, REMOTE_PING_INTERVAL_MS);
       console.log('[LANOVEL Remote] WebSocket connected to server.');
+      void flushQueueOutbox(sendQueueEvent); // 서버가 꺼져 있는 동안 쌓인 목록 이벤트 전송
     };
 
     ws.onmessage = (ev) => {
       try {
         const msg = JSON.parse(ev.data);
-        if (msg.type === 'commands') {
+        if (msg.type === 'config') {
+          saveRemoteConfig(msg.config);
+        } else if (msg.type === 'commands') {
           remoteHandleCommands(msg.commands);
         }
       } catch (e) {
@@ -217,7 +257,18 @@ export async function remoteConnect(): Promise<void> {
 }
 
 export function initRemoteControl(): void {
-  chrome.runtime.onMessage.addListener((request, sender) => {
+  chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    // 콘텐츠 스크립트: 이 탭이 목록 작업 중인가?
+    if (request && request.action === 'remoteQueueSession') {
+      const tid = sender.tab && sender.tab.id != null ? sender.tab.id : null;
+      getQueueSession(tid).then((session) => sendResponse({ session }));
+      return true; // 비동기 응답
+    }
+    // 콘텐츠 스크립트: 목록 이벤트(소설 완료/페이지 문제/신데렐라) 보고
+    if (request && request.action === 'remoteQueueEvent' && request.data) {
+      handleQueueEventFromTab(request.data as QueueEventData, sender.tab && sender.tab.id != null ? sender.tab.id : null);
+      return false;
+    }
     if (request && request.action === 'remoteStatus' && sender.tab && sender.tab.id != null) {
       const now = Date.now();
       const prev = remoteReports.get(sender.tab.id);
@@ -234,6 +285,7 @@ export function initRemoteControl(): void {
   });
 
   chrome.tabs.onRemoved.addListener((tabId) => {
+    void setQueueSession(tabId, null);
     if (remoteReports.delete(tabId)) {
       remoteSendStatus();
     }

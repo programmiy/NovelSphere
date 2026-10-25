@@ -1,3 +1,4 @@
+import { serverFetch } from './api_client';
 // separators.ts: 소설별 상/하단 구분선 관리 및 영역 분석 모듈
 import type { ParagraphItem, SeparatorConfig, SeparatorAnalysis } from '../types/novel';
 
@@ -161,7 +162,7 @@ export function analyzeSeparatorSections(validParagraphs: ParagraphItem[], separ
 export async function loadNovelSeparators(novelTitle: string): Promise<SeparatorConfig> {
   const title = novelTitle || '기본 소설';
   try {
-    const resp = await fetch(`http://127.0.0.1:8001/api/separators?novel_title=${encodeURIComponent(title)}`);
+    const resp = await serverFetch(`http://127.0.0.1:8001/api/separators?novel_title=${encodeURIComponent(title)}`);
     if (resp.ok) {
       const data = await resp.json();
       const config: SeparatorConfig = {
@@ -223,7 +224,7 @@ export async function saveNovelSeparators(
   await chrome.storage.local.set({ [cacheKey]: config });
 
   try {
-    const resp = await fetch('http://127.0.0.1:8001/api/separators', {
+    const resp = await serverFetch('http://127.0.0.1:8001/api/separators', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -240,7 +241,7 @@ export async function saveNovelSeparators(
 
 export async function resetNovelSeparators(novelTitle: string): Promise<SeparatorConfig> {
   try {
-    await fetch(`http://127.0.0.1:8001/api/separators?novel_title=${encodeURIComponent(novelTitle)}`, {
+    await serverFetch(`http://127.0.0.1:8001/api/separators?novel_title=${encodeURIComponent(novelTitle)}`, {
       method: 'DELETE',
     });
   } catch (e) {

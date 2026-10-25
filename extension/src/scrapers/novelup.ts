@@ -51,12 +51,12 @@ export class NovelUpScraper implements PlatformScraper {
   }
 
   isTocPage(_url: string, path: string): boolean {
-    if (document.getElementById('episode_content')) {
+    if (document.getElementById('episode_content') || /\/story\/\d+\/\d+/.test(path)) {
       return false;
     }
     return (
       (/\/story\/\d+\/?$/.test(path) && !/\/\d+\/\d+/.test(path)) ||
-      !!document.querySelector('#section_episode, .episodeListItem, a.episodeTitle, .storyList')
+      !!document.querySelector('.storyList, .episodeListItem, a.episodeTitle')
     );
   }
 
@@ -130,7 +130,7 @@ export class NovelUpScraper implements PlatformScraper {
 
     const rawHtml = epContent.innerHTML;
     let lines = rawHtml.split(/\r?\n/);
-    if (lines.length <= 1 && epContent.querySelectorAll('p').length > 1) {
+    if (epContent.querySelectorAll('p').length > 1) {
       epContent.querySelectorAll('p').forEach((p, idx) => {
         if (!p.id) p.id = `L${idx + 1}`;
       });

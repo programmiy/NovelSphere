@@ -1,3 +1,4 @@
+import { serverFetch } from './api_client';
 import type { BatchStats } from '../types/novel.ts';
 import { detectCutoffInfo, getCurrentQuotaWindow } from './turbo.ts';
 
@@ -221,7 +222,7 @@ export async function updateAndGetBatchCount(
 
   try {
     const syncUrl = `http://127.0.0.1:8001/api/translation_session_count?url=${encodeURIComponent(currentCleanUrl)}&work_key=${encodeURIComponent(workKey)}&novel_title=${encodeURIComponent(novelTitle || '')}`;
-    const serverResp = await fetch(syncUrl);
+    const serverResp = await serverFetch(syncUrl);
     if (serverResp.ok) {
       const serverData = await serverResp.json();
       if (typeof serverData.total_today_count === 'number') {
@@ -270,7 +271,7 @@ export async function sendProgressNotification(
     if (episodeCount !== null && episodeCount !== undefined) {
       payload.episode_count = episodeCount;
     }
-    await fetch('http://127.0.0.1:8001/api/notifications/progress', {
+    await serverFetch('http://127.0.0.1:8001/api/notifications/progress', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -297,7 +298,7 @@ export async function sendCompleteNotification(
     if (episodeCount !== null && episodeCount !== undefined) {
       payload.episode_count = episodeCount;
     }
-    await fetch('http://127.0.0.1:8001/api/notifications/complete', {
+    await serverFetch('http://127.0.0.1:8001/api/notifications/complete', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
