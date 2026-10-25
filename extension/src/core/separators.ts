@@ -1,4 +1,4 @@
-import { serverFetch } from './api_client';
+import { serverFetch } from './api_client.ts';
 // separators.ts: 소설별 상/하단 구분선 관리 및 영역 분석 모듈
 import type { ParagraphItem, SeparatorConfig, SeparatorAnalysis } from '../types/novel';
 

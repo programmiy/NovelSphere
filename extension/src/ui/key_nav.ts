@@ -6,6 +6,7 @@ import {
   handleQuickJumpNKey,
   moveQuickJumpFocus,
   toggleQuickJumpDrawer,
+  toggleQuickJumpFromSidebar,
   quickJumpFocusedIndex,
   untranslatedEpisodesCache,
 } from './toc_quick_jump';
@@ -18,7 +19,11 @@ export function setupLanovelKeyboardNavigation(
     const target = e.target as HTMLElement | null;
     if (target) {
       const tagName = target.tagName ? target.tagName.toUpperCase() : '';
-      if (tagName === 'INPUT' || tagName === 'TEXTAREA' || tagName === 'SELECT' || target.isContentEditable) {
+      if (tagName === 'INPUT' || tagName === 'SELECT' || target.isContentEditable) {
+        return;
+      }
+      // TEXTAREA의 경우 Esc 키는 단축키(서랍 닫기 등)를 위해 허용할 수 있으나 기본적으로 타이핑 필드는 패스
+      if (tagName === 'TEXTAREA' && e.key !== 'Escape') {
         return;
       }
     }
@@ -77,41 +82,46 @@ export function setupLanovelKeyboardNavigation(
 
     // [미번역 서랍 및 목차 단축키] N / 화살표 / Enter / ESC
     const quickJumpDrawer = document.getElementById('lanovel-quick-jump-drawer');
-    const isDrawerOpen = quickJumpDrawer && quickJumpDrawer.classList.contains('open');
+    const isDrawerOpen = !!(quickJumpDrawer && quickJumpDrawer.classList.contains('open'));
 
-    if (scraper.isTocPage(window.location.href, window.location.pathname) || isDrawerOpen) {
-      if (lowerKey === 'n') {
-        e.preventDefault();
+    if (lowerKey === 'n') {
+      e.preventDefault();
+      // 목차 페이지이거나 이미 서랍이 열려 있는 상태: 순차 N 탐색
+      if (scraper.isTocPage(window.location.href, window.location.pathname) || isDrawerOpen) {
         handleQuickJumpNKey();
-        return;
+      } else {
+        // 본문 회차 페이지에서 서랍이 닫혀 있거나 미생성된 상태: 즉시 원격 목차 서랍 로드 및 열기
+        toggleQuickJumpFromSidebar();
       }
-      if (isDrawerOpen) {
-        if (key === 'ArrowDown') {
+      return;
+    }
+
+    if (isDrawerOpen) {
+      if (key === 'ArrowDown') {
+        e.preventDefault();
+        moveQuickJumpFocus(1);
+      } else if (key === 'ArrowUp') {
+        e.preventDefault();
+        moveQuickJumpFocus(-1);
+      } else if (key === 'Enter') {
+        if (quickJumpFocusedIndex >= 0 && quickJumpFocusedIndex < untranslatedEpisodesCache.length) {
           e.preventDefault();
-          moveQuickJumpFocus(1);
-        } else if (key === 'ArrowUp') {
-          e.preventDefault();
-          moveQuickJumpFocus(-1);
-        } else if (key === 'Enter') {
-          if (quickJumpFocusedIndex >= 0 && quickJumpFocusedIndex < untranslatedEpisodesCache.length) {
-            e.preventDefault();
-            const targetEp = untranslatedEpisodesCache[quickJumpFocusedIndex];
-            if (targetEp && targetEp.url) {
-              if (targetEp.isExcluded) {
-                showLanovelHud(`'${targetEp.title}'은(는) 제외된 회차입니다.`, '⚠️', 2000);
-                return;
-              }
-              sessionStorage.setItem('lanovel_auto_translate_next', '1');
-              showLanovelHud(`'${targetEp.title}' 진입 및 자동 번역...`, '⚡');
-              setTimeout(() => {
-                window.location.href = targetEp.url;
-              }, 150);
+          const targetEp = untranslatedEpisodesCache[quickJumpFocusedIndex];
+          if (targetEp && targetEp.url) {
+            if (targetEp.isExcluded) {
+              showLanovelHud(`'${targetEp.title}'은(는) 제외된 회차입니다.`, '⚠️', 2000);
+              return;
             }
+            sessionStorage.setItem('lanovel_auto_translate_next', '1');
+            showLanovelHud(`'${targetEp.title}' 진입 및 자동 번역...`, '⚡');
+            setTimeout(() => {
+              window.location.href = targetEp.url;
+            }, 150);
           }
-        } else if (key === 'Escape') {
-          e.preventDefault();
-          toggleQuickJumpDrawer(false);
         }
+      } else if (key === 'Escape') {
+        e.preventDefault();
+        toggleQuickJumpDrawer(false);
       }
     }
   });

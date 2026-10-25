@@ -768,7 +768,15 @@
           return host.includes("syosetu.com");
         }
         detectNovelTitle() {
-          const novelLink = document.querySelector('.c-announce a[href*="/n"]') || document.querySelector(".p-novel__series-link") || document.querySelector(".novel_title") || document.querySelector("a.margin_r20");
+          if (typeof document === "undefined") return null;
+          const breadcrumbLink = document.querySelector('.c-breadcrumbs a[href*="/n"]');
+          if (breadcrumbLink) {
+            const href = breadcrumbLink.getAttribute("href") || "";
+            if (/\/n\d+[a-z]+(\/|$|\?)/i.test(href) && breadcrumbLink.textContent?.trim()) {
+              return breadcrumbLink.textContent.trim();
+            }
+          }
+          const novelLink = document.querySelector(".p-novel__series-link") || document.querySelector(".novel_title") || document.querySelector("a.margin_r20");
           if (novelLink && novelLink.textContent && novelLink.textContent.trim()) {
             return novelLink.textContent.trim();
           }
@@ -781,6 +789,7 @@
           return null;
         }
         extractEpisodeTitle() {
+          if (typeof document === "undefined") return "";
           const epEl = document.querySelector('.p-novel__title, .novel_subtitle, [class*="novel__title"]');
           if (epEl && !epEl.closest("a") && epEl.textContent && epEl.textContent.trim()) {
             return epEl.textContent.trim();
@@ -800,12 +809,13 @@
           return match ? `syosetu_${match[1].toLowerCase()}` : null;
         }
         isTocPage(_url, path) {
-          if (document.querySelector(".p-novel__body, #novel_honbun, .p-novel__text")) {
+          if (typeof document !== "undefined" && document.querySelector(".p-novel__body, #novel_honbun, .p-novel__text")) {
             return false;
           }
-          return /\/n[a-z0-9]+\/?$/i.test(path) && !/\/\d+\/?$/.test(path) || !!document.querySelector(".p-eplist, .index_box");
+          return /\/n[a-z0-9]+\/?$/i.test(path) && !/\/\d+\/?$/.test(path) || typeof document !== "undefined" && !!document.querySelector(".p-eplist, .index_box");
         }
         findNextEpisodeLink() {
+          if (typeof document === "undefined") return null;
           const direct = document.querySelector(".c-pager__item--next") || document.querySelector("a.novel_bn_next") || document.querySelector(".novel_bn a.c-pager__item--next") || document.querySelector("a.c-pager__item.c-pager__item--next") || document.querySelector("a.novelview_pager-next");
           if (direct && direct.href) return direct;
           const links = Array.from(document.querySelectorAll(".novel_bn a, .c-pager a, a.c-pager__item"));
@@ -813,6 +823,7 @@
           return found || null;
         }
         findPrevEpisodeLink() {
+          if (typeof document === "undefined") return null;
           const direct = document.querySelector(".c-pager__item--before") || document.querySelector("a.novel_bn_prev");
           if (direct && direct.href) return direct;
           const links = Array.from(document.querySelectorAll(".novel_bn a, .c-pager a, a.c-pager__item"));
@@ -820,12 +831,36 @@
           return found || null;
         }
         findTocLink() {
-          const direct = document.querySelector('.c-announce a[href*="/n"]') || document.querySelector(".p-novel__series-link a") || document.querySelector("a.p-novel__series-link") || document.querySelector(".novel_title a");
-          return direct && direct.href ? direct : null;
+          if (typeof document === "undefined") return null;
+          const selectors = [
+            '.c-breadcrumbs a[href*="/n"]',
+            ".p-novel__series-link a",
+            "a.p-novel__series-link",
+            ".novel_title a",
+            "a.novel_title",
+            'a.margin_r20[href*="/n"]'
+          ];
+          for (const sel of selectors) {
+            const el = document.querySelector(sel);
+            if (el && el.href) {
+              const cleanHref = el.getAttribute("href") || el.href;
+              if (/\/n\d+[a-z]+(\/|$|\?)/i.test(cleanHref)) {
+                return el;
+              }
+            }
+          }
+          const allLinks = Array.from(document.querySelectorAll("a[href]"));
+          const matched = allLinks.find((a) => {
+            const raw = a.getAttribute("href") || a.href || "";
+            return /\/n\d+[a-z]+\/?$/i.test(raw.split("?")[0].split("#")[0]);
+          });
+          return matched || null;
         }
-        getTocEpisodes(rootDoc = document) {
+        getTocEpisodes(rootDoc) {
+          const doc = rootDoc || (typeof document !== "undefined" ? document : null);
+          if (!doc) return [];
           const elements = Array.from(
-            rootDoc.querySelectorAll(
+            doc.querySelectorAll(
               "a.p-eplist__subtitle, .p-eplist a.p-eplist__subtitle, .p-eplist__sublist a, .p-eplist a, .index_box .subtitle a, .subtitle a"
             )
           ).filter((el) => {
@@ -2751,7 +2786,7 @@
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 5e3);
-      const resp = await serverFetch("http://127.0.0.1:8001/api/check_translated_urls", {
+      const resp = await serverFetch("/api/check_translated_urls", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ urls: Array.from(urlSet) }),
@@ -3025,12 +3060,15 @@
       targetEp.element.scrollIntoView({ block: "center", behavior: "smooth" });
     }
   }
-  function getNovelTocUrl(scraper, currentUrl = window.location.href) {
+  function getNovelTocUrl(scraper, currentUrl = typeof window !== "undefined" ? window.location.href : "") {
+    if (!currentUrl) return null;
     if (scraper.findTocLink) {
       const link = scraper.findTocLink();
       if (link && link.href) {
         const clean = link.href.split("#")[0].split("?")[0];
-        if (clean) return clean;
+        if (!currentUrl.includes("syosetu.com") || /\/n\d+[a-z]+(\/|$)/i.test(clean)) {
+          if (clean) return clean;
+        }
       }
     }
     try {
@@ -3068,22 +3106,43 @@
       showLanovelHud("\uC18C\uC124 \uBAA9\uCC28 URL\uC744 \uD655\uC778\uD560 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4.", "\u26A0\uFE0F", 2500);
       return false;
     }
-    showLanovelHud("\uC18C\uC124 \uBAA9\uCC28 \uBC0F \uBC88\uC5ED \uC0C1\uD0DC\uB97C \uBD88\uB7EC\uC624\uB294 \uC911...", "\u23F3", 3e3);
+    showLanovelHud("\uC18C\uC124 \uC804\uCCB4 \uBAA9\uCC28 \uBC0F \uBC88\uC5ED \uC0C1\uD0DC\uB97C \uBD88\uB7EC\uC624\uB294 \uC911...", "\u23F3", 8e3);
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 6e3);
-      const resp = await fetch(tocUrl, { signal: controller.signal });
-      clearTimeout(timeoutId);
-      if (!resp.ok) {
-        showLanovelHud(`\uBAA9\uCC28 \uC694\uCCAD \uC2E4\uD328 (HTTP ${resp.status})`, "\u26A0\uFE0F", 2500);
-        return false;
-      }
-      const html = await resp.text();
-      const parser = new DOMParser();
-      const doc = parser.parseFromString(html, "text/html");
       let episodeItems = [];
-      if (scraper.getTocEpisodes) {
-        episodeItems = scraper.getTocEpisodes(doc);
+      try {
+        const serverResp = await serverFetch("/api/import-toc", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ toc_url: tocUrl })
+        });
+        if (serverResp.ok) {
+          const importedList = await serverResp.json();
+          if (Array.isArray(importedList) && importedList.length > 0) {
+            episodeItems = importedList.map((item) => ({
+              url: item.url,
+              title: item.title
+            }));
+            console.log(`[LANOVEL] \uBC31\uC5D4\uB4DC /api/import-toc \uC5F0\uB3D9 \uC131\uACF5: \uCD1D ${episodeItems.length}\uAC1C \uCC55\uD130 \uD68D\uB4DD`);
+          }
+        }
+      } catch (apiErr) {
+        console.warn("[LANOVEL] \uBC31\uC5D4\uB4DC /api/import-toc \uD638\uCD9C \uC2E4\uD328, \uD504\uB860\uD2B8\uC5D4\uB4DC \uC9C1\uC811 fetch fallback \uC2E4\uD589:", apiErr);
+      }
+      if (!episodeItems.length) {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 6e3);
+        const resp = await fetch(tocUrl, { signal: controller.signal });
+        clearTimeout(timeoutId);
+        if (!resp.ok) {
+          showLanovelHud(`\uBAA9\uCC28 \uC694\uCCAD \uC2E4\uD328 (HTTP ${resp.status})`, "\u26A0\uFE0F", 2500);
+          return false;
+        }
+        const html = await resp.text();
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, "text/html");
+        if (scraper.getTocEpisodes) {
+          episodeItems = scraper.getTocEpisodes(doc);
+        }
       }
       if (!episodeItems.length) {
         showLanovelHud("\uBAA9\uCC28\uC5D0\uC11C \uD68C\uCC28 \uBAA9\uB85D\uC744 \uCC3E\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4.", "\u26A0\uFE0F", 2500);
@@ -3108,7 +3167,7 @@
       try {
         const serverCtrl = new AbortController();
         const sTimeout = setTimeout(() => serverCtrl.abort(), 5e3);
-        const checkResp = await serverFetch("http://127.0.0.1:8001/api/check_translated_urls", {
+        const checkResp = await serverFetch("/api/check_translated_urls", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ urls: Array.from(urlSet) }),
@@ -3153,7 +3212,7 @@
           });
         }
       });
-      console.log(`[LANOVEL] \uC6D0\uACA9 \uBAA9\uCC28 \uB85C\uB4DC \uC644\uB8CC: \uCD1D ${episodeDataList.length}\uAC1C \uD68C\uCC28 \uC911 ${untranslatedEpisodesCache.length}\uAC1C \uBBF8\uBC88\uC5ED \uBC1C\uACAC`);
+      console.log(`[LANOVEL] \uC6D0\uACA9 \uC804\uCCB4 \uBAA9\uCC28 \uB85C\uB4DC \uC644\uB8CC: \uCD1D ${episodeDataList.length}\uAC1C \uD68C\uCC28 \uC911 ${untranslatedEpisodesCache.length}\uAC1C \uBBF8\uBC88\uC5ED \uBC1C\uACAC`);
       renderQuickJumpPanel(untranslatedEpisodesCache);
       if (untranslatedEpisodesCache.length > 0) {
         showLanovelHud(`\uBBF8\uBC88\uC5ED \uD68C\uCC28 ${untranslatedEpisodesCache.length}\uD654 \uB85C\uB4DC \uC644\uB8CC`, "\u26A1", 1800);
@@ -3177,6 +3236,13 @@
     }
     if (drawer && container) {
       toggleQuickJumpDrawer(true);
+      if (quickJumpFocusedIndex < 0 && untranslatedEpisodesCache.length > 0) {
+        const firstActive = untranslatedEpisodesCache.findIndex((ep) => !ep.isExcluded);
+        if (firstActive !== -1) {
+          quickJumpFocusedIndex = firstActive;
+          updateQuickJumpFocusUI();
+        }
+      }
       showLanovelHud("\uBBF8\uBC88\uC5ED \uD68C\uCC28 \uC11C\uB78D\uC744 \uC5F4\uC5C8\uC2B5\uB2C8\uB2E4.", "\u26A1", 1500);
       return;
     }
@@ -3187,12 +3253,26 @@
       const newDrawer = document.getElementById("lanovel-quick-jump-drawer");
       if (newDrawer) {
         toggleQuickJumpDrawer(true);
+        if (quickJumpFocusedIndex < 0 && untranslatedEpisodesCache.length > 0) {
+          const firstActive = untranslatedEpisodesCache.findIndex((ep) => !ep.isExcluded);
+          if (firstActive !== -1) {
+            quickJumpFocusedIndex = firstActive;
+            updateQuickJumpFocusUI();
+          }
+        }
         showLanovelHud("\uBBF8\uBC88\uC5ED \uD68C\uCC28 \uC11C\uB78D\uC744 \uC5F4\uC5C8\uC2B5\uB2C8\uB2E4.", "\u26A1", 1500);
       }
     } else {
       const ok = await loadRemoteTocEpisodes(scraper);
       if (ok) {
         toggleQuickJumpDrawer(true);
+        if (quickJumpFocusedIndex < 0 && untranslatedEpisodesCache.length > 0) {
+          const firstActive = untranslatedEpisodesCache.findIndex((ep) => !ep.isExcluded);
+          if (firstActive !== -1) {
+            quickJumpFocusedIndex = firstActive;
+            updateQuickJumpFocusUI();
+          }
+        }
         showLanovelHud("\uBBF8\uBC88\uC5ED \uD68C\uCC28 \uC11C\uB78D\uC744 \uC5F4\uC5C8\uC2B5\uB2C8\uB2E4.", "\u26A1", 1500);
       }
     }
@@ -4800,7 +4880,10 @@
       const target = e.target;
       if (target) {
         const tagName = target.tagName ? target.tagName.toUpperCase() : "";
-        if (tagName === "INPUT" || tagName === "TEXTAREA" || tagName === "SELECT" || target.isContentEditable) {
+        if (tagName === "INPUT" || tagName === "SELECT" || target.isContentEditable) {
+          return;
+        }
+        if (tagName === "TEXTAREA" && e.key !== "Escape") {
           return;
         }
       }
@@ -4850,40 +4933,42 @@
         return;
       }
       const quickJumpDrawer = document.getElementById("lanovel-quick-jump-drawer");
-      const isDrawerOpen = quickJumpDrawer && quickJumpDrawer.classList.contains("open");
-      if (scraper.isTocPage(window.location.href, window.location.pathname) || isDrawerOpen) {
-        if (lowerKey === "n") {
-          e.preventDefault();
+      const isDrawerOpen = !!(quickJumpDrawer && quickJumpDrawer.classList.contains("open"));
+      if (lowerKey === "n") {
+        e.preventDefault();
+        if (scraper.isTocPage(window.location.href, window.location.pathname) || isDrawerOpen) {
           handleQuickJumpNKey();
-          return;
+        } else {
+          toggleQuickJumpFromSidebar();
         }
-        if (isDrawerOpen) {
-          if (key === "ArrowDown") {
+        return;
+      }
+      if (isDrawerOpen) {
+        if (key === "ArrowDown") {
+          e.preventDefault();
+          moveQuickJumpFocus(1);
+        } else if (key === "ArrowUp") {
+          e.preventDefault();
+          moveQuickJumpFocus(-1);
+        } else if (key === "Enter") {
+          if (quickJumpFocusedIndex >= 0 && quickJumpFocusedIndex < untranslatedEpisodesCache.length) {
             e.preventDefault();
-            moveQuickJumpFocus(1);
-          } else if (key === "ArrowUp") {
-            e.preventDefault();
-            moveQuickJumpFocus(-1);
-          } else if (key === "Enter") {
-            if (quickJumpFocusedIndex >= 0 && quickJumpFocusedIndex < untranslatedEpisodesCache.length) {
-              e.preventDefault();
-              const targetEp = untranslatedEpisodesCache[quickJumpFocusedIndex];
-              if (targetEp && targetEp.url) {
-                if (targetEp.isExcluded) {
-                  showLanovelHud(`'${targetEp.title}'\uC740(\uB294) \uC81C\uC678\uB41C \uD68C\uCC28\uC785\uB2C8\uB2E4.`, "\u26A0\uFE0F", 2e3);
-                  return;
-                }
-                sessionStorage.setItem("lanovel_auto_translate_next", "1");
-                showLanovelHud(`'${targetEp.title}' \uC9C4\uC785 \uBC0F \uC790\uB3D9 \uBC88\uC5ED...`, "\u26A1");
-                setTimeout(() => {
-                  window.location.href = targetEp.url;
-                }, 150);
+            const targetEp = untranslatedEpisodesCache[quickJumpFocusedIndex];
+            if (targetEp && targetEp.url) {
+              if (targetEp.isExcluded) {
+                showLanovelHud(`'${targetEp.title}'\uC740(\uB294) \uC81C\uC678\uB41C \uD68C\uCC28\uC785\uB2C8\uB2E4.`, "\u26A0\uFE0F", 2e3);
+                return;
               }
+              sessionStorage.setItem("lanovel_auto_translate_next", "1");
+              showLanovelHud(`'${targetEp.title}' \uC9C4\uC785 \uBC0F \uC790\uB3D9 \uBC88\uC5ED...`, "\u26A1");
+              setTimeout(() => {
+                window.location.href = targetEp.url;
+              }, 150);
             }
-          } else if (key === "Escape") {
-            e.preventDefault();
-            toggleQuickJumpDrawer(false);
           }
+        } else if (key === "Escape") {
+          e.preventDefault();
+          toggleQuickJumpDrawer(false);
         }
       }
     });

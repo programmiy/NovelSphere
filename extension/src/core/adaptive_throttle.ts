@@ -1,4 +1,4 @@
-import { serverFetch } from './api_client';
+import { serverFetch } from './api_client.ts';
 import type { BatchStats } from '../types/novel.ts';
 import { detectCutoffInfo, getCurrentQuotaWindow } from './turbo.ts';
 

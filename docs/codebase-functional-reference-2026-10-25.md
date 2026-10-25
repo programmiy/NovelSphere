@@ -1,7 +1,7 @@
 # LANOVEL 종합 코드베이스 기능 및 함수 레퍼런스 (Architectural & Functional Reference)
 
 > **문서 목적**: AI 어시스턴트가 사용자 요구사항 및 구어체 지시를 입력받았을 때, 혼선이나 회귀(Regression) 없이 전체 아키텍처와 1:1 타깃 코드를 0초 만에 직관적으로 파악할 수 있도록 압축 정리한 단일 진실 공급원(SSOT) 기술 레퍼런스입니다.
-> **최신 동기화 일자**: 2026-10-25 (모바일 원격 제어 기반 소설 연속 번역 큐 `novel_queue.py` 및 신데렐라 모드·자동 자율 복구 파이프라인 구축; 확장 프로그램 큐 세션 `queue_session.ts` 및 탭 수명주기 `queue_tabs.ts`; 모바일 Luminary 리더 v1.6.0 판올림 및 릴리즈 APK 패키징; 특별 적재 및 문장 부호 보정본 승인 시 임의 'Unknown' 폴더 생성 원천 차단 및 동일 URL 소설 폴더 자동 상속, 미분류(None) 보관함 규격 완전 준수; 관리자 페이지 검색 시 소설 폴더 자동 전개 완전 차단 및 사이버네틱 네온 표시등 `novel-match-lamp` 적용; 검색 시 회차 지연 로딩(Lazy Loading) 유지로 수만 개 DOM 폭발 생성 및 브라우저 프리징 렉 완전 제거; 타이핑 실시간 디바운스 폐지 및 Enter 키/전용 [검색] 버튼 명시적 실행 전환; 첫 소설 빠른 점프 네비게이션; 크롬 확장 프로그램 검수 3대 서브시스템 레거시 100% 복원 및 단일 책임 모듈 분리; 모바일 Luminary UI Impeller 커스텀 프래그먼트 셰이더 `shaders/hyper_ambient_mesh.frag` 도입; PC 서재 증기 차분기관 & 3D 닉시관 UI; 최근 번역 회차 연동 적응형 RPM 방어 시스템; 사전 연동 및 34만 누적 번역 코퍼스 학습/교정 엔진)
+> **최신 동기화 일자**: 2026-10-25-2 (소설가가 되자 100화 단위 페이징 원격 목차 수집 연동 `/api/import-toc` 및 본문 회차 101화 이상 미번역 서랍 누락 완벽 해결; `SyosetuScraper`의 `.c-announce` 공지 배너 오매칭 원천 차단 및 N코드 정규식 목차 링크 검증; 본문 회차 페이지 단축키 `N` 즉시 서랍 열기 및 순차 포커스 이동 지원; 모바일 원격 제어 기반 소설 연속 번역 큐 `novel_queue.py` 및 신데렐라 모드·자동 자율 복구 파이프라인 구축; 확장 프로그램 큐 세션 `queue_session.ts` 및 탭 수명주기 `queue_tabs.ts`; 모바일 Luminary 리더 v1.6.0 판올림 및 릴리즈 APK 패키징; 특별 적재 및 문장 부호 보정본 승인 시 임의 'Unknown' 폴더 생성 원천 차단 및 동일 URL 소설 폴더 자동 상속, 미분류(None) 보관함 규격 완전 준수; 관리자 페이지 검색 시 소설 폴더 자동 전개 완전 차단 및 사이버네틱 네온 표시등 `novel-match-lamp` 적용; 검색 시 회차 지연 로딩(Lazy Loading) 유지로 수만 개 DOM 폭발 생성 및 브라우저 프리징 렉 완전 제거; 타이핑 실시간 디바운스 폐지 및 Enter 키/전용 [검색] 버튼 명시적 실행 전환; 첫 소설 빠른 점프 네비게이션; 크롬 확장 프로그램 검수 3대 서브시스템 레거시 100% 복원 및 단일 책임 모듈 분리; 모바일 Luminary UI Impeller 커스텀 프래그먼트 셰이더 `shaders/hyper_ambient_mesh.frag` 도입; PC 서재 증기 차분기관 & 3D 닉시관 UI; 최근 번역 회차 연동 적응형 RPM 방어 시스템; 사전 연동 및 34만 누적 번역 코퍼스 학습/교정 엔진)
 
 ---
 
@@ -23,14 +23,14 @@
 | **사전/코퍼스** | `server/routers/dictionary.py` | **100% No-AI 사전 연동 및 누적 코퍼스 검색** (`GET /api/dictionary/lookup`, `GET /api/dictionary/links`) |
 | **사전 서비스** | `server/services/dictionary_service.py` | 네이버/Weblio/Jisho/Goo 사전 링크 생성, 34만+ 문장 코퍼스 검색, 빈도 등급 및 한국어 대응 표현 통계 |
 | **서재/책** | `server/routers/books.py` | 도서 숨김/표시, URL 번역 상태 배치 확인([`check_translated_urls`](file:///C:/LANOVEL/server/routers/books.py)), NovelUp+ 줄거리 크롤링, 회차 내 위치 복원 |
-| **목차 파서** | `server/routers/toc_importer.py` | 카쿠요무(Apollo State Next.js), 소설가가 되자, NovelUp+ ([`fetch_all_novelup_chapters`](file:///C:/LANOVEL/server/routers/toc_importer.py)) 목차 수집 |
+| **목차 파서** | `server/routers/toc_importer.py` | 카쿠요무(Apollo State Next.js), 소설가가 되자 100화 단위 다중 페이징 순회([`fetch_all_syosetu_chapters`](file:///C:/LANOVEL/server/routers/toc_importer.py)), NovelUp+ ([`fetch_all_novelup_chapters`](file:///C:/LANOVEL/server/routers/toc_importer.py)) 목차 수집 (`POST /api/import-toc`) |
 | **동기화** | `server/routers/sync.py` | 모바일 초고속 양방향 동기화: `/ping`, 하이브리드 zlib 압축 SQLite 시드 DB(`/full-pack`), `/pull`, `/push` |
 | **앱 배포** | `server/routers/app_release.py` | 모바일 OTA 무선 자동 업데이트: `/api/app/version`, `/api/app/download`, 웹 랜딩 페이지(`/download`) |
 | **구분선** | `server/routers/separators.py` | 후기/광고 번역 차단용 소설별 구분선 CRUD (공통 7종, 프리셋 6종) |
 | **원격 허브** | `server/routers/remote.py` | 모바일/웹 리모컨 (`/command`, `/status`, `/ws`, `/poll`, `/report`, `/ack`) 및 연속 번역 큐 제어 API (`/queue`, `/queue/config`, `/queue/reorder`, `/queue/event`) |
 | **소설 큐 러너** | `server/novel_queue.py` | **원격 소설 연속 번역 대기열 엔진**: `QueueRunner`, `NovelQueueManager`, 신데렐라 모드(17시 쿼터 중단 및 익일 자율 복구), 3회 재시도 및 건너뛰기 안전장치 |
 | **특별 적재** | `server/routers/special_batch.py` | 배치 번역/보정본 검수 UI(`/special_batch`), 승인 시 원래 소설 폴더 자동 상속, 미분류(None) 보존, 일괄 승인 |
-| **크롬 확장** | `extension/` | **TypeScript + esbuild 단일 책임 모듈화 구조**: `src/content.ts`, `src/background/` (`remote_ws.ts`, `queue_tabs.ts`, `index.ts`), `src/scrapers/`, `src/core/` (`state.ts`, `chunker.ts`, `filters.ts`, `turbo.ts`, `separators.ts`, `adaptive_throttle.ts`, `dom_applier.ts`, `row_actions.ts`, `page_translator.ts`, `queue_session.ts`), `src/ui/` (`sidebar.ts`, `review_panel.ts`, `separator_panel.ts`, `hud.ts`, `key_nav.ts`, `toc_quick_jump.ts`) |
+| **크롬 확장** | `extension/` | **TypeScript + esbuild 단일 책임 모듈화 구조**: `src/content.ts`, `src/background/` (`remote_ws.ts`, `queue_tabs.ts`, `index.ts`), `src/scrapers/` (`syosetu.ts`, `kakuyomu.ts` 등), `src/core/` (`state.ts`, `chunker.ts`, `filters.ts`, `turbo.ts`, `separators.ts`, `adaptive_throttle.ts`, `dom_applier.ts`, `row_actions.ts`, `page_translator.ts`, `queue_session.ts`), `src/ui/` (`sidebar.ts`, `review_panel.ts`, `separator_panel.ts`, `hud.ts`, `key_nav.ts`, `toc_quick_jump.ts`) |
 | **모바일 앱** | `mobile_app/lib/`<br>`mobile_app/shaders/` | **하이퍼 에스테틱 Luminary UI & Impeller GLSL 셰이더** (`shaders/hyper_ambient_mesh.frag`, `hyper_aesthetic_theme.dart`, `HyperAmbientMeshBackground`, `_HyperAuroraShaderPainter`, `HyperGlassCard`, `HyperHapticPill`, `HyperProgressRing`, 플로팅 글래스 네비게이션 독, Sqflite 하이브리드 압축 DB, 루비/방점 렌더러, 원격 연속 번역 큐 제어 지원) |
 | **웹 프론트** | `server/static/admin/` | **ES 모듈 분리 관리자 UI**: `admin-main.js` (진입점 & 단축키), `admin-tree.js` (3단계 트리, 검색 시 소설 폴더 자동 전개 차단 `isFolderCollapsed = true` 및 사이버네틱 일치 표시등 `novel-match-lamp`, 회차 지연 로딩 Lazy Loading 유지로 검색 렉 0ms, `updateSearchJumpUI`, `jumpToMatchingNovel`), `admin-state.js` (전역 상태 및 DOM 캐시), `admin-dock.js`, `admin-analytics.js`, `admin-restore.js`, `admin-find-replace.js` |
 | **웹 프론트** | `server/static/` | `viewer.js` (3D 닉시관 인디케이터, 사전 & 용례 학습 패널), `library.js` (증기 차분기관 톱니/배관/압력계 대시보드), `admin-fx.js` (사이버네틱 오디오 & 파티클 엔진) |
@@ -53,13 +53,14 @@
    - src/background/queue_tabs.ts: 연속 번역 전용 탭 수명주기(생성/닫기/포커스) 제어
    - src/core/dom_applier.ts & row_actions.ts: 본문 DOM 주입/복원, 개별 문장 인라인 저장 및 단건 즉시 재번역
    - src/background/remote_ws.ts: WebSocket(ws://127.0.0.1:8001/api/remote/ws) + HTTP 폴링 백오프, 원격 명령 실행
-   - src/ui/: 사이드바(sidebar.ts), 알림 센터 연계 검수 패널(review_panel.ts), 구분선 자동 제외/복원 패널(separator_panel.ts), 플로팅 HUD, 목차 배지 & 퀵점프 패널
-           │ HTTP (POST /translate, GET /api/rpm_status, POST /api/check_translated_urls, WS /api/remote/ws, POST /api/remote/queue/event)
+   - src/ui/: 사이드바(sidebar.ts), 알림 센터 연계 검수 패널(review_panel.ts), 구분선 자동 제외/복원 패널(separator_panel.ts), 플로팅 HUD, 목차 배지 & 퀵점프 패널 (toc_quick_jump.ts)
+           │ HTTP (POST /translate, GET /api/rpm_status, POST /api/check_translated_urls, POST /api/import-toc, WS /api/remote/ws, POST /api/remote/queue/event)
            ▼
 [ FastAPI 백엔드 서버 (server:app, Port: 8001) ]
    - novel_queue.py        ──▶ [ 소설 연속 번역 대기열 엔진 & 신데렐라 자율 복구 루프 ]
    - translation.py        ──▶ [ Google Gemini API ] (gemini-3.5-flash-lite / gemini-3.8-flash)
    - rpm_manager.py        ──▶ [ API 60초 + 회차 5분 2단계 슬라이딩 윈도우 & 선제적 쿨다운 휴식 ]
+   - toc_importer.py       ──▶ [ 쇼세츠 100화 다중 페이징 및 카쿠요무 Apollo Next.js 전수 목차 임포트 API ]
    - dictionary.py         ──▶ [ dictionary_service.py ] (100% No-AI, 34만+ 누적 SQLite 코퍼스 & 포털 사전 연동)
    - remote.py             ──▶ [ remote_control.py ] (모바일 앱 리모컨 <-> 크롬 확장 탭 양방향 제어 & 스레드 락)
    - data_crud.py          ──▶ [ SQLite DB (translations.db - WAL Mode) ]
@@ -98,6 +99,6 @@
 | **"원격 제어 안 돼" / "모바일 리모컨 상태 안 올라와"** | `extension/src/background/remote_ws.ts`<br>`extension/src/core/state.ts` | WebSocket(`ws://127.0.0.1:8001/api/remote/ws`) 연결 상태 점검. `state.broadcastStatus()`를 통해 주기적(2초) 및 상태 변화 시 직접 디스패치. |
 | **"최근 소설이 분당 번역수가 늘어나서 rpm제한에 걸려"** | `extension/src/core/adaptive_throttle.ts`<br>`server/services/rpm_manager.py` | 최근 5분간 번역된 회차 수를 실시간 추적하여, 회차가 많을수록 다음 화 이동 대기시간을 8초에서 최대 55초까지 계단식으로 늘려 분당 호출 폭증 차단. |
 | **"키보드로 다음화 넘어가게 해줘" / "단축키로 다음화 이동"** | `extension/src/ui/key_nav.ts`<br>`extension/src/ui/hud.ts` | `]` 또는 `L` 누르면 세션 플래그 설정 후 다음 화로 이동 -> 새 페이지 로드 즉시 자동 번역 시작 + 플로팅 HUD 안내. |
-| **"목차에서 안 읽은(미번역) 화만 골라서 보고 싶어"** | `extension/src/ui/toc_quick_jump.ts`<br>`server/routers/books.py` | 목차 페이지 감지 시 에피소드 링크별 번역 여부 배지 부착, 우측 하단 `[⚡ 미번역 N화]` 퀵 점프 드로어 제공, `N`키 순차 탐색 및 `Enter` 진입. |
+| **"목차에서 안 읽은(미번역) 화만 골라서 보고 싶어 / 100화 넘는 소설 회차에서 목차가 누락돼 / N키로 목차 서랍 열어줘"** | `extension/src/ui/toc_quick_jump.ts`<br>`extension/src/scrapers/syosetu.ts`<br>`extension/src/ui/key_nav.ts`<br>`server/routers/toc_importer.py` | 목차 감지 시 상태 배지 부착 및 `[⚡ 미번역 N화]` 퀵 점프 드로어 제공. 본문 회차 페이지(`.../128/` 등)에서도 백엔드 `POST /api/import-toc`를 통해 100화 단위 페이징 전체를 순회 수집하여 101~170화 누락 원천 차단. `findTocLink()` N코드 패턴 검증으로 `.c-announce` 오매칭 방지. 본문 페이지에서도 `N` 키로 서랍 즉시 띄우기 및 순차 포커스 이동/`Enter` 진입 지원. |
 | **"DB 보호해줘" / "데이터 유실 방지" / "스마트 백업"** | `server/database.py`<br>`server/backup_utils.py`<br>`server/server.py` | SQLite C-Authorizer(`DROP TABLE` 차단), SQLAlchemy `before_cursor_execute`(전건 DELETE 차단), 비서버 스크립트 `query_only=ON`, 1시간 주기 스마트 스킵 및 음수 역전 시 백업 중단 & 모바일 비상 경보(`db_alert`). |
 | **"모바일에서 유실 데이터 복구"** | `server/routers/sync.py`<br>`mobile_app/lib/services/sync_service.dart` | `POST /api/sync/rescue-from-mobile`: 모바일에 캐시된 압축 챕터 중 PC DB에 없는 누락 회차(비파괴 INSERT OR IGNORE)만을 안전 복원. |

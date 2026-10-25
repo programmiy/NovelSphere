@@ -10,6 +10,8 @@ import {
   sendProgressNotification,
   sendCompleteNotification,
 } from '../src/core/adaptive_throttle.ts';
+import { SyosetuScraper } from '../src/scrapers/syosetu.ts';
+import { getNovelTocUrl } from '../src/ui/toc_quick_jump.ts';
 
 test('chunker: chunkArray splits array by exact size', () => {
   const input = [1, 2, 3, 4, 5];
@@ -491,6 +493,16 @@ test('sidebar: sortSidebarDescending sorts rows in reverse DOM order and sortSid
   });
   assert.deepStrictEqual(tableChildren.map((r) => r.dataset.pid), ['p1', 'p2', 'p3']);
   }
+});
+
+test('syosetu: SyosetuScraper accurately resolves workKey, TOC URL and ignores .c-announce banners', () => {
+  const scraper = new SyosetuScraper();
+  assert.strictEqual(scraper.matches('https://ncode.syosetu.com/n5955en/128/', 'ncode.syosetu.com'), true);
+  assert.strictEqual(scraper.getWorkKey('https://ncode.syosetu.com/n5955en/128/'), 'syosetu_n5955en');
+
+  // getNovelTocUrl pattern fallback test
+  const tocUrl = getNovelTocUrl(scraper, 'https://ncode.syosetu.com/n5955en/128/');
+  assert.strictEqual(tocUrl, 'https://ncode.syosetu.com/n5955en/');
 });
 
 

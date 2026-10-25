@@ -9,8 +9,17 @@ export class SyosetuScraper implements PlatformScraper {
   }
 
   detectNovelTitle(): string | null {
+    if (typeof document === 'undefined') return null;
+    // 1. 공지 배너(.c-announce) 오매칭 방지: 빵부스러기 및 N코드 패턴 링크 우선
+    const breadcrumbLink = document.querySelector<HTMLElement>('.c-breadcrumbs a[href*="/n"]');
+    if (breadcrumbLink) {
+      const href = breadcrumbLink.getAttribute('href') || '';
+      if (/\/n\d+[a-z]+(\/|$|\?)/i.test(href) && breadcrumbLink.textContent?.trim()) {
+        return breadcrumbLink.textContent.trim();
+      }
+    }
+
     const novelLink =
-      document.querySelector<HTMLElement>('.c-announce a[href*="/n"]') ||
       document.querySelector<HTMLElement>('.p-novel__series-link') ||
       document.querySelector<HTMLElement>('.novel_title') ||
       document.querySelector<HTMLElement>('a.margin_r20');
@@ -29,6 +38,7 @@ export class SyosetuScraper implements PlatformScraper {
   }
 
   extractEpisodeTitle(): string {
+    if (typeof document === 'undefined') return '';
     const epEl = document.querySelector<HTMLElement>('.p-novel__title, .novel_subtitle, [class*="novel__title"]');
     if (epEl && !epEl.closest('a') && epEl.textContent && epEl.textContent.trim()) {
       return epEl.textContent.trim();
@@ -52,13 +62,14 @@ export class SyosetuScraper implements PlatformScraper {
   }
 
   isTocPage(_url: string, path: string): boolean {
-    if (document.querySelector('.p-novel__body, #novel_honbun, .p-novel__text')) {
+    if (typeof document !== 'undefined' && document.querySelector('.p-novel__body, #novel_honbun, .p-novel__text')) {
       return false;
     }
-    return (/\/n[a-z0-9]+\/?$/i.test(path) && !/\/\d+\/?$/.test(path)) || !!document.querySelector('.p-eplist, .index_box');
+    return (/\/n[a-z0-9]+\/?$/i.test(path) && !/\/\d+\/?$/.test(path)) || (typeof document !== 'undefined' && !!document.querySelector('.p-eplist, .index_box'));
   }
 
   findNextEpisodeLink(): HTMLAnchorElement | null {
+    if (typeof document === 'undefined') return null;
     const direct =
       document.querySelector<HTMLAnchorElement>('.c-pager__item--next') ||
       document.querySelector<HTMLAnchorElement>('a.novel_bn_next') ||
@@ -73,6 +84,7 @@ export class SyosetuScraper implements PlatformScraper {
   }
 
   findPrevEpisodeLink(): HTMLAnchorElement | null {
+    if (typeof document === 'undefined') return null;
     const direct =
       document.querySelector<HTMLAnchorElement>('.c-pager__item--before') ||
       document.querySelector<HTMLAnchorElement>('a.novel_bn_prev');
@@ -84,17 +96,42 @@ export class SyosetuScraper implements PlatformScraper {
   }
 
   findTocLink(): HTMLAnchorElement | null {
-    const direct =
-      document.querySelector<HTMLAnchorElement>('.c-announce a[href*="/n"]') ||
-      document.querySelector<HTMLAnchorElement>('.p-novel__series-link a') ||
-      document.querySelector<HTMLAnchorElement>('a.p-novel__series-link') ||
-      document.querySelector<HTMLAnchorElement>('.novel_title a');
-    return (direct && direct.href) ? direct : null;
+    if (typeof document === 'undefined') return null;
+    // 1. 유효한 N코드 목차 링크 셀렉터 후보군 (.c-announce 공지 배너 완전 제외로 공지/작품정보 오매칭 차단)
+    const selectors = [
+      '.c-breadcrumbs a[href*="/n"]',
+      '.p-novel__series-link a',
+      'a.p-novel__series-link',
+      '.novel_title a',
+      'a.novel_title',
+      'a.margin_r20[href*="/n"]',
+    ];
+
+    for (const sel of selectors) {
+      const el = document.querySelector<HTMLAnchorElement>(sel);
+      if (el && el.href) {
+        const cleanHref = el.getAttribute('href') || el.href;
+        // 쇼세츠 N코드 패턴 (/nXXXXXX/ 또는 /nXXXXXX) 검증하여 공지/뉴스/작품정보 오매칭 방지
+        if (/\/n\d+[a-z]+(\/|$|\?)/i.test(cleanHref)) {
+          return el;
+        }
+      }
+    }
+
+    // 2. 본문 페이지 DOM 전체에서 N코드 목차 형태의 앵커 탐색
+    const allLinks = Array.from(document.querySelectorAll<HTMLAnchorElement>('a[href]'));
+    const matched = allLinks.find((a) => {
+      const raw = a.getAttribute('href') || a.href || '';
+      return /\/n\d+[a-z]+\/?$/i.test(raw.split('?')[0].split('#')[0]);
+    });
+    return matched || null;
   }
 
-  getTocEpisodes(rootDoc: Document | Element = document): TocEpisodeItem[] {
+  getTocEpisodes(rootDoc?: Document | Element): TocEpisodeItem[] {
+    const doc = rootDoc || (typeof document !== 'undefined' ? document : null);
+    if (!doc) return [];
     const elements = Array.from(
-      rootDoc.querySelectorAll<HTMLAnchorElement>(
+      doc.querySelectorAll<HTMLAnchorElement>(
         'a.p-eplist__subtitle, .p-eplist a.p-eplist__subtitle, .p-eplist__sublist a, .p-eplist a, .index_box .subtitle a, .subtitle a'
       )
     ).filter((el) => {
