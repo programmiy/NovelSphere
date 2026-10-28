@@ -35,6 +35,7 @@
 | **모바일 앱** | `mobile_app/lib/`<br>`mobile_app/shaders/` | **하이퍼 에스테틱 Luminary UI & Impeller GLSL 셰이더 (v1.7.0)** (`replaceSeedDatabase` 원자적 시드 교체, 진도/북마크 동기화 역전 방지, 상단고정·독서잔디 양방향 동기화, TTS 유니코드 정규화 캐시, OLED 셰이더 완전 바이패스 절전 & `onAccentColor` 고대비 가독성, 볼륨키 넘김 MethodChannel, 원문 대역 병기/여백 슬라이더, `_RuleEditorCardItem` IME 한글 자모 분리 방지) |
 | **웹 프론트** | `server/static/admin/` | **ES 모듈 분리 관리자 UI**: `admin-main.js` (진입점 & 단축키), `admin-tree.js` (3단계 트리, 검색 시 소설 폴더 자동 전개 차단 `isFolderCollapsed = true` 및 사이버네틱 일치 표시등 `novel-match-lamp`, 회차 지연 로딩 Lazy Loading 유지로 검색 렉 0ms, `updateSearchJumpUI`, `jumpToMatchingNovel`), `admin-state.js` (전역 상태 및 DOM 캐시), `admin-dock.js`, `admin-analytics.js`(KST 24시간 활동 프로필·하루 시작 16시 인디케이터), `admin-restore.js`, `admin-find-replace.js` |
 | **웹 프론트** | `server/static/` | `viewer.js` (3D 닉시관 인디케이터, 사전 & 용례 학습 패널), `library.js` (증기 차분기관 톱니/배관/압력계 대시보드), `admin-fx.js` (사이버네틱 오디오 & 파티클 엔진) |
+| **검수 가속화** | `review_acceleration_plan/` | **검수완료율 가속화 및 DB 용량 최적화 전략 입안서**(`review_boost_strategy.md`): Trigram FTS5 및 1시간 주기 백업 용량 방어, 검수완료(`is_reviewed`) 기반 Cold Data 격리 & 회차 통압축 로드맵, 완결 근접도(Near-Completion) & 콤보/연쇄폭발/정화율 게이미피케이션 기획 |
 
 ---
 
