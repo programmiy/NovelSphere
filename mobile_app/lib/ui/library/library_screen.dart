@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -43,6 +44,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
   bool _isSyncing = false;
 
   final TextEditingController _searchController = TextEditingController();
+  Timer? _searchDebounce;
 
   @override
   void initState() {
@@ -56,6 +58,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
     StatusDashboardService.enterBackground();
     _searchController.dispose();
     super.dispose();
@@ -150,9 +153,11 @@ class _LibraryScreenState extends State<LibraryScreen> {
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
-      builder: (ctx) => BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-        child: Container(
+      builder: (ctx) => ClipRRect(
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+          child: Container(
           decoration: BoxDecoration(
             color: (theme.isDark ? theme.surfaceColor : Colors.white).withOpacity(0.88),
             borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
@@ -295,7 +300,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                     ),
                   ),
                   title: Text(
-                    book.isPinned ? '즐겨찾기 해제' : '즐겨찾기 등록',
+                    book.isPinned ? '상단 고정 해제' : '상단 고정 등록',
                     style: TextStyle(color: theme.textColor, fontWeight: FontWeight.bold, fontSize: 14),
                   ),
                   onTap: () async {
@@ -304,13 +309,60 @@ class _LibraryScreenState extends State<LibraryScreen> {
                     _loadLibrary();
                   },
                 ),
+                ListTile(
+                  leading: Container(
+                    padding: const EdgeInsets.all(9),
+                    decoration: BoxDecoration(
+                      color: (book.isCompleted ? Colors.green : theme.subTextColor).withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(
+                      book.isCompleted ? Icons.check_circle_rounded : Icons.check_circle_outline_rounded,
+                      color: book.isCompleted ? Colors.green : theme.subTextColor,
+                      size: 20,
+                    ),
+                  ),
+                  title: Text(
+                    book.isCompleted ? '완독 취소 (읽는 중으로 변경)' : '완독 처리',
+                    style: TextStyle(color: theme.textColor, fontWeight: FontWeight.bold, fontSize: 14),
+                  ),
+                  onTap: () async {
+                    Navigator.pop(ctx);
+                    await LocalDbService.toggleCompleteBook(book.folderName, book.isCompleted);
+                    _loadLibrary();
+                  },
+                ),
+                ListTile(
+                  leading: Container(
+                    padding: const EdgeInsets.all(9),
+                    decoration: BoxDecoration(
+                      color: (book.isVisible ? theme.subTextColor : Colors.purpleAccent).withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(
+                      book.isVisible ? Icons.archive_outlined : Icons.unarchive_outlined,
+                      color: book.isVisible ? theme.subTextColor : Colors.purpleAccent,
+                      size: 20,
+                    ),
+                  ),
+                  title: Text(
+                    book.isVisible ? '보관함으로 숨기기' : '서재로 다시 복원',
+                    style: TextStyle(color: theme.textColor, fontWeight: FontWeight.bold, fontSize: 14),
+                  ),
+                  onTap: () async {
+                    Navigator.pop(ctx);
+                    await LocalDbService.toggleVisibilityBook(book.folderName, book.isVisible);
+                    _loadLibrary();
+                  },
+                ),
               ],
             ),
           ),
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 
   @override
   Widget build(BuildContext context) {
@@ -689,7 +741,10 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 ),
                 onChanged: (val) {
                   setState(() => _searchQuery = val);
-                  _loadLibrary();
+                  _searchDebounce?.cancel();
+                  _searchDebounce = Timer(const Duration(milliseconds: 250), () {
+                    if (mounted) _loadLibrary();
+                  });
                 },
               ),
             ),
@@ -741,7 +796,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
     final primary = HyperAestheticTheme.getAmbientPrimary(theme);
     final secondary = HyperAestheticTheme.getAmbientSecondary(theme);
 
-    const progress = 0.65;
+    final progress = book.estimatedProgress;
 
     return Container(
       margin: const EdgeInsets.fromLTRB(20, 10, 20, 14),

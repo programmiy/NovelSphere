@@ -1,3 +1,4 @@
+import '../../services/font_helper.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -77,6 +78,38 @@ class _ReaderScreenState extends State<ReaderScreen> {
     return (_sentences.length / _sentencesPerPage).ceil().clamp(1, 9999);
   }
 
+  static const MethodChannel _volumeChannel = MethodChannel('com.lanovel.lanovel_reader/volume_key');
+
+  void _nextPageOrScroll() {
+    if (PreferencesService.viewMode == 'paging' && _pageController.hasClients) {
+      if (_currentPage < _contentPageCount - 1) {
+        _pageController.nextPage(duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
+      } else {
+        if (_currentChapterIndex < _chapters.length - 1) {
+          _loadChapter(_currentChapterIndex + 1);
+        }
+      }
+    } else if (_scrollController.hasClients) {
+      final target = (_scrollController.offset + 400).clamp(0.0, _scrollController.position.maxScrollExtent);
+      _scrollController.animateTo(target, duration: const Duration(milliseconds: 200), curve: Curves.easeOut);
+    }
+  }
+
+  void _prevPageOrScroll() {
+    if (PreferencesService.viewMode == 'paging' && _pageController.hasClients) {
+      if (_currentPage > 0) {
+        _pageController.previousPage(duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
+      } else {
+        if (_currentChapterIndex > 0) {
+          _loadChapter(_currentChapterIndex - 1, loadLastPage: true);
+        }
+      }
+    } else if (_scrollController.hasClients) {
+      final target = (_scrollController.offset - 400).clamp(0.0, _scrollController.position.maxScrollExtent);
+      _scrollController.animateTo(target, duration: const Duration(milliseconds: 200), curve: Curves.easeOut);
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -84,6 +117,19 @@ class _ReaderScreenState extends State<ReaderScreen> {
     _startReadingTracker();
     if (PreferencesService.keepScreenOn) {
       WakelockPlus.enable();
+    }
+    if (PreferencesService.volumeKeyPaging) {
+      _volumeChannel.invokeMethod('enableVolumeKeyPaging', {'enable': true});
+      _volumeChannel.setMethodCallHandler((call) async {
+        if (call.method == 'onVolumeKeyDown') {
+          final direction = call.arguments?['direction'] as String?;
+          if (direction == 'next') {
+            _nextPageOrScroll();
+          } else if (direction == 'prev') {
+            _prevPageOrScroll();
+          }
+        }
+      });
     }
 
     _scrollController.addListener(() {
@@ -103,6 +149,8 @@ class _ReaderScreenState extends State<ReaderScreen> {
 
   @override
   void dispose() {
+    _volumeChannel.invokeMethod('enableVolumeKeyPaging', {'enable': false});
+    _volumeChannel.setMethodCallHandler(null);
     _readingTimer?.cancel();
     _saveProgressTimer?.cancel();
     _saveCurrentPosition();
@@ -1314,12 +1362,14 @@ class _ReaderScreenState extends State<ReaderScreen> {
               // 한국어 번역문 (루비/방점 자동 전환 및 선택한 한국어 폰트 적용)
               NovelRubyText(
                 text: sentence.translated,
-                style: TextStyle(
-                  color: theme.textColor,
-                  fontSize: PreferencesService.fontSize,
-                  fontFamily: PreferencesService.koreanFont,
-                  height: PreferencesService.lineHeight,
-                  letterSpacing: -0.2,
+                style: FontHelper.getKoreanStyle(
+                  baseStyle: TextStyle(
+                    color: theme.textColor,
+                    fontSize: PreferencesService.fontSize,
+                    height: PreferencesService.lineHeight,
+                    letterSpacing: -0.2,
+                  ),
+                  fontName: PreferencesService.koreanFont,
                 ),
               ),
               // 원문 대역 표시 (선택한 일본어 폰트 적용)
@@ -1327,11 +1377,13 @@ class _ReaderScreenState extends State<ReaderScreen> {
                 const SizedBox(height: 4),
                 Text(
                   sentence.original,
-                  style: TextStyle(
-                    color: theme.originalTextColor,
-                    fontSize: PreferencesService.fontSize * 0.85,
-                    fontFamily: PreferencesService.japaneseFont,
-                    height: 1.4,
+                  style: FontHelper.getJapaneseStyle(
+                    baseStyle: TextStyle(
+                      color: theme.originalTextColor,
+                      fontSize: PreferencesService.fontSize * 0.85,
+                      height: 1.4,
+                    ),
+                    fontName: PreferencesService.japaneseFont,
                   ),
                 ),
               ],

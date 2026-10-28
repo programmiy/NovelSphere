@@ -39,9 +39,9 @@ class ActivitySyncItem(BaseModel):
     last_read_timestamp: Optional[int] = None
     last_read_pid: Optional[str] = None
     last_read_chapter_title: Optional[str] = None
-    is_completed: Optional[int] = 0
-    is_visible: Optional[int] = 1
-    is_bookmarked: Optional[int] = 0
+    is_completed: Optional[int] = None
+    is_visible: Optional[int] = None
+    is_bookmarked: Optional[int] = None
     notes: Optional[str] = None
     summary: Optional[str] = None
 
@@ -58,6 +58,7 @@ class PushPayload(BaseModel):
     modified_translations: Optional[List[LocalChangeItem]] = []
     activities: Optional[List[ActivitySyncItem]] = []
     reading_logs: Optional[List[ReadingLogItem]] = []
+    pinned_books: Optional[List[str]] = None
     glossary_rules: Optional[List[Dict[str, Any]]] = []
 
 class RescueChapterItem(BaseModel):
@@ -612,12 +613,39 @@ async def push_changes_to_pc(request: Request, db: Session = Depends(get_db)):
                         is_completed = COALESCE(excluded.is_completed, book_activity.is_completed),
                         is_visible = COALESCE(excluded.is_visible, book_activity.is_visible),
                         is_bookmarked = COALESCE(excluded.is_bookmarked, book_activity.is_bookmarked),
-                        notes = COALESCE(excluded.notes, book_activity.notes);
+                        notes = COALESCE(excluded.notes, book_activity.notes),
+                        summary = COALESCE(excluded.summary, book_activity.summary);
                 """, (
                     act.folderName, act.last_read_timestamp, act.last_read_pid, act.last_read_chapter_title,
                     act.is_completed, act.is_visible, act.is_bookmarked, act.notes, act.summary
                 ))
                 updated_act_count += 1
+
+        # 2-2. 상단 고정(pinned_books) 동기화 반영
+        if payload.pinned_books is not None:
+            cursor.execute("DELETE FROM pinned_books")
+            for pf in payload.pinned_books:
+                cursor.execute("INSERT OR IGNORE INTO pinned_books (folderName) VALUES (?)", (pf,))
+
+        # 2-3. 독서 통계 및 캘린더 히트맵(reading_logs) 동기화
+        if payload.reading_logs:
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS reading_logs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    date TEXT NOT NULL,
+                    read_seconds INTEGER DEFAULT 0,
+                    pages_count INTEGER DEFAULT 0,
+                    book_title TEXT,
+                    chapter_title TEXT,
+                    created_at INTEGER
+                );
+            ''')
+            cursor.execute('CREATE INDEX IF NOT EXISTS ix_reading_logs_date ON reading_logs(date);')
+            for rlog in payload.reading_logs:
+                cursor.execute('''
+                    INSERT INTO reading_logs (date, read_seconds, pages_count, book_title, chapter_title, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                ''', (rlog.date, rlog.read_seconds, rlog.pages_count, rlog.book_title, rlog.chapter_title, int(time.time())))
 
         conn.commit()
 

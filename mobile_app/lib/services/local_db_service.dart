@@ -16,7 +16,7 @@ class LocalDbService {
   static Database? _database;
 
   static Future<Database> get database async {
-    if (_database != null) return _database!;
+    if (_database != null && _database!.isOpen) return _database!;
     _database = await _initDatabase();
     return _database!;
   }
@@ -51,6 +51,80 @@ class LocalDbService {
       debugPrint('[LocalDbService] DB 초기화 실패: $e');
       rethrow;
     }
+  }
+
+  /// [P0 안전 시드 DB 원자적 교체 엔진]
+  /// 1) 기존 로컬 DB에서 미전송 큐, 독서 잔디(reading_logs), 용어집(local_glossary), 상단고정(is_pinned) 메모리 백업
+  /// 2) DB 정상 close 및 _database = null 초기화
+  /// 3) .db, -wal, -shm 안전 일괄 정리 후 tempSeed 파일 원자적 rename
+  /// 4) 새 DB 오픈 및 백업 데이터 무결성 복원
+  /// 5) 중복 챕터 자가 치유(healDuplicateChapters) 실행
+  static Future<void> replaceSeedDatabase(File tempSeedFile) async {
+    List<Map<String, dynamic>> backupQueue = [];
+    List<Map<String, dynamic>> backupLogs = [];
+    List<Map<String, dynamic>> backupGlossary = [];
+    List<String> backupPinned = [];
+
+    try {
+      if (_database != null && _database!.isOpen) {
+        try {
+          backupQueue = await _database!.query('offline_change_queue');
+        } catch (_) {}
+        try {
+          backupLogs = await _database!.query('reading_logs');
+        } catch (_) {}
+        try {
+          backupGlossary = await _database!.query('local_glossary');
+        } catch (_) {}
+        try {
+          final pinnedRows = await _database!.query('books', columns: ['folder_name'], where: 'is_pinned = 1');
+          backupPinned = pinnedRows.map((r) => r['folder_name'] as String).toList();
+        } catch (_) {}
+
+        await _database!.close();
+      }
+    } catch (e) {
+      debugPrint('[LocalDbService] 시드 교체 전 백업 경고: $e');
+    } finally {
+      _database = null;
+    }
+
+    final path = await getDbPath();
+    final dbFile = File(path);
+    final walFile = File('$path-wal');
+    final shmFile = File('$path-shm');
+
+    if (await walFile.exists()) await walFile.delete();
+    if (await shmFile.exists()) await shmFile.delete();
+    if (await dbFile.exists()) await dbFile.delete();
+
+    await tempSeedFile.rename(path);
+
+    // 새 DB 오픈
+    final newDb = await _initDatabase();
+    _database = newDb;
+
+    // 백업 데이터 복원
+    final batch = newDb.batch();
+    for (var q in backupQueue) {
+      final map = Map<String, dynamic>.from(q)..remove('id');
+      batch.insert('offline_change_queue', map);
+    }
+    for (var l in backupLogs) {
+      final map = Map<String, dynamic>.from(l)..remove('id');
+      batch.insert('reading_logs', map);
+    }
+    for (var g in backupGlossary) {
+      final map = Map<String, dynamic>.from(g)..remove('id');
+      batch.insert('local_glossary', map);
+    }
+    for (var pFolder in backupPinned) {
+      batch.update('books', {'is_pinned': 1}, where: 'folder_name = ?', whereArgs: [pFolder]);
+    }
+    await batch.commit(noResult: true);
+
+    await healDuplicateChapters();
+    debugPrint('[LocalDbService] replaceSeedDatabase 성공: 무결성 유지 완료');
   }
 
   static Future<Database> _initDatabase() async {
@@ -278,7 +352,58 @@ class LocalDbService {
       where: 'folder_name = ?',
       whereArgs: [folderName],
     );
-    await _enqueueChange('activity', folderName, {'folderName': folderName, 'is_bookmarked': newBookmark ? 1 : 0});
+    final book = await getBook(folderName);
+    await _enqueueChange('activity', folderName, {
+      'folderName': folderName,
+      'is_bookmarked': newBookmark ? 1 : 0,
+      'is_completed': (book?.isCompleted ?? false) ? 1 : 0,
+      'is_visible': (book?.isVisible ?? true) ? 1 : 0,
+      'last_read_timestamp': book?.lastReadTimestamp,
+      'last_read_pid': book?.lastReadPid,
+      'last_read_chapter_title': book?.lastReadChapterTitle,
+    });
+  }
+
+  static Future<void> toggleCompleteBook(String folderName, bool currentComplete) async {
+    final db = await database;
+    final newComplete = !currentComplete;
+    await db.update(
+      'books',
+      {'is_completed': newComplete ? 1 : 0},
+      where: 'folder_name = ?',
+      whereArgs: [folderName],
+    );
+    final book = await getBook(folderName);
+    await _enqueueChange('activity', folderName, {
+      'folderName': folderName,
+      'is_completed': newComplete ? 1 : 0,
+      'is_bookmarked': (book?.isBookmarked ?? false) ? 1 : 0,
+      'is_visible': (book?.isVisible ?? true) ? 1 : 0,
+      'last_read_timestamp': book?.lastReadTimestamp,
+      'last_read_pid': book?.lastReadPid,
+      'last_read_chapter_title': book?.lastReadChapterTitle,
+    });
+  }
+
+  static Future<void> toggleVisibilityBook(String folderName, bool currentVisible) async {
+    final db = await database;
+    final newVisible = !currentVisible;
+    await db.update(
+      'books',
+      {'is_visible': newVisible ? 1 : 0},
+      where: 'folder_name = ?',
+      whereArgs: [folderName],
+    );
+    final book = await getBook(folderName);
+    await _enqueueChange('activity', folderName, {
+      'folderName': folderName,
+      'is_visible': newVisible ? 1 : 0,
+      'is_completed': (book?.isCompleted ?? false) ? 1 : 0,
+      'is_bookmarked': (book?.isBookmarked ?? false) ? 1 : 0,
+      'last_read_timestamp': book?.lastReadTimestamp,
+      'last_read_pid': book?.lastReadPid,
+      'last_read_chapter_title': book?.lastReadChapterTitle,
+    });
   }
 
   // --- 챕터 (Chapters) 쿼리 및 압축 해제 엔진 ---
@@ -545,12 +670,15 @@ class LocalDbService {
       whereArgs: [bookName],
     );
 
+    final currentBook = await getBook(bookName);
     await _enqueueChange('activity', bookName, {
       'folderName': bookName,
       'last_read_chapter_title': chapterTitle,
       'last_read_pid': pid,
       'last_read_timestamp': nowTs,
       'is_completed': isCompleted ? 1 : 0,
+      'is_bookmarked': (currentBook?.isBookmarked ?? false) ? 1 : 0,
+      'is_visible': (currentBook?.isVisible ?? true) ? 1 : 0,
     });
   }
 
@@ -635,8 +763,16 @@ class LocalDbService {
 
     RegExp? regExp;
     if (rule.useRegex) {
-      regExp = RegExp(rule.findText, caseSensitive: rule.caseSensitive);
+      try {
+        regExp = RegExp(rule.findText, caseSensitive: rule.caseSensitive);
+      } catch (e) {
+        debugPrint('[LocalDbService] Invalid regex pattern: ${rule.findText} - $e');
+        rethrow;
+      }
     }
+
+    final batch = db.batch();
+    bool hasBatchUpdates = false;
 
     for (var chap in targetChapters) {
       final chapId = chap['id'] as int;
@@ -671,18 +807,23 @@ class LocalDbService {
 
         if (chapterModified) {
           final reEncoded = const ZLibEncoder().encode(utf8.encode(jsonEncode(list)));
-          await db.update(
+          batch.update(
             'chapters',
             {'compressed_content': reEncoded},
             where: 'id = ?',
             whereArgs: [chapId],
           );
+          hasBatchUpdates = true;
         }
       } catch (e) {
         if (kDebugMode) {
           debugPrint('Error applying rule on chapter $chapId: $e');
         }
       }
+    }
+
+    if (hasBatchUpdates) {
+      await batch.commit(noResult: true);
     }
 
     // 룰 저장 & 동기화 큐 등록

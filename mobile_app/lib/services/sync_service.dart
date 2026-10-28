@@ -121,24 +121,13 @@ class SyncService {
       // Gzip 압축 해제
       final decompressed = GZipDecoder().decodeBytes(bytes);
 
-      // 로컬 DB 파일 덮어쓰기
+      // 로컬 DB 파일 덮어쓰기 (P0 안전 원자적 시드 교체 엔진 활용)
       final localDbPath = await LocalDbService.getDbPath();
       final tempFile = File('$localDbPath.download.tmp');
       await tempFile.writeAsBytes(decompressed, flush: true);
 
-      // 기존 DB 닫기 및 교체
-      final oldDb = await LocalDbService.database;
-      await oldDb.close();
-
-      final targetFile = File(localDbPath);
-      if (await targetFile.exists()) {
-        await targetFile.delete();
-      }
-      await tempFile.rename(localDbPath);
-
-      // 로컬 DB 재오픈 및 자가 치유 실행
-      await LocalDbService.database;
-      await LocalDbService.healDuplicateChapters();
+      // 기존 데이터 백업, 핸들 초기화, WAL 정리 및 무결성 복원
+      await LocalDbService.replaceSeedDatabase(tempFile);
 
       // 동기화 시간 저장
       final nowTs = DateTime.now().millisecondsSinceEpoch ~/ 1000;
@@ -203,6 +192,7 @@ class SyncService {
         List<Map<String, dynamic>> glossaryRules = [];
         List<int> processedQueueIds = [];
 
+        bool hasPinChange = false;
         for (var change in pendingChanges) {
           final qId = change['id'] as int;
           final type = change['change_type'] as String;
@@ -214,14 +204,41 @@ class SyncService {
             activities.add(payload);
           } else if (type == 'glossary_rule') {
             glossaryRules.add(payload);
+          } else if (type == 'pin') {
+            hasPinChange = true;
           }
           processedQueueIds.add(qId);
         }
+
+        // 고정핀 목록 및 최근 독서 잔디 수집
+        final db = await LocalDbService.database;
+        List<String>? pinnedPayload;
+        if (hasPinChange) {
+          final pRows = await db.query('books', columns: ['folder_name'], where: 'is_pinned = 1');
+          pinnedPayload = pRows.map((r) => r['folder_name'] as String).toList();
+        }
+
+        // 최근 3일간 독서 기록 동기화
+        List<Map<String, dynamic>> readingLogsPayload = [];
+        try {
+          final rLogs = await db.query('reading_logs', orderBy: 'id DESC', limit: 50);
+          for (var r in rLogs) {
+            readingLogsPayload.add({
+              'date': r['date'],
+              'read_seconds': r['read_seconds'],
+              'pages_count': r['pages_count'],
+              'book_title': r['book_title'],
+              'chapter_title': r['chapter_title'],
+            });
+          }
+        } catch (_) {}
 
         final pushPayload = {
           'push_timestamp': DateTime.now().millisecondsSinceEpoch ~/ 1000,
           'modified_translations': modifiedTrans,
           'activities': activities,
+          'reading_logs': readingLogsPayload,
+          'pinned_books': pinnedPayload,
           'glossary_rules': glossaryRules,
         };
 
@@ -356,6 +373,17 @@ class SyncService {
             ]);
           }
           await actBatch.commit(noResult: true);
+        }
+
+        // 상단 고정(pinned_books) 서버 동기화 반영
+        if (pullData['pinned_books'] != null) {
+          final serverPinned = (pullData['pinned_books'] as List<dynamic>).map((e) => e.toString()).toList();
+          final pinBatch = db.batch();
+          pinBatch.update('books', {'is_pinned': 0});
+          for (var pFolder in serverPinned) {
+            pinBatch.update('books', {'is_pinned': 1}, where: 'folder_name = ?', whereArgs: [pFolder]);
+          }
+          await pinBatch.commit(noResult: true);
         }
 
         hasMore = pullData['has_more'] == true;

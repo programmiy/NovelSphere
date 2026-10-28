@@ -4,6 +4,59 @@ import os
 # Ensure server process has production database write authorization
 os.environ["ALLOW_PROD_DB_WRITE"] = "1"
 import asyncio
+# --- Windows IOCP AcceptEx Patch: Prevents WinError 64 / 121 / 1236 from closing server listener socket ---
+if os.name == "nt":
+    try:
+        import asyncio.proactor_events
+        if not getattr(asyncio.proactor_events.BaseProactorEventLoop, "_iocp_patch_applied", False):
+            _orig_start_serving = asyncio.proactor_events.BaseProactorEventLoop._start_serving
+            def _patched_start_serving(self, protocol_factory, sock, sslcontext=None, server=None, backlog=100,
+                                       ssl_handshake_timeout=None, ssl_shutdown_timeout=None):
+                def loop(f=None):
+                    try:
+                        if f is not None:
+                            try:
+                                conn, addr = f.result()
+                            except OSError as exc:
+                                if getattr(exc, "winerror", None) in (64, 121, 1236):
+                                    if not self.is_closed() and sock.fileno() != -1:
+                                        next_f = self._proactor.accept(sock)
+                                        self._accept_futures[sock.fileno()] = next_f
+                                        next_f.add_done_callback(loop)
+                                    return
+                                raise
+                            protocol = protocol_factory()
+                            if sslcontext is not None:
+                                self._make_ssl_transport(
+                                    conn, protocol, sslcontext, server_side=True,
+                                    extra={'peername': addr}, server=server,
+                                    ssl_handshake_timeout=ssl_handshake_timeout,
+                                    ssl_shutdown_timeout=ssl_shutdown_timeout)
+                            else:
+                                self._make_socket_transport(
+                                    conn, protocol,
+                                    extra={'peername': addr}, server=server)
+                        if self.is_closed():
+                            return
+                        f = self._proactor.accept(sock)
+                    except OSError as exc:
+                        if sock.fileno() != -1:
+                            self.call_exception_handler({
+                                'message': 'Accept failed on a socket',
+                                'exception': exc,
+                                'socket': getattr(asyncio, 'trsock', None) and asyncio.trsock.TransportSocket(sock) or sock,
+                            })
+                            sock.close()
+                    except asyncio.CancelledError:
+                        sock.close()
+                    else:
+                        self._accept_futures[sock.fileno()] = f
+                        f.add_done_callback(loop)
+                self.call_soon(loop)
+            asyncio.proactor_events.BaseProactorEventLoop._start_serving = _patched_start_serving
+            asyncio.proactor_events.BaseProactorEventLoop._iocp_patch_applied = True
+    except Exception:
+        pass
 import subprocess
 import logging
 import logging.handlers

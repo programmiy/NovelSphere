@@ -288,6 +288,75 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> with SingleTi
             widget.onSettingsChanged();
           },
         ),
+        const SizedBox(height: 6),
+        // 가로 여백
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text('좌우 여백', style: TextStyle(color: theme.textColor, fontSize: 14)),
+            Text('${PreferencesService.horizontalPadding.toInt()}px', style: TextStyle(color: theme.subTextColor, fontSize: 13)),
+          ],
+        ),
+        Slider(
+          value: PreferencesService.horizontalPadding,
+          min: 12.0,
+          max: 40.0,
+          divisions: 14,
+          activeColor: theme.accentColor,
+          inactiveColor: theme.borderColor,
+          onChanged: (val) async {
+            await PreferencesService.setHorizontalPadding(val);
+            setState(() {});
+            widget.onSettingsChanged();
+          },
+        ),
+        const SizedBox(height: 6),
+        // 단락 간격
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text('단락 간격', style: TextStyle(color: theme.textColor, fontSize: 14)),
+            Text('${PreferencesService.paragraphSpacing.toInt()}px', style: TextStyle(color: theme.subTextColor, fontSize: 13)),
+          ],
+        ),
+        Slider(
+          value: PreferencesService.paragraphSpacing,
+          min: 4.0,
+          max: 30.0,
+          divisions: 13,
+          activeColor: theme.accentColor,
+          inactiveColor: theme.borderColor,
+          onChanged: (val) async {
+            await PreferencesService.setParagraphSpacing(val);
+            setState(() {});
+            widget.onSettingsChanged();
+          },
+        ),
+        const SizedBox(height: 10),
+        // 원문 표시 모드 (bilingual / tooltip / hidden)
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text('원문(일본어) 표시', style: TextStyle(color: theme.textColor, fontSize: 14)),
+            SegmentedButton<String>(
+              segments: const [
+                ButtonSegment(value: 'hidden', label: Text('숨김', style: TextStyle(fontSize: 11))),
+                ButtonSegment(value: 'tooltip', label: Text('툴팁', style: TextStyle(fontSize: 11))),
+                ButtonSegment(value: 'bilingual', label: Text('대역', style: TextStyle(fontSize: 11))),
+              ],
+              selected: {PreferencesService.originalTextMode},
+              onSelectionChanged: (val) async {
+                await PreferencesService.setOriginalTextMode(val.first);
+                setState(() {});
+                widget.onSettingsChanged();
+              },
+              style: const ButtonStyle(
+                visualDensity: VisualDensity.compact,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+            ),
+          ],
+        ),
         const SizedBox(height: 10),
         // 뷰어 모드 토글 (페이징 vs 스크롤)
         SwitchListTile(

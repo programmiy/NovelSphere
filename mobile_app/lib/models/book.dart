@@ -29,6 +29,23 @@ class Book {
     this.tags = const [],
   });
 
+  /// 독서 진도율 (0.0 ~ 1.0)
+  double get estimatedProgress {
+    if (isCompleted) return 1.0;
+    if (totalChapters <= 0) return 0.0;
+    if (lastReadChapterTitle != null && lastReadChapterTitle!.isNotEmpty) {
+      final match = RegExp(r'(\d+)\s*(?:화|편|장|회|Episode)', caseSensitive: false).firstMatch(lastReadChapterTitle!);
+      if (match != null) {
+        final cur = int.tryParse(match.group(1)!) ?? 0;
+        if (cur > 0) {
+          final p = cur / totalChapters;
+          return p.clamp(0.0, 1.0);
+        }
+      }
+    }
+    return lastReadTimestamp != null ? 0.05 : 0.0;
+  }
+
   factory Book.fromMap(Map<String, dynamic> map) {
     List<String> parsedTags = [];
     if (map['tags'] != null) {

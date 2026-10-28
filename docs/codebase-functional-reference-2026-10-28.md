@@ -32,7 +32,7 @@
 | **소설 큐 러너** | `server/novel_queue.py` | **원격 소설 연속 번역 대기열 엔진**: `QueueRunner`, `NovelQueueManager`, 신데렐라 모드(17시 쿼터 중단 및 익일 자율 복구), 3회 재시도 및 건너뛰기 안전장치 |
 | **특별 적재** | `server/routers/special_batch.py` | 배치 번역/보정본 검수 UI(`/special_batch`), 승인 시 원래 소설 폴더 자동 상속, 미분류(None) 보존, 일괄 승인 |
 | **크롬 확장** | `extension/` | **TypeScript + esbuild 단일 책임 모듈화 구조**: `src/content.ts`, `src/background/` (`remote_ws.ts`, `queue_tabs.ts`, `index.ts`), `src/scrapers/` (`syosetu.ts`, `kakuyomu.ts` 등), `src/core/` (`state.ts`, `chunker.ts`(글자 수 연동 가변 청킹: 기본 45개·대화문 최대 75개·1300자 밀도 분할), `filters.ts`, `turbo.ts`, `separators.ts`, `adaptive_throttle.ts`, `dom_applier.ts`, `row_actions.ts`, `page_translator.ts`, `queue_session.ts`), `src/ui/` (`sidebar.ts`, `review_panel.ts`, `separator_panel.ts`, `hud.ts`, `key_nav.ts`, `toc_quick_jump.ts`) |
-| **모바일 앱** | `mobile_app/lib/`<br>`mobile_app/shaders/` | **하이퍼 에스테틱 Luminary UI & Impeller GLSL 셰이더** (`shaders/hyper_ambient_mesh.frag`, `hyper_aesthetic_theme.dart`, `HyperAmbientMeshBackground`, `_HyperAuroraShaderPainter`, `HyperGlassCard`, `HyperHapticPill`, `HyperProgressRing`, 플로팅 글래스 네비게이션 독, Sqflite 하이브리드 압축 DB, 루비/방점 렌더러, 원격 연속 번역 큐 제어 지원) |
+| **모바일 앱** | `mobile_app/lib/`<br>`mobile_app/shaders/` | **하이퍼 에스테틱 Luminary UI & Impeller GLSL 셰이더 (v1.7.0)** (`replaceSeedDatabase` 원자적 시드 교체, 진도/북마크 동기화 역전 방지, 상단고정·독서잔디 양방향 동기화, TTS 유니코드 정규화 캐시, OLED 셰이더 완전 바이패스 절전 & `onAccentColor` 고대비 가독성, 볼륨키 넘김 MethodChannel, 원문 대역 병기/여백 슬라이더, `_RuleEditorCardItem` IME 한글 자모 분리 방지) |
 | **웹 프론트** | `server/static/admin/` | **ES 모듈 분리 관리자 UI**: `admin-main.js` (진입점 & 단축키), `admin-tree.js` (3단계 트리, 검색 시 소설 폴더 자동 전개 차단 `isFolderCollapsed = true` 및 사이버네틱 일치 표시등 `novel-match-lamp`, 회차 지연 로딩 Lazy Loading 유지로 검색 렉 0ms, `updateSearchJumpUI`, `jumpToMatchingNovel`), `admin-state.js` (전역 상태 및 DOM 캐시), `admin-dock.js`, `admin-analytics.js`, `admin-restore.js`, `admin-find-replace.js` |
 | **웹 프론트** | `server/static/` | `viewer.js` (3D 닉시관 인디케이터, 사전 & 용례 학습 패널), `library.js` (증기 차분기관 톱니/배관/압력계 대시보드), `admin-fx.js` (사이버네틱 오디오 & 파티클 엔진) |
 
@@ -80,7 +80,7 @@
       - viewer.html / viewer.css: 3D 진공관 닉시관(Nixie Tube) 오렌지 네온 회차 & 인디케이터
       - viewer.js: 📖 사전 & 누적 용례 학습 패널 (Shift+D/W), 단어 선택 플로팅 툴팁, 수동 수정 연동
       - admin/ (admin-main.js, admin-tree.js, admin-state.js): 검색 시 소설 폴더 자동 펼침 차단(접힘 유지), 사이버네틱 일치 표시등(`novel-match-lamp`) 및 첫 소설 빠른 이동(Enter/점프 버튼/네온 펄스 애니메이션), 회차 지연 로딩(Lazy Loading)으로 렉 원천 차단
-   3. 모바일 독립 앱 (mobile_app/): Flutter 기반 하이퍼 에스테틱 Luminary 리더 (v1.6.0)
+   3. 모바일 독립 앱 (mobile_app/): Flutter 기반 하이퍼 에스테틱 Luminary 리더 (v1.7.0)
 ```
 
 ---

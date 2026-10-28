@@ -14,10 +14,25 @@ import java.io.File
 
 class MainActivity: FlutterActivity() {
     private val CHANNEL = "com.lanovel.lanovel_reader/app_installer"
+    private val VOLUME_CHANNEL = "com.lanovel.lanovel_reader/volume_key"
     private val TAG = "MainActivity"
+    private var volumeChannel: MethodChannel? = null
+    private var volumePagingEnabled = false
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        volumeChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, VOLUME_CHANNEL).apply {
+            setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "enableVolumeKeyPaging" -> {
+                        volumePagingEnabled = call.argument<Boolean>("enable") ?: false
+                        result.success(true)
+                    }
+                    else -> result.notImplemented()
+                }
+            }
+        }
+
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).setMethodCallHandler { call, result ->
             when (call.method) {
                 "installApkSilent", "installApk" -> {
@@ -120,5 +135,21 @@ class MainActivity: FlutterActivity() {
             Log.e(TAG, "installApk error: ${e.message}", e)
             false
         }
+    }
+
+    override fun onKeyDown(keyCode: Int, event: android.view.KeyEvent?): Boolean {
+        if (volumePagingEnabled) {
+            when (keyCode) {
+                android.view.KeyEvent.KEYCODE_VOLUME_DOWN -> {
+                    volumeChannel?.invokeMethod("onVolumeKeyDown", mapOf("direction" to "next"))
+                    return true
+                }
+                android.view.KeyEvent.KEYCODE_VOLUME_UP -> {
+                    volumeChannel?.invokeMethod("onVolumeKeyDown", mapOf("direction" to "prev"))
+                    return true
+                }
+            }
+        }
+        return super.onKeyDown(keyCode, event)
     }
 }

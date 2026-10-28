@@ -207,6 +207,20 @@ class _HyperAmbientMeshBackgroundState extends State<HyperAmbientMeshBackground>
 
   @override
   Widget build(BuildContext context) {
+    // OLED 테마일 경우 배터리 극소화 및 순수 블랙 보장을 위해 셰이더 틱 및 드로잉 완전 차단
+    if (widget.theme.id == 'oled') {
+      return Stack(
+        children: [
+          Positioned.fill(
+            child: ColoredBox(color: widget.theme.background),
+          ),
+          Positioned.fill(
+            child: widget.child,
+          ),
+        ],
+      );
+    }
+
     final c1 = HyperAestheticTheme.getAmbientPrimary(widget.theme);
     final c2 = HyperAestheticTheme.getAmbientSecondary(widget.theme);
     final c3 = HyperAestheticTheme.getAmbientTertiary(widget.theme);

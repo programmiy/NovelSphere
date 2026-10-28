@@ -1379,185 +1379,15 @@ class _RulesEditorSheetState extends State<_RulesEditorSheet> {
                   final isDiscovering = _isDiscoveringIndex.contains(index);
                   final candidates = _discoveredCandidates[index] ?? [];
 
-                  return Card(
-                    color: theme.background,
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      side: BorderSide(color: theme.borderColor),
-                    ),
-                    margin: const EdgeInsets.only(bottom: 14),
-                    child: Padding(
-                      padding: const EdgeInsets.all(14),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Switch(
-                                value: rule.enabled,
-                                activeColor: theme.accentColor,
-                                onChanged: (v) => setState(() => rule.enabled = v),
-                              ),
-                              Text(rule.enabled ? '활성화' : '비활성', style: TextStyle(color: theme.textColor, fontSize: 12)),
-                              const Spacer(),
-                              IconButton(
-                                icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 20),
-                                onPressed: () => setState(() => _rules.removeAt(index)),
-                              ),
-                            ],
-                          ),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: TextField(
-                                  controller: TextEditingController(text: rule.source)..selection = TextSelection.collapsed(offset: rule.source.length),
-                                  style: TextStyle(color: theme.textColor, fontSize: 13),
-                                  decoration: InputDecoration(
-                                    labelText: '원문 한자 (Source)',
-                                    labelStyle: TextStyle(color: theme.subTextColor, fontSize: 12),
-                                    isDense: true,
-                                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                                  ),
-                                  onChanged: (v) => rule.source = v.trim(),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Icon(Icons.arrow_forward_rounded, color: theme.subTextColor, size: 16),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: TextField(
-                                  controller: TextEditingController(text: rule.target)..selection = TextSelection.collapsed(offset: rule.target.length),
-                                  style: TextStyle(color: theme.textColor, fontSize: 13),
-                                  decoration: InputDecoration(
-                                    labelText: '올바른 표기 (Target)',
-                                    labelStyle: TextStyle(color: theme.subTextColor, fontSize: 12),
-                                    isDense: true,
-                                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                                  ),
-                                  onChanged: (v) => rule.target = v.trim(),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 10),
-
-                          // 오독 단어 목록
-                          TextField(
-                            controller: TextEditingController(text: rule.misreadings.join(', '))..selection = TextSelection.collapsed(offset: rule.misreadings.join(', ').length),
-                            style: TextStyle(color: theme.textColor, fontSize: 13),
-                            decoration: InputDecoration(
-                              labelText: '오독 단어 목록 (쉼표 구분)',
-                              labelStyle: TextStyle(color: theme.subTextColor, fontSize: 12),
-                              hintText: '예: 하루토, 유토, 유리',
-                              hintStyle: TextStyle(color: theme.subTextColor.withOpacity(0.5), fontSize: 11),
-                              isDense: true,
-                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                            ),
-                            onChanged: (v) {
-                              rule.misreadings = v.split(',').map((s) => s.trim()).filterEmpty().toList();
-                            },
-                          ),
-                          const SizedBox(height: 10),
-
-                          // 감지 제외/예외 단어 목록
-                          TextField(
-                            controller: TextEditingController(text: rule.exceptions.join(', '))..selection = TextSelection.collapsed(offset: rule.exceptions.join(', ').length),
-                            style: TextStyle(color: theme.textColor, fontSize: 13),
-                            decoration: InputDecoration(
-                              labelText: '🚫 감지 제외/예외 단어 (원문·번역문 포함 시 감지 건너뛰기)',
-                              labelStyle: const TextStyle(color: Colors.redAccent, fontSize: 12),
-                              hintText: '예: 영국, 영어, 英国, 英語, 영웅',
-                              hintStyle: TextStyle(color: theme.subTextColor.withOpacity(0.5), fontSize: 11),
-                              isDense: true,
-                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                            ),
-                            onChanged: (v) {
-                              rule.exceptions = v.split(',').map((s) => s.trim()).filterEmpty().toList();
-                            },
-                          ),
-                          const SizedBox(height: 10),
-
-                          // 🔍 통계 기반 오독 단어 자동 발굴 버튼
-                          SizedBox(
-                            width: double.infinity,
-                            child: OutlinedButton.icon(
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: theme.accentColor,
-                                side: BorderSide(color: theme.accentColor),
-                                padding: const EdgeInsets.symmetric(vertical: 8),
-                              ),
-                              onPressed: isDiscovering ? null : () => _discover(index, rule),
-                              icon: isDiscovering
-                                  ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
-                                  : const Icon(Icons.analytics_outlined, size: 16),
-                              label: Text(isDiscovering ? '오독 단어 통계 분석 중...' : '🔍 오독 단어 통계 자동 발굴 (PC)'),
-                            ),
-                          ),
-
-                          // 발굴된 단어 칩 목록
-                          if (candidates.isNotEmpty) ...[
-                            const SizedBox(height: 8),
-                            Text('🎯 발굴된 단어 후보 (${candidates.length}건):', style: TextStyle(color: theme.subTextColor, fontSize: 11, fontWeight: FontWeight.bold)),
-                            const SizedBox(height: 4),
-                            Wrap(
-                              spacing: 8,
-                              runSpacing: 6,
-                              children: candidates.map((cand) {
-                                final alreadyMis = rule.misreadings.contains(cand.word);
-                                final alreadyExc = rule.exceptions.contains(cand.word);
-                                return Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    ActionChip(
-                                      label: Text('+ ${cand.word} (${cand.count}회)'),
-                                      labelStyle: TextStyle(fontSize: 11, color: alreadyMis ? Colors.grey : theme.accentColor),
-                                      backgroundColor: alreadyMis ? theme.borderColor.withOpacity(0.5) : theme.accentColor.withOpacity(0.12),
-                                      onPressed: alreadyMis
-                                          ? null
-                                          : () {
-                                              setState(() {
-                                                rule.misreadings.add(cand.word);
-                                              });
-                                              ScaffoldMessenger.of(context).showSnackBar(
-                                                SnackBar(content: Text("'${cand.word}' 오독 목록에 추가되었습니다."), duration: const Duration(milliseconds: 700)),
-                                              );
-                                            },
-                                    ),
-                                    const SizedBox(width: 2),
-                                    InkWell(
-                                      borderRadius: BorderRadius.circular(12),
-                                      onTap: alreadyExc
-                                          ? null
-                                          : () {
-                                              setState(() {
-                                                rule.exceptions.add(cand.word);
-                                              });
-                                              ScaffoldMessenger.of(context).showSnackBar(
-                                                SnackBar(content: Text("'${cand.word}' 감지 제외 단어로 추가되었습니다."), duration: const Duration(milliseconds: 700)),
-                                              );
-                                            },
-                                      child: Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                                        decoration: BoxDecoration(
-                                          color: alreadyExc ? theme.borderColor.withOpacity(0.5) : Colors.redAccent.withOpacity(0.12),
-                                          borderRadius: BorderRadius.circular(12),
-                                          border: Border.all(color: alreadyExc ? Colors.transparent : Colors.redAccent.withOpacity(0.3)),
-                                        ),
-                                        child: Text(
-                                          '🚫 예외',
-                                          style: TextStyle(fontSize: 10, color: alreadyExc ? Colors.grey : Colors.redAccent, fontWeight: FontWeight.bold),
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                );
-                              }).toList(),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
+                  return _RuleEditorCardItem(
+                    key: ObjectKey(rule),
+                    theme: theme,
+                    rule: rule,
+                    isDiscovering: isDiscovering,
+                    candidates: candidates,
+                    onDelete: () => setState(() => _rules.removeAt(index)),
+                    onDiscover: () => _discover(index, rule),
+                    onRuleChanged: () => setState(() {}),
                   );
                 },
               ),
@@ -1571,4 +1401,263 @@ class _RulesEditorSheetState extends State<_RulesEditorSheet> {
 
 extension _IterableStringExt on Iterable<String> {
   Iterable<String> filterEmpty() => where((s) => s.isNotEmpty);
+}
+
+
+class _RuleEditorCardItem extends StatefulWidget {
+  final ReaderThemeData theme;
+  final CharacterRule rule;
+  final bool isDiscovering;
+  final List<MisreadingCandidate> candidates;
+  final VoidCallback onDelete;
+  final VoidCallback onDiscover;
+  final VoidCallback onRuleChanged;
+
+  const _RuleEditorCardItem({
+    super.key,
+    required this.theme,
+    required this.rule,
+    required this.isDiscovering,
+    required this.candidates,
+    required this.onDelete,
+    required this.onDiscover,
+    required this.onRuleChanged,
+  });
+
+  @override
+  State<_RuleEditorCardItem> createState() => _RuleEditorCardItemState();
+}
+
+class _RuleEditorCardItemState extends State<_RuleEditorCardItem> {
+  late final TextEditingController _sourceController;
+  late final TextEditingController _targetController;
+  late final TextEditingController _misreadingsController;
+  late final TextEditingController _exceptionsController;
+
+  @override
+  void initState() {
+    super.initState();
+    _sourceController = TextEditingController(text: widget.rule.source);
+    _targetController = TextEditingController(text: widget.rule.target);
+    _misreadingsController = TextEditingController(text: widget.rule.misreadings.join(', '));
+    _exceptionsController = TextEditingController(text: widget.rule.exceptions.join(', '));
+  }
+
+  @override
+  void didUpdateWidget(covariant _RuleEditorCardItem oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.rule.misreadings.join(', ') != _misreadingsController.text) {
+      _misreadingsController.text = widget.rule.misreadings.join(', ');
+    }
+    if (widget.rule.exceptions.join(', ') != _exceptionsController.text) {
+      _exceptionsController.text = widget.rule.exceptions.join(', ');
+    }
+  }
+
+  @override
+  void dispose() {
+    _sourceController.dispose();
+    _targetController.dispose();
+    _misreadingsController.dispose();
+    _exceptionsController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = widget.theme;
+    final rule = widget.rule;
+
+    return Card(
+      color: theme.background,
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: theme.borderColor),
+      ),
+      margin: const EdgeInsets.only(bottom: 14),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Switch(
+                  value: rule.enabled,
+                  activeColor: theme.accentColor,
+                  onChanged: (v) {
+                    setState(() => rule.enabled = v);
+                    widget.onRuleChanged();
+                  },
+                ),
+                Text(rule.enabled ? '활성화' : '비활성', style: TextStyle(color: theme.textColor, fontSize: 12)),
+                const Spacer(),
+                IconButton(
+                  icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 20),
+                  onPressed: widget.onDelete,
+                ),
+              ],
+            ),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _sourceController,
+                    style: TextStyle(color: theme.textColor, fontSize: 13),
+                    decoration: InputDecoration(
+                      labelText: '원문 한자 (Source)',
+                      labelStyle: TextStyle(color: theme.subTextColor, fontSize: 12),
+                      isDense: true,
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                    onChanged: (v) {
+                      rule.source = v.trim();
+                      widget.onRuleChanged();
+                    },
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Icon(Icons.arrow_forward_rounded, color: theme.subTextColor, size: 16),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: TextField(
+                    controller: _targetController,
+                    style: TextStyle(color: theme.textColor, fontSize: 13),
+                    decoration: InputDecoration(
+                      labelText: '올바른 표기 (Target)',
+                      labelStyle: TextStyle(color: theme.subTextColor, fontSize: 12),
+                      isDense: true,
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                    onChanged: (v) {
+                      rule.target = v.trim();
+                      widget.onRuleChanged();
+                    },
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+
+            // 오독 단어 목록
+            TextField(
+              controller: _misreadingsController,
+              style: TextStyle(color: theme.textColor, fontSize: 13),
+              decoration: InputDecoration(
+                labelText: '오독 단어 목록 (쉼표 구분)',
+                labelStyle: TextStyle(color: theme.subTextColor, fontSize: 12),
+                hintText: '예: 하루토, 유토, 유리',
+                hintStyle: TextStyle(color: theme.subTextColor.withOpacity(0.5), fontSize: 11),
+                isDense: true,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+              onChanged: (v) {
+                rule.misreadings = v.split(',').map((s) => s.trim()).filterEmpty().toList();
+                widget.onRuleChanged();
+              },
+            ),
+            const SizedBox(height: 10),
+
+            // 감지 제외/예외 단어 목록
+            TextField(
+              controller: _exceptionsController,
+              style: TextStyle(color: theme.textColor, fontSize: 13),
+              decoration: InputDecoration(
+                labelText: '🚫 감지 제외/예외 단어 (원문·번역문 포함 시 감지 건너뛰기)',
+                labelStyle: const TextStyle(color: Colors.redAccent, fontSize: 12),
+                hintText: '예: 영국, 영어, 英国, 英語, 영웅',
+                hintStyle: TextStyle(color: theme.subTextColor.withOpacity(0.5), fontSize: 11),
+                isDense: true,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+              onChanged: (v) {
+                rule.exceptions = v.split(',').map((s) => s.trim()).filterEmpty().toList();
+                widget.onRuleChanged();
+              },
+            ),
+            const SizedBox(height: 10),
+
+            // 🔍 통계 기반 오독 단어 자동 발굴 버튼
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: theme.accentColor,
+                  side: BorderSide(color: theme.accentColor),
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                ),
+                onPressed: widget.isDiscovering ? null : widget.onDiscover,
+                icon: widget.isDiscovering
+                    ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Icon(Icons.analytics_outlined, size: 16),
+                label: Text(widget.isDiscovering ? '오독 단어 통계 분석 중...' : '🔍 오독 단어 통계 자동 발굴 (PC)'),
+              ),
+            ),
+
+            // 발굴된 단어 칩 목록
+            if (widget.candidates.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text('🎯 발굴된 단어 후보 (${widget.candidates.length}건):', style: TextStyle(color: theme.subTextColor, fontSize: 11, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 4),
+              Wrap(
+                spacing: 8,
+                runSpacing: 6,
+                children: widget.candidates.map((cand) {
+                  final alreadyMis = rule.misreadings.contains(cand.word);
+                  final alreadyExc = rule.exceptions.contains(cand.word);
+                  return Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      ActionChip(
+                        label: Text('+ ${cand.word} (${cand.count}회)'),
+                        labelStyle: TextStyle(fontSize: 11, color: alreadyMis ? Colors.grey : theme.accentColor),
+                        backgroundColor: alreadyMis ? theme.borderColor.withOpacity(0.5) : theme.accentColor.withOpacity(0.12),
+                        onPressed: alreadyMis
+                            ? null
+                            : () {
+                                rule.misreadings.add(cand.word);
+                                _misreadingsController.text = rule.misreadings.join(', ');
+                                widget.onRuleChanged();
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text("'${cand.word}' 오독 목록에 추가되었습니다."), duration: const Duration(milliseconds: 700)),
+                                );
+                              },
+                      ),
+                      const SizedBox(width: 2),
+                      InkWell(
+                        borderRadius: BorderRadius.circular(12),
+                        onTap: alreadyExc
+                            ? null
+                            : () {
+                                rule.exceptions.add(cand.word);
+                                _exceptionsController.text = rule.exceptions.join(', ');
+                                widget.onRuleChanged();
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text("'${cand.word}' 감지 제외 단어로 추가되었습니다."), duration: const Duration(milliseconds: 700)),
+                                );
+                              },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: alreadyExc ? theme.borderColor.withOpacity(0.5) : Colors.redAccent.withOpacity(0.12),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: alreadyExc ? Colors.transparent : Colors.redAccent.withOpacity(0.3)),
+                          ),
+                          child: Text(
+                            '🚫 예외',
+                            style: TextStyle(fontSize: 10, color: alreadyExc ? Colors.grey : Colors.redAccent, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
+                }).toList(),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
 }

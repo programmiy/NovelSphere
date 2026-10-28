@@ -23,6 +23,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final TextEditingController _wifi1Controller = TextEditingController();
   final TextEditingController _wifi2Controller = TextEditingController();
   final TextEditingController _serverUrlController = TextEditingController();
+  final TextEditingController _tokenController = TextEditingController();
 
   String _currentWifiSsid = '확인 중...';
   bool _isTrustedWifi = false;
@@ -45,11 +46,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _isCheckingUpdate = false;
 
   @override
+  void dispose() {
+    _wifi1Controller.dispose();
+    _wifi2Controller.dispose();
+    _serverUrlController.dispose();
+    _tokenController.dispose();
+    super.dispose();
+  }
+
+  @override
   void initState() {
     super.initState();
     _wifi1Controller.text = PreferencesService.trustedWifi1;
     _wifi2Controller.text = PreferencesService.trustedWifi2;
     _serverUrlController.text = PreferencesService.serverUrl;
+    _tokenController.text = PreferencesService.authToken;
     _hideWifiSection = PreferencesService.hideWifiSection;
     _hideServerSection = PreferencesService.hideServerSection;
     _enableSystemNotification = PreferencesService.enableSystemNotification;
@@ -149,6 +160,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     await PreferencesService.setTrustedWifi1(_wifi1Controller.text.trim());
     await PreferencesService.setTrustedWifi2(_wifi2Controller.text.trim());
     await PreferencesService.setServerUrl(normalized);
+    await PreferencesService.setAuthToken(_tokenController.text.trim());
     await PreferencesService.setEnableSystemNotification(_enableSystemNotification);
     await PreferencesService.setEnableDashboardNotification(_enableDashboardNotification);
     await PreferencesService.setAutoSilentUpdate(_autoSilentUpdate);
@@ -1084,6 +1096,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
               labelText: 'PC 서버 주소 (IP:포트)',
               labelStyle: TextStyle(color: theme.subTextColor),
               hintText: 'http://192.168.219.103:8001',
+            ),
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: _tokenController,
+            obscureText: true,
+            style: TextStyle(color: theme.textColor, fontSize: 14),
+            decoration: InputDecoration(
+              labelText: 'LAN 보안 인증 토큰 (X-Lanovel-Key)',
+              labelStyle: TextStyle(color: theme.subTextColor),
+              hintText: 'lnv_... (미입력 시 토큰 미사용)',
             ),
           ),
           const SizedBox(height: 8),

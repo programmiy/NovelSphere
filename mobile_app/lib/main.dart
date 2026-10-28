@@ -69,9 +69,9 @@ class _LanovelAppState extends State<LanovelApp> {
         colorScheme: ColorScheme(
           brightness: theme.isDark ? Brightness.dark : Brightness.light,
           primary: theme.accentColor,
-          onPrimary: Colors.white,
+          onPrimary: theme.onAccentColor,
           secondary: theme.accentColor,
-          onSecondary: Colors.white,
+          onSecondary: theme.onAccentColor,
           error: Colors.redAccent,
           onError: Colors.white,
           surface: theme.surfaceColor,

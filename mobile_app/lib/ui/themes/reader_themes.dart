@@ -25,6 +25,10 @@ class ReaderThemeData {
     required this.borderColor,
     required this.isDark,
   });
+
+  /// 버튼/칩 배경이 accentColor일 때 가독성(대비비)을 보장하는 전경 텍스트 색상
+  Color get onAccentColor =>
+      accentColor.computeLuminance() > 0.45 ? Colors.black : Colors.white;
 }
 
 class ReaderThemes {
@@ -178,8 +182,8 @@ class ReaderThemes {
       name: 'OLED 퓨어 블랙',
       background: Color(0xFF000000),
       textColor: Color(0xFFEDEDED),
-      subTextColor: Color(0xFF888888),
-      originalTextColor: Color(0xFF555555),
+      subTextColor: Color(0xFF9E9E9E),
+      originalTextColor: Color(0xFF888888),
       accentColor: Color(0xFFFFFFFF),
       surfaceColor: Color(0xFF121212),
       borderColor: Color(0xFF242424),
