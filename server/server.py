@@ -152,6 +152,23 @@ async def periodic_bracket_restoration_task(interval_seconds: int = 1800):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global APP_START_TIME, SERVER_METADATA
+
+    # Suppress harmless Windows IOCP client disconnect noise (WinError 64 / 121 / 1236)
+    if os.name == "nt":
+        try:
+            loop = asyncio.get_running_loop()
+            orig_handler = loop.get_exception_handler()
+            def windows_iocp_exception_handler(l, context):
+                exc = context.get("exception")
+                if isinstance(exc, OSError) and getattr(exc, "winerror", None) in (64, 121, 1236):
+                    return
+                if orig_handler:
+                    orig_handler(l, context)
+                else:
+                    l.default_exception_handler(context)
+            loop.set_exception_handler(windows_iocp_exception_handler)
+        except Exception:
+            pass
     
     try:
         with open(settings.metadata_file, "r") as f:
