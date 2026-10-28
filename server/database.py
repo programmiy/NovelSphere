@@ -64,9 +64,12 @@ import zoneinfo
 import datetime
 
 _LA_TZ = zoneinfo.ZoneInfo("America/Los_Angeles")
+_KST_TZ = zoneinfo.ZoneInfo("Asia/Seoul")
 
 def _sqlite_to_quota_date(ts):
-    """Unix timestamp(초)를 미국 태평양(America/Los_Angeles, Gemini API 리셋 기준) 날짜 문자열(YYYY-MM-DD)로 변환."""
+    """Unix timestamp(초)를 미국 태평양(America/Los_Angeles, Gemini API 리셋 기준) 날짜 문자열(YYYY-MM-DD)로 변환.
+    LA 자정(00:00)이 KST 16시(서머타임) 또는 17시(표준시)와 일치하므로 API 쿼터 주기의 해당 일자를 정확히 나타냅니다.
+    """
     if ts is None:
         return None
     try:
@@ -76,17 +79,19 @@ def _sqlite_to_quota_date(ts):
         return None
 
 def _sqlite_to_quota_hour(ts):
-    """Unix timestamp(초)를 미국 태평양 기준 0~23 시(Hour)로 변환."""
+    """Unix timestamp(초)를 한국 표준시(Asia/Seoul, KST) 기준 0~23 시(Hour)로 변환."""
     if ts is None:
         return 0
     try:
-        dt = datetime.datetime.fromtimestamp(int(ts), tz=_LA_TZ)
+        dt = datetime.datetime.fromtimestamp(int(ts), tz=_KST_TZ)
         return dt.hour
     except Exception:
         return 0
 
 def _sqlite_to_quota_dow(ts):
-    """Unix timestamp(초)를 미국 태평양 기준 요일(0:일, 1:월, ..., 6:토)로 변환."""
+    """Unix timestamp(초)를 미국 태평양 기준 요일(0:일, 1:월, ..., 6:토)로 변환.
+    API 쿼터 주기 일자(TO_QUOTA_DATE)의 요일과 1:1로 일치합니다.
+    """
     if ts is None:
         return 0
     try:
@@ -103,6 +108,7 @@ def register_sqlite_functions(conn):
     conn.create_function("REGEXP_REPLACE_PLAIN", 3, _sqlite_regexp_replace_plain)
     conn.create_function("TO_QUOTA_DATE", 1, _sqlite_to_quota_date)
     conn.create_function("TO_QUOTA_HOUR", 1, _sqlite_to_quota_hour)
+    conn.create_function("TO_KST_HOUR", 1, _sqlite_to_quota_hour)
     conn.create_function("TO_QUOTA_DOW", 1, _sqlite_to_quota_dow)
 
 import sys

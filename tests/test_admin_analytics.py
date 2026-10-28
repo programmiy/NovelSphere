@@ -46,7 +46,12 @@ def test_admin_analytics_endpoint():
         assert "ma7_chars" in trend
     assert "hourly_distribution" in activity
     assert len(activity["hourly_distribution"]) == 24
+    # 24시간 활동 분포의 시작 시각이 API 초기화 시각(16시/17시)과 일치해야 함
+    first_hour_item = activity["hourly_distribution"][0]
+    assert first_hour_item["hour"] == activity["quota_reset_hour"]
+    assert first_hour_item["is_reset_start"] is True
     assert "peak_hour" in activity
+    assert 0 <= activity["peak_hour"] <= 23
     assert "dow_distribution" in activity
     assert len(activity["dow_distribution"]) == 7
     assert "peak_dow" in activity

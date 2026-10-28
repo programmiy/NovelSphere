@@ -226,25 +226,27 @@ export function getTranslationsList(selectedOnly = false) {
 }
 
 export function getQuotaWindowStartMs(summary) {
-    const resetTimeIso = summary?.period_reset_time_kst;
-    if (resetTimeIso) {
-        const resetMs = new Date(resetTimeIso).getTime();
-        if (!Number.isNaN(resetMs)) {
-            return resetMs - (24 * 60 * 60 * 1000);
-        }
+    // 1. 서버(quota_window_start_ts / today_start_ts) 검증된 Unix timestamp 최우선 반영 (초 -> ms)
+    if (summary && typeof summary.quota_window_start_ts === 'number' && summary.quota_window_start_ts > 0) {
+        return summary.quota_window_start_ts * 1000;
+    }
+    if (summary && typeof summary.today_start_ts === 'number' && summary.today_start_ts > 0) {
+        return summary.today_start_ts * 1000;
     }
 
+    // 2. Fallback: KST 기준 당일 또는 전일의 quota_reset_hour(16시/17시) 계산
+    const resetHour = (summary && typeof summary.quota_reset_hour === 'number') ? summary.quota_reset_hour : 16;
     const now = new Date();
     const utcMs = now.getTime() + (now.getTimezoneOffset() * 60 * 1000);
-    const kstDate = new Date(utcMs + (9 * 60 * 60 * 1000));
-    kstDate.setHours(16, 0, 0, 0);
-
     const kstNow = new Date(utcMs + (9 * 60 * 60 * 1000));
-    if (kstNow.getTime() < kstDate.getTime()) {
-        kstDate.setDate(kstDate.getDate() - 1);
+    
+    const kstReset = new Date(kstNow);
+    kstReset.setHours(resetHour, 0, 0, 0);
+    if (kstNow.getTime() < kstReset.getTime()) {
+        kstReset.setDate(kstReset.getDate() - 1);
     }
 
-    return kstDate.getTime() - (9 * 60 * 60 * 1000);
+    return kstReset.getTime() - (9 * 60 * 60 * 1000);
 }
 
 // Utilities

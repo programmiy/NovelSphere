@@ -236,10 +236,10 @@ def get_admin_analytics(folder_name: Optional[str] = None):
                 streak_days += 1
                 check_date = check_date - datetime.timedelta(days=1)
 
-        # 3. 24시간 시간대별 활동 프로필 (Hourly Distribution) - API 쿼터 주기(미국 시간 0시~23시)
+        # 3. 24시간 시간대별 활동 프로필 (Hourly Distribution) - API 쿼터 초기화 시각(16시/17시 KST)을 하루 시작점으로 정렬
         hourly_query = f"""
         SELECT 
-            TO_QUOTA_HOUR(timestamp) as hour_num,
+            TO_KST_HOUR(timestamp) as hour_num,
             COUNT(*) as count
         FROM translations
         {daily_where}
@@ -249,9 +249,17 @@ def get_admin_analytics(folder_name: Optional[str] = None):
         cursor.execute(hourly_query, params)
         hourly_rows = cursor.fetchall()
         hourly_map = {r[0]: r[1] for r in hourly_rows}
+
+        # 하루의 시작점을 API 초기화 시각(quota_reset_hour: 16시 또는 17시)으로 순환 정렬 (16, 17, ..., 23, 0, ..., 15)
+        ordered_hours = [(quota_reset_hour + i) % 24 for i in range(24)]
         hourly_distribution = [
-            {"hour": h, "count": hourly_map.get(h, 0), "pct": round((hourly_map.get(h, 0) / max(total_paragraphs, 1)) * 100, 1)}
-            for h in range(24)
+            {
+                "hour": h,
+                "count": hourly_map.get(h, 0),
+                "pct": round((hourly_map.get(h, 0) / max(total_paragraphs, 1)) * 100, 1),
+                "is_reset_start": (h == quota_reset_hour)
+            }
+            for h in ordered_hours
         ]
         
         peak_hour = 0

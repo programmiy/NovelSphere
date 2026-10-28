@@ -1,7 +1,7 @@
 # LANOVEL 종합 코드베이스 기능 및 함수 레퍼런스 (Architectural & Functional Reference)
 
 > **문서 목적**: AI 어시스턴트가 사용자 요구사항 및 구어체 지시를 입력받았을 때, 혼선이나 회귀(Regression) 없이 전체 아키텍처와 1:1 타깃 코드를 0초 만에 직관적으로 파악할 수 있도록 압축 정리한 단일 진실 공급원(SSOT) 기술 레퍼런스입니다.
-> **최신 동기화 일자**: 2026-10-28 (`C:\ServerHub` 공동 서버 관리자 고도화 및 안정성 전면 개선: Windows Named Mutex 기반 프로세스 다중 실행 방어, `kill_by_port` 기반 고아 프로세스 및 서브프로세스 트리 원천 박멸, 300ms UI 로그 테일링과 2.5s 통합 HTTP 상태 감시 루프 완전 분리로 Raw TCP Probe 제거 및 Windows IOCP `WinError 64` 소켓 중단 에러 원천 차단, 15MB 초과 시 자동 백업 및 0바이트 리셋 로그 자동 로테이션과 수동 회전 버튼 탑재, LANOVEL 가상환경 `C:\LANOVEL\venv` 표준 공용 바인딩; 번역 청킹 글자 수 연동 가변 상한 알고리즘 createBudgetChunks 도입; 모바일 리모컨 연속 번역 큐 제어; 소설가가 되자 100화 단위 페이징 수집 연동; 관리자 페이지 검색 시 소설 폴더 자동 펼침 차단 및 사이버네틱 일치 표시등; 0.01초 지연 로딩 Lazy Loading; 34만 누적 번역 코퍼스 사전 연동)
+> **최신 동기화 일자**: 2026-10-28 (`C:\ServerHub` 공동 서버 관리자 고도화 및 안정성 전면 개선; 번역 통계 모듈 API 일일 쿼터 초기화 주기(16시/17시 KST) 100% 정합성 개편: 24시간 활동 프로필 한국 시간 KST 기준 복원 및 초기화 시각 24시간 순환 정렬 `[16..23, 0..15]`, 하루 시작점 인디케이터 `⚡16시` 및 KST 피크 시간대 정상화, `admin-state.js`의 `getQuotaWindowStartMs` 서버 타임스탬프 1순위 반영 및 9시간 중복 차감 버그 해결; Windows Named Mutex 단일 인스턴스, `kill_by_port`, 로그 자동 로테이션, 가변 청킹 `createBudgetChunks`, 소설 연속 번역 큐)
 
 ---
 
@@ -13,7 +13,7 @@
 | **데스크톱** | `main.py` | PyWebView 윈도우 + 시스템 트레이(`Pystray`) + 서버/셀러리 서브프로세스 수명주기 관리 |
 | **설정/연결** | `server/settings.py` | Pydantic 환경변수 (.env), Gemini 모델(`gemini-3.5-flash-lite`), 포트(8001), CORS 허용 출처, 보안 토큰 해시 |
 | **보안 코어** | `server/security.py` | PBKDF2-HMAC-SHA256 (10만 회 솔트 해시), `verify_token` 상수 시간 비교, `is_safe_external_url` SSRF 사설망 방어 |
-| **DB 코어** | `server/database.py` | SQLite WAL 모드, `busy_timeout=5000`, `REGEXP` 함수 주입, SQLAlchemy 세션 제너레이터 |
+| **DB 코어** | `server/database.py` | SQLite WAL 모드, `busy_timeout=5000`, `REGEXP`, `TO_QUOTA_DATE`, `TO_QUOTA_HOUR`(`TO_KST_HOUR`), `TO_QUOTA_DOW` 주입, SQLAlchemy 세션 제너레이터 |
 | **ORM 모델** | `server/models.py` | `Translation`, `BookActivity`(`is_visible` 포함), `NovelSeparatorSetting`, `TranslationTrash`, `SpecialBatchQueue` 등 13개 테이블 |
 | **RPM 관리** | `server/services/rpm_manager.py` | **2단계 슬라이딩 윈도우(API 60초 + 회차 5분)**, 최근 회차 가중 적응형 휴식([`proactive_rpm_rest`](file:///C:/LANOVEL/server/services/rpm_manager.py)), 세션 소켓 재생성, 회차 기반 가변 딜레이 계산([`calculate_episode_adaptive_delay`](file:///C:/LANOVEL/server/services/rpm_manager.py)) |
 | **품질/복원** | `server/rule_classifier.py` | 100% 룰베이스 번역 품질 분류(규칙 1~4), 대사 괄호(`「%」`) 자동 복원([`restore_brackets`](file:///C:/LANOVEL/server/rule_classifier.py)) |
@@ -33,7 +33,7 @@
 | **특별 적재** | `server/routers/special_batch.py` | 배치 번역/보정본 검수 UI(`/special_batch`), 승인 시 원래 소설 폴더 자동 상속, 미분류(None) 보존, 일괄 승인 |
 | **크롬 확장** | `extension/` | **TypeScript + esbuild 단일 책임 모듈화 구조**: `src/content.ts`, `src/background/` (`remote_ws.ts`, `queue_tabs.ts`, `index.ts`), `src/scrapers/` (`syosetu.ts`, `kakuyomu.ts` 등), `src/core/` (`state.ts`, `chunker.ts`(글자 수 연동 가변 청킹: 기본 45개·대화문 최대 75개·1300자 밀도 분할), `filters.ts`, `turbo.ts`, `separators.ts`, `adaptive_throttle.ts`, `dom_applier.ts`, `row_actions.ts`, `page_translator.ts`, `queue_session.ts`), `src/ui/` (`sidebar.ts`, `review_panel.ts`, `separator_panel.ts`, `hud.ts`, `key_nav.ts`, `toc_quick_jump.ts`) |
 | **모바일 앱** | `mobile_app/lib/`<br>`mobile_app/shaders/` | **하이퍼 에스테틱 Luminary UI & Impeller GLSL 셰이더 (v1.7.0)** (`replaceSeedDatabase` 원자적 시드 교체, 진도/북마크 동기화 역전 방지, 상단고정·독서잔디 양방향 동기화, TTS 유니코드 정규화 캐시, OLED 셰이더 완전 바이패스 절전 & `onAccentColor` 고대비 가독성, 볼륨키 넘김 MethodChannel, 원문 대역 병기/여백 슬라이더, `_RuleEditorCardItem` IME 한글 자모 분리 방지) |
-| **웹 프론트** | `server/static/admin/` | **ES 모듈 분리 관리자 UI**: `admin-main.js` (진입점 & 단축키), `admin-tree.js` (3단계 트리, 검색 시 소설 폴더 자동 전개 차단 `isFolderCollapsed = true` 및 사이버네틱 일치 표시등 `novel-match-lamp`, 회차 지연 로딩 Lazy Loading 유지로 검색 렉 0ms, `updateSearchJumpUI`, `jumpToMatchingNovel`), `admin-state.js` (전역 상태 및 DOM 캐시), `admin-dock.js`, `admin-analytics.js`, `admin-restore.js`, `admin-find-replace.js` |
+| **웹 프론트** | `server/static/admin/` | **ES 모듈 분리 관리자 UI**: `admin-main.js` (진입점 & 단축키), `admin-tree.js` (3단계 트리, 검색 시 소설 폴더 자동 전개 차단 `isFolderCollapsed = true` 및 사이버네틱 일치 표시등 `novel-match-lamp`, 회차 지연 로딩 Lazy Loading 유지로 검색 렉 0ms, `updateSearchJumpUI`, `jumpToMatchingNovel`), `admin-state.js` (전역 상태 및 DOM 캐시), `admin-dock.js`, `admin-analytics.js`(KST 24시간 활동 프로필·하루 시작 16시 인디케이터), `admin-restore.js`, `admin-find-replace.js` |
 | **웹 프론트** | `server/static/` | `viewer.js` (3D 닉시관 인디케이터, 사전 & 용례 학습 패널), `library.js` (증기 차분기관 톱니/배관/압력계 대시보드), `admin-fx.js` (사이버네틱 오디오 & 파티클 엔진) |
 
 ---
@@ -89,6 +89,7 @@
 
 | 사용자 발화 / 요청 예시 | 연관 파일 및 핵심 함수 | 핵심 처리 내용 |
 | :--- | :--- | :--- |
+| **"통계 모듈 손봐줘 / 하루 시작점(초기화 시간) 통계에 적용해줘 / 통계 시간대 왜곡"** | `server/database.py`<br>`server/routers/admin.py`<br>`server/static/admin/admin-analytics.js`<br>`server/static/admin/admin-state.js`<br>`tests/test_admin_analytics.py` | `_sqlite_to_quota_hour`를 한국 시간(KST)으로 수정 및 `TO_KST_HOUR` 등록. 24시간 활동 분포를 API 초기화 시각(16시/17시)부터 시작하는 24시간 순환 정렬(`[16..23, 0..15]`)로 개편하고 `is_reset_start` 하루 시작점 배지 및 실제 피크 시간대(KST) 도출. `admin-state.js`에서 `quota_window_start_ts` 1순위 참조 및 9시간 중복 차감 버그 해결. |
 | **"서버 허브 개선해줘 / 중복 실행 막아줘 / 로그 파일 너무 커 / 포트 안 닫혀"** | `C:\ServerHub\server_hub.pyw`<br>`C:\ServerHub\log_viewer.pyw`<br>`C:\ServerHub\hub_utils.py`<br>`start_server_hub.bat`<br>`open_logs.bat` | `acquire_single_instance_mutex`로 트레이/뷰어 프로세스 이중 실행 방지. `kill_by_port`로 포트 8000/8001 점유 프로세스 트리 확실하게 강제 종료. `SO_LINGER (1, 0)` 즉각 해제 소켓으로 `TIME_WAIT` 소켓 누적 원천 차단. 15MB 초과 시 `.old` 백업 및 0바이트 리셋 로그 자동 로테이션. `poll_logs`(300ms)와 서버 상태 체크(2.5s)를 분리하여 네트워크 부하 절감. `C:\LANOVEL\venv` 가상환경 표준 바인딩. |
 | **"원격으로 여러 소설 연속 번역해줘 / 큐 등록해줘 / 신데렐라 모드 켜줘"** | `server/novel_queue.py`<br>`server/routers/remote.py`<br>`extension/src/core/queue_session.ts`<br>`mobile_app/lib/ui/remote/remote_control_screen.dart`<br>`mobile_app/lib/services/remote_control_service.dart` | 폰 리모컨 화면 `_queueSection`에서 URL 추가·삭제·재시도·드래그 순서 변경·목록 자동 진행/신데렐라 스위치·최근 이슈 3개 관리(`RemoteControlService.fetchQueue/addQueueUrls/removeQueueItem/reorderQueue/retryQueueItem/setQueueConfig`). 폰 리모컨에 소설 개요 URL 목록을 전송(`POST /api/remote/queue`)하면 서버 `QueueRunner`가 에피소드 파싱 및 차례대로 탭 이동 명령 발송. 17시 마감 시 신데렐라 모드가 안전 대기 후 다음날 자동 재개. |
 | **"모바일 앱 빌드해줘 / 릴리즈 APK 만들어줘"** | `scripts/setup_mobile.ps1`<br>`mobile_app/pubspec.yaml` | `.\scripts\setup_mobile.ps1 -BuildApk` 실행. Flutter release APK 컴파일 후 `server/static/lanovel-reader-release.apk` 자동 복사 및 Wi-Fi 연결 기기에 실시간 무설치 업데이트 신호 발송. |

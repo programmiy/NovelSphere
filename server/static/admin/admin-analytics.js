@@ -266,7 +266,7 @@ function renderActivityTab(activity) {
     // 피크 시간대 배지
     const peakBadge = document.getElementById('peakHourBadge');
     if (peakBadge) {
-        peakBadge.textContent = `🔥 피크 시간대: ${activity.peak_hour}시 (${activity.peak_hour_count.toLocaleString()}건, API 주기 기준)`;
+        peakBadge.textContent = `🔥 피크 시간대: ${activity.peak_hour}시 (${activity.peak_hour_count.toLocaleString()}건, KST 기준)`;
     }
 
     // SVG 차트 렌더링
@@ -483,6 +483,7 @@ function renderHourlySvg(hourlyDistribution, peakHour) {
         const barH = plotH * (h.count / maxVal);
         const y = padTop + plotH - barH;
         const isPeak = (h.hour === peakHour);
+        const isStart = !!h.is_reset_start;
 
         const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
         rect.setAttribute('x', x);
@@ -490,8 +491,8 @@ function renderHourlySvg(hourlyDistribution, peakHour) {
         rect.setAttribute('width', barW);
         rect.setAttribute('height', Math.max(barH, 2));
         rect.setAttribute('rx', '3');
-        rect.setAttribute('fill', isPeak ? '#f59e0b' : '#4f46e5');
-        rect.setAttribute('opacity', isPeak ? '1' : '0.8');
+        rect.setAttribute('fill', isPeak ? '#f59e0b' : (isStart ? '#06b6d4' : '#4f46e5'));
+        rect.setAttribute('opacity', (isPeak || isStart) ? '1' : '0.85');
         rect.style.cursor = 'pointer';
         rect.style.transition = 'opacity 0.15s, y 0.15s';
 
@@ -500,7 +501,10 @@ function renderHourlySvg(hourlyDistribution, peakHour) {
             rect.setAttribute('opacity', '1');
             if (tooltip) {
                 tooltip.style.display = 'block';
-                tooltip.innerHTML = `<strong>${h.hour}:00 ~ ${h.hour}:59</strong><br/>번역량: ${h.count.toLocaleString()}문단 (${h.pct}%)${isPeak ? ' 🔥 피크' : ''}`;
+                let tag = '';
+                if (isPeak) tag += ' 🔥 피크';
+                if (isStart) tag += ' ⚡ 하루 시작점(API 초기화)';
+                tooltip.innerHTML = `<strong>${h.hour}:00 ~ ${h.hour}:59 (KST)</strong><br/>번역량: <strong>${h.count.toLocaleString()}문단</strong> (${h.pct}%)${tag}`;
                 const svgRect = svg.getBoundingClientRect();
                 const scaleX = svgRect.width / width;
                 const scaleY = svgRect.height / height;
@@ -510,21 +514,22 @@ function renderHourlySvg(hourlyDistribution, peakHour) {
         });
 
         rect.addEventListener('mouseleave', () => {
-            rect.setAttribute('opacity', isPeak ? '1' : '0.8');
+            rect.setAttribute('opacity', (isPeak || isStart) ? '1' : '0.85');
             if (tooltip) tooltip.style.display = 'none';
         });
 
         svg.appendChild(rect);
 
-        // X축 시간 라벨 (3시간 간격)
-        if (h.hour % 3 === 0 || h.hour === 23) {
+        // X축 시간 라벨 (하루 시작점 0번째, 3시간 간격 및 마지막)
+        if (isStart || idx % 3 === 0 || idx === 23) {
             const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
             text.setAttribute('x', x + barW / 2);
             text.setAttribute('y', padTop + plotH + 18);
             text.setAttribute('text-anchor', 'middle');
-            text.setAttribute('fill', 'var(--text-muted, #64748b)');
+            text.setAttribute('fill', isStart ? '#06b6d4' : 'var(--text-muted, #64748b)');
+            text.setAttribute('font-weight', isStart ? 'bold' : 'normal');
             text.setAttribute('font-size', '10px');
-            text.textContent = `${h.hour}시`;
+            text.textContent = isStart ? `⚡${h.hour}시` : `${h.hour}시`;
             svg.appendChild(text);
         }
     });
