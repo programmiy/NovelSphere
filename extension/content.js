@@ -2685,27 +2685,156 @@
     };
     return text.replace(/[&<>"']/g, (m) => map[m]);
   }
-  function showLanovelHud(message, icon = "\u{1F4D6}", durationMs = 2200) {
+  function getOrCreateHud() {
     let hud = document.getElementById("lanovel-hud");
     if (!hud) {
       hud = document.createElement("div");
       hud.id = "lanovel-hud";
       document.body.appendChild(hud);
     }
-    hud.innerHTML = `<span class="hud-icon">${icon}</span><span class="hud-message">${escapeHtml2(message)}</span>`;
-    hud.classList.add("visible");
+    return hud;
+  }
+  function clearLanovelHudTimers() {
     if (hudTimer) {
       clearTimeout(hudTimer);
+      hudTimer = null;
     }
-    hudTimer = setTimeout(() => {
-      if (hud) hud.classList.remove("visible");
-    }, durationMs);
+    if (countdownInterval) {
+      clearInterval(countdownInterval);
+      countdownInterval = null;
+    }
   }
-  var hudTimer;
+  function hideLanovelHud(immediate = false) {
+    clearLanovelHudTimers();
+    const hud = document.getElementById("lanovel-hud");
+    if (!hud) return;
+    if (immediate) {
+      hud.classList.remove("visible", "detailed");
+      hud.innerHTML = "";
+    } else {
+      hud.classList.remove("visible");
+      hudTimer = setTimeout(() => {
+        hud.classList.remove("detailed");
+        hud.innerHTML = "";
+        hudTimer = null;
+      }, 260);
+    }
+  }
+  function showLanovelHud(message, icon = "\u{1F4D6}", durationMs = 2200) {
+    clearLanovelHudTimers();
+    const hud = getOrCreateHud();
+    hud.classList.remove("detailed");
+    hud.innerHTML = `<span class="hud-icon">${icon}</span><span class="hud-message">${escapeHtml2(message)}</span>`;
+    hud.classList.add("visible");
+    if (durationMs > 0) {
+      hudTimer = setTimeout(() => {
+        hideLanovelHud(false);
+      }, durationMs);
+    }
+  }
+  function showLanovelProgressHud(options) {
+    clearLanovelHudTimers();
+    const hud = getOrCreateHud();
+    const icon = options.icon || "\u{1F4D6}";
+    const title = options.title || "\uBC88\uC5ED \uC9C4\uD589 \uC911";
+    const total = Math.max(1, options.total);
+    const current = Math.max(0, Math.min(options.current, total));
+    const pct = Math.min(100, Math.round(current / total * 100));
+    let chunkInfo = "";
+    if (options.chunkIndex !== void 0 && options.chunkTotal !== void 0 && options.chunkTotal > 0) {
+      chunkInfo = `<span class="hud-chunk-info">${options.chunkIndex}/${options.chunkTotal} \uBB36\uC74C</span>`;
+    }
+    const subtext = options.subtext ? escapeHtml2(options.subtext) : `${current}/${total}\uBB38\uC7A5 (${pct}%)`;
+    hud.classList.add("detailed");
+    hud.innerHTML = `
+    <div class="hud-detailed-wrapper">
+      <div class="hud-header-row">
+        <div class="hud-header-left">
+          <span class="hud-icon">${icon}</span>
+          <span class="hud-title">${escapeHtml2(title)}</span>
+        </div>
+        <span class="hud-badge hud-badge-progress">${pct}%</span>
+      </div>
+      <div class="hud-progress-track">
+        <div class="hud-progress-fill" style="width: ${pct}%;"></div>
+      </div>
+      <div class="hud-footer-row">
+        <span class="hud-subtext">${subtext}</span>
+        ${chunkInfo}
+      </div>
+    </div>
+  `;
+    hud.classList.add("visible");
+    if (options.durationMs && options.durationMs > 0) {
+      hudTimer = setTimeout(() => {
+        hideLanovelHud(false);
+      }, options.durationMs);
+    }
+  }
+  function startLanovelCountdownHud(options) {
+    clearLanovelHudTimers();
+    const hud = getOrCreateHud();
+    const icon = options.icon || "\u23F3";
+    const title = options.title || "\uB2E4\uC74C \uC791\uC5C5 \uB300\uAE30 \uC911";
+    const totalSeconds = Math.max(1, options.totalSeconds);
+    let remaining = totalSeconds;
+    const renderCountdown = (sec) => {
+      const pct = Math.max(0, Math.min(100, Math.round(sec / totalSeconds * 100)));
+      const subtext = options.subtext ? escapeHtml2(options.subtext) : `\uB0A8\uC740 \uC2DC\uAC04: ${sec}\uCD08`;
+      hud.classList.add("detailed");
+      hud.innerHTML = `
+      <div class="hud-detailed-wrapper">
+        <div class="hud-header-row">
+          <div class="hud-header-left">
+            <span class="hud-icon">${icon}</span>
+            <span class="hud-title">${escapeHtml2(title)}</span>
+          </div>
+          <span class="hud-badge hud-badge-timer">${sec}\uCD08</span>
+        </div>
+        <div class="hud-progress-track">
+          <div class="hud-progress-fill hud-fill-timer" style="width: ${pct}%;"></div>
+        </div>
+        <div class="hud-footer-row">
+          <span class="hud-subtext">${subtext}</span>
+          <span class="hud-chunk-info">\uB300\uAE30 \uC911</span>
+        </div>
+      </div>
+    `;
+      hud.classList.add("visible");
+    };
+    renderCountdown(remaining);
+    countdownInterval = setInterval(() => {
+      remaining--;
+      if (remaining > 0) {
+        const badge = hud.querySelector(".hud-badge-timer");
+        if (badge) badge.textContent = `${remaining}\uCD08`;
+        const fill = hud.querySelector(".hud-fill-timer");
+        if (fill) {
+          const pct = Math.max(0, Math.min(100, Math.round(remaining / totalSeconds * 100)));
+          fill.style.width = `${pct}%`;
+        }
+      } else {
+        clearLanovelHudTimers();
+        const badge = hud.querySelector(".hud-badge-timer");
+        if (badge) badge.textContent = "0\uCD08";
+        const fill = hud.querySelector(".hud-fill-timer");
+        if (fill) fill.style.width = "0%";
+        if (options.onFinish) {
+          options.onFinish();
+        }
+      }
+    }, 1e3);
+    return () => {
+      clearLanovelHudTimers();
+      hideLanovelHud(false);
+    };
+  }
+  var hudTimer, countdownInterval;
   var init_hud = __esm({
     "src/ui/hud.ts"() {
       "use strict";
       hudTimer = null;
+      countdownInterval = null;
     }
   });
 
@@ -4261,6 +4390,7 @@
     const retryBtn = document.getElementById("retry-translation-btn");
     if (retryBtn) retryBtn.style.display = "inline-block";
     logToSidebar(`\u23F0 [\uCF8C\uC18D\uBAA8\uB4DC \uC790\uB3D9 \uC911\uB2E8] \uC0AC\uC720: ${reason}. \uC790\uB3D9 \uBC88\uC5ED \uBC0F \uB2E4\uC74C \uD654 \uC774\uB3D9\uC774 \uCC28\uB2E8\uB418\uC5C8\uC2B5\uB2C8\uB2E4.`, "log-error");
+    hideLanovelHud(true);
     showLanovelHud(`\uCF8C\uC18D\uBAA8\uB4DC \uC790\uB3D9 \uC911\uB2E8 (${reason})`, "\u23F0", 3500);
     void onAbortTurbo(reason, wasTurbo);
     state.broadcastStatus();
@@ -4486,10 +4616,12 @@
         if (instantPunctuationItems.length > 0) {
           sortSidebar(allParagraphs.map((p) => p.id));
           logToSidebar("\uBAA8\uB4E0 \uBC88\uC5ED \uC791\uC5C5\uC774 \uC644\uB8CC\uB418\uC5C8\uC2B5\uB2C8\uB2E4. (\uC21C\uC218 \uBB38\uC7A5\uBD80\uD638 \uC989\uC2DC \uB300\uC785 \uC644\uB8CC)");
+          showLanovelHud(`\uAE30\uD638/\uBB38\uC7A5\uBD80\uD638 ${instantPunctuationItems.length}\uBB38\uC7A5 \uC989\uC2DC \uC801\uC6A9 \uC644\uB8CC`, "\u26A1", 2500);
           onNothingToTranslate(validParagraphs.length);
         } else {
           sortSidebar(allParagraphs.map((p) => p.id));
           logToSidebar("\uBC88\uC5ED\uD560 \uC0C8\uB85C\uC6B4 \uB0B4\uC6A9\uC774 \uC5C6\uC2B5\uB2C8\uB2E4.");
+          showLanovelHud("\uBC88\uC5ED\uD560 \uC0C8\uB85C\uC6B4 \uBB38\uC7A5\uC774 \uC5C6\uC2B5\uB2C8\uB2E4 (\uC774\uBBF8 \uBC88\uC5ED \uC644\uB8CC\uB428)", "\u2705", 2500);
           onNothingToTranslate(validParagraphs.length);
         }
         if (stopBtn) stopBtn.style.display = "none";
@@ -4505,6 +4637,15 @@
       logToSidebar(
         `[\uC18C\uC124: ${state.currentNovelTitle || "\uAE30\uBCF8"}] \uCD1D ${textsToTranslate.length}\uAC1C \uBB38\uC7A5(\uC57D ${totalChars.toLocaleString()}\uC790) \uAE00\uC790 \uC218\xB7\uD1A0\uD070 \uC608\uC0B0 \uAE30\uBC18 ${chunks.length}\uAC1C \uCD5C\uC801 \uBB36\uC74C\uC73C\uB85C \uBC88\uC5ED\uC744 \uC2DC\uC791\uD569\uB2C8\uB2E4. (${modelDesc}${turboDesc}, \uAD6C\uBD84\uC120: ${sepPreview})`
       );
+      showLanovelProgressHud({
+        title: state.isTurboMode ? "\uBC88\uC5ED \uC2DC\uC791 (\u26A1\uCF8C\uC18D)" : "\uBC88\uC5ED \uC2DC\uC791",
+        current: 0,
+        total: textsToTranslate.length,
+        chunkIndex: 0,
+        chunkTotal: chunks.length,
+        icon: "\u26A1",
+        subtext: `\uCD1D ${textsToTranslate.length}\uBB38\uC7A5 (${chunks.length}\uAC1C \uBB36\uC74C, \uC57D ${totalChars.toLocaleString()}\uC790)`
+      });
       addPlaceholderRows(textsToTranslate);
       sortSidebarDescending(allParagraphs.map((p) => p.id));
       async function translateChunk(items, chunkSize) {
@@ -4729,15 +4870,45 @@
           }
         }
         const currentChunkChars = currentChunk.reduce((sum, it) => sum + (it.text ? it.text.length : 0), 0);
+        const prevProgress = progress;
         progress += chunk.length;
         logToSidebar(
           `(${progress}/${textsToTranslate.length}\uBB38\uC7A5, \uBB36\uC74C ${index + 1}/${chunks.length} [\uC57D ${currentChunkChars.toLocaleString()}\uC790]) \uBC88\uC5ED \uC9C4\uD589 \uC911...${currentChunk.length > chunk.length ? ` (\uBE48\uCE78 \uBB38\uC7A5 ${currentChunk.length - chunk.length}\uAC1C \uCD94\uAC00 \uD3EC\uD568)` : ""}`
         );
+        showLanovelProgressHud({
+          title: state.isTurboMode ? "\uBC88\uC5ED \uC9C4\uD589 \uC911 (\u26A1\uCF8C\uC18D)" : "\uBC88\uC5ED \uC9C4\uD589 \uC911",
+          current: prevProgress,
+          total: textsToTranslate.length,
+          chunkIndex: index + 1,
+          chunkTotal: chunks.length,
+          icon: "\u{1F4D6}",
+          subtext: `\uBB36\uC74C ${index + 1}/${chunks.length} \uC694\uCCAD \uC911 (\uC57D ${currentChunkChars.toLocaleString()}\uC790)`
+        });
         await translateChunk(currentChunk, currentChunk.length);
+        showLanovelProgressHud({
+          title: state.isTurboMode ? "\uBC88\uC5ED \uC9C4\uD589 \uC911 (\u26A1\uCF8C\uC18D)" : "\uBC88\uC5ED \uC9C4\uD589 \uC911",
+          current: Math.min(progress, textsToTranslate.length),
+          total: textsToTranslate.length,
+          chunkIndex: index + 1,
+          chunkTotal: chunks.length,
+          icon: "\u{1F4D6}",
+          subtext: `${progress}/${textsToTranslate.length}\uBB38\uC7A5 \uBC88\uC5ED \uC644\uB8CC`
+        });
         if (index < chunks.length - 1 && !state.isTranslationCancelled) {
           const currentDelay = calculateAdaptiveChunkDelay(recentEpCount, state.isTurboMode);
+          const chunkDelaySec = Math.round(currentDelay / 1e3);
           logToSidebar(`${(currentDelay / 1e3).toFixed(1)}\uCD08 \uD6C4 \uB2E4\uC74C \uBB36\uC74C\uC744 \uBC88\uC5ED\uD569\uB2C8\uB2E4.`);
+          let cancelChunkCountdown = null;
+          if (chunkDelaySec >= 2) {
+            cancelChunkCountdown = startLanovelCountdownHud({
+              title: "\uB2E4\uC74C \uBB36\uC74C \uB300\uAE30 \uC911",
+              totalSeconds: chunkDelaySec,
+              icon: "\u23F3",
+              subtext: `\uBB36\uC74C ${index + 1}/${chunks.length} \uC644\uB8CC (${chunkDelaySec}\uCD08 \uB300\uAE30)`
+            });
+          }
           await sleepResponsive(() => calculateAdaptiveChunkDelay(recentEpCount, state.isTurboMode));
+          if (cancelChunkCountdown) cancelChunkCountdown();
           if (state.isTurboMode && checkCutoffTimeReached(state.turboCutoffHour, state.turboTargetTimestamp)) {
             await abortTurboMode("\uCD08\uAE30\uD654 \uC2DC\uAC04 \uB3C4\uB2EC");
             break;
@@ -4757,6 +4928,13 @@
           logToSidebar(
             `[\uBCF4\uC644 \uBC88\uC5ED\uAFB8\uB7EC\uBBF8] \uBC88\uC5ED \uC644\uB8CC \uC9C1\uC804, \uBBF8\uC644\uB8CC \uBE48\uCE78 \uBC88\uC5ED ${remainingEmptyItems.length}\uAC1C\uAC00 \uAC10\uC9C0\uB418\uC5B4 \uB9C8\uC9C0\uB9C9 \uBC88\uC5ED\uAFB8\uB7EC\uBBF8\uB85C \uCD94\uAC00 \uBC88\uC5ED\uC744 \uC9C4\uD589\uD569\uB2C8\uB2E4.`
           );
+          showLanovelProgressHud({
+            title: "\uBCF4\uC644 \uBC88\uC5ED \uC9C4\uD589 \uC911",
+            current: textsToTranslate.length,
+            total: textsToTranslate.length,
+            icon: "\u23F3",
+            subtext: `\uBBF8\uC644\uB8CC \uBE48\uCE78 ${remainingEmptyItems.length}\uBB38\uC7A5 \uBCF4\uC644 \uBC88\uC5ED \uC911`
+          });
           remainingEmptyItems.forEach((item) => {
             const row = document.querySelector(`tr[data-pid="${item.id}"]`);
             if (row) {
@@ -4793,6 +4971,11 @@
         logToSidebar(
           `[\uBC88\uC5ED \uC9C4\uD589 \uCE74\uC6B4\uD130] \uD604\uC7AC \uC18C\uC124 \uC774\uBC88 \uC5F0\uC18D: ${consecutiveCount}\uD654 \uC644\uB8CC (\uC624\uB298 \uC774 \uC18C\uC124: ${novelTodayCount}\uD654${totalTodayMsg})`
         );
+        showLanovelHud(
+          `\uBC88\uC5ED \uC644\uB8CC! (\uCD1D ${textsToTranslate.length}\uBB38\uC7A5 / \uC774\uBC88 \uC5F0\uC18D ${consecutiveCount}\uD654)`,
+          "\u{1F389}",
+          3e3
+        );
         if (consecutiveCount > 0 && consecutiveCount % 10 === 0) {
           logToSidebar(`\u{1F514} [\uC54C\uB9BC] \uC774\uBC88 \uC5F0\uC18D ${consecutiveCount}\uD654 \uB2EC\uC131! 10\uD654 \uB2E8\uC704 \uBC88\uC5ED \uC9C4\uD589 \uC54C\uB9BC\uC744 \uBC1C\uC1A1\uD569\uB2C8\uB2E4.`);
           sendProgressNotification(
@@ -4818,7 +5001,6 @@
             logToSidebar(
               `\u26A1 [RPM \uC801\uC751\uD615 \uBCF4\uD638] \uCD5C\uADFC 5\uBD84\uAC04 \uBC88\uC5ED \uD68C\uCC28: ${completedRecentCount}\uD654 \uAC10\uC9C0 (\uACFC\uC5F4 \uBC29\uC9C0 \uAD6C\uAC04) \u2192 \uB2E4\uC74C \uD68C\uCC28 \uB300\uAE30 \uC2DC\uAC04\uC744 ${delaySec}\uCD08\uB85C \uC790\uB3D9 \uC5F0\uC7A5\uD569\uB2C8\uB2E4.`
             );
-            showLanovelHud(`RPM \uBCF4\uD638 \uC9C0\uC5F0 \uC911... (${delaySec}\uCD08)`, "\u{1F6E1}\uFE0F", 4e3);
           } else {
             logToSidebar(
               `\u26A1 [\uCF8C\uC18D\uBAA8\uB4DC] \uBC88\uC5ED \uC644\uB8CC (\uCD5C\uADFC 5\uBD84: ${completedRecentCount}\uD654, \uC548\uC804 \uAD6C\uAC04). ${delaySec}\uCD08 \uD6C4 \uB2E4\uC74C \uD398\uC774\uC9C0\uB85C \uC774\uB3D9\uD569\uB2C8\uB2E4.`
@@ -4833,13 +5015,25 @@
             logToSidebar(`\uBC88\uC5ED \uC644\uB8CC. ${delaySec}\uCD08 \uD6C4 \uD398\uC774\uC9C0 \uB05D\uC73C\uB85C \uC790\uB3D9 \uC2A4\uD06C\uB864\uD569\uB2C8\uB2E4.`);
           }
         }
+        const isRpmWarning = state.isTurboMode ? completedRecentCount >= 3 : completedRecentCount >= 5;
+        const cancelEpisodeCountdown = startLanovelCountdownHud({
+          title: state.isTurboMode ? "\uB2E4\uC74C \uD654 \uC790\uB3D9 \uC774\uB3D9 \uB300\uAE30" : "\uD398\uC774\uC9C0 \uC2A4\uD06C\uB864 \uB300\uAE30",
+          totalSeconds: delaySec,
+          icon: isRpmWarning ? "\u{1F6E1}\uFE0F" : "\u23F3",
+          subtext: isRpmWarning ? `RPM \uACFC\uC5F4 \uBC29\uC9C0 \uC9C0\uC5F0 (\uCD5C\uADFC 5\uBD84: ${completedRecentCount}\uD654)` : `\uCD5C\uADFC 5\uBD84: ${completedRecentCount}\uD654 (\uC548\uC804 \uAD6C\uAC04)`
+        });
         await sleepResponsive(() => calculateAdaptiveEpisodeDelay(completedRecentCount, state.isTurboMode));
-        if (state.isTranslationCancelled) return;
+        cancelEpisodeCountdown();
+        if (state.isTranslationCancelled) {
+          hideLanovelHud();
+          return;
+        }
         if (state.isTurboMode && checkCutoffTimeReached(state.turboCutoffHour, state.turboTargetTimestamp)) {
           await abortTurboMode("\uCD08\uAE30\uD654 \uC2DC\uAC04 \uB3C4\uB2EC");
           return;
         }
         logToSidebar("\uD398\uC774\uC9C0 \uB05D\uC73C\uB85C \uC2A4\uD06C\uB864 \uD6C4 \uB2E4\uC74C \uD398\uC774\uC9C0 \uC561\uC158\uC744 \uC2E4\uD589\uD569\uB2C8\uB2E4.");
+        showLanovelHud("\uD398\uC774\uC9C0 \uB05D\uC73C\uB85C \uC774\uB3D9 \uC911...", "\u{1F4DC}", 1500);
         const scrollTarget = Math.max(document.body.scrollHeight, document.documentElement.scrollHeight);
         window.scrollTo({ top: scrollTarget, behavior: "smooth" });
         await new Promise((resolve) => {
@@ -5222,12 +5416,14 @@
           if (retryBtn2) retryBtn2.style.display = "inline-block";
           logToSidebar("\uBC88\uC5ED\uC774 \uC911\uC9C0\uB418\uC5C8\uC2B5\uB2C8\uB2E4.");
           updateSidebarWithCancelled();
+          showLanovelHud("\uBC88\uC5ED\uC774 \uC911\uC9C0\uB418\uC5C8\uC2B5\uB2C8\uB2E4.", "\u23F9\uFE0F", 2500);
           state.broadcastStatus();
         });
       }
       const retryBtn = document.getElementById("retry-translation-btn");
       if (retryBtn) {
         retryBtn.addEventListener("click", () => {
+          showLanovelHud("\uC804\uCCB4 \uC7AC\uBC88\uC5ED\uC744 \uC2DC\uC791\uD569\uB2C8\uB2E4...", "\u{1F504}", 2e3);
           startFullRetranslation();
         });
       }
@@ -5239,6 +5435,7 @@
             if (stopBtn) stopBtn.style.display = "inline-block";
             const resolver = state.resolveResume;
             state.resolveResume = null;
+            showLanovelHud("\uBC88\uC5ED\uC744 \uC7AC\uAC1C\uD569\uB2C8\uB2E4...", "\u25B6\uFE0F", 2e3);
             resolver();
           }
         });

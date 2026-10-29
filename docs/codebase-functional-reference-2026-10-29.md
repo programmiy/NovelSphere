@@ -1,7 +1,7 @@
 # LANOVEL 종합 코드베이스 기능 및 함수 레퍼런스 (Architectural & Functional Reference)
 
 > **문서 목적**: AI 어시스턴트가 사용자 요구사항 및 구어체 지시를 입력받았을 때, 혼선이나 회귀(Regression) 없이 전체 아키텍처와 1:1 타깃 코드를 0초 만에 직관적으로 파악할 수 있도록 압축 정리한 단일 진실 공급원(SSOT) 기술 레퍼런스입니다.
-> **최신 동기화 일자**: 2026-10-29 (통계 & 품질 분석 HUD 대개편: 번역 회차 수(Episodes) 메트릭 및 회차당 분량 밀도(Density) 지표 전면 탑재, Throughput & Efficiency HUD 분석 카드 데크(시간당 최대 속도·API 호출당 청킹 밀도·회차당 분량 밀도·주간 완독 환산량) 연동, 3종 종합 실적 브레이크다운 툴팁; 단락별 1-클릭 원본 순간이동 및 상호작용 동기화 시스템; C:\ServerHub 공동 서버 관리자 고도화; 번역 통계 KST 16시 리셋 정렬)
+> **최신 동기화 일자**: 2026-10-29 (플로팅 HUD 실시간 번역 진행도 및 다음 번역간 초 단위 카운트다운 타이머 고도화; 통계 & 품질 분석 HUD 대개편: 번역 회차 수(Episodes) 메트릭 및 회차당 분량 밀도(Density) 지표 전면 탑재, Throughput & Efficiency HUD 분석 카드 데크(시간당 최대 속도·API 호출당 청킹 밀도·회차당 분량 밀도·주간 완독 환산량) 연동, 3종 종합 실적 브레이크다운 툴팁; 단락별 1-클릭 원본 순간이동 및 상호작용 동기화 시스템; C:\ServerHub 공동 서버 관리자 고도화; 번역 통계 KST 16시 리셋 정렬)
 
 ---
 
@@ -31,7 +31,7 @@
 | **원격 허브** | `server/routers/remote.py` | 모바일/웹 리모컨 (`/command`, `/status`, `/ws`, `/poll`, `/report`, `/ack`) 및 연속 번역 큐 제어 API (`/queue`, `/queue/config`, `/queue/reorder`, `/queue/event`) |
 | **소설 큐 러너** | `server/novel_queue.py` | **원격 소설 연속 번역 대기열 엔진**: `QueueRunner`, `NovelQueueManager`, 신데렐라 모드(17시 쿼터 중단 및 익일 자율 복구), 3회 재시도 및 건너뛰기 안전장치 |
 | **특별 적재** | `server/routers/special_batch.py` | 배치 번역/보정본 검수 UI(`/special_batch`), 카드 헤더 [🔗 원본 ↗] 링크, 승인 시 원래 소설 폴더 자동 상속, 미분류(None) 보존, 일괄 승인 |
-| **크롬 확장** | `extension/` | **TypeScript + esbuild 단일 책임 모듈화 구조**: `src/content.ts`, `src/background/` (`remote_ws.ts`, `queue_tabs.ts`, `index.ts`), `src/scrapers/` (`syosetu.ts`, `kakuyomu.ts` 등), `src/core/` (`state.ts`, `chunker.ts`(글자 수 연동 가변 청킹: 기본 45개·대화문 최대 75개·1300자 밀도 분할), `filters.ts`, `turbo.ts`, `separators.ts`, `adaptive_throttle.ts`, `dom_applier.ts`(`jumpToParagraph` 해시/PID 기반 부드러운 스크롤 & 펄스 발광, 화면 비율 65% 규칙 동적 사이드바 제어), `row_actions.ts`, `page_translator.ts`, `queue_session.ts`), `src/ui/` (`sidebar.ts`, `review_panel.ts`, `separator_panel.ts`, `hud.ts`, `key_nav.ts`, `toc_quick_jump.ts`) |
+| **크롬 확장** | `extension/` | **TypeScript + esbuild 단일 책임 모듈화 구조**: `src/content.ts`, `src/background/` (`remote_ws.ts`, `queue_tabs.ts`, `index.ts`), `src/scrapers/` (`syosetu.ts`, `kakuyomu.ts` 등), `src/core/` (`state.ts`, `chunker.ts`(글자 수 연동 가변 청킹: 기본 45개·대화문 최대 75개·1300자 밀도 분할), `filters.ts`, `turbo.ts`, `separators.ts`, `adaptive_throttle.ts`, `dom_applier.ts`(`jumpToParagraph` 해시/PID 기반 부드러운 스크롤 & 펄스 발광, 화면 비율 65% 규칙 동적 사이드바 제어), `row_actions.ts`, `page_translator.ts`, `queue_session.ts`), `src/ui/` (`sidebar.ts`, `review_panel.ts`, `separator_panel.ts`, `hud.ts`(플로팅 미니멀 & 프로그레스/카운트다운 타이머 HUD), `key_nav.ts`, `toc_quick_jump.ts`) |
 | **모바일 앱** | `mobile_app/lib/`<br>`mobile_app/shaders/` | **하이퍼 에스테틱 Luminary UI & Impeller GLSL 셰이더 (v1.7.0)** (`replaceSeedDatabase` 원자적 시드 교체, 진도/북마크 동기화 역전 방지, 상단고정·독서잔디 양방향 동기화, TTS 유니코드 정규화 캐시, OLED 셰이더 완전 바이패스 절전 & `onAccentColor` 고대비 가독성, 볼륨키 넘김 MethodChannel, 원문 대역 병기/여백 슬라이더, `_RuleEditorCardItem` IME 한글 자모 분리 방지) |
 | **웹 프론트** | `server/static/admin/` | **ES 모듈 분리 관리자 UI**: `admin-main.js` (진입점 & 단축키), `admin-tree.js` (3단계 트리, 단락별 1-클릭 [🔗 원본 ↗] 버튼 및 PID 배지 링크, 검색 시 소설 폴더 자동 전개 차단 `isFolderCollapsed = true` 및 사이버네틱 일치 표시등 `novel-match-lamp`, 회차 지연 로딩 Lazy Loading 유지로 검색 렉 0ms, `updateSearchJumpUI`, `jumpToMatchingNovel`), `admin-state.js` (전역 상태 및 DOM 캐시), `admin-dock.js`, `admin-analytics.js`(회차수·문단·글자·밀도 4종 메트릭, Throughput & Efficiency 분석 HUD, KST 24시간 활동 프로필·하루 시작 16시 인디케이터), `admin-restore.js`, `admin-find-replace.js` |
 | **웹 프론트** | `server/static/` | `viewer.js` (3D 닉시관 인디케이터, 사전 & 용례 학습 패널), `library.js` (증기 차분기관 톱니/배관/압력계 대시보드), `admin-fx.js` (사이버네틱 오디오 & 파티클 엔진) |
@@ -52,7 +52,7 @@
    - src/core/page_translator.ts & dom_applier.ts: jumpToParagraph(rawPid), hashchange 이벤트 실시간 감지
    - src/core/dom_applier.ts & row_actions.ts: 본문 DOM 주입/복원, 개별 문장 인라인 저장 및 단건 즉시 재번역
    - src/background/remote_ws.ts: WebSocket(ws://127.0.0.1:8001/api/remote/ws) + HTTP 폴링 백오프, 원격 명령 실행
-   - src/ui/: 사이드바(sidebar.ts), 알림 센터 연계 검수 패널(review_panel.ts), 구분선 자동 제외/복원 패널(separator_panel.ts), 플로팅 HUD, 목차 배지 & 퀵점프 패널 (toc_quick_jump.ts)
+   - src/ui/: 사이드바(sidebar.ts), 알림 센터 연계 검수 패널(review_panel.ts), 구분선 자동 제외/복원 패널(separator_panel.ts), 플로팅 HUD(hud.ts: 프로그레스 바 & 카운트다운 타이머), 목차 배지 & 퀵점프 패널 (toc_quick_jump.ts)
            │ HTTP (POST /translate, GET /api/rpm_status, POST /api/check_translated_urls, POST /api/import-toc, WS /api/remote/ws, POST /api/remote/queue/event)
            ▼
 [ FastAPI 백엔드 서버 (server/server.py: 8001 포트) ]
@@ -73,6 +73,7 @@
 
 | 사용자 발화 / 요청 예시 | 연관 파일 및 핵심 함수 | 핵심 처리 내용 |
 | :--- | :--- | :--- |
+| **"HUD 알림 보강해줘 / 다음 번역 타이머 띄워줘 / HUD에 번역 진행도 표시"** | `extension/src/ui/hud.ts`<br>`extension/content.css`<br>`extension/src/core/page_translator.ts`<br>`extension/src/content.ts` | 화면 우측 상단 플로팅 HUD(#lanovel-hud)에 `showLanovelProgressHud` 및 `startLanovelCountdownHud`를 탑재하여 번역 묶음 진행도(백분율, N/M문장, 그라디언트 프로그레스 바), 묶음 간 대기 및 다음 화 이동 적응형 지연(8s~55s)의 실시간 초 단위 카운트다운 타이머, 번역 완료 통계(총 문장수 및 이번 연속 N화)를 시각적으로 즉각 안내 |
 | **"단락 링크 누르면 해당 단락으로 순간이동하고 클릭 효과 주기" / "원문 페이지 해당 단락으로 점프"** | `extension/src/core/dom_applier.ts`<br>`extension/src/content.ts`<br>`server/static/admin/admin-tree.js`<br>`server/templates/ai_review.html`<br>`server/templates/ai_reretranslate.html`<br>`server/templates/db_editor.html`<br>`server/templates/special_batch.html` | admin.html 단락 행 및 4종 검수 시스템에 1-클릭 `[🔗 원본 ↗]` 버튼(`target="lanovel_novel_reader"`, `${url}#${pid}`) 배치. 크롬 확장의 `jumpToParagraph()`가 URL 해시(#PID)를 파싱하여 부드러운 스크롤 & 펄스 발광(`lanovel-highlight-pulse`). 창 너비가 모니터의 65% 이상일 때만 사이드바를 자동 오픈하여 해당 번역 행 동기화(`lanovel-row-highlight`), 미만일 때는 본문 집중 유지. 탭 재사용 시 `hashchange`로 무새로고침 즉각 순간이동. |
 | **"통계 모듈에 회차수도 넣어줘 / 번역 속도·처리 효율성(Throughput) 지표 추가해줘"** | `server/routers/admin.py`<br>`server/templates/admin.html`<br>`server/static/admin/admin-analytics.js`<br>`tests/test_admin_analytics.py` | 일별 추이에 `episodes` 집계 및 `cum_episodes`, `ma7_episodes` 산출. 메트릭 버튼을 `[회차 수] [문단 수] [글자 수] [회차당 분량]` 4종으로 확장. Throughput & Efficiency HUD(시간당 최대 속도, API 호출당 청킹 수율, 회차당 분량 밀도, 주간 완독 환산량) 추가 및 툴팁에 `당일 N화·N문단·N자` 3종 종합 브레이크다운 출력. |
 | **"통계 모듈 손봐줘 / 하루 시작점(초기화 시간) 통계에 적용해줘 / 통계 시간대 왜곡"** | `server/database.py`<br>`server/routers/admin.py`<br>`server/static/admin/admin-analytics.js`<br>`server/static/admin/admin-state.js`<br>`tests/test_admin_analytics.py` | `_sqlite_to_quota_hour`를 한국 시간(KST)으로 수정 및 `TO_KST_HOUR` 등록. 24시간 활동 분포를 API 초기화 시각(16시/17시)부터 시작하는 24시간 순환 정렬(`[16..23, 0..15]`)로 개편하고 `is_reset_start` 하루 시작점 배지 및 실제 피크 시간대(KST) 도출. `admin-state.js`에서 `quota_window_start_ts` 1순위 참조 및 9시간 중복 차감 버그 해결. |

@@ -39,7 +39,12 @@ import {
   updateTurboBadgeUI,
   showSidebar,
 } from '../ui/sidebar';
-import { showLanovelHud } from '../ui/hud';
+import {
+  showLanovelHud,
+  showLanovelProgressHud,
+  startLanovelCountdownHud,
+  hideLanovelHud,
+} from '../ui/hud';
 import { updateReviewCardTranslation } from '../ui/review_panel';
 import { getScraper } from '../scrapers';
 import { onNothingToTranslate, reportNovelFinished, onAbortTurbo } from './queue_session';
@@ -189,6 +194,7 @@ export async function abortTurboMode(reason = '초기화 시간 도달'): Promis
   if (retryBtn) retryBtn.style.display = 'inline-block';
 
   logToSidebar(`⏰ [쾌속모드 자동 중단] 사유: ${reason}. 자동 번역 및 다음 화 이동이 차단되었습니다.`, 'log-error');
+  hideLanovelHud(true);
   showLanovelHud(`쾌속모드 자동 중단 (${reason})`, '⏰', 3500);
   void onAbortTurbo(reason, wasTurbo);   // 목록 작업 + 신데렐라 ON이면 새로고침으로 이어가기
   state.broadcastStatus();
@@ -452,10 +458,12 @@ export async function translateAllPTags(isRetranslation = false): Promise<void> 
       if (instantPunctuationItems.length > 0) {
         sortSidebar(allParagraphs.map((p) => p.id));
         logToSidebar('모든 번역 작업이 완료되었습니다. (순수 문장부호 즉시 대입 완료)');
+        showLanovelHud(`기호/문장부호 ${instantPunctuationItems.length}문장 즉시 적용 완료`, '⚡', 2500);
         onNothingToTranslate(validParagraphs.length);
       } else {
         sortSidebar(allParagraphs.map((p) => p.id));
         logToSidebar('번역할 새로운 내용이 없습니다.');
+        showLanovelHud('번역할 새로운 문장이 없습니다 (이미 번역 완료됨)', '✅', 2500);
         onNothingToTranslate(validParagraphs.length);
       }
       if (stopBtn) stopBtn.style.display = 'none';
@@ -472,6 +480,16 @@ export async function translateAllPTags(isRetranslation = false): Promise<void> 
     logToSidebar(
       `[소설: ${state.currentNovelTitle || '기본'}] 총 ${textsToTranslate.length}개 문장(약 ${totalChars.toLocaleString()}자) 글자 수·토큰 예산 기반 ${chunks.length}개 최적 묶음으로 번역을 시작합니다. (${modelDesc}${turboDesc}, 구분선: ${sepPreview})`
     );
+
+    showLanovelProgressHud({
+      title: state.isTurboMode ? '번역 시작 (⚡쾌속)' : '번역 시작',
+      current: 0,
+      total: textsToTranslate.length,
+      chunkIndex: 0,
+      chunkTotal: chunks.length,
+      icon: '⚡',
+      subtext: `총 ${textsToTranslate.length}문장 (${chunks.length}개 묶음, 약 ${totalChars.toLocaleString()}자)`,
+    });
 
     addPlaceholderRows(textsToTranslate);
     sortSidebarDescending(allParagraphs.map((p) => p.id));
@@ -723,6 +741,7 @@ export async function translateAllPTags(isRetranslation = false): Promise<void> 
       }
 
       const currentChunkChars = currentChunk.reduce((sum, it) => sum + (it.text ? it.text.length : 0), 0);
+      const prevProgress = progress;
       progress += chunk.length;
       logToSidebar(
         `(${progress}/${textsToTranslate.length}문장, 묶음 ${index + 1}/${chunks.length} [약 ${currentChunkChars.toLocaleString()}자]) 번역 진행 중...${
@@ -730,12 +749,45 @@ export async function translateAllPTags(isRetranslation = false): Promise<void> 
         }`
       );
 
+      showLanovelProgressHud({
+        title: state.isTurboMode ? '번역 진행 중 (⚡쾌속)' : '번역 진행 중',
+        current: prevProgress,
+        total: textsToTranslate.length,
+        chunkIndex: index + 1,
+        chunkTotal: chunks.length,
+        icon: '📖',
+        subtext: `묶음 ${index + 1}/${chunks.length} 요청 중 (약 ${currentChunkChars.toLocaleString()}자)`,
+      });
+
       await translateChunk(currentChunk, currentChunk.length);
+
+      showLanovelProgressHud({
+        title: state.isTurboMode ? '번역 진행 중 (⚡쾌속)' : '번역 진행 중',
+        current: Math.min(progress, textsToTranslate.length),
+        total: textsToTranslate.length,
+        chunkIndex: index + 1,
+        chunkTotal: chunks.length,
+        icon: '📖',
+        subtext: `${progress}/${textsToTranslate.length}문장 번역 완료`,
+      });
 
       if (index < chunks.length - 1 && !state.isTranslationCancelled) {
         const currentDelay = calculateAdaptiveChunkDelay(recentEpCount, state.isTurboMode);
+        const chunkDelaySec = Math.round(currentDelay / 1000);
         logToSidebar(`${(currentDelay / 1000).toFixed(1)}초 후 다음 묶음을 번역합니다.`);
+
+        let cancelChunkCountdown = null;
+        if (chunkDelaySec >= 2) {
+          cancelChunkCountdown = startLanovelCountdownHud({
+            title: '다음 묶음 대기 중',
+            totalSeconds: chunkDelaySec,
+            icon: '⏳',
+            subtext: `묶음 ${index + 1}/${chunks.length} 완료 (${chunkDelaySec}초 대기)`,
+          });
+        }
         await sleepResponsive(() => calculateAdaptiveChunkDelay(recentEpCount, state.isTurboMode));
+        if (cancelChunkCountdown) cancelChunkCountdown();
+
         if (state.isTurboMode && checkCutoffTimeReached(state.turboCutoffHour, state.turboTargetTimestamp)) {
           await abortTurboMode('초기화 시간 도달');
           break;
@@ -757,6 +809,13 @@ export async function translateAllPTags(isRetranslation = false): Promise<void> 
         logToSidebar(
           `[보완 번역꾸러미] 번역 완료 직전, 미완료 빈칸 번역 ${remainingEmptyItems.length}개가 감지되어 마지막 번역꾸러미로 추가 번역을 진행합니다.`
         );
+        showLanovelProgressHud({
+          title: '보완 번역 진행 중',
+          current: textsToTranslate.length,
+          total: textsToTranslate.length,
+          icon: '⏳',
+          subtext: `미완료 빈칸 ${remainingEmptyItems.length}문장 보완 번역 중`,
+        });
         remainingEmptyItems.forEach((item) => {
           const row = document.querySelector<HTMLTableRowElement>(`tr[data-pid="${item.id}"]`);
           if (row) {
@@ -806,6 +865,11 @@ export async function translateAllPTags(isRetranslation = false): Promise<void> 
       logToSidebar(
         `[번역 진행 카운터] 현재 소설 이번 연속: ${consecutiveCount}화 완료 (오늘 이 소설: ${novelTodayCount}화${totalTodayMsg})`
       );
+      showLanovelHud(
+        `번역 완료! (총 ${textsToTranslate.length}문장 / 이번 연속 ${consecutiveCount}화)`,
+        '🎉',
+        3000
+      );
 
       // 10의 배수(10, 20, 30, ...) 화가 100% 완료되었을 때만 진행 알림 발송!
       if (consecutiveCount > 0 && consecutiveCount % 10 === 0) {
@@ -836,7 +900,6 @@ export async function translateAllPTags(isRetranslation = false): Promise<void> 
           logToSidebar(
             `⚡ [RPM 적응형 보호] 최근 5분간 번역 회차: ${completedRecentCount}화 감지 (과열 방지 구간) → 다음 회차 대기 시간을 ${delaySec}초로 자동 연장합니다.`
           );
-          showLanovelHud(`RPM 보호 지연 중... (${delaySec}초)`, '🛡️', 4000);
         } else {
           logToSidebar(
             `⚡ [쾌속모드] 번역 완료 (최근 5분: ${completedRecentCount}화, 안전 구간). ${delaySec}초 후 다음 페이지로 이동합니다.`
@@ -852,8 +915,23 @@ export async function translateAllPTags(isRetranslation = false): Promise<void> 
         }
       }
 
+      const isRpmWarning = state.isTurboMode ? completedRecentCount >= 3 : completedRecentCount >= 5;
+      const cancelEpisodeCountdown = startLanovelCountdownHud({
+        title: state.isTurboMode ? '다음 화 자동 이동 대기' : '페이지 스크롤 대기',
+        totalSeconds: delaySec,
+        icon: isRpmWarning ? '🛡️' : '⏳',
+        subtext: isRpmWarning
+          ? `RPM 과열 방지 지연 (최근 5분: ${completedRecentCount}화)`
+          : `최근 5분: ${completedRecentCount}화 (안전 구간)`,
+      });
+
       await sleepResponsive(() => calculateAdaptiveEpisodeDelay(completedRecentCount, state.isTurboMode));
-      if (state.isTranslationCancelled) return;
+      cancelEpisodeCountdown();
+
+      if (state.isTranslationCancelled) {
+        hideLanovelHud();
+        return;
+      }
 
       if (state.isTurboMode && checkCutoffTimeReached(state.turboCutoffHour, state.turboTargetTimestamp)) {
         await abortTurboMode('초기화 시간 도달');
@@ -861,6 +939,7 @@ export async function translateAllPTags(isRetranslation = false): Promise<void> 
       }
 
       logToSidebar('페이지 끝으로 스크롤 후 다음 페이지 액션을 실행합니다.');
+      showLanovelHud('페이지 끝으로 이동 중...', '📜', 1500);
       const scrollTarget = Math.max(document.body.scrollHeight, document.documentElement.scrollHeight);
       window.scrollTo({ top: scrollTarget, behavior: 'smooth' });
 

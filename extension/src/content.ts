@@ -263,6 +263,7 @@ async function init(): Promise<void> {
         if (retryBtn) retryBtn.style.display = 'inline-block';
         logToSidebar('번역이 중지되었습니다.');
         updateSidebarWithCancelled();
+        showLanovelHud('번역이 중지되었습니다.', '⏹️', 2500);
         state.broadcastStatus();
       });
     }
@@ -270,6 +271,7 @@ async function init(): Promise<void> {
     const retryBtn = document.getElementById('retry-translation-btn');
     if (retryBtn) {
       retryBtn.addEventListener('click', () => {
+        showLanovelHud('전체 재번역을 시작합니다...', '🔄', 2000);
         startFullRetranslation();
       });
     }
@@ -282,6 +284,7 @@ async function init(): Promise<void> {
           if (stopBtn) stopBtn.style.display = 'inline-block';
           const resolver = state.resolveResume;
           state.resolveResume = null;
+          showLanovelHud('번역을 재개합니다...', '▶️', 2000);
           resolver();
         }
       });
