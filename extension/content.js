@@ -4101,6 +4101,45 @@
       });
     });
   }
+  function jumpToParagraph(rawPid) {
+    if (!rawPid) return false;
+    const cleanPid = rawPid.replace(/^#/, "").trim();
+    if (!cleanPid) return false;
+    let targetP = document.getElementById(cleanPid);
+    if (!targetP && cleanPid.startsWith("p")) {
+      targetP = document.getElementById(cleanPid.slice(1));
+    }
+    if (!targetP && !cleanPid.startsWith("p") && !cleanPid.startsWith("L")) {
+      targetP = document.getElementById("p" + cleanPid) || document.getElementById("L" + cleanPid);
+    }
+    if (!targetP) {
+      targetP = document.querySelector(`[data-pid="${cleanPid}"]`) || document.querySelector(`p#${cleanPid}`);
+    }
+    if (!targetP) return false;
+    targetP.scrollIntoView({ behavior: "smooth", block: "center" });
+    targetP.classList.remove("lanovel-highlight-pulse");
+    void targetP.offsetWidth;
+    targetP.classList.add("lanovel-highlight-pulse");
+    setTimeout(() => {
+      targetP?.classList.remove("lanovel-highlight-pulse");
+    }, 1600);
+    const availWidth = window.screen && (window.screen.availWidth || window.screen.width) || 1920;
+    const screenRatio = window.innerWidth / availWidth;
+    if (screenRatio >= 0.65) {
+      const row = document.querySelector(`tr[data-pid="${cleanPid}"]`) || document.querySelector(`tr[data-pid="${targetP.id}"]`);
+      if (row) {
+        showSidebar();
+        row.scrollIntoView({ behavior: "smooth", block: "center" });
+        row.classList.remove("lanovel-row-highlight");
+        void row.offsetWidth;
+        row.classList.add("lanovel-row-highlight");
+        setTimeout(() => {
+          row?.classList.remove("lanovel-row-highlight");
+        }, 1600);
+      }
+    }
+    return true;
+  }
   var init_dom_applier = __esm({
     "src/core/dom_applier.ts"() {
       "use strict";
@@ -5241,6 +5280,7 @@
         }
       }
       await initTocPageFeatures(scraper);
+      handleParagraphJumpFromHash();
     } catch (error) {
       console.error("[LANOVEL] \uD655\uC7A5 \uD504\uB85C\uADF8\uB7A8 \uCD08\uAE30\uD654 \uC624\uB958:", error);
     }
@@ -5284,6 +5324,22 @@
     if (changes.lanovel_turbo_target) {
       state.turboTargetTimestamp = changes.lanovel_turbo_target.newValue || 0;
     }
+  });
+  function handleParagraphJumpFromHash() {
+    const hash = window.location.hash;
+    if (!hash || hash === "#") return;
+    let attempts = 0;
+    const tryJump = () => {
+      const success = jumpToParagraph(hash);
+      if (!success && attempts < 10) {
+        attempts++;
+        setTimeout(tryJump, 250);
+      }
+    };
+    tryJump();
+  }
+  window.addEventListener("hashchange", () => {
+    handleParagraphJumpFromHash();
   });
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", init);

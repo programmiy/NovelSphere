@@ -10,6 +10,7 @@ import {
   applyTranslationsToPage,
   setPageApplyStatus,
   setupParagraphInteraction,
+  jumpToParagraph,
   loadTurboModeState,
   setTurboMode,
   translateAllPTags,
@@ -331,6 +332,9 @@ async function init(): Promise<void> {
 
     // 목차 페이지 기능 초기화
     await initTocPageFeatures(scraper);
+
+    // URL 해시 기반 단락 순간이동 실행
+    handleParagraphJumpFromHash();
   } catch (error: any) {
     console.error('[LANOVEL] 확장 프로그램 초기화 오류:', error);
   }
@@ -380,6 +384,29 @@ chrome.storage.onChanged.addListener((changes, namespace) => {
   if (changes.lanovel_turbo_target) {
     state.turboTargetTimestamp = changes.lanovel_turbo_target.newValue || 0;
   }
+});
+
+
+/**
+ * URL 해시(#L15, #p15)에 기반하여 특정 단락으로 순간이동 및 하이라이트 효과를 실행합니다.
+ */
+function handleParagraphJumpFromHash(): void {
+  const hash = window.location.hash;
+  if (!hash || hash === '#') return;
+  let attempts = 0;
+  const tryJump = () => {
+    const success = jumpToParagraph(hash);
+    if (!success && attempts < 10) {
+      attempts++;
+      setTimeout(tryJump, 250);
+    }
+  };
+  tryJump();
+}
+
+// 탭 재사용(target="lanovel_novel_reader") 시 URL 해시 실시간 변경 감지
+window.addEventListener('hashchange', () => {
+  handleParagraphJumpFromHash();
 });
 
 // DOMContentLoaded 핸들러

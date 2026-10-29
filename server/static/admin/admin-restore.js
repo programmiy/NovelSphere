@@ -424,7 +424,7 @@ async function loadAndRenderNotifications(silent = false) {
                     <td>${escapeHtml(n.episode_title || n.url)}</td>
                     <td style="text-align: center;"><span style="color: var(--danger-color); font-weight: 600;">${n.deleted_count}건</span></td>
                     <td>
-                        <a href="${escapeHtml(reviewUrl)}" target="_blank" class="btn btn-sm btn-primary" style="text-decoration: none;">🔍 검수 회차 열기 ↗</a>
+                        <a href="${escapeHtml(reviewUrl)}" target="lanovel_novel_reader" class="btn btn-sm btn-primary" style="text-decoration: none;">🔍 검수 회차 열기 ↗</a>
                     </td>
                     <td style="text-align: center;">
                         <button class="btn btn-sm btn-outline dismiss-notif-btn" data-id="${n.id}">해제</button>
@@ -449,7 +449,7 @@ async function loadAndRenderNotifications(silent = false) {
                             <td>${escapeHtml(d.episode_title || d.url)}</td>
                             <td>${d.deleted_count}건</td>
                             <td>${dismissedDate}</td>
-                            <td><a href="${escapeHtml(reviewUrl)}" target="_blank" style="color: var(--primary-color);">열기 ↗</a></td>
+                            <td><a href="${escapeHtml(reviewUrl)}" target="lanovel_novel_reader" style="color: var(--primary-color);">열기 ↗</a></td>
                         </tr>
                     `;
                 }).join('');

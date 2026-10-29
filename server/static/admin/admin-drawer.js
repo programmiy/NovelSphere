@@ -708,7 +708,7 @@ function renderUnclassifiedEpisodes(novel) {
                     <span class="episode-count-badge">${ep.paragraph_count}개 단락</span>
                 </div>
                 <div class="unclassified-ep-actions list-group-actions">
-                    <a href="${ep.url}" target="_blank" class="btn btn-outline btn-sm ext-link-btn" title="원본 웹페이지 새 창으로 열기">🔗 원본 ↗</a>
+                    <a href="${ep.url}" target="lanovel_novel_reader" class="btn btn-outline btn-sm ext-link-btn" title="원본 웹페이지 열기">🔗 원본 ↗</a>
                     <button type="button" class="btn btn-outline btn-sm edit-title-btn" data-url="${escapeHtml(ep.url)}" title="회차 제목 수정">✏️ 수정</button>
                     <button type="button" class="btn btn-secondary btn-sm btn-apply ${isApplied ? 'applied' : ''}" data-url="${escapeHtml(ep.url)}">${isApplied ? '적용 해제' : '적용'}</button>
                 </div>
@@ -771,7 +771,7 @@ function renderUnclassifiedEpisodes(novel) {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    ${items.map(t => renderItem(t)).join('')}
+                                    ${items.map(t => renderItem(t, ep.url)).join('')}
                                 </tbody>
                             </table>
                         `;

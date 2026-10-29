@@ -492,7 +492,12 @@
                                 <option value="gemini-3.8-flash" ${modelName === 'gemini-3.8-flash' ? 'selected' : ''}>3.8 Flash</option>
                             </select>
                         </div>
-                        <div style="text-align: right;">
+                        <div style="text-align: right; display: flex; gap: 6px; justify-content: flex-end; align-items: center;">
+                            ${item.url ? `
+                            <a href="${item.url.split('#')[0]}#${item.pid || ''}" target="lanovel_novel_reader" class="btn" style="padding: 4px 8px; border-color: rgba(99,102,241,0.4); color: #818cf8; text-decoration: none; display: inline-flex; align-items: center; gap: 3px; font-size: 11px;" title="원본 웹소설 해당 단락 즉시 이동">
+                                <span class="material-icons-round" style="font-size: 13px;">open_in_new</span> 원본 ↗
+                            </a>
+                            ` : ''}
                             <button onclick="deleteItem(${item.queue_id})" class="btn" style="padding: 4px 8px; border-color: rgba(244,63,94,0.4); color: var(--accent-rose);" title="재재번역 큐에서 제외">
                                 <span class="material-icons-round" style="font-size: 14px;">delete</span>
                             </button>

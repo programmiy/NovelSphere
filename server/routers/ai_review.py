@@ -379,7 +379,9 @@ async def get_reretranslate_queue(folderName: Optional[str] = None, db: Session 
             "old_translated_text": clean_ai_translation(item.old_translated_text) if item.old_translated_text else None,
             "ai_translated_text": clean_ai_translation(item.ai_translated_text) if item.ai_translated_text else None,
             "length": length,
-            "folderName": folder
+            "folderName": folder,
+            "url": base_trans.url if base_trans else "",
+            "pid": base_trans.pid if base_trans else ""
         })
         
     return {

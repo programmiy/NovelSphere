@@ -140,3 +140,60 @@ export function setupParagraphInteraction(): void {
     });
   });
 }
+
+/**
+ * URL 해시 또는 외부 링크(#L15, #p15)를 통해 특정 단락으로 순간이동하고 시각적 효과를 부여합니다.
+ * 화면 비율 65% 이상일 때만 번역 사이드바를 함께 전개하고 행을 포커스합니다.
+ */
+export function jumpToParagraph(rawPid: string): boolean {
+  if (!rawPid) return false;
+  const cleanPid = rawPid.replace(/^#/, '').trim();
+  if (!cleanPid) return false;
+
+  // Syosetu (#L1, L1), Kakuyomu (#p1, p1), 또는 기타 DOM ID 매핑 탐색
+  let targetP: HTMLElement | null = document.getElementById(cleanPid);
+  if (!targetP && cleanPid.startsWith('p')) {
+    targetP = document.getElementById(cleanPid.slice(1));
+  }
+  if (!targetP && !cleanPid.startsWith('p') && !cleanPid.startsWith('L')) {
+    targetP = document.getElementById('p' + cleanPid) || document.getElementById('L' + cleanPid);
+  }
+  if (!targetP) {
+    targetP =
+      document.querySelector<HTMLElement>(`[data-pid="${cleanPid}"]`) ||
+      document.querySelector<HTMLElement>(`p#${cleanPid}`);
+  }
+
+  if (!targetP) return false;
+
+  // 1. 본문 단락으로 즉시 부드럽게 스크롤 & 펄스 애니메이션 발광
+  targetP.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  targetP.classList.remove('lanovel-highlight-pulse');
+  void targetP.offsetWidth;
+  targetP.classList.add('lanovel-highlight-pulse');
+  setTimeout(() => {
+    targetP?.classList.remove('lanovel-highlight-pulse');
+  }, 1600);
+
+  // 2. 화면 비율 65% 이상 규칙 검사 (창 너비 / 모니터 유효 가로폭)
+  const availWidth = (window.screen && (window.screen.availWidth || window.screen.width)) || 1920;
+  const screenRatio = window.innerWidth / availWidth;
+
+  if (screenRatio >= 0.65) {
+    const row =
+      document.querySelector<HTMLTableRowElement>(`tr[data-pid="${cleanPid}"]`) ||
+      document.querySelector<HTMLTableRowElement>(`tr[data-pid="${targetP.id}"]`);
+    if (row) {
+      showSidebar();
+      row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      row.classList.remove('lanovel-row-highlight');
+      void row.offsetWidth;
+      row.classList.add('lanovel-row-highlight');
+      setTimeout(() => {
+        row?.classList.remove('lanovel-row-highlight');
+      }, 1600);
+    }
+  }
+
+  return true;
+}

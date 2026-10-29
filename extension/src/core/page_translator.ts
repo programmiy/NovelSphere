@@ -51,6 +51,7 @@ import {
   setPageApplyStatus,
   togglePageApplyStatus,
   setupParagraphInteraction,
+  jumpToParagraph,
 } from './dom_applier';
 
 export {
@@ -61,6 +62,7 @@ export {
   setPageApplyStatus,
   togglePageApplyStatus,
   setupParagraphInteraction,
+  jumpToParagraph,
 };
 
 export function sleepResponsive(getDelayFn: (() => number) | number): Promise<void> {

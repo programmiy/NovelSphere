@@ -1795,7 +1795,7 @@
                             ${item.is_reretranslated ? '<span class="badge" style="background: linear-gradient(135deg, #f59e0b, #d97706); color: #000; font-weight: 800; font-size: 11px; padding: 3px 8px; border-radius: 8px; display: inline-flex; align-items: center; gap: 4px;"><span class="material-icons-round" style="font-size: 13px;">bolt</span> 2차 재재번역 우선검수</span>' : ''}
                         </div>
                         <div style="display:flex; gap:8px; align-items:center;">
-                            ${item.url ? `<a href="${item.url}" target="_blank" class="ctx-tool-btn" style="padding: 4px 8px; border-radius: 8px;" title="이 화의 원본 웹소설 페이지 즉시 이동"><span class="material-icons-round" style="font-size: 13px;">open_in_new</span> 원본</a>` : ''}
+                            ${item.url ? `<a href="${(item.url || '').split('#')[0]}#${item.pid || ''}" target="lanovel_novel_reader" class="ctx-tool-btn" style="padding: 4px 8px; border-radius: 8px;" title="원본 웹소설 해당 단락 즉시 이동"><span class="material-icons-round" style="font-size: 13px;">open_in_new</span> 원본 ↗</a>` : ''}
                             <a href="/admin?search=${encodeURIComponent(item.ai_translated_text || '')}&folder=${encodeURIComponent(item.folderName || '')}" target="_blank" class="ctx-tool-btn" style="padding: 4px 8px; border-radius: 8px;" title="관리자 페이지에서 열기"><span class="material-icons-round" style="font-size: 13px;">tune</span> 관리자</a>
                             <span class="model-chip">${item.model_used || 'AI MODEL'}</span>
                             <button id="rerollBtn-${item.queue_id}" onclick="rerollTranslation(${item.queue_id})" class="btn btn-glass" style="padding: 4px 8px; font-size: 11px; border-radius: 12px; border-color: var(--accent-brand);" title="가장 똑똑한 모델로 현재 문장만 즉시 재번역">
@@ -1937,7 +1937,7 @@
                     const adminLink = `/admin?search=${encodeURIComponent(c.translated || c.original || '')}&folder=${encodeURIComponent(targetFolder)}`;
                     const safeOriginal = escapeHtml(c.original || '');
                     const safeTranslated = escapeHtml(c.translated || '');
-                    const urlWithPid = c.url ? (c.url + (c.pid ? '#p' + c.pid : '')) : '';
+                    const urlWithPid = c.url ? ((c.url || '').split('#')[0] + (c.pid ? '#' + c.pid : '')) : '';
 
                     return `
                         <div class="ctx-item" id="ctx-card-${c.id || Math.random()}">
@@ -1948,7 +1948,7 @@
                                 </span>
                                 <div style="display: flex; gap: 4px; align-items: center;">
                                     ${urlWithPid ? `
-                                        <a href="${urlWithPid}" target="_blank" class="ctx-tool-btn" title="원본 웹소설 화 페이지로 즉시 이동">
+                                        <a href="${urlWithPid}" target="lanovel_novel_reader" class="ctx-tool-btn" title="원본 웹소설 해당 단락으로 즉시 이동">
                                             <span class="material-icons-round" style="font-size: 13px;">open_in_new</span>
                                         </a>
                                     ` : ''}
@@ -2436,7 +2436,7 @@
                                 <div class="sim-item-header">
                                     <span class="sim-item-novel">[${escapeHtml(novelTitle)}]</span>
                                     <span class="sim-item-title" title="${escapeHtml(epTitle)}">${escapeHtml(epTitle)}</span>
-                                    ${cleanUrl ? `<a href="${escapeHtml(targetUrl)}" target="_blank" class="sim-item-link">🔗 원본 화 ↗</a>` : ''}
+                                    ${cleanUrl ? `<a href="${escapeHtml(targetUrl)}" target="lanovel_novel_reader" class="sim-item-link" title="원본 웹소설 해당 단락 즉시 이동">🔗 원본 ↗</a>` : ''}
                                 </div>
                                 <div class="sim-item-ori">${highlightedOri}</div>
                                 <div class="sim-item-tra">${highlightedTra}</div>

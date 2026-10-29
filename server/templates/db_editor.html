@@ -1149,9 +1149,12 @@
 
                     <!-- Header -->
                     <header class="card-header">
-                        <div class="card-header-left">
+                        <div class="card-header-left" style="display: flex; align-items: center; gap: 8px;">
                             <span class="card-counter-badge" id="cardCounterText">1 / 0</span>
                             <span class="card-chapter-title" id="cardChapterTitle">회차 제목</span>
+                            <a id="cardExtLink" href="#" target="lanovel_novel_reader" class="btn btn-sm btn-outline" style="padding: 2px 7px; font-size: 11px; display: none; align-items: center; gap: 3px; text-decoration: none;" title="원본 웹소설 해당 단락 즉시 이동">
+                                🔗 원본 ↗
+                            </a>
                         </div>
                         <div class="card-badges-wrap" id="cardBadgesWrap">
                             <!-- Dynamic Reason Badges -->
@@ -2296,6 +2299,15 @@
 
             cardCounterText.textContent = `${current} / ${total}`;
             cardChapterTitle.textContent = item.title || "회차 제목 없음";
+            const cardExtLink = document.getElementById("cardExtLink");
+            if (cardExtLink) {
+                if (item && item.url) {
+                    cardExtLink.href = `${(item.url || '').split('#')[0]}#${item.pid || ''}`;
+                    cardExtLink.style.display = "inline-flex";
+                } else {
+                    cardExtLink.style.display = "none";
+                }
+            }
 
             // Progress bar
             const percent = ((current / total) * 100).toFixed(1);
@@ -2539,7 +2551,14 @@
                         <input type="checkbox" class="list-item-checkbox" data-id="${item.id}" ${state.approvedIds.has(item.id) ? '' : 'checked'} style="width:17px; height:17px; cursor:pointer;">
                     </td>
                     <td>
-                        <div style="font-weight:600; font-size:12.5px; margin-bottom:4px;">${escapeHtml(item.title || '회차')}</div>
+                        <div style="font-weight:600; font-size:12.5px; margin-bottom:4px; display: flex; align-items: center; gap: 6px;">
+                            <span>${escapeHtml(item.title || '회차')}</span>
+                            ${item.url ? `
+                            <a href="${(item.url || '').split('#')[0]}#${item.pid || ''}" target="lanovel_novel_reader" class="btn btn-sm btn-outline" style="padding: 1px 6px; font-size: 11px; text-decoration: none; display: inline-flex; align-items: center; gap: 2px;" title="원본 웹소설 해당 단락 즉시 이동">
+                                🔗 원본 ↗
+                            </a>
+                            ` : ''}
+                        </div>
                         <div class="row-reasons-wrap" style="display:flex; flex-wrap:wrap; gap:2px;">${reasonsHtml}</div>
                     </td>
                     <td class="list-cell-orig">

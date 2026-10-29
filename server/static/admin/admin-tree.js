@@ -280,7 +280,7 @@ function renderGroupedHistory(dataToRender, selectedFolder = '') {
                             <span class="episode-count-badge ${state.currentSearch ? 'search-match' : ''}">${filteredTranslations.length}개 단락${state.currentSearch ? ' 일치' : ''}</span>
                         </div>
                         <div class="list-group-actions">
-                            <a href="${url}" target="_blank" class="btn btn-outline btn-sm ext-link-btn" title="소설 원본 웹페이지 새 창으로 열기">🔗 원본 ↗</a>
+                            <a href="${url}" target="lanovel_novel_reader" class="btn btn-outline btn-sm ext-link-btn" title="소설 원본 웹페이지 열기">🔗 원본 ↗</a>
                             <button class="btn btn-outline btn-sm edit-title-btn" data-url="${escapeHtml(url)}" title="회차 제목 수정">✏️ 수정</button>
                             <button class="btn btn-secondary btn-sm btn-apply ${isApplied ? 'applied' : ''}" data-url="${escapeHtml(url)}">${isApplied ? '적용 해제' : '적용'}</button>
                             <label class="checkbox-container select-all-label">
@@ -489,7 +489,7 @@ function renderUrlGroupContent(listGroupEl) {
     }
     items.sort((a, b) => (a.pid || '').localeCompare(b.pid || '', undefined, { numeric: true, sensitivity: 'base' }));
 
-    const itemsHtml = items.map(t => renderItem(t)).join('');
+    const itemsHtml = items.map(t => renderItem(t, url)).join('');
     contentEl.innerHTML = `
         <table class="history-table">
             <thead>
@@ -506,7 +506,9 @@ function renderUrlGroupContent(listGroupEl) {
     `;
 }
 
-function renderItem(t) {
+function renderItem(t, groupUrl = '') {
+    const rawUrl = t.url || groupUrl || '';
+    const targetUrl = rawUrl ? (rawUrl.split('#')[0] + '#' + (t.pid || '')) : '#';
     const date = new Date(t.timestamp * 1000);
     const dateStr = date.toLocaleString('ko-KR', { dateStyle: 'short', timeStyle: 'short' });
     const isChecked = state.selectedIds.has(t.id);
@@ -544,15 +546,22 @@ function renderItem(t) {
                 <input type="checkbox" class="item-checkbox" data-id="${t.id}" ${isChecked ? 'checked' : ''}>
             </td>
             <td class="item-pid-cell">
-                <span class="pid-badge">${escapeHtml(t.pid)}</span>
+                ${targetUrl !== '#' ? `
+                <a href="${escapeHtml(targetUrl)}" target="lanovel_novel_reader" class="pid-badge" title="클릭 시 원본 소설 단락으로 이동" style="text-decoration: none; cursor: pointer;">${escapeHtml(t.pid)}</a>
+                ` : `<span class="pid-badge">${escapeHtml(t.pid)}</span>`}
             </td>
             <td class="item-original-cell">
                 <div class="original-cell-container">
                     <div class="text-content original-text" title="클릭 또는 드래그하여 원문을 복사할 수 있습니다.">${escapeHtml(t.original)}</div>
-                    <div class="original-actions">
+                    <div class="original-actions" style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
                         <button class="btn btn-sm btn-copy-orig copy-orig-btn" title="원문 일본어 복사" data-original="${escapeHtml(t.original)}">
                             📋 원문 복사
                         </button>
+                        ${targetUrl !== '#' ? `
+                        <a href="${escapeHtml(targetUrl)}" target="lanovel_novel_reader" class="btn btn-sm btn-outline ext-link-btn" title="원본 소설의 해당 단락으로 즉시 이동" style="text-decoration: none; display: inline-flex; align-items: center; gap: 3px; font-size: 11.5px; padding: 2px 7px;">
+                            🔗 원본 ↗
+                        </a>
+                        ` : ''}
                     </div>
                 </div>
             </td>

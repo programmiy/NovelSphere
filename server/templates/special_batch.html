@@ -468,10 +468,13 @@
     <main class="card-view-wrapper" id="cardContainer">
         <div class="review-card" id="activeCard">
             <div class="card-header-bar">
-                <div class="card-meta-info">
+                <div class="card-meta-info" style="display: flex; align-items: center; gap: 8px;">
                     <span class="material-icons" style="font-size: 18px; color: var(--fixer-purple);">auto_stories</span>
                     <span id="cardNovelChapter">소설을 선택해주세요</span>
                     <span class="key-badge" id="cardPid">PID: -</span>
+                    <a id="cardSpecialExtLink" href="#" target="lanovel_novel_reader" class="btn btn-outline" style="padding: 2px 7px; font-size: 11px; display: none; align-items: center; gap: 3px; text-decoration: none;" title="원본 웹소설 해당 단락 즉시 이동">
+                        🔗 원본 ↗
+                    </a>
                 </div>
                 <div style="display: flex; align-items: center; gap: 8px;">
                     <span class="key-badge" id="cardIndexIndicator">0 / 0</span>
@@ -676,6 +679,8 @@
         if (!state.items || state.items.length === 0) {
             cardNovelChapter.textContent = state.currentFolder || "목록 비어있음";
             cardPid.textContent = "PID: -";
+            const emptyExtLink = document.getElementById("cardSpecialExtLink");
+            if (emptyExtLink) emptyExtLink.style.display = "none";
             cardIndexIndicator.textContent = "0 / 0";
             cardStatusBadge.textContent = "EMPTY";
             cardStatusBadge.style.background = "rgba(0,0,0,0.08)";
@@ -695,6 +700,16 @@
         const novelLabel = (it.folder_name && it.folder_name !== 'Unknown') ? it.folder_name : '미분류';
         cardNovelChapter.textContent = `${novelLabel} - 제 ${it.chapter_index}화 ${it.chapter_title ? '「' + it.chapter_title + '」' : ''}`;
         cardPid.textContent = `PID: ${it.pid}`;
+        const specialExtLink = document.getElementById("cardSpecialExtLink");
+        if (specialExtLink) {
+            const epUrl = it.url || it.chapter_url || '';
+            if (epUrl) {
+                specialExtLink.href = `${epUrl.split('#')[0]}#${it.pid || ''}`;
+                specialExtLink.style.display = "inline-flex";
+            } else {
+                specialExtLink.style.display = "none";
+            }
+        }
         cardIndexIndicator.textContent = `${state.currentIndex + 1} / ${state.items.length}`;
 
         cardStatusBadge.textContent = it.status.toUpperCase();
