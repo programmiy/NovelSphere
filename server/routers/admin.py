@@ -178,7 +178,8 @@ def get_admin_analytics(folder_name: Optional[str] = None):
             TO_QUOTA_DATE(timestamp) as date_str,
             COUNT(*) as count,
             COALESCE(SUM(LENGTH(translated)), 0) as kr_chars,
-            COALESCE(SUM(LENGTH(original)), 0) as jp_chars
+            COALESCE(SUM(LENGTH(original)), 0) as jp_chars,
+            COUNT(DISTINCT url) as episodes
         FROM translations
         {daily_where}
         GROUP BY date_str
@@ -188,39 +189,59 @@ def get_admin_analytics(folder_name: Optional[str] = None):
         daily_rows = cursor.fetchall()
         
         daily_trends = [
-            {"date": r[0], "count": r[1], "kr_chars": r[2], "jp_chars": r[3]}
+            {
+                "date": r[0],
+                "count": r[1],
+                "kr_chars": r[2],
+                "jp_chars": r[3],
+                "episodes": r[4],
+                "avg_chars_per_ep": round(r[2] / max(r[4], 1)),
+                "avg_paras_per_ep": round(r[1] / max(r[4], 1), 1)
+            }
             for r in daily_rows if r[0]
         ]
 
-        # 누적치(Cumulative) 및 7일 이동평균(MA7) 산출
+        # 누적치(Cumulative) 및 7일 이동평균(MA7) 산출 (문단, 글자, 회차)
         cum_count = 0
         cum_chars = 0
+        cum_episodes = 0
         for i, d in enumerate(daily_trends):
             cum_count += d["count"]
             cum_chars += d["kr_chars"]
+            cum_episodes += d["episodes"]
             d["cum_count"] = cum_count
             d["cum_chars"] = cum_chars
+            d["cum_episodes"] = cum_episodes
 
             window = daily_trends[max(0, i - 6) : i + 1]
             d["ma7_count"] = round(sum(w["count"] for w in window) / len(window), 1)
             d["ma7_chars"] = round(sum(w["kr_chars"] for w in window) / len(window), 1)
+            d["ma7_episodes"] = round(sum(w["episodes"] for w in window) / len(window), 1)
 
         # KPI 산출
         peak_count = 0
         peak_date = "-"
+        peak_episodes_count = 0
+        peak_episodes_date = "-"
         if daily_trends:
             peak_item = max(daily_trends, key=lambda x: x["count"])
             peak_count = peak_item["count"]
             peak_date = peak_item["date"]
 
+            peak_ep_item = max(daily_trends, key=lambda x: x["episodes"])
+            peak_episodes_count = peak_ep_item["episodes"]
+            peak_episodes_date = peak_ep_item["date"]
+
         active_days_count = len(daily_trends)
         daily_avg_count = round(total_paragraphs / active_days_count) if active_days_count else 0
         daily_avg_chars = round(total_kr_chars / active_days_count) if active_days_count else 0
+        daily_avg_episodes = round(total_episodes / active_days_count, 1) if active_days_count else 0.0
 
         # 최근 7일 생산량
         last_7_trends = daily_trends[-7:] if len(daily_trends) >= 7 else daily_trends
         last_7d_count = sum(d["count"] for d in last_7_trends)
         last_7d_chars = sum(d["kr_chars"] for d in last_7_trends)
+        last_7d_episodes = sum(d["episodes"] for d in last_7_trends)
 
         # 연속 번역일수 (Streak) - 미국 태평양(API 쿼터 날짜) 기준
         import zoneinfo
@@ -240,7 +261,9 @@ def get_admin_analytics(folder_name: Optional[str] = None):
         hourly_query = f"""
         SELECT 
             TO_KST_HOUR(timestamp) as hour_num,
-            COUNT(*) as count
+            COUNT(*) as count,
+            COALESCE(SUM(LENGTH(translated)), 0) as kr_chars,
+            COUNT(DISTINCT url) as episodes
         FROM translations
         {daily_where}
         GROUP BY hour_num
@@ -248,15 +271,17 @@ def get_admin_analytics(folder_name: Optional[str] = None):
         """
         cursor.execute(hourly_query, params)
         hourly_rows = cursor.fetchall()
-        hourly_map = {r[0]: r[1] for r in hourly_rows}
+        hourly_map = {r[0]: {"count": r[1], "chars": r[2], "episodes": r[3]} for r in hourly_rows}
 
         # 하루의 시작점을 API 초기화 시각(quota_reset_hour: 16시 또는 17시)으로 순환 정렬 (16, 17, ..., 23, 0, ..., 15)
         ordered_hours = [(quota_reset_hour + i) % 24 for i in range(24)]
         hourly_distribution = [
             {
                 "hour": h,
-                "count": hourly_map.get(h, 0),
-                "pct": round((hourly_map.get(h, 0) / max(total_paragraphs, 1)) * 100, 1),
+                "count": hourly_map.get(h, {}).get("count", 0),
+                "chars": hourly_map.get(h, {}).get("chars", 0),
+                "episodes": hourly_map.get(h, {}).get("episodes", 0),
+                "pct": round((hourly_map.get(h, {}).get("count", 0) / max(total_paragraphs, 1)) * 100, 1),
                 "is_reset_start": (h == quota_reset_hour)
             }
             for h in ordered_hours
@@ -264,17 +289,22 @@ def get_admin_analytics(folder_name: Optional[str] = None):
         
         peak_hour = 0
         peak_hour_count = 0
+        peak_hour_chars = 0
+        peak_hour_episodes = 0
         if any(h["count"] > 0 for h in hourly_distribution):
             peak_item = max(hourly_distribution, key=lambda h: h["count"])
             peak_hour = peak_item["hour"]
             peak_hour_count = peak_item["count"]
+            peak_hour_chars = peak_item["chars"]
+            peak_hour_episodes = peak_item["episodes"]
 
         # 요일별 활동 분포 (Day of Week Distribution: 월~일) - API 쿼터 주기(미국 시간 요일)
         dow_query = f"""
         SELECT 
             TO_QUOTA_DOW(timestamp) as dow_num,
             COUNT(*) as count,
-            COALESCE(SUM(LENGTH(translated)), 0) as kr_chars
+            COALESCE(SUM(LENGTH(translated)), 0) as kr_chars,
+            COUNT(DISTINCT url) as episodes
         FROM translations
         {daily_where}
         GROUP BY dow_num
@@ -282,7 +312,7 @@ def get_admin_analytics(folder_name: Optional[str] = None):
         """
         cursor.execute(dow_query, params)
         dow_rows = cursor.fetchall()
-        dow_map = {r[0]: {"count": r[1], "chars": r[2]} for r in dow_rows}
+        dow_map = {r[0]: {"count": r[1], "chars": r[2], "episodes": r[3]} for r in dow_rows}
 
         dow_order = [
             (1, "월요일", "월"),
@@ -296,9 +326,12 @@ def get_admin_analytics(folder_name: Optional[str] = None):
         dow_distribution = []
         weekday_count = 0
         weekend_count = 0
+        weekday_episodes = 0
+        weekend_episodes = 0
         for num, name, short_name in dow_order:
             c = dow_map.get(num, {}).get("count", 0)
             ch = dow_map.get(num, {}).get("chars", 0)
+            ep = dow_map.get(num, {}).get("episodes", 0)
             pct = round((c / max(total_paragraphs, 1)) * 100, 1)
             dow_distribution.append({
                 "dow": num,
@@ -306,12 +339,15 @@ def get_admin_analytics(folder_name: Optional[str] = None):
                 "short_name": short_name,
                 "count": c,
                 "chars": ch,
+                "episodes": ep,
                 "pct": pct
             })
             if num in (0, 6):
                 weekend_count += c
+                weekend_episodes += ep
             else:
                 weekday_count += c
+                weekday_episodes += ep
 
         peak_dow_item = max(dow_distribution, key=lambda x: x["count"]) if dow_distribution else None
         peak_dow_name = peak_dow_item["name"] if peak_dow_item and peak_dow_item["count"] > 0 else "-"
@@ -418,6 +454,34 @@ def get_admin_analytics(folder_name: Optional[str] = None):
         elif avg_chars_per_ep > 5000:
             fit_badge = "밀도 높은 분량 (5,000자 초과)"
 
+        # 번역 처리 속도 및 효율성 분석 (Throughput & Efficiency Analytics)
+        active_hours = sum(1 for h in hourly_distribution if h["count"] > 0)
+        avg_chars_per_active_hour = round(total_kr_chars / max(active_hours, 1))
+        avg_paras_per_active_hour = round(total_paragraphs / max(active_hours, 1))
+        
+        # 오늘 API 호출량 연동 청킹 수율
+        from server.quota import get_today_api_call_count
+        today_api_calls = get_today_api_call_count()
+        today_chars_per_call = round(today_kr_chars / max(today_api_calls, 1)) if today_api_calls > 0 else 0
+        today_paras_per_call = round(today_paragraphs / max(today_api_calls, 1), 1) if today_api_calls > 0 else 0.0
+
+        efficiency_stats = {
+            "peak_hourly_chars": peak_hour_chars,
+            "peak_hourly_paras": peak_hour_count,
+            "peak_hourly_episodes": peak_hour_episodes,
+            "avg_chars_per_active_hour": avg_chars_per_active_hour,
+            "avg_paras_per_active_hour": avg_paras_per_active_hour,
+            "today_api_calls": today_api_calls,
+            "today_chars_per_call": today_chars_per_call,
+            "today_paras_per_call": today_paras_per_call,
+            "last_7d_daily_avg_episodes": round(last_7d_episodes / min(len(last_7_trends), 7), 1) if last_7_trends else 0.0,
+            "last_7d_daily_avg_chars": round(last_7d_chars / min(len(last_7_trends), 7)) if last_7_trends else 0,
+            "last_7d_daily_avg_paras": round(last_7d_count / min(len(last_7_trends), 7)) if last_7_trends else 0,
+            "last_7d_books_volume": round(last_7d_chars / 100000, 2),
+            "density_avg_chars_per_ep": avg_chars_per_ep,
+            "density_avg_paras_per_ep": avg_paras_per_ep
+        }
+
         return {
             "status": "success",
             "scope": target_folder or "전체",
@@ -451,15 +515,21 @@ def get_admin_analytics(folder_name: Optional[str] = None):
                 "today_start_ts": quota_window_start_ts,
                 "daily_avg_count": daily_avg_count,
                 "daily_avg_chars": daily_avg_chars,
+                "daily_avg_episodes": daily_avg_episodes,
                 "peak_count": peak_count,
                 "peak_date": peak_date,
+                "peak_episodes_count": peak_episodes_count,
+                "peak_episodes_date": peak_episodes_date,
                 "streak_days": streak_days,
                 "last_7d_count": last_7d_count,
                 "last_7d_chars": last_7d_chars,
+                "last_7d_episodes": last_7d_episodes,
                 "daily_trends": daily_trends,
                 "hourly_distribution": hourly_distribution,
                 "peak_hour": peak_hour,
                 "peak_hour_count": peak_hour_count,
+                "peak_hour_chars": peak_hour_chars,
+                "peak_hour_episodes": peak_hour_episodes,
                 "dow_distribution": dow_distribution,
                 "peak_dow": peak_dow_name,
                 "peak_dow_count": peak_dow_count,
@@ -468,6 +538,7 @@ def get_admin_analytics(folder_name: Optional[str] = None):
                 "weekday_pct": weekday_pct,
                 "weekend_pct": weekend_pct
             },
+            "efficiency": efficiency_stats,
             "quality": {
                 "health_score": health_score,
                 "normal_rate": normal_rate,

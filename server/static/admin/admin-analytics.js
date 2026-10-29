@@ -8,7 +8,7 @@ import { state, dom, escapeHtml, showToast } from './admin-state.js';
 
 let analyticsDataCache = null;
 let currentActivityPeriod = '14';
-let currentActivityMetric = 'count';
+let currentActivityMetric = 'episodes';
 let currentActivityTrendMode = 'daily';
 
 function initStatsAnalyticsModal() {
@@ -207,7 +207,7 @@ async function loadAdminAnalytics(folderScope = '__all__') {
         const data = await res.json();
         analyticsDataCache = data;
 
-        renderActivityTab(data.activity);
+        renderActivityTab(data.activity, data.efficiency);
         renderQualityTab(data.quality, data.summary);
         renderNovelsTab(data.novels);
         renderScaleTab(data.scale);
@@ -218,7 +218,7 @@ async function loadAdminAnalytics(folderScope = '__all__') {
 }
 
 // 탭 1: 활동 & 생산성 추이 렌더러
-function renderActivityTab(activity) {
+function renderActivityTab(activity, efficiency) {
     if (!activity) return;
 
     // KPI 카드 업데이트
@@ -263,6 +263,44 @@ function renderActivityTab(activity) {
     const last7dChars = document.getElementById('kpiLast7dChars');
     if (last7dChars) last7dChars.textContent = `${activity.last_7d_chars.toLocaleString()}자`;
 
+    const dailyAvgEps = document.getElementById('kpiDailyAvgEps');
+    if (dailyAvgEps) dailyAvgEps.textContent = `${(activity.daily_avg_episodes || 0).toLocaleString()}화 / 일`;
+
+    const peakEpsSub = document.getElementById('kpiPeakEpisodesSub');
+    if (peakEpsSub && activity.peak_episodes_count) {
+        peakEpsSub.textContent = `최다 ${activity.peak_episodes_count.toLocaleString()}화 (${activity.peak_episodes_date || '-'})`;
+    }
+
+    const last7dEps = document.getElementById('kpiLast7dEpisodes');
+    if (last7dEps) last7dEps.textContent = `${(activity.last_7d_episodes || 0).toLocaleString()}화 번역`;
+
+    // Throughput & 처리 효율성 지표 채우기
+    if (efficiency) {
+        const peakCharsEl = document.getElementById('kpiThroughputPeakChars');
+        if (peakCharsEl) peakCharsEl.innerHTML = `${(efficiency.peak_hourly_chars || 0).toLocaleString()}<span class="kpi-unit">자/h</span>`;
+
+        const peakSubEl = document.getElementById('kpiThroughputPeakSub');
+        if (peakSubEl) peakSubEl.textContent = `${(efficiency.peak_hourly_episodes || 0).toLocaleString()}화 · ${(efficiency.peak_hourly_paras || 0).toLocaleString()}문단 / 시간`;
+
+        const yieldCharsEl = document.getElementById('kpiThroughputYieldChars');
+        if (yieldCharsEl) yieldCharsEl.innerHTML = `${(efficiency.today_chars_per_call || 0).toLocaleString()}<span class="kpi-unit">자/회</span>`;
+
+        const yieldSubEl = document.getElementById('kpiThroughputYieldSub');
+        if (yieldSubEl) yieldSubEl.textContent = `호출 1회당 ${(efficiency.today_paras_per_call || 0)}문단 (오늘 ${efficiency.today_api_calls || 0}회 호출)`;
+
+        const epCharsEl = document.getElementById('kpiThroughputEpChars');
+        if (epCharsEl) epCharsEl.innerHTML = `${(efficiency.density_avg_chars_per_ep || 0).toLocaleString()}<span class="kpi-unit">자/화</span>`;
+
+        const epSubEl = document.getElementById('kpiThroughputEpSub');
+        if (epSubEl) epSubEl.textContent = `회차당 평균 ${(efficiency.density_avg_paras_per_ep || 0)}개 문단 구성`;
+
+        const booksEl = document.getElementById('kpiThroughput7dBooks');
+        if (booksEl) booksEl.innerHTML = `${(efficiency.last_7d_books_volume || 0).toLocaleString()}<span class="kpi-unit">권 분량</span>`;
+
+        const booksSubEl = document.getElementById('kpiThroughput7dSub');
+        if (booksSubEl) booksSubEl.textContent = `일평균 ${(efficiency.last_7d_daily_avg_episodes || 0)}화 (${(efficiency.last_7d_daily_avg_chars || 0).toLocaleString()}자) 페이스`;
+    }
+
     // 피크 시간대 배지
     const peakBadge = document.getElementById('peakHourBadge');
     if (peakBadge) {
@@ -305,14 +343,22 @@ function renderDailyTrendSvg(dailyTrends, period, metric, mode = 'daily') {
         return;
     }
 
-    // 값 산출 함수
+    // 값 산출 함수 (회차 수, 문단 수, 글자 수, 회차당 밀도)
     const getVal = (t) => {
-        if (mode === 'cumulative') {
-            return metric === 'chars' ? (t.cum_chars ?? t.kr_chars) : (t.cum_count ?? t.count);
-        } else if (mode === 'ma7') {
-            return metric === 'chars' ? (t.ma7_chars ?? t.kr_chars) : (t.ma7_count ?? t.count);
-        } else {
-            return metric === 'chars' ? t.kr_chars : t.count;
+        if (metric === 'episodes') {
+            if (mode === 'cumulative') return t.cum_episodes ?? t.episodes ?? 0;
+            if (mode === 'ma7') return t.ma7_episodes ?? t.episodes ?? 0;
+            return t.episodes ?? 0;
+        } else if (metric === 'chars') {
+            if (mode === 'cumulative') return t.cum_chars ?? t.kr_chars;
+            if (mode === 'ma7') return t.ma7_chars ?? t.kr_chars;
+            return t.kr_chars;
+        } else if (metric === 'density') {
+            return t.avg_chars_per_ep ?? Math.round(t.kr_chars / Math.max(t.episodes ?? 1, 1));
+        } else { // count (문단 수)
+            if (mode === 'cumulative') return t.cum_count ?? t.count;
+            if (mode === 'ma7') return t.ma7_count ?? t.count;
+            return t.count;
         }
     };
 
@@ -424,20 +470,22 @@ function renderDailyTrendSvg(dailyTrends, period, metric, mode = 'daily') {
             circle.setAttribute('fill', '#f59e0b');
             if (tooltip) {
                 tooltip.style.display = 'block';
-                const unit = metric === 'chars' ? '자' : '문단';
-                let modeTitle = '일일 번역량';
-                let extraInfo = '';
-                if (mode === 'ma7') {
-                    modeTitle = '7일 이동평균';
-                    const dailyVal = metric === 'chars' ? pt.raw.kr_chars : pt.raw.count;
-                    extraInfo = `<br/><span style="color: #94a3b8; font-size: 11px;">(당일 실적: ${dailyVal.toLocaleString()}${unit})</span>`;
-                } else if (mode === 'cumulative') {
-                    modeTitle = '누적 번역량';
-                    const dailyVal = metric === 'chars' ? pt.raw.kr_chars : pt.raw.count;
-                    extraInfo = `<br/><span style="color: #94a3b8; font-size: 11px;">(당일 증가: +${dailyVal.toLocaleString()}${unit})</span>`;
-                }
+                let unit = '화';
+                if (metric === 'chars') unit = '자';
+                else if (metric === 'count') unit = '문단';
+                else if (metric === 'density') unit = '자/화';
 
-                tooltip.innerHTML = `<strong>${pt.date}</strong><br/>${modeTitle}: <strong>${pt.val.toLocaleString()}${unit}</strong>${extraInfo}`;
+                let modeTitle = '일일 번역량';
+                if (metric === 'density') modeTitle = '회차당 평균 분량';
+                else if (mode === 'ma7') modeTitle = '7일 이동평균';
+                else if (mode === 'cumulative') modeTitle = '누적 성장량';
+
+                const epVal = (pt.raw.episodes ?? 0).toLocaleString();
+                const paraVal = (pt.raw.count ?? 0).toLocaleString();
+                const charVal = (pt.raw.kr_chars ?? 0).toLocaleString();
+                const breakdown = `<div style="margin-top: 4px; padding-top: 4px; border-top: 1px dashed rgba(255,255,255,0.2); font-size: 10.5px; color: #94a3b8;">당일: ${epVal}화 · ${paraVal}문단 · ${charVal}자</div>`;
+
+                tooltip.innerHTML = `<strong>${pt.date}</strong><br/>${modeTitle}: <strong style="color: #f59e0b;">${pt.val.toLocaleString()}${unit}</strong>${breakdown}`;
                 const rect = svg.getBoundingClientRect();
                 const scaleX = rect.width / width;
                 const scaleY = rect.height / height;
@@ -504,7 +552,9 @@ function renderHourlySvg(hourlyDistribution, peakHour) {
                 let tag = '';
                 if (isPeak) tag += ' 🔥 피크';
                 if (isStart) tag += ' ⚡ 하루 시작점(API 초기화)';
-                tooltip.innerHTML = `<strong>${h.hour}:00 ~ ${h.hour}:59 (KST)</strong><br/>번역량: <strong>${h.count.toLocaleString()}문단</strong> (${h.pct}%)${tag}`;
+                const epInfo = h.episodes ? ` (${h.episodes.toLocaleString()}화)` : '';
+                const charInfo = h.chars ? `<br/><span style='color: #94a3b8; font-size: 11px;'>${h.chars.toLocaleString()}자 번역</span>` : '';
+                tooltip.innerHTML = `<strong>${h.hour}:00 ~ ${h.hour}:59 (KST)</strong><br/>번역량: <strong>${h.count.toLocaleString()}문단</strong>${epInfo} [${h.pct}%]${tag}${charInfo}`;
                 const svgRect = svg.getBoundingClientRect();
                 const scaleX = svgRect.width / width;
                 const scaleY = svgRect.height / height;
@@ -592,7 +642,8 @@ function renderDowSvg(dowDistribution, peakDow, weekdayPct, weekendPct) {
         rect.addEventListener('mouseenter', () => {
             if (tooltip) {
                 tooltip.style.display = 'block';
-                tooltip.innerHTML = `<strong>${d.name}</strong><br/>번역량: <strong>${d.count.toLocaleString()}문단</strong> (${d.pct}%)<br/><span style="font-size: 11px; color: #94a3b8;">${d.chars.toLocaleString()}자</span>${isPeak ? ' 🔥 피크 요일' : ''}`;
+                const epText = d.episodes ? ` (${d.episodes.toLocaleString()}화)` : '';
+                tooltip.innerHTML = `<strong>${d.name}</strong><br/>번역량: <strong>${d.count.toLocaleString()}문단</strong>${epText} [${d.pct}%]<br/><span style="font-size: 11px; color: #94a3b8;">${d.chars.toLocaleString()}자</span>${isPeak ? ' 🔥 피크 요일' : ''}`;
                 const svgRect = svg.getBoundingClientRect();
                 const scaleX = svgRect.width / width;
                 const scaleY = svgRect.height / height;

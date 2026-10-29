@@ -42,8 +42,12 @@ def test_admin_analytics_endpoint():
         trend = activity["daily_trends"][0]
         assert "cum_count" in trend
         assert "cum_chars" in trend
+        assert "cum_episodes" in trend
         assert "ma7_count" in trend
         assert "ma7_chars" in trend
+        assert "ma7_episodes" in trend
+        assert "episodes" in trend
+        assert "avg_chars_per_ep" in trend
     assert "hourly_distribution" in activity
     assert len(activity["hourly_distribution"]) == 24
     # 24시간 활동 분포의 시작 시각이 API 초기화 시각(16시/17시)과 일치해야 함
@@ -57,6 +61,17 @@ def test_admin_analytics_endpoint():
     assert "peak_dow" in activity
     assert "weekday_pct" in activity
     assert "weekend_pct" in activity
+    assert "daily_avg_episodes" in activity
+    assert "last_7d_episodes" in activity
+
+    # 2-2. efficiency 검증
+    assert "efficiency" in data
+    eff = data["efficiency"]
+    assert "peak_hourly_chars" in eff
+    assert "peak_hourly_episodes" in eff
+    assert "today_chars_per_call" in eff
+    assert "last_7d_books_volume" in eff
+    assert "density_avg_chars_per_ep" in eff
 
     # 3. quality 검증
     quality = data["quality"]
