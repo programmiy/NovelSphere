@@ -1,4 +1,663 @@
 
+// ==========================================
+// 일별 번역 활동 추이 심층 뷰어 (Expanded Graph Suite)
+// ==========================================
+
+let viewerMetric = 'episodes';
+let viewerMode = 'daily';
+let viewerInterval = 'day'; // 'day' | 'week' | 'month'
+let viewerChartType = 'area'; // 'area' | 'bar' | 'spline' | 'step'
+let viewerPeriod = 'all';
+let viewerShowAvg = true;
+let viewerShowPeak = true;
+let viewerShowWeekend = true;
+let viewerZoomMin = 0; // 0..100
+let viewerZoomMax = 100; // 0..100
+
+// 데이터 집계 단위 변환 (일간 / 주간 / 월간)
+function aggregateTrends(rawTrends, interval) {
+    if (!Array.isArray(rawTrends) || rawTrends.length === 0) return [];
+    if (interval === 'day') return rawTrends;
+
+    const groups = {};
+    rawTrends.forEach(d => {
+        let key;
+        let label;
+        if (interval === 'month') {
+            key = d.date.slice(0, 7); // 'YYYY-MM'
+            label = `${d.date.slice(2, 4)}.${d.date.slice(5, 7)}월`;
+        } else {
+            // 주간 집계 (월요일 기준)
+            const dt = new Date(d.date);
+            const day = dt.getDay();
+            const diff = dt.getDate() - day + (day === 0 ? -6 : 1);
+            const mon = new Date(dt.setDate(diff));
+            const y = mon.getFullYear();
+            const m = String(mon.getMonth() + 1).padStart(2, '0');
+            const dayStr = String(mon.getDate()).padStart(2, '0');
+            key = `${y}-${m}-${dayStr}`;
+            label = `${String(y).slice(2)}.${m}.${dayStr}(주)`;
+        }
+
+        if (!groups[key]) {
+            groups[key] = {
+                date: key,
+                displayDate: label,
+                count: 0,
+                kr_chars: 0,
+                jp_chars: 0,
+                episodes: 0
+            };
+        }
+        groups[key].count += (d.count || 0);
+        groups[key].kr_chars += (d.kr_chars || 0);
+        groups[key].jp_chars += (d.jp_chars || 0);
+        groups[key].episodes += (d.episodes || 0);
+    });
+
+    const sortedKeys = Object.keys(groups).sort();
+    let runningCumEp = 0;
+    let runningCumCount = 0;
+    let runningCumChars = 0;
+    const pastQueue = [];
+
+    return sortedKeys.map(k => {
+        const g = groups[k];
+        runningCumEp += g.episodes;
+        runningCumCount += g.count;
+        runningCumChars += g.kr_chars;
+
+        pastQueue.push(g.episodes);
+        if (pastQueue.length > 7) pastQueue.shift();
+        const ma = Number((pastQueue.reduce((a, b) => a + b, 0) / pastQueue.length).toFixed(1));
+
+        return {
+            date: g.date,
+            displayDate: g.displayDate,
+            count: g.count,
+            kr_chars: g.kr_chars,
+            jp_chars: g.jp_chars,
+            episodes: g.episodes,
+            cum_episodes: runningCumEp,
+            cum_count: runningCumCount,
+            cum_chars: runningCumChars,
+            ma7_episodes: ma,
+            avg_chars_per_ep: g.episodes > 0 ? Math.round(g.kr_chars / g.episodes) : 0
+        };
+    });
+}
+
+// 심층 뷰어 모달 열기
+function openTrendExpandedViewer() {
+    const modal = document.getElementById('trendGraphViewerModal');
+    if (!modal) return;
+    modal.style.display = 'flex';
+    viewerMetric = currentActivityMetric || 'episodes';
+    viewerMode = currentActivityTrendMode || 'daily';
+
+    // 버튼 활성 동기화
+    document.querySelectorAll('#viewerMetricButtons button').forEach(b => {
+        b.classList.toggle('active', b.dataset.metric === viewerMetric);
+    });
+    document.querySelectorAll('#viewerModeButtons button').forEach(b => {
+        b.classList.toggle('active', b.dataset.mode === viewerMode);
+    });
+
+    renderViewerExpandedSvg();
+}
+
+// 심층 뷰어 모달 닫기
+function closeTrendExpandedViewer() {
+    const modal = document.getElementById('trendGraphViewerModal');
+    if (modal) modal.style.display = 'none';
+}
+
+// 심층 뷰어 대형 SVG 차트 렌더러
+function renderViewerExpandedSvg() {
+    const svg = document.getElementById('viewerExpandedSvg');
+    const tooltip = document.getElementById('viewerExpandedTooltip');
+    const scopeBadge = document.getElementById('viewerScopeBadge');
+    const rangeLabel = document.getElementById('viewerRangeLabel');
+    if (!svg || !analyticsDataCache || !analyticsDataCache.activity) return;
+
+    let rawTrends = analyticsDataCache.activity.daily_trends || [];
+    if (rawTrends.length === 0) {
+        svg.innerHTML = `<text x="50%" y="50%" text-anchor="middle" fill="var(--text-muted)">표시할 데이터가 없습니다.</text>`;
+        return;
+    }
+
+    // 1. 기간 필터링
+    let trends = [...rawTrends];
+    if (viewerPeriod !== 'all') {
+        const days = parseInt(viewerPeriod, 10);
+        trends = trends.slice(-days);
+    }
+
+    // 2. 줌 슬라이더 범위 필터링
+    const totalCount = trends.length;
+    const startIdx = Math.floor((viewerZoomMin / 100) * totalCount);
+    const endIdx = Math.max(startIdx + 2, Math.ceil((viewerZoomMax / 100) * totalCount));
+    trends = trends.slice(startIdx, endIdx);
+
+    // 3. 집계 단위 변환 (일간, 주간, 월간)
+    trends = aggregateTrends(trends, viewerInterval);
+
+    if (scopeBadge && trends.length > 0) {
+        const firstD = trends[0].date;
+        const lastD = trends[trends.length - 1].date;
+        scopeBadge.textContent = `${firstD} ~ ${lastD} (${trends.length}개 ${viewerInterval === 'day' ? '일' : (viewerInterval === 'week' ? '주' : '개월')})`;
+        if (rangeLabel) rangeLabel.textContent = `${firstD.slice(2)} ~ ${lastD.slice(2)}`;
+    }
+
+    svg.innerHTML = '';
+    const width = 1600;
+    const height = 540;
+    const padLeft = 80;
+    const padRight = 40;
+    const padTop = 40;
+    const padBottom = 50;
+    const plotW = width - padLeft - padRight;
+    const plotH = height - padTop - padBottom;
+
+    svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+
+    // 값 추출 함수
+    const getVal = (t) => {
+        const ep = (t.episodes != null && t.episodes > 0) ? t.episodes : Math.max(t.count > 0 ? 1 : 0, Math.round((t.count || 0) / 90.8));
+        const cumEp = t.cum_episodes || Math.round((t.cum_count || t.count || 0) / 90.8);
+        const ma7Ep = t.ma7_episodes || Number(((t.ma7_count || t.count || 0) / 90.8).toFixed(1));
+
+        if (viewerMetric === 'episodes') {
+            if (viewerMode === 'cumulative') return cumEp;
+            if (viewerMode === 'ma7') return ma7Ep;
+            return ep;
+        } else if (viewerMetric === 'chars') {
+            if (viewerMode === 'cumulative') return t.cum_chars || t.kr_chars;
+            if (viewerMode === 'ma7') return t.ma7_chars || t.kr_chars;
+            return t.kr_chars;
+        } else if (viewerMetric === 'density') {
+            return t.avg_chars_per_ep || (ep > 0 ? Math.round((t.kr_chars || 0) / ep) : 3500);
+        } else {
+            if (viewerMode === 'cumulative') return t.cum_count || t.count;
+            if (viewerMode === 'ma7') return t.ma7_count || t.count;
+            return t.count;
+        }
+    };
+
+    const values = trends.map(getVal);
+    const maxVal = Math.max(...values, 10);
+    const minVal = Math.min(...values);
+    const avgVal = Math.round(values.reduce((a, b) => a + b, 0) / Math.max(1, values.length));
+    const n = trends.length;
+    const stepX = plotW / (n > 1 ? (n - 1) : 1);
+
+    let unitStr = '화';
+    if (viewerMetric === 'chars') unitStr = '자';
+    else if (viewerMetric === 'count') unitStr = '문단';
+    else if (viewerMetric === 'density') unitStr = '자/화';
+
+    // 1. 주말 배경 음영 대역 렌더링 (일간 모드 시)
+    if (viewerShowWeekend && viewerInterval === 'day') {
+        trends.forEach((t, i) => {
+            const dt = new Date(t.date);
+            const dayOfWeek = dt.getDay(); // 0: Sun, 6: Sat
+            if (dayOfWeek === 0 || dayOfWeek === 6) {
+                const bx = padLeft + i * stepX - (stepX / 2);
+                const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+                rect.setAttribute('x', Math.max(padLeft, bx));
+                rect.setAttribute('y', padTop);
+                rect.setAttribute('width', Math.min(stepX, padLeft + plotW - bx));
+                rect.setAttribute('height', plotH);
+                rect.setAttribute('fill', 'rgba(168, 85, 247, 0.04)');
+                svg.appendChild(rect);
+            }
+        });
+    }
+
+    // 2. Y축 수평 그리드선 (5단계)
+    for (let i = 0; i <= 4; i++) {
+        const yVal = Math.round(maxVal - (maxVal / 4) * i);
+        const yPos = padTop + (plotH / 4) * i;
+
+        const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        line.setAttribute('x1', padLeft);
+        line.setAttribute('x2', padLeft + plotW);
+        line.setAttribute('y1', yPos);
+        line.setAttribute('y2', yPos);
+        line.setAttribute('stroke', 'rgba(255, 255, 255, 0.08)');
+        line.setAttribute('stroke-dasharray', '3 3');
+        svg.appendChild(line);
+
+        const lbl = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        lbl.setAttribute('x', padLeft - 12);
+        lbl.setAttribute('y', yPos + 4);
+        lbl.setAttribute('text-anchor', 'end');
+        lbl.setAttribute('fill', 'var(--text-muted, #94a3b8)');
+        lbl.setAttribute('font-size', '11px');
+        lbl.setAttribute('font-family', 'var(--font-cyber)');
+        lbl.textContent = yVal >= 1000000 ? `${(yVal/1000000).toFixed(1)}M` : (yVal >= 1000 ? `${Math.round(yVal/1000)}k` : yVal);
+        svg.appendChild(lbl);
+    }
+
+    // 3. 평균 기준선 (AVG Guideline)
+    if (viewerShowAvg && avgVal > 0) {
+        const avgY = padTop + plotH - (plotH * (avgVal / maxVal));
+        const avgLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        avgLine.setAttribute('x1', padLeft);
+        avgLine.setAttribute('x2', padLeft + plotW);
+        avgLine.setAttribute('y1', avgY);
+        avgLine.setAttribute('y2', avgY);
+        avgLine.setAttribute('stroke', '#06b6d4');
+        avgLine.setAttribute('stroke-dasharray', '5 5');
+        avgLine.setAttribute('stroke-width', '1.5');
+        svg.appendChild(avgLine);
+
+        const avgText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        avgText.setAttribute('x', padLeft + plotW - 10);
+        avgText.setAttribute('y', avgY - 6);
+        avgText.setAttribute('text-anchor', 'end');
+        avgText.setAttribute('fill', '#06b6d4');
+        avgText.setAttribute('font-size', '11px');
+        avgText.setAttribute('font-weight', '700');
+        avgText.textContent = `평균(AVG): ${avgVal.toLocaleString()}${unitStr}`;
+        svg.appendChild(avgText);
+    }
+
+    // 좌표 포인트 생성
+    const points = trends.map((t, i) => {
+        const val = values[i];
+        const x = padLeft + (n > 1 ? i * stepX : plotW / 2);
+        const y = padTop + plotH - (val / maxVal) * plotH;
+        return { x, y, val, raw: t, date: t.date, displayDate: t.displayDate || t.date };
+    });
+
+    // 테마 컬러
+    let strokeColor = '#38bdf8';
+    if (viewerMetric === 'episodes') strokeColor = '#06b6d4';
+    else if (viewerMetric === 'chars') strokeColor = '#a855f7';
+    else if (viewerMetric === 'count') strokeColor = '#3b82f6';
+    else strokeColor = '#f59e0b';
+
+    // 4. 차트 스타일에 따른 본문 렌더링
+    if (viewerChartType === 'bar') {
+        const barW = Math.max(4, (plotW / n) - 4);
+        points.forEach(pt => {
+            const barH = Math.max(2, (pt.val / maxVal) * plotH);
+            const bx = pt.x - barW / 2;
+            const by = padTop + plotH - barH;
+
+            const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+            rect.setAttribute('x', bx);
+            rect.setAttribute('y', by);
+            rect.setAttribute('width', barW);
+            rect.setAttribute('height', barH);
+            rect.setAttribute('rx', 3);
+            rect.setAttribute('ry', 3);
+            rect.setAttribute('fill', pt.val === maxVal ? '#f59e0b' : strokeColor);
+            rect.setAttribute('opacity', '0.85');
+            rect.style.cursor = 'pointer';
+
+            rect.addEventListener('mouseenter', () => updateInspector(pt));
+            svg.appendChild(rect);
+        });
+    } else {
+        // Area, Spline, Step
+        const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+        defs.innerHTML = `
+            <linearGradient id="viewerAreaGrad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="${strokeColor}" stop-opacity="0.38"/>
+                <stop offset="100%" stop-color="${strokeColor}" stop-opacity="0.0"/>
+            </linearGradient>
+        `;
+        svg.appendChild(defs);
+
+        let pathD = '';
+        if (viewerChartType === 'step') {
+            pathD = `M ${points[0].x} ${points[0].y}`;
+            for (let i = 1; i < points.length; i++) {
+                pathD += ` H ${points[i].x} V ${points[i].y}`;
+            }
+        } else if (viewerChartType === 'spline') {
+            pathD = `M ${points[0].x} ${points[0].y}`;
+            for (let i = 0; i < points.length - 1; i++) {
+                const cpX = (points[i].x + points[i + 1].x) / 2;
+                pathD += ` C ${cpX} ${points[i].y}, ${cpX} ${points[i + 1].y}, ${points[i + 1].x} ${points[i + 1].y}`;
+            }
+        } else {
+            // Area (기본)
+            pathD = `M ${points[0].x} ${points[0].y}`;
+            points.slice(1).forEach(pt => { pathD += ` L ${pt.x} ${pt.y}`; });
+        }
+
+        // 영역 채우기
+        if (viewerChartType === 'area') {
+            const areaD = `${pathD} L ${points[points.length - 1].x} ${padTop + plotH} L ${points[0].x} ${padTop + plotH} Z`;
+            const areaPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            areaPath.setAttribute('d', areaD);
+            areaPath.setAttribute('fill', 'url(#viewerAreaGrad)');
+            svg.appendChild(areaPath);
+        }
+
+        const linePath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        linePath.setAttribute('d', pathD);
+        linePath.setAttribute('fill', 'none');
+        linePath.setAttribute('stroke', strokeColor);
+        linePath.setAttribute('stroke-width', '2.5');
+        linePath.setAttribute('filter', 'drop-shadow(0 0 8px ' + strokeColor + '88)');
+        svg.appendChild(linePath);
+    }
+
+    // 5. 피크 마커 렌더링 (Peak Annotation)
+    if (viewerShowPeak && maxVal > 0) {
+        const peakPt = points.find(p => p.val === maxVal);
+        if (peakPt) {
+            const peakGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+            peakGroup.innerHTML = `
+                <circle cx="${peakPt.x}" cy="${peakPt.y}" r="8" fill="#ef4444" opacity="0.4">
+                    <animate attributeName="r" values="6;12;6" dur="2s" repeatCount="indefinite" />
+                    <animate attributeName="opacity" values="0.6;0.1;0.6" dur="2s" repeatCount="indefinite" />
+                </circle>
+                <circle cx="${peakPt.x}" cy="${peakPt.y}" r="4.5" fill="#f59e0b" stroke="#ffffff" stroke-width="1.5"/>
+                <rect x="${peakPt.x - 45}" y="${peakPt.y - 28}" width="90" height="20" rx="4" fill="#0f172a" stroke="#f59e0b" stroke-width="1.2"/>
+                <text x="${peakPt.x}" y="${peakPt.y - 14}" text-anchor="middle" fill="#f59e0b" font-size="10px" font-weight="800">
+                    🔥 PEAK: ${maxVal.toLocaleString()}${unitStr}
+                </text>
+            `;
+            svg.appendChild(peakGroup);
+        }
+    }
+
+    // 6. X축 날짜 라벨 (연도 포함 YYYY-MM-DD / YY.MM.DD)
+    const stepLabel = Math.max(1, Math.floor(n / 12));
+    points.forEach((pt, idx) => {
+        if (idx % stepLabel === 0 || idx === n - 1) {
+            const dateText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+            dateText.setAttribute('x', pt.x);
+            dateText.setAttribute('y', padTop + plotH + 22);
+            dateText.setAttribute('text-anchor', 'middle');
+            dateText.setAttribute('fill', 'var(--text-muted, #94a3b8)');
+            dateText.setAttribute('font-size', '10.5px');
+            dateText.setAttribute('font-family', 'var(--font-cyber)');
+
+            // 연도 포함 날짜 표기
+            if (pt.displayDate) {
+                dateText.textContent = pt.displayDate;
+            } else {
+                const yPart = pt.date.slice(2, 4);
+                const mPart = pt.date.slice(5, 7);
+                const dPart = pt.date.slice(8, 10);
+                dateText.textContent = `${yPart}.${mPart}.${dPart}`;
+            }
+            svg.appendChild(dateText);
+        }
+    });
+
+    // 7. 인터랙티브 크로스헤어 및 인스펙터 바 갱신 함수
+    function updateInspector(pt) {
+        const inspDate = document.getElementById('inspDate');
+        const inspVal = document.getElementById('inspValue');
+        const inspBreak = document.getElementById('inspBreakdown');
+        const inspCum = document.getElementById('inspCumulative');
+        const inspDensity = document.getElementById('inspDensity');
+        const inspMa7 = document.getElementById('inspMa7');
+
+        if (inspDate) inspDate.textContent = `📅 일자: ${pt.date}`;
+        if (inspVal) inspVal.textContent = `⚡ 선택 수치: ${pt.val.toLocaleString()} ${unitStr}`;
+        if (inspBreak) {
+            const ep = (pt.raw.episodes || 0).toLocaleString();
+            const para = (pt.raw.count || 0).toLocaleString();
+            const chr = (pt.raw.kr_chars || 0).toLocaleString();
+            inspBreak.textContent = `(${ep}화 · ${para}문단 · ${chr}자)`;
+        }
+        if (inspCum) inspCum.textContent = `누적: ${(pt.raw.cum_episodes || 0).toLocaleString()}화 (${(pt.raw.cum_chars || 0).toLocaleString()}자)`;
+        if (inspDensity) inspDensity.textContent = `밀도: ${(pt.raw.avg_chars_per_ep || 0).toLocaleString()}자/화`;
+        if (inspMa7) inspMa7.textContent = `7일 MA: ${(pt.raw.ma7_episodes || 0).toLocaleString()}화`;
+    }
+
+    // 마우스 호버 오버레이 (크로스헤어 가이드라인)
+    const crosshair = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    crosshair.setAttribute('y1', padTop);
+    crosshair.setAttribute('y2', padTop + plotH);
+    crosshair.setAttribute('stroke', '#38bdf8');
+    crosshair.setAttribute('stroke-dasharray', '2 2');
+    crosshair.setAttribute('stroke-width', '1.2');
+    crosshair.style.display = 'none';
+    svg.appendChild(crosshair);
+
+    svg.addEventListener('mousemove', (e) => {
+        const rect = svg.getBoundingClientRect();
+        const mouseX = ((e.clientX - rect.left) / rect.width) * width;
+        if (mouseX >= padLeft && mouseX <= padLeft + plotW) {
+            // Find closest point
+            let closest = points[0];
+            let minDist = Math.abs(mouseX - points[0].x);
+            for (let i = 1; i < points.length; i++) {
+                const dist = Math.abs(mouseX - points[i].x);
+                if (dist < minDist) {
+                    minDist = dist;
+                    closest = points[i];
+                }
+            }
+            crosshair.setAttribute('x1', closest.x);
+            crosshair.setAttribute('x2', closest.x);
+            crosshair.style.display = 'block';
+            updateInspector(closest);
+        }
+    });
+
+    svg.addEventListener('mouseleave', () => {
+        crosshair.style.display = 'none';
+    });
+
+    // 초기 인스펙터는 마지막 데이터로 설정
+    if (points.length > 0) {
+        updateInspector(points[points.length - 1]);
+    }
+}
+
+// 심층 뷰어 이벤트 바인딩 초기화
+function initTrendExpandedViewerEvents() {
+    const openBtn = document.getElementById('openTrendExpandedViewerBtn');
+    const closeBtn = document.getElementById('closeTrendExpandedViewerBtn');
+    const modal = document.getElementById('trendGraphViewerModal');
+
+    if (openBtn) openBtn.addEventListener('click', openTrendExpandedViewer);
+    if (closeBtn) closeBtn.addEventListener('click', closeTrendExpandedViewer);
+
+    // ESC 키로 닫기
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && modal && modal.style.display === 'flex') {
+            closeTrendExpandedViewer();
+        }
+    });
+
+    // 지표 버튼
+    document.querySelectorAll('#viewerMetricButtons button').forEach(b => {
+        b.addEventListener('click', () => {
+            document.querySelectorAll('#viewerMetricButtons button').forEach(x => x.classList.remove('active'));
+            b.classList.add('active');
+            viewerMetric = b.dataset.metric;
+            renderViewerExpandedSvg();
+        });
+    });
+
+    // 모드 버튼
+    document.querySelectorAll('#viewerModeButtons button').forEach(b => {
+        b.addEventListener('click', () => {
+            document.querySelectorAll('#viewerModeButtons button').forEach(x => x.classList.remove('active'));
+            b.classList.add('active');
+            viewerMode = b.dataset.mode;
+            renderViewerExpandedSvg();
+        });
+    });
+
+    // 집계 주기 버튼 (일간 / 주간 / 월간)
+    document.querySelectorAll('#viewerIntervalButtons button').forEach(b => {
+        b.addEventListener('click', () => {
+            document.querySelectorAll('#viewerIntervalButtons button').forEach(x => x.classList.remove('active'));
+            b.classList.add('active');
+            viewerInterval = b.dataset.interval;
+            renderViewerExpandedSvg();
+        });
+    });
+
+    // 차트 스타일 버튼
+    document.querySelectorAll('#viewerChartTypeButtons button').forEach(b => {
+        b.addEventListener('click', () => {
+            document.querySelectorAll('#viewerChartTypeButtons button').forEach(x => x.classList.remove('active'));
+            b.classList.add('active');
+            viewerChartType = b.dataset.type;
+            renderViewerExpandedSvg();
+        });
+    });
+
+    // 도구 토글 버튼
+    const avgBtn = document.getElementById('viewerToggleAvgBtn');
+    if (avgBtn) {
+        avgBtn.addEventListener('click', () => {
+            viewerShowAvg = !viewerShowAvg;
+            avgBtn.classList.toggle('active', viewerShowAvg);
+            renderViewerExpandedSvg();
+        });
+    }
+
+    const peakBtn = document.getElementById('viewerTogglePeakBtn');
+    if (peakBtn) {
+        peakBtn.addEventListener('click', () => {
+            viewerShowPeak = !viewerShowPeak;
+            peakBtn.classList.toggle('active', viewerShowPeak);
+            renderViewerExpandedSvg();
+        });
+    }
+
+    const wEndBtn = document.getElementById('viewerToggleWeekendBtn');
+    if (wEndBtn) {
+        wEndBtn.addEventListener('click', () => {
+            viewerShowWeekend = !viewerShowWeekend;
+            wEndBtn.classList.toggle('active', viewerShowWeekend);
+            renderViewerExpandedSvg();
+        });
+    }
+
+    // 기간 버튼
+    document.querySelectorAll('#viewerPeriodButtons button').forEach(b => {
+        b.addEventListener('click', () => {
+            document.querySelectorAll('#viewerPeriodButtons button').forEach(x => x.classList.remove('active'));
+            b.classList.add('active');
+            viewerPeriod = b.dataset.period;
+            renderViewerExpandedSvg();
+        });
+    });
+
+    // 줌 리셋
+    const resetZoomBtn = document.getElementById('viewerResetZoomBtn');
+    if (resetZoomBtn) {
+        resetZoomBtn.addEventListener('click', () => {
+            viewerZoomMin = 0;
+            viewerZoomMax = 100;
+            const sMin = document.getElementById('viewerRangeSliderMin');
+            const sMax = document.getElementById('viewerRangeSliderMax');
+            if (sMin) sMin.value = 0;
+            if (sMax) sMax.value = 100;
+            renderViewerExpandedSvg();
+        });
+    }
+
+    // 슬라이더 조절
+    const sMin = document.getElementById('viewerRangeSliderMin');
+    const sMax = document.getElementById('viewerRangeSliderMax');
+    if (sMin && sMax) {
+        sMin.addEventListener('input', (e) => {
+            viewerZoomMin = Math.min(parseInt(e.target.value, 10), viewerZoomMax - 5);
+            e.target.value = viewerZoomMin;
+            renderViewerExpandedSvg();
+        });
+        sMax.addEventListener('input', (e) => {
+            viewerZoomMax = Math.max(parseInt(e.target.value, 10), viewerZoomMin + 5);
+            e.target.value = viewerZoomMax;
+            renderViewerExpandedSvg();
+        });
+    }
+
+    // 휠 줌 기능
+    const chartBody = document.getElementById('viewerChartBody');
+    if (chartBody) {
+        chartBody.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            const delta = e.deltaY > 0 ? 3 : -3;
+            viewerZoomMin = Math.max(0, Math.min(viewerZoomMin + delta, viewerZoomMax - 10));
+            viewerZoomMax = Math.min(100, Math.max(viewerZoomMax - delta, viewerZoomMin + 10));
+            if (sMin) sMin.value = viewerZoomMin;
+            if (sMax) sMax.value = viewerZoomMax;
+            renderViewerExpandedSvg();
+        }, { passive: false });
+    }
+
+    // CSV 내보내기
+    const csvBtn = document.getElementById('viewerExportCsvBtn');
+    if (csvBtn) {
+        csvBtn.addEventListener('click', () => {
+            if (!analyticsDataCache || !analyticsDataCache.activity) return;
+            const rawTrends = analyticsDataCache.activity.daily_trends || [];
+            const trends = aggregateTrends(rawTrends, viewerInterval);
+            const headers = ['날짜', '회차수(화)', '문단수', '글자수(자)', '누적회차(화)', '누적문단', '누적글자', '회차당평균글자'];
+            const rows = trends.map(t => [
+                t.date,
+                t.episodes || 0,
+                t.count || 0,
+                t.kr_chars || 0,
+                t.cum_episodes || 0,
+                t.cum_count || 0,
+                t.cum_chars || 0,
+                t.avg_chars_per_ep || 0
+            ]);
+            const csvContent = '\uFEFF' + [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `lanovel_trend_${viewerInterval}_${new Date().toISOString().slice(0, 10)}.csv`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            showToast('CSV 내보내기가 완료되었습니다.', 'success');
+        });
+    }
+
+    // PNG 저장
+    const pngBtn = document.getElementById('viewerExportPngBtn');
+    if (pngBtn) {
+        pngBtn.addEventListener('click', () => {
+            const svgEl = document.getElementById('viewerExpandedSvg');
+            if (!svgEl) return;
+            const svgData = new XMLSerializer().serializeToString(svgEl);
+            const canvas = document.createElement('canvas');
+            canvas.width = 1600;
+            canvas.height = 540;
+            const ctx = canvas.getContext('2d');
+            const img = new Image();
+            const blob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            img.onload = () => {
+                ctx.fillStyle = '#0f172a';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.drawImage(img, 0, 0);
+                URL.revokeObjectURL(url);
+                const pngUrl = canvas.toDataURL('image/png');
+                const link = document.createElement('a');
+                link.href = pngUrl;
+                link.download = `lanovel_trend_analytics_${new Date().toISOString().slice(0, 10)}.png`;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                showToast('고화질 PNG 저장이 완료되었습니다.', 'success');
+            };
+            img.src = url;
+        });
+    }
+}
+
+
 // 안전한 일별 추이(Daily Trends) 회차수 및 밀도 자동 보정 엔진
 function getSafeDailyTrends(dailyTrends, summary, activity) {
     if (!Array.isArray(dailyTrends) || dailyTrends.length === 0) return [];
@@ -686,6 +1345,9 @@ function initStatsAnalyticsModal() {
         });
     });
 
+    // 심층 뷰어 이벤트 바인딩
+    initTrendExpandedViewerEvents();
+
     // Throughput 처리 속도 차트 지표 토글
     const throughputMetricBtns = document.querySelectorAll('#throughputMetricButtons button');
     throughputMetricBtns.forEach(btn => {
@@ -1090,7 +1752,8 @@ function renderDailyTrendSvg(dailyTrends, period, metric, mode = 'daily') {
             dateText.setAttribute('text-anchor', 'middle');
             dateText.setAttribute('fill', 'var(--text-muted, #64748b)');
             dateText.setAttribute('font-size', '10px');
-            dateText.textContent = pt.date.slice(5); // MM-DD
+            const yShort = pt.date.slice(2, 4);
+            dateText.textContent = `${yShort}.${pt.date.slice(5, 7)}.${pt.date.slice(8, 10)}`;
             svg.appendChild(dateText);
         }
 
@@ -1797,5 +2460,8 @@ export {
     renderNovelSparkline,
     renderScaleTab,
     renderPerformanceTab,
-    renderPerformanceSvg
+    renderPerformanceSvg,
+    openTrendExpandedViewer,
+    closeTrendExpandedViewer,
+    renderViewerExpandedSvg
 };

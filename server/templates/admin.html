@@ -635,6 +635,10 @@
                                     <button type="button" class="btn btn-sm btn-outline" data-metric="chars">글자 수</button>
                                     <button type="button" class="btn btn-sm btn-outline" data-metric="density">회차당 분량</button>
                                 </div>
+                                <button type="button" class="btn btn-sm btn-primary" id="openTrendExpandedViewerBtn" title="그래프 심층 뷰어 (큰창 / 줌 / 주별·월별 집계 / CSV 내보내기)" style="display: inline-flex; align-items: center; gap: 4px; box-shadow: 0 0 10px rgba(79, 70, 229, 0.4);">
+                                    <span class="material-icons" style="font-size: 15px;">open_in_full</span>
+                                    <span>심층 뷰어 (큰창)</span>
+                                </button>
                             </div>
                         </div>
                         <div class="chart-container" id="dailyTrendChartContainer">
@@ -1223,6 +1227,107 @@
         </div>
     </div>
 
+    <!-- 일별 번역 활동 추이 심층 뷰어 모달 (Expanded Graph Suite) -->
+    <div class="edit-modal" id="trendGraphViewerModal" style="display: none; z-index: 10500; align-items: center; justify-content: center; backdrop-filter: blur(8px);">
+        <div class="modal-content" style="width: 95vw; max-width: 1750px; height: 90vh; display: flex; flex-direction: column; background: var(--bg-card, #0f172a); border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 12px; box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.8), 0 0 25px rgba(56, 189, 248, 0.2); overflow: hidden; padding: 0;">
+            <!-- 뷰어 헤더 -->
+            <div class="modal-header" style="padding: 14px 20px; border-bottom: 1px solid rgba(255, 255, 255, 0.1); display: flex; justify-content: space-between; align-items: center; background: rgba(15, 23, 42, 0.85);">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <span class="material-icons" style="color: #38bdf8; font-size: 20px;">analytics</span>
+                    <span style="font-size: 16px; font-weight: 800; color: #fff;">일별 번역 활동 추이 심층 분석 뷰어</span>
+                    <span class="badge-tag" id="viewerScopeBadge" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3);">전체 기간</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <button type="button" class="btn btn-sm btn-outline" id="viewerExportCsvBtn" title="선택 구간 CSV 파일 내보내기">
+                        <span class="material-icons" style="font-size: 14px; vertical-align: middle;">file_download</span> CSV 내보내기
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline" id="viewerExportPngBtn" title="고화질 PNG 이미지 저장">
+                        <span class="material-icons" style="font-size: 14px; vertical-align: middle;">image</span> PNG 저장
+                    </button>
+                    <button type="button" class="close-btn" id="closeTrendExpandedViewerBtn" style="font-size: 24px; cursor: pointer; color: var(--text-muted); line-height: 1;">&times;</button>
+                </div>
+            </div>
+
+            <!-- 뷰어 컨트롤 툴바 -->
+            <div class="viewer-toolbar" style="padding: 10px 20px; border-bottom: 1px solid rgba(255, 255, 255, 0.08); background: rgba(30, 41, 59, 0.6); display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 10px;">
+                <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">
+                    <!-- 지표 선택 -->
+                    <div class="btn-group" id="viewerMetricButtons">
+                        <button type="button" class="btn btn-sm btn-outline active" data-metric="episodes">회차 수</button>
+                        <button type="button" class="btn btn-sm btn-outline" data-metric="count">문단 수</button>
+                        <button type="button" class="btn btn-sm btn-outline" data-metric="chars">글자 수</button>
+                        <button type="button" class="btn btn-sm btn-outline" data-metric="density">회차당 분량</button>
+                    </div>
+                    <!-- 모드 선택 -->
+                    <div class="btn-group" id="viewerModeButtons">
+                        <button type="button" class="btn btn-sm btn-outline active" data-mode="daily">구간 번역량</button>
+                        <button type="button" class="btn btn-sm btn-outline" data-mode="ma7">7일 이동평균</button>
+                        <button type="button" class="btn btn-sm btn-outline" data-mode="cumulative">누적 성장량</button>
+                    </div>
+                    <!-- 집계 주기 (일간 / 주간 / 월간) -->
+                    <div class="btn-group" id="viewerIntervalButtons" title="밀도 조절: 데이터를 주별 또는 월별로 묶어 긴 기간을 한눈에 조망합니다">
+                        <button type="button" class="btn btn-sm btn-outline active" data-interval="day">일간 (Daily)</button>
+                        <button type="button" class="btn btn-sm btn-outline" data-interval="week">주간 (Weekly)</button>
+                        <button type="button" class="btn btn-sm btn-outline" data-interval="month">월간 (Monthly)</button>
+                    </div>
+                </div>
+
+                <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">
+                    <!-- 차트 스타일 -->
+                    <div class="btn-group" id="viewerChartTypeButtons">
+                        <button type="button" class="btn btn-sm btn-outline active" data-type="area" title="영역 & 라인">Area</button>
+                        <button type="button" class="btn btn-sm btn-outline" data-type="bar" title="막대 그래프">Bar</button>
+                        <button type="button" class="btn btn-sm btn-outline" data-type="spline" title="스플라인 곡선">Spline</button>
+                        <button type="button" class="btn btn-sm btn-outline" data-type="step" title="스텝 계단식">Step</button>
+                    </div>
+                    <!-- 토글 도구 -->
+                    <div style="display: flex; gap: 4px;">
+                        <button type="button" class="btn btn-sm btn-outline active" id="viewerToggleAvgBtn" title="평균 기준선(AVG) 표시/숨김">📏 평균선</button>
+                        <button type="button" class="btn btn-sm btn-outline active" id="viewerTogglePeakBtn" title="최고치 피크 마커 표시/숨김">📌 최고치</button>
+                        <button type="button" class="btn btn-sm btn-outline active" id="viewerToggleWeekendBtn" title="주말 음영 표시/숨김">📅 주말</button>
+                    </div>
+                    <!-- 기간 범위 -->
+                    <div class="btn-group" id="viewerPeriodButtons">
+                        <button type="button" class="btn btn-sm btn-outline" data-period="14">14일</button>
+                        <button type="button" class="btn btn-sm btn-outline" data-period="30">30일</button>
+                        <button type="button" class="btn btn-sm btn-outline" data-period="90">90일</button>
+                        <button type="button" class="btn btn-sm btn-outline" data-period="180">180일</button>
+                        <button type="button" class="btn btn-sm btn-outline active" data-period="all">전체</button>
+                    </div>
+                    <button type="button" class="btn btn-sm btn-outline" id="viewerResetZoomBtn" title="줌 & 스크롤 초기화">↺ 줌 리셋</button>
+                </div>
+            </div>
+
+            <!-- 실시간 마우스 커서 인스펙터 HUD 바 -->
+            <div id="viewerInspectorBar" style="padding: 8px 20px; background: rgba(15, 23, 42, 0.95); border-bottom: 1px solid rgba(255, 255, 255, 0.05); display: flex; justify-content: space-between; align-items: center; font-size: 12px; font-family: var(--font-cyber); flex-wrap: wrap; gap: 8px;">
+                <div style="display: flex; align-items: center; gap: 15px;">
+                    <span id="inspDate" style="color: #38bdf8; font-weight: 700;">📅 날짜: -</span>
+                    <span id="inspValue" style="color: #f59e0b; font-weight: 800;">⚡ 번역량: -</span>
+                    <span id="inspBreakdown" style="color: #94a3b8;">(- 문단 · - 자)</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 15px; color: #94a3b8;">
+                    <span id="inspCumulative">누적: -</span>
+                    <span id="inspDensity">밀도: -자/화</span>
+                    <span id="inspMa7">7일 이동평균: -</span>
+                </div>
+            </div>
+
+            <!-- 대형 SVG 차트 본문 영역 -->
+            <div class="viewer-chart-body" id="viewerChartBody" style="flex: 1; position: relative; width: 100%; min-height: 420px; overflow: hidden; background: radial-gradient(circle at center, rgba(30, 41, 59, 0.3) 0%, rgba(15, 23, 42, 0.9) 100%);">
+                <div id="viewerExpandedTooltip" class="chart-tooltip" style="display: none; position: absolute; z-index: 100;"></div>
+                <svg id="viewerExpandedSvg" style="width: 100%; height: 100%; display: block;"></svg>
+            </div>
+
+            <!-- 하단 타임라인 네비게이터 (Range Slider / Minimap) -->
+            <div class="viewer-minimap-container" style="padding: 10px 20px; background: rgba(15, 23, 42, 0.95); border-top: 1px solid rgba(255, 255, 255, 0.08); display: flex; align-items: center; gap: 14px;">
+                <span style="font-size: 11px; color: var(--text-muted); font-weight: 600; white-space: nowrap;">🗺️ 타임라인 범위 조절</span>
+                <input type="range" id="viewerRangeSliderMin" min="0" max="100" value="0" style="flex: 1; accent-color: #38bdf8; cursor: pointer;" title="시작 시점 조절">
+                <input type="range" id="viewerRangeSliderMax" min="0" max="100" value="100" style="flex: 1; accent-color: #38bdf8; cursor: pointer;" title="종료 시점 조절">
+                <span id="viewerRangeLabel" style="font-size: 11px; color: #38bdf8; font-weight: 700; white-space: nowrap; min-width: 160px; text-align: right;">전체 범위</span>
+            </div>
+        </div>
+    </div>
+
     <!-- 앱 릴리즈 관리 모달 -->
     <div id="appReleaseModal" class="modal" x-data="{ open: false }" x-show="open" x-cloak @open-app-release.window="open = true" @close-app-release.window="open = false" @keydown.escape.window="open = false">
         <div class="modal-content" style="max-width: 620px;">
@@ -1430,7 +1535,7 @@
 
     <!-- <script type="module" src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.esm.js"></script> -->
     <script src="/static/admin-fx.js?v=3.3"></script>
-    <script type="module" src="/static/admin/admin-main.js?v=4.6"></script>
+    <script type="module" src="/static/admin/admin-main.js?v=4.7"></script>
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
