@@ -72,6 +72,18 @@ def test_admin_analytics_endpoint():
     assert "today_chars_per_call" in eff
     assert "last_7d_books_volume" in eff
     assert "density_avg_chars_per_ep" in eff
+    assert "hourly_throughput" in eff
+    assert len(eff["hourly_throughput"]) == 24
+
+    # 2-3. performance 검증
+    assert "performance" in data
+    perf = data["performance"]
+    assert "chars_per_sec_avg" in perf
+    assert "chars_per_sec_peak" in perf
+    assert "est_sec_per_ep" in perf
+    assert "est_sec_per_1k" in perf
+    assert "engine_grade" in perf
+    assert "pipeline_fidelity_pct" in perf
 
     # 3. quality 검증
     quality = data["quality"]
@@ -94,6 +106,11 @@ def test_admin_analytics_endpoint():
         assert "paragraph_count" in first
         assert "total_chars" in first
         assert "share_pct" in first
+        assert "density_badge" in first
+        assert "scale_tier" in first
+    assert "novels_meta" in data
+    assert "top5_share_pct" in data["novels_meta"]
+    assert "tiers" in data["novels_meta"]
 
     # 5. scale 검증
     scale = data["scale"]
@@ -105,6 +122,10 @@ def test_admin_analytics_endpoint():
     assert "pace_standard_hours" in scale
     assert "pace_slow_hours" in scale
     assert "novel_fit_badge" in scale
+    assert "comparisons" in scale
+    assert len(scale["comparisons"]) >= 3
+    assert "physical_volume" in scale
+    assert "reading_routines" in scale
 
 
 def test_admin_analytics_with_folder_scope():
