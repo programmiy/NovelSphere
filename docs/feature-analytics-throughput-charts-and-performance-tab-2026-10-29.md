@@ -67,3 +67,10 @@
 - **해결책**:
   - `admin-analytics.js`에 `getSafeDailyTrends`, `getSafeHourly`, `getSafeDow` 무결점 방어 계산 엔진을 구현.
   - 서버 응답에 `episodes`가 존재하지 않더라도 문단 수 및 전체 단락 비율(`avg_paragraphs_per_episode`)을 기반으로 회차 수, 누적 회차(`cum_episodes`), 7일 이동평균(`ma7_episodes`), 회차당 밀도(`avg_chars_per_ep`)를 실시간 주입하여 서버 재시작 전후 모두 정상 차트가 즉시 렌더링되도록 조치.
+
+### 2.5 신규 탭 '번역 성능 & 엔진 효율' 빈 화면(블랭크) 버그 해결
+- **원인**: `admin.html` 템플릿 마크업 작성 중 이전 탭인 `tabStatScale`의 닫는 `</div>` 태그가 누락되어, 신규 탭인 `tabStatPerformance`가 `tabStatScale`의 하위 자식 노드로 잘못 중첩됨. 이로 인해 탭 전환 시 상위 부모인 `tabStatScale`이 `display: none`으로 처리되면서 그 내부의 `tabStatPerformance` 전체가 브라우저에서 화면에 나타나지 않고 비어 보이던 결함 발생.
+- **조치**:
+  1. `admin.html`에서 `tabStatScale`의 닫는 태그를 명확히 닫아 5개 탭 컨테이너(`stats-tab-pane`)가 모두 `stats-modal-body`의 동일한 직계 1차 자식 노드로 격리되도록 DOM 구조 정상화.
+  2. 탭 전환 이벤트 리스너에서 해당 탭 활성화 시 `renderPerformanceTab` 및 `renderPerformanceSvg`를 재호출하여 표시 시점의 실측 렌더링 및 반응성 보장.
+  3. 캐시 파라미터를 `v=4.6`으로 갱신.

@@ -634,6 +634,16 @@ function initStatsAnalyticsModal() {
             modal.querySelectorAll('.stats-tab-pane').forEach(pane => {
                 pane.style.display = (pane.id === targetPaneId) ? 'block' : 'none';
             });
+
+            // 탭 활성화 시 차트 재렌더링 (SVG 크기 계산 및 반응성 보장)
+            if (targetPaneId === 'tabStatPerformance' && analyticsDataCache) {
+                const perf = getSafePerformance(analyticsDataCache);
+                renderPerformanceTab(perf, analyticsDataCache.activity);
+            } else if (targetPaneId === 'tabStatActivity' && analyticsDataCache) {
+                const eff = getSafeEfficiency(analyticsDataCache);
+                renderThroughputSvg(eff.hourly_throughput, currentThroughputMetric);
+                renderDailyTrendSvg(analyticsDataCache.activity.daily_trends, currentActivityPeriod, currentActivityMetric, currentActivityTrendMode);
+            }
         });
     });
 
