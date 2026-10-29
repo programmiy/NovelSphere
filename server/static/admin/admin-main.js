@@ -39,7 +39,7 @@ import {
 
 import {
     initStatsAnalyticsModal
-} from './admin-analytics.js?v=4.2';
+} from './admin-analytics.js?v=4.5';
 
 import {
     openFindReplaceModal,

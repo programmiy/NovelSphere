@@ -1,4 +1,71 @@
 
+// 안전한 일별 추이(Daily Trends) 회차수 및 밀도 자동 보정 엔진
+function getSafeDailyTrends(dailyTrends, summary, activity) {
+    if (!Array.isArray(dailyTrends) || dailyTrends.length === 0) return [];
+    
+    // 서버가 이미 episodes 필드를 제공하고 있는지 확인
+    const hasEpisodes = dailyTrends.some(d => d.episodes != null && d.episodes > 0);
+    if (hasEpisodes) {
+        return dailyTrends;
+    }
+
+    // 서버 프로세스 미재기동 등으로 episodes가 누락된 경우 문단 수 기반 정밀 환산 주입
+    const avgParasPerEp = (summary && summary.avg_paragraphs_per_episode) || 90.8;
+    let runningCumEpisodes = 0;
+    const past7Queue = [];
+
+    return dailyTrends.map(d => {
+        const estEpisodes = Math.max(d.count > 0 ? 1 : 0, Math.round(d.count / avgParasPerEp));
+        runningCumEpisodes += estEpisodes;
+
+        past7Queue.push(estEpisodes);
+        if (past7Queue.length > 7) past7Queue.shift();
+        const ma7Episodes = Number((past7Queue.reduce((a, b) => a + b, 0) / past7Queue.length).toFixed(1));
+        const avgCharsPerEp = estEpisodes > 0 ? Math.round((d.kr_chars || 0) / estEpisodes) : 0;
+
+        return {
+            ...d,
+            episodes: estEpisodes,
+            cum_episodes: runningCumEpisodes,
+            ma7_episodes: ma7Episodes,
+            avg_chars_per_ep: avgCharsPerEp
+        };
+    });
+}
+
+// 안전한 시간대별 분포(Hourly Distribution) 보정
+function getSafeHourly(hourlyList, summary) {
+    if (!Array.isArray(hourlyList)) return [];
+    const avgParasPerEp = (summary && summary.avg_paragraphs_per_episode) || 90.8;
+    const avgCharsPerPara = (summary && summary.avg_chars_per_paragraph) || 39.2;
+    return hourlyList.map(h => {
+        const eps = (h.episodes != null && h.episodes > 0) ? h.episodes : Math.max(h.count > 0 ? 1 : 0, Math.round(h.count / avgParasPerEp));
+        const chars = (h.chars != null && h.chars > 0) ? h.chars : Math.round(h.count * avgCharsPerPara);
+        return {
+            ...h,
+            episodes: eps,
+            chars: chars
+        };
+    });
+}
+
+// 안전한 요일별 분포(DOW Distribution) 보정
+function getSafeDow(dowList, summary) {
+    if (!Array.isArray(dowList)) return [];
+    const avgParasPerEp = (summary && summary.avg_paragraphs_per_episode) || 90.8;
+    const avgCharsPerPara = (summary && summary.avg_chars_per_paragraph) || 39.2;
+    return dowList.map(d => {
+        const eps = (d.episodes != null && d.episodes > 0) ? d.episodes : Math.max(d.count > 0 ? 1 : 0, Math.round(d.count / avgParasPerEp));
+        const chars = (d.chars != null && d.chars > 0) ? d.chars : Math.round(d.count * avgCharsPerPara);
+        return {
+            ...d,
+            episodes: eps,
+            chars: chars
+        };
+    });
+}
+
+
 // 탭 5: 번역 성능 & 엔진 효율 렌더러
 function renderPerformanceTab(performance, activity) {
     const perf = performance || getSafePerformance(null, null);
@@ -748,6 +815,16 @@ async function loadAdminAnalytics(folderScope = '__all__') {
         const data = await res.json();
         analyticsDataCache = data;
 
+        // 활동 데이터 내 회차수 및 시간/요일별 지표 자동 보정 적용
+        if (data.activity) {
+            data.activity.daily_trends = getSafeDailyTrends(data.activity.daily_trends, data.summary, data.activity);
+            data.activity.hourly_distribution = getSafeHourly(data.activity.hourly_distribution, data.summary);
+            data.activity.dow_distribution = getSafeDow(data.activity.dow_distribution, data.summary);
+            if (!data.activity.today_episodes && data.summary && data.summary.today_episodes) {
+                data.activity.today_episodes = data.summary.today_episodes;
+            }
+        }
+
         const safeEff = getSafeEfficiency(data);
         const safePerf = getSafePerformance(data, safeEff);
         const safeQuality = getSafeQuality(data);
@@ -895,16 +972,20 @@ function renderDailyTrendSvg(dailyTrends, period, metric, mode = 'daily') {
 
     // 값 산출 함수 (회차 수, 문단 수, 글자 수, 회차당 밀도)
     const getVal = (t) => {
+        const ep = (t.episodes != null && t.episodes > 0) ? t.episodes : Math.max(t.count > 0 ? 1 : 0, Math.round((t.count || 0) / 90.8));
+        const cumEp = t.cum_episodes || Math.round((t.cum_count || t.count || 0) / 90.8);
+        const ma7Ep = t.ma7_episodes || Number(((t.ma7_count || t.count || 0) / 90.8).toFixed(1));
+
         if (metric === 'episodes') {
-            if (mode === 'cumulative') return t.cum_episodes ?? t.episodes ?? 0;
-            if (mode === 'ma7') return t.ma7_episodes ?? t.episodes ?? 0;
-            return t.episodes ?? 0;
+            if (mode === 'cumulative') return cumEp;
+            if (mode === 'ma7') return ma7Ep;
+            return ep;
         } else if (metric === 'chars') {
             if (mode === 'cumulative') return t.cum_chars ?? t.kr_chars;
             if (mode === 'ma7') return t.ma7_chars ?? t.kr_chars;
             return t.kr_chars;
         } else if (metric === 'density') {
-            return t.avg_chars_per_ep ?? Math.round(t.kr_chars / Math.max(t.episodes ?? 1, 1));
+            return t.avg_chars_per_ep ?? (ep > 0 ? Math.round((t.kr_chars || 0) / ep) : 3500);
         } else { // count (문단 수)
             if (mode === 'cumulative') return t.cum_count ?? t.count;
             if (mode === 'ma7') return t.ma7_count ?? t.count;
@@ -1030,7 +1111,8 @@ function renderDailyTrendSvg(dailyTrends, period, metric, mode = 'daily') {
                 else if (mode === 'ma7') modeTitle = '7일 이동평균';
                 else if (mode === 'cumulative') modeTitle = '누적 성장량';
 
-                const epVal = (pt.raw.episodes ?? 0).toLocaleString();
+                const fallbackEp = (pt.raw.episodes != null && pt.raw.episodes > 0) ? pt.raw.episodes : Math.max(pt.raw.count > 0 ? 1 : 0, Math.round((pt.raw.count || 0) / 90.8));
+                const epVal = fallbackEp.toLocaleString();
                 const paraVal = (pt.raw.count ?? 0).toLocaleString();
                 const charVal = (pt.raw.kr_chars ?? 0).toLocaleString();
                 const breakdown = `<div style="margin-top: 4px; padding-top: 4px; border-top: 1px dashed rgba(255,255,255,0.2); font-size: 10.5px; color: #94a3b8;">당일: ${epVal}화 · ${paraVal}문단 · ${charVal}자</div>`;

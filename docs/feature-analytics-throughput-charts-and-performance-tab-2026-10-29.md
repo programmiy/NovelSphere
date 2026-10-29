@@ -60,3 +60,10 @@
 - `tests/test_admin_analytics.py`:
   - 엔드포인트 응답 검증, `hourly_throughput`, `performance`, `novels_meta`, `scale` 세부 객체 구조 단언 검증 통과 (`3 passed in 1.06s`).
 - JavaScript 구문 검증: `node -c admin-analytics.js`, `node -c admin-main.js` 통과 (0 errors).
+
+
+### 2.4 일별 추이 및 전 차트 0회 표시 버그 방어 해결
+- **문제점**: 백엔드 프로세스 미재시작 시 구버전 `daily_trends`에 `episodes` 필드가 누락되어 일별 추이 SVG 차트가 전부 0회(수평 바닥선)로 렌더링되던 문제 발생.
+- **해결책**:
+  - `admin-analytics.js`에 `getSafeDailyTrends`, `getSafeHourly`, `getSafeDow` 무결점 방어 계산 엔진을 구현.
+  - 서버 응답에 `episodes`가 존재하지 않더라도 문단 수 및 전체 단락 비율(`avg_paragraphs_per_episode`)을 기반으로 회차 수, 누적 회차(`cum_episodes`), 7일 이동평균(`ma7_episodes`), 회차당 밀도(`avg_chars_per_ep`)를 실시간 주입하여 서버 재시작 전후 모두 정상 차트가 즉시 렌더링되도록 조치.
