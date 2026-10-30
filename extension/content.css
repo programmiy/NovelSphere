@@ -1246,7 +1246,7 @@ tr.review-target-row:hover {
 #lanovel-hud {
     position: fixed;
     top: 24px;
-    right: 24px;
+    left: 24px;
     z-index: 2147483645;
     display: flex;
     align-items: center;
