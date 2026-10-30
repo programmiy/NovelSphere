@@ -2,6 +2,7 @@ import sys
 import os
 import json
 import time
+import glob
 
 APP_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if APP_ROOT not in sys.path:
@@ -21,7 +22,8 @@ def insert_reviewed(batch_data, model_name="Antigravity-AI"):
             ai_text = clean_ai_translation(
                 item.get('translated') or 
                 item.get('translated_text') or 
-                item.get('cleaned_text') or ''
+                item.get('cleaned_text') or 
+                item.get('reviewed_translation') or ''
             )
             if not ai_text or not ai_text.strip():
                 raise ValueError(f"Empty translation for ID {t_id}! Item keys: {list(item.keys())}")
@@ -57,7 +59,21 @@ def insert_reviewed(batch_data, model_name="Antigravity-AI"):
 
 if __name__ == '__main__':
     if len(sys.argv) > 1:
-        with open(sys.argv[1], 'r', encoding='utf-8') as f:
-            data = json.load(f)
-        cnt = insert_reviewed(data)
-        print(f"INSERTED_COUNT: {cnt}")
+        file_paths = []
+        for arg in sys.argv[1:]:
+            matched = glob.glob(arg)
+            if matched:
+                file_paths.extend(matched)
+            elif os.path.exists(arg):
+                file_paths.append(arg)
+        
+        file_paths = sorted(list(dict.fromkeys(file_paths)))
+        print(f"Processing {len(file_paths)} file(s)...")
+        total_inserted = 0
+        for fp in file_paths:
+            with open(fp, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            cnt = insert_reviewed(data)
+            total_inserted += cnt
+            print(f"[{os.path.basename(fp)}] INSERTED: {cnt}")
+        print(f"TOTAL_INSERTED_COUNT: {total_inserted}")
