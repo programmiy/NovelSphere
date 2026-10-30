@@ -1,7 +1,7 @@
 # LANOVEL 종합 코드베이스 기능 및 함수 레퍼런스 (Architectural & Functional Reference)
 
 > **문서 목적**: AI 어시스턴트가 사용자 요구사항 및 구어체 지시를 입력받았을 때, 혼선이나 회귀(Regression) 없이 전체 아키텍처와 1:1 타깃 코드를 0초 만에 직관적으로 파악할 수 있도록 압축 정리한 단일 진실 공급원(SSOT) 기술 레퍼런스입니다.
-> **최신 동기화 일자**: 2026-10-30 (플로팅 HUD 알림 위치 화면 좌측 상단바 간섭 방지 위치(top: 150px; left: 24px) 하향 조정으로 상단바·우측 사이드바 간섭 원천 차단; 플로팅 HUD 실시간 번역 진행도 및 다음 번역간 초 단위 카운트다운 타이머 고도화; 통계 & 품질 분석 HUD 대개편: Throughput 처리 속도 스펙트럼 차트 및 방어 산출 엔진 탑재, 전 탭 통계 고도화(AI 텍스트 정제율·상위 5대 점유율 스펙트럼·소설 4대 규모 티어·명작 문학 환산 및 서가 물리적 부피), 신규 5번째 탭 '번역 성능 & AI 엔진 효율' 개설; 번역 회차 수(Episodes) 메트릭 및 회차당 분량 밀도(Density) 지표 전면 탑재; 단락별 1-클릭 원본 순간이동 및 상호작용 동기화 시스템; C:\ServerHub 공동 서버 관리자 고도화; 번역 통계 KST 16시 리셋 정렬; **AI 검수 큐 3,163건 이상치 전량 고품질 재번역 및 복원 적재 완결 (미검수 잔여 0건)**)
+> **최신 동기화 일자**: 2026-10-30 (시스템 무결성 및 파이프라인 고도화: `toc_sort_order` 신규/수정 단락 영구 상속 보장, 모바일 시드 DB 자연어 정렬 동기화 및 도서 검수완료 잠금 가드 보강, 연속 번역 큐 NovelUp+ 플랫폼 바인딩, 백엔드 RPM Zone 실시간 피드백 및 플로팅 HUD 과열 방어 지연 연동, PID/URL 관리자 정리 시 스마트 백업 신뢰 연동 완료; 플로팅 HUD 좌측 상단 간섭 차단 재배치; AI 검수 큐 3,163건 이상치 전량 복원 적재 완결)
 
 ---
 
@@ -19,8 +19,8 @@
 | **품질/복원** | `server/rule_classifier.py` | 100% 룰베이스 번역 품질 분류(규칙 1~4), 대사 괄호(`「%」`) 자동 복원([`restore_brackets`](file:///C:/LANOVEL/server/rule_classifier.py)) |
 | **알림/현황판** | `server/notifications.py` | 배민 스타일 단일 번역 현황판([`update_translation_status`](file:///C:/LANOVEL/server/notifications.py)), Gemini API 오류 통계, 인메모리 버퍼 & SSE 스트림 |
 | **서버 코어** | `server/server.py` | **16개 라우터 등록**, `lanovel_security_middleware` (루프백 100% 프리패스 + LAN 토큰 검증 + CSRF 차단), Windows IOCP WinError 64 클라이언트 접속 끊김 예외 필터링, FTS5 가상테이블/트리거, 30분 괄호복원, 백업, 큐 틱 루프([`queue_tick_loop`](file:///C:/LANOVEL/server/routers/remote.py)) 수명주기 관리 |
-| **번역 엔진** | `server/routers/translation.py` | Gemini 호출, 기본모델 verbatim 2단계 자체 복구([`_recover_verbatim_items`](file:///C:/LANOVEL/server/routers/translation.py)), 17시 안전 중단, **`GET /api/rpm_status`** |
-| **데이터 CRUD** | `server/routers/data_crud.py` | FTS5 전문 검색, N+1 제거 upsert, 이상 번역 검출, 복원 센터 모달(휴지통/알림) |
+| **번역 엔진** | `server/routers/translation.py` | Gemini 호출, 실시간 RPM Zone 피그백 반환([`_build_translate_response`](file:///C:/LANOVEL/server/routers/translation.py)), 기본모델 verbatim 2단계 자체 복구, 17시 안전 중단, **`GET /api/rpm_status`**, 고성능 DISTINCT 일괄 치환 |
+| **데이터 CRUD** | `server/routers/data_crud.py` | FTS5 전문 검색, N+1 제거 upsert, `toc_sort_order` 단락 단위 영구 상속 및 일괄 동기화, 이상 번역 검출, 복원 센터 모달(휴지통/알림) |
 | **사전/코퍼스** | `server/routers/dictionary.py` | **100% No-AI 사전 연동 및 누적 코퍼스 검색** (`GET /api/dictionary/lookup`, `GET /api/dictionary/links`) |
 | **사전 서비스** | `server/services/dictionary_service.py` | 네이버/Weblio/Jisho/Goo 사전 링크 생성, 34만+ 문장 코퍼스 검색, 빈도 등급 및 한국어 대응 표현 통계 |
 | **서재/책** | `server/routers/books.py` | 도서 숨김/표시, URL 번역 상태 배치 확인([`check_translated_urls`](file:///C:/LANOVEL/server/routers/books.py)), NovelUp+ 줄거리 크롤링, 회차 내 위치 복원 |
@@ -29,7 +29,7 @@
 | **앱 배포** | `server/routers/app_release.py` | 모바일 OTA 무선 자동 업데이트: `/api/app/version`, `/api/app/download`, 웹 랜딩 페이지(`/download`) |
 | **구분선** | `server/routers/separators.py` | 후기/광고 번역 차단용 소설별 구분선 CRUD (공통 7종, 프리셋 6종) |
 | **원격 허브** | `server/routers/remote.py` | 모바일/웹 리모컨 (`/command`, `/status`, `/ws`, `/poll`, `/report`, `/ack`) 및 연속 번역 큐 제어 API (`/queue`, `/queue/config`, `/queue/reorder`, `/queue/event`) |
-| **소설 큐 러너** | `server/novel_queue.py` | **원격 소설 연속 번역 대기열 엔진**: `QueueRunner`, `NovelQueueManager`, 신데렐라 모드(17시 쿼터 중단 및 익일 자율 복구), 3회 재시도 및 건너뛰기 안전장치 |
+| **소설 큐 러너** | `server/novel_queue.py` | **원격 소설 연속 번역 대기열 엔진**: `QueueRunner`, `NovelQueueManager`, NovelUp+ (`novelup.plus`) 공식 바인딩, 신데렐라 모드(17시 쿼터 중단 및 익일 자율 복구), 3회 재시도 및 건너뛰기 안전장치 |
 | **특별 적재** | `server/routers/special_batch.py` | 배치 번역/보정본 검수 UI(`/special_batch`), 카드 헤더 [🔗 원본 ↗] 링크, 승인 시 원래 소설 폴더 자동 상속, 미분류(None) 보존, 일괄 승인 |
 | **AI 검수 파이프라인** | `server/routers/ai_review.py`<br>`scripts/fetch_unreviewed.py`<br>`scripts/insert_reviewed_items.py` | **AI 검수 큐 & 대량 배치 적재 엔진**: 미번역·촉음/장음 오염 이상치 3,163건 전량 복원 및 룰베이스/고품질 번역 적재 완결, `ai_review_queue` 7,800여 건 웹 검수 UI([`/ai_review`](http://localhost:8001/ai_review)) 연동, `ALLOW_PROD_DB_WRITE="1"` 안전 가드 |
 | **크롬 확장** | `extension/` | **TypeScript + esbuild 단일 책임 모듈화 구조**: `src/content.ts`, `src/background/` (`remote_ws.ts`, `queue_tabs.ts`, `index.ts`), `src/scrapers/` (`syosetu.ts`, `kakuyomu.ts` 등), `src/core/` (`state.ts`, `chunker.ts`(글자 수 연동 가변 청킹: 기본 45개·대화문 최대 75개·1300자 밀도 분할), `filters.ts`, `turbo.ts`, `separators.ts`, `adaptive_throttle.ts`, `dom_applier.ts`(`jumpToParagraph` 해시/PID 기반 부드러운 스크롤 & 펄스 발광, 화면 비율 65% 규칙 동적 사이드바 제어), `row_actions.ts`, `page_translator.ts`, `queue_session.ts`), `src/ui/` (`sidebar.ts`, `review_panel.ts`, `separator_panel.ts`, `hud.ts`(플로팅 미니멀 & 프로그레스/카운트다운 타이머 HUD), `key_nav.ts`, `toc_quick_jump.ts`) |

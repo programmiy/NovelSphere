@@ -113,6 +113,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           sendResponse({
             translations: result.translations,
             recommended_turbo_delay_ms: result.recommended_turbo_delay_ms,
+            rpm_status: result.rpm_status,
           });
         } catch (e: any) {
           if (e.message && e.message.includes(channelClosedMessage)) {
@@ -285,7 +286,7 @@ async function handleBatchTranslate(
   sourceUrl: string,
   isRetranslation = false,
   model: string | null = null
-): Promise<{ translations: any[]; recommended_turbo_delay_ms: number }> {
+): Promise<{ translations: any[]; recommended_turbo_delay_ms: number; rpm_status?: any }> {
   try {
     const cleanSourceUrl = (sourceUrl || '').split('#')[0].trim();
     const bodyPayload: Record<string, any> = { items: items, url: cleanSourceUrl };
@@ -324,6 +325,7 @@ async function handleBatchTranslate(
     return {
       translations: data.translations,
       recommended_turbo_delay_ms: data.recommended_turbo_delay_ms || 2000,
+      rpm_status: data.rpm_status || null,
     };
   } catch (error) {
     console.error('Translation request to local server failed:', error);

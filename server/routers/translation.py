@@ -155,6 +155,27 @@ def _get_excluded_sentences_for_url(url: str, db: Session) -> set:
 
 
 
+def _build_translate_response(final_translations: list) -> dict:
+    """번역 결과 목록에 실시간 RPM 및 Zone 상태를 동봉하여 클라이언트 HUD에 피드백을 제공합니다."""
+    rpm = get_current_rpm(60.0)
+    recent_episodes = get_recent_episode_count(300.0)
+    if rpm >= 12 or (recent_episodes >= 7 and rpm >= 9) or (recent_episodes >= 4 and rpm >= 11):
+        zone = "red"
+    elif rpm >= 9 or (recent_episodes >= 4 and rpm >= 7):
+        zone = "yellow"
+    else:
+        zone = "green"
+    return {
+        "translations": final_translations,
+        "rpm_status": {
+            "current_rpm": rpm,
+            "recent_episodes_5m": recent_episodes,
+            "zone": zone,
+            "recommended_turbo_delay": calculate_episode_adaptive_delay(recent_episodes, is_turbo=True)
+        }
+    }
+
+
 def _post_process_translated_text(item_text: str, raw_trans: str) -> tuple:
     """
     번역문 공통 후처리: 화살표 분리 → 반복문자 제거 → 괄호복원 → 품질분류
@@ -216,9 +237,9 @@ def translate_texts(req: TranslateRequest, db: Session = Depends(get_db)):
         items_to_translate = []
 
     if not items_to_translate:
-        return {"translations": [
+        return _build_translate_response([
             {"id": item.id, "original": item.text, "translated": item.text} for item in req.items
-        ]}
+        ])
 
     # 순수 문장부호/기호 문장(「……」 등)은 Gemini API 호출 없이 원문 그대로 즉시 반환(Fast-path)
     fast_pass_results = {}
@@ -237,13 +258,13 @@ def translate_texts(req: TranslateRequest, db: Session = Depends(get_db)):
             actual_items_to_translate.append(item)
 
     if not actual_items_to_translate:
-        return {"translations": [
+        return _build_translate_response([
             fast_pass_results.get(
                 str(item.id),
                 {"id": item.id, "original": item.text, "translated": item.text, "censored": False, "verbatim": False, "verbatim_category": None}
             )
             for item in req.items
-        ]}
+        ])
 
     items_to_translate = actual_items_to_translate
 
@@ -402,7 +423,7 @@ def translate_texts(req: TranslateRequest, db: Session = Depends(get_db)):
                         "verbatim_category": None
                     })
 
-            return {"translations": final_translations}
+            return _build_translate_response(final_translations)
 
         raw_text = None
         if data.get('candidates') and isinstance(data['candidates'], list) and data['candidates']:
@@ -508,7 +529,7 @@ def translate_texts(req: TranslateRequest, db: Session = Depends(get_db)):
                     "verbatim_category": None
                 })
 
-        return {"translations": final_translations}
+        return _build_translate_response(final_translations)
 
     except (KeyError, IndexError, json.JSONDecodeError) as e:
         error_detail = f"API 응답 처리 오류: {e}. Original response: '{data.get('candidates', 'N/A') if 'data' in locals() else 'Response not available'}'"
@@ -767,11 +788,11 @@ def find_replace_all(req: FindReplaceRequest, db: Session = Depends(get_db)):
     if req.target_ids:
         safe_ids = [int(i) for i in req.target_ids]
         if safe_ids:
-            # 타겟 ID 중 검수완료 항목 검사
-            id_check_sql = text(f"SELECT url, folderName FROM translations WHERE id IN ({','.join(str(i) for i in safe_ids)})")
+            # 타겟 ID 중 검수완료 항목 검사 (DISTINCT 축약 쿼리)
+            id_check_sql = text(f"SELECT DISTINCT url, folderName FROM translations WHERE id IN ({','.join(str(i) for i in safe_ids)})")
             id_rows = db.execute(id_check_sql).fetchall()
             for r in id_rows:
-                if reviewed_service.is_chapter_reviewed(r[0], r[1]):
+                if reviewed_service.is_chapter_reviewed(r[0], r[1]) or (r[1] and reviewed_service.is_book_reviewed(r[1])):
                     raise HTTPException(
                         status_code=403,
                         detail=f"선택한 항목 중 검수 완료된 회차({r[0]})의 번역문이 포함되어 있어 일괄 치환을 수행할 수 없습니다."

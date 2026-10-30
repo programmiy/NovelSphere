@@ -243,13 +243,24 @@ def _build_mobile_optimized_db(temp_db_path: str):
                 t1.title,
                 t1.url
             ) as title,
-            MIN(COALESCE(t1.toc_sort_order, 999999)) as sort_order
+            MIN(COALESCE(t1.toc_sort_order, 999999)) as sort_order,
+            MIN(t1.id) as min_id
         FROM translations t1
         WHERE t1.folderName IS NOT NULL AND t1.url IS NOT NULL AND t1.url != ''
         GROUP BY t1.folderName, t1.url
         ORDER BY t1.folderName, sort_order ASC
     """)
     chapters_meta = src_cursor.fetchall()
+
+    # PC books.py와 100% 동일한 자연 정렬: folderName -> sort_order -> min_id -> url -> title
+    from server.utils import natural_sort_key
+    chapters_meta.sort(key=lambda x: (
+        x['folderName'],
+        x['sort_order'],
+        x.get('min_id', 0),
+        natural_sort_key(x.get('url') or ''),
+        natural_sort_key(x.get('title') or '')
+    ))
 
     # 4. 단 1회의 Bulk 쿼리로 모든 회차 문장 일괄 로드 (N+1 쿼리 폭포 완전 제거)
     src_cursor.execute("""
@@ -577,8 +588,8 @@ async def push_changes_to_pc(request: Request, db: Session = Depends(get_db)):
                     if row:
                         chk_folder = row['folderName'] if isinstance(row, dict) else row[0]
 
-                if chk_url and reviewed_service.is_chapter_reviewed(chk_url, chk_folder):
-                    logger.info(f"[Push Sync] Skip locked/reviewed chapter translation: {chk_url}")
+                if chk_url and (reviewed_service.is_chapter_reviewed(chk_url, chk_folder) or (chk_folder and reviewed_service.is_book_reviewed(chk_folder))):
+                    logger.info(f"[Push Sync] Skip locked/reviewed chapter or book translation: {chk_url} ({chk_folder})")
                     continue
 
                 if item.id:

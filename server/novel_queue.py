@@ -65,7 +65,12 @@ def normalize_overview_url(raw: str) -> Tuple[str, str]:
             return f"https://{host}/{segments[0].lower()}", "nocturne"
         raise QueueUrlError("녹턴노벨즈 소설 주소(https://noc.syosetu.com/n1234ab)가 아닙니다.")
 
-    raise QueueUrlError("지원하지 않는 사이트입니다. (카쿠요무, ncode, 녹턴노벨즈만 가능)")
+    if host in ("novelup.plus", "www.novelup.plus"):
+        if len(segments) >= 2 and segments[0] == "story" and segments[1].isdigit():
+            return f"https://novelup.plus/story/{segments[1]}", "novelup"
+        raise QueueUrlError("노벨업 소설 주소(https://novelup.plus/story/숫자)가 아닙니다.")
+
+    raise QueueUrlError("지원하지 않는 사이트입니다. (카쿠요무, ncode, 녹턴노벨즈, 노벨업플러스만 가능)")
 
 
 def _ep_key(url: str) -> str:

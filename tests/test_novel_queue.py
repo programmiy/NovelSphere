@@ -22,6 +22,8 @@ from server.remote_control import RemoteHub
     ("https://ncode.syosetu.com/N1234AB/", "https://ncode.syosetu.com/n1234ab", "ncode"),
     ("ncode.syosetu.com/n1234ab/12/", "https://ncode.syosetu.com/n1234ab", "ncode"),
     ("https://noc.syosetu.com/n9999zz/", "https://noc.syosetu.com/n9999zz", "nocturne"),
+    ("https://novelup.plus/story/123456789", "https://novelup.plus/story/123456789", "novelup"),
+    ("novelup.plus/story/987654321/12345", "https://novelup.plus/story/987654321", "novelup"),
 ])
 def test_normalize_ok(raw, expected, site):
     assert normalize_overview_url(raw) == (expected, site)

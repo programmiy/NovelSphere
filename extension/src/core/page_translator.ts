@@ -550,6 +550,15 @@ export async function translateAllPTags(isRetranslation = false): Promise<void> 
             return;
           }
 
+          if (response && response.rpm_status) {
+            state.lastServerRpmStatus = response.rpm_status;
+            if (response.rpm_status.zone === 'red') {
+              logToSidebar(`🛡️ [서버 RPM 과열 방어] 서버 슬라이딩 RPM(${response.rpm_status.current_rpm}회) 과열 구간. 쿨다운이 자동 연계됩니다.`);
+            } else if (response.rpm_status.zone === 'yellow') {
+              logToSidebar(`⚡ [서버 RPM 주의] 서버 슬라이딩 RPM(${response.rpm_status.current_rpm}회) 주의 구간. 안전 지연을 유지합니다.`);
+            }
+          }
+
           if (response && response.translations) {
             const censoredItems = response.translations.filter(
               (t: any) => t.censored || (t.translated && t.translated.includes('[검열로 인해 번역 생략]'))
@@ -773,19 +782,30 @@ export async function translateAllPTags(isRetranslation = false): Promise<void> 
 
       if (index < chunks.length - 1 && !state.isTranslationCancelled) {
         const currentDelay = calculateAdaptiveChunkDelay(recentEpCount, state.isTurboMode);
-        const chunkDelaySec = Math.round(currentDelay / 1000);
-        logToSidebar(`${(currentDelay / 1000).toFixed(1)}초 후 다음 묶음을 번역합니다.`);
+        let actualDelay = currentDelay;
+        if (state.lastServerRpmStatus?.zone === 'red') {
+          actualDelay = Math.max(actualDelay, 5000);
+        } else if (state.lastServerRpmStatus?.zone === 'yellow') {
+          actualDelay = Math.max(actualDelay, 3000);
+        }
+        const chunkDelaySec = Math.round(actualDelay / 1000);
+        logToSidebar(`${(actualDelay / 1000).toFixed(1)}초 후 다음 묶음을 번역합니다.${state.lastServerRpmStatus?.zone === 'red' ? ' (🛡️ 서버 과열 완충)' : ''}`);
 
         let cancelChunkCountdown = null;
         if (chunkDelaySec >= 2) {
           cancelChunkCountdown = startLanovelCountdownHud({
-            title: '다음 묶음 대기 중',
+            title: state.lastServerRpmStatus?.zone === 'red' ? '서버 과열 방어 대기 중' : '다음 묶음 대기 중',
             totalSeconds: chunkDelaySec,
-            icon: '⏳',
-            subtext: `묶음 ${index + 1}/${chunks.length} 완료 (${chunkDelaySec}초 대기)`,
+            icon: state.lastServerRpmStatus?.zone === 'red' ? '🛡️' : '⏳',
+            subtext: `묶음 ${index + 1}/${chunks.length} 완료 (${chunkDelaySec}초 대기${state.lastServerRpmStatus?.zone === 'red' ? ', 서버 과열 완충' : ''})`,
           });
         }
-        await sleepResponsive(() => calculateAdaptiveChunkDelay(recentEpCount, state.isTurboMode));
+        await sleepResponsive(() => {
+          const base = calculateAdaptiveChunkDelay(recentEpCount, state.isTurboMode);
+          if (state.lastServerRpmStatus?.zone === 'red') return Math.max(base, 5000);
+          if (state.lastServerRpmStatus?.zone === 'yellow') return Math.max(base, 3000);
+          return base;
+        });
         if (cancelChunkCountdown) cancelChunkCountdown();
 
         if (state.isTurboMode && checkCutoffTimeReached(state.turboCutoffHour, state.turboTargetTimestamp)) {

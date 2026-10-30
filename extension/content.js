@@ -359,6 +359,7 @@
         censorSplitUntil = 0;
         retryDelayUntil = 0;
         activeDelayFn = null;
+        lastServerRpmStatus = null;
         // 원격 제어 핸들러 주입
         onNextEpisode = null;
         onPrevEpisode = null;
@@ -1759,7 +1760,7 @@
     let novelTodayCount = batchState.consecutiveCount;
     let totalTodayCount = cachedTodayTotalEpisodes || 0;
     try {
-      const syncUrl = `http://127.0.0.1:8001/api/translation_session_count?url=${encodeURIComponent(currentCleanUrl)}&work_key=${encodeURIComponent(workKey)}&novel_title=${encodeURIComponent(novelTitle || "")}`;
+      const syncUrl = `/api/translation_session_count?url=${encodeURIComponent(currentCleanUrl)}&work_key=${encodeURIComponent(workKey)}&novel_title=${encodeURIComponent(novelTitle || "")}`;
       const serverResp = await serverFetch(syncUrl);
       if (serverResp.ok) {
         const serverData = await serverResp.json();
@@ -4696,6 +4697,14 @@
               }
               return;
             }
+            if (response && response.rpm_status) {
+              state.lastServerRpmStatus = response.rpm_status;
+              if (response.rpm_status.zone === "red") {
+                logToSidebar(`\u{1F6E1}\uFE0F [\uC11C\uBC84 RPM \uACFC\uC5F4 \uBC29\uC5B4] \uC11C\uBC84 \uC2AC\uB77C\uC774\uB529 RPM(${response.rpm_status.current_rpm}\uD68C) \uACFC\uC5F4 \uAD6C\uAC04. \uCFE8\uB2E4\uC6B4\uC774 \uC790\uB3D9 \uC5F0\uACC4\uB429\uB2C8\uB2E4.`);
+              } else if (response.rpm_status.zone === "yellow") {
+                logToSidebar(`\u26A1 [\uC11C\uBC84 RPM \uC8FC\uC758] \uC11C\uBC84 \uC2AC\uB77C\uC774\uB529 RPM(${response.rpm_status.current_rpm}\uD68C) \uC8FC\uC758 \uAD6C\uAC04. \uC548\uC804 \uC9C0\uC5F0\uC744 \uC720\uC9C0\uD569\uB2C8\uB2E4.`);
+              }
+            }
             if (response && response.translations) {
               const censoredItems = response.translations.filter(
                 (t) => t.censored || t.translated && t.translated.includes("[\uAC80\uC5F4\uB85C \uC778\uD574 \uBC88\uC5ED \uC0DD\uB7B5]")
@@ -4896,18 +4905,29 @@
         });
         if (index < chunks.length - 1 && !state.isTranslationCancelled) {
           const currentDelay = calculateAdaptiveChunkDelay(recentEpCount, state.isTurboMode);
-          const chunkDelaySec = Math.round(currentDelay / 1e3);
-          logToSidebar(`${(currentDelay / 1e3).toFixed(1)}\uCD08 \uD6C4 \uB2E4\uC74C \uBB36\uC74C\uC744 \uBC88\uC5ED\uD569\uB2C8\uB2E4.`);
+          let actualDelay = currentDelay;
+          if (state.lastServerRpmStatus?.zone === "red") {
+            actualDelay = Math.max(actualDelay, 5e3);
+          } else if (state.lastServerRpmStatus?.zone === "yellow") {
+            actualDelay = Math.max(actualDelay, 3e3);
+          }
+          const chunkDelaySec = Math.round(actualDelay / 1e3);
+          logToSidebar(`${(actualDelay / 1e3).toFixed(1)}\uCD08 \uD6C4 \uB2E4\uC74C \uBB36\uC74C\uC744 \uBC88\uC5ED\uD569\uB2C8\uB2E4.${state.lastServerRpmStatus?.zone === "red" ? " (\u{1F6E1}\uFE0F \uC11C\uBC84 \uACFC\uC5F4 \uC644\uCDA9)" : ""}`);
           let cancelChunkCountdown = null;
           if (chunkDelaySec >= 2) {
             cancelChunkCountdown = startLanovelCountdownHud({
-              title: "\uB2E4\uC74C \uBB36\uC74C \uB300\uAE30 \uC911",
+              title: state.lastServerRpmStatus?.zone === "red" ? "\uC11C\uBC84 \uACFC\uC5F4 \uBC29\uC5B4 \uB300\uAE30 \uC911" : "\uB2E4\uC74C \uBB36\uC74C \uB300\uAE30 \uC911",
               totalSeconds: chunkDelaySec,
-              icon: "\u23F3",
-              subtext: `\uBB36\uC74C ${index + 1}/${chunks.length} \uC644\uB8CC (${chunkDelaySec}\uCD08 \uB300\uAE30)`
+              icon: state.lastServerRpmStatus?.zone === "red" ? "\u{1F6E1}\uFE0F" : "\u23F3",
+              subtext: `\uBB36\uC74C ${index + 1}/${chunks.length} \uC644\uB8CC (${chunkDelaySec}\uCD08 \uB300\uAE30${state.lastServerRpmStatus?.zone === "red" ? ", \uC11C\uBC84 \uACFC\uC5F4 \uC644\uCDA9" : ""})`
             });
           }
-          await sleepResponsive(() => calculateAdaptiveChunkDelay(recentEpCount, state.isTurboMode));
+          await sleepResponsive(() => {
+            const base = calculateAdaptiveChunkDelay(recentEpCount, state.isTurboMode);
+            if (state.lastServerRpmStatus?.zone === "red") return Math.max(base, 5e3);
+            if (state.lastServerRpmStatus?.zone === "yellow") return Math.max(base, 3e3);
+            return base;
+          });
           if (cancelChunkCountdown) cancelChunkCountdown();
           if (state.isTurboMode && checkCutoffTimeReached(state.turboCutoffHour, state.turboTargetTimestamp)) {
             await abortTurboMode("\uCD08\uAE30\uD654 \uC2DC\uAC04 \uB3C4\uB2EC");

@@ -70,6 +70,9 @@ def cleanup_pids():
         deleted_count = cursor.rowcount
 
         conn.commit()
+        if deleted_count > 0:
+            from server.backup_utils import record_legitimate_deletion
+            record_legitimate_deletion(deleted_count, reason="admin_cleanup_pids")
     except Exception as e:
         conn.rollback()
         raise HTTPException(status_code=500, detail=f"An error occurred: {e}")

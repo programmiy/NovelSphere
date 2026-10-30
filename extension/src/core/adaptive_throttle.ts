@@ -221,7 +221,7 @@ export async function updateAndGetBatchCount(
   let totalTodayCount = cachedTodayTotalEpisodes || 0;
 
   try {
-    const syncUrl = `http://127.0.0.1:8001/api/translation_session_count?url=${encodeURIComponent(currentCleanUrl)}&work_key=${encodeURIComponent(workKey)}&novel_title=${encodeURIComponent(novelTitle || '')}`;
+    const syncUrl = `/api/translation_session_count?url=${encodeURIComponent(currentCleanUrl)}&work_key=${encodeURIComponent(workKey)}&novel_title=${encodeURIComponent(novelTitle || '')}`;
     const serverResp = await serverFetch(syncUrl);
     if (serverResp.ok) {
       const serverData = await serverResp.json();

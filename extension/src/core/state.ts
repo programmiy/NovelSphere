@@ -45,6 +45,7 @@ export class ExtensionState {
   public censorSplitUntil = 0;
   public retryDelayUntil = 0;
   public activeDelayFn: (() => number) | number | null = null;
+  public lastServerRpmStatus: { current_rpm?: number; recent_episodes_5m?: number; zone?: string; recommended_turbo_delay?: number } | null = null;
 
   // 원격 제어 핸들러 주입
   public onNextEpisode: (() => RemoteCommandResult) | null = null;

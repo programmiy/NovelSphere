@@ -77,6 +77,7 @@ class TranslationItem(BaseModel):
     timestamp: int
     folderName: Optional[str] = None
     title: Optional[str] = None
+    toc_sort_order: Optional[int] = None
 
 
 class MoveRequest(BaseModel):
@@ -217,6 +218,15 @@ def upsert_translations(items: List[TranslationItem], db: Session = Depends(get_
             if cleaned_title:
                 url_to_title[item.url] = cleaned_title
 
+    url_to_toc_order = {}
+    for t in existing_translations:
+        if t.url and t.toc_sort_order is not None and t.url not in url_to_toc_order:
+            url_to_toc_order[t.url] = t.toc_sort_order
+
+    for item in items:
+        if item.url and item.toc_sort_order is not None:
+            url_to_toc_order[item.url] = item.toc_sort_order
+
     verbatim_items_to_clean = []
     target_title = None
     deleted_existing_count = 0
@@ -225,6 +235,7 @@ def upsert_translations(items: List[TranslationItem], db: Session = Depends(get_
         key = (item.url, item.pid)
         existing_translation = existing_map.get(key)
         target_title = url_to_title.get(item.url) if item.url else (clean_chapter_title(item.title, item.url) if item.title else None)
+        target_toc_order = item.toc_sort_order if item.toc_sort_order is not None else url_to_toc_order.get(item.url)
 
         target_trans = item.translated
         # 룰베이스 원문 괄호(「」, 『』) 누락 복원
@@ -267,6 +278,8 @@ def upsert_translations(items: List[TranslationItem], db: Session = Depends(get_
                 existing_translation.folderName = item.folderName.strip()
             if target_title:
                 existing_translation.title = target_title
+            if target_toc_order is not None:
+                existing_translation.toc_sort_order = target_toc_order
             updated_count += 1
         else:
             new_folder = item.folderName.strip() if (item.folderName and item.folderName.strip()) else None
@@ -277,17 +290,24 @@ def upsert_translations(items: List[TranslationItem], db: Session = Depends(get_
                 translated=target_trans,
                 timestamp=item.timestamp,
                 folderName=new_folder,
-                title=target_title or item.title
+                title=target_title or item.title,
+                toc_sort_order=target_toc_order
             )
             db.add(new_translation)
             existing_map[key] = new_translation
             inserted_count += 1
 
-    # 동일 URL을 공유하는 모든 단락의 제목을 최신 title로 원자적 동기화
-    for u, resolved_title in url_to_title.items():
-        if resolved_title:
+    # 동일 URL을 공유하는 모든 단락의 제목 및 toc_sort_order를 최신 상태로 원자적 동기화
+    all_target_urls = set(url_to_title.keys()).union(set(url_to_toc_order.keys()))
+    for u in all_target_urls:
+        update_data = {}
+        if u in url_to_title and url_to_title[u]:
+            update_data[Translation.title] = url_to_title[u]
+        if u in url_to_toc_order and url_to_toc_order[u] is not None:
+            update_data[Translation.toc_sort_order] = url_to_toc_order[u]
+        if update_data:
             db.query(Translation).filter(Translation.url == u).update(
-                {Translation.title: resolved_title},
+                update_data,
                 synchronize_session=False
             )
 

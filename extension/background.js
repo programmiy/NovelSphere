@@ -444,7 +444,8 @@
           try {
             sendResponse({
               translations: result.translations,
-              recommended_turbo_delay_ms: result.recommended_turbo_delay_ms
+              recommended_turbo_delay_ms: result.recommended_turbo_delay_ms,
+              rpm_status: result.rpm_status
             });
           } catch (e) {
             if (e.message && e.message.includes(channelClosedMessage)) {
@@ -630,7 +631,8 @@
       }
       return {
         translations: data.translations,
-        recommended_turbo_delay_ms: data.recommended_turbo_delay_ms || 2e3
+        recommended_turbo_delay_ms: data.recommended_turbo_delay_ms || 2e3,
+        rpm_status: data.rpm_status || null
       };
     } catch (error) {
       console.error("Translation request to local server failed:", error);
