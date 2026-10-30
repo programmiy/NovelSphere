@@ -9,8 +9,6 @@ import '../../services/sync_service.dart';
 import '../themes/reader_themes.dart';
 import '../themes/hyper_aesthetic_theme.dart';
 import '../viewer/reader_screen.dart';
-import 'reading_stats_sheet.dart';
-import 'server_analytics_view.dart';
 import '../glossary/glossary_screen.dart';
 import '../glossary/character_fixer_screen.dart';
 import '../ai_review/ai_review_screen.dart';
@@ -35,7 +33,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
   bool _isLoading = true;
 
   String _filter = 'all'; // all, pinned, reading, unread, completed, hidden
-  final String _sort = 'recent';
+  String _sort = 'recent';
   String _searchQuery = '';
   bool _isGridView = true;
 
@@ -371,7 +369,6 @@ class _LibraryScreenState extends State<LibraryScreen> {
     final pages = [
       _buildLibraryView(theme),
       const GlossaryScreen(),
-      _buildReadingStatsView(theme),
       SettingsScreen(onThemeChanged: () => setState(() {})),
     ];
 
@@ -393,7 +390,6 @@ class _LibraryScreenState extends State<LibraryScreen> {
     final items = [
       {'icon': Icons.menu_book_rounded, 'label': '서재'},
       {'icon': Icons.find_replace_rounded, 'label': '찾아바꾸기'},
-      {'icon': Icons.insights_rounded, 'label': '통계 & 분석'},
       {'icon': Icons.settings_rounded, 'label': '설정'},
     ];
 
@@ -655,17 +651,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
           // 우측 컨트롤 그룹 (최소 44dp 안심 터치 타깃 보장)
           Row(
             children: [
-              IconButton(
-                icon: Icon(Icons.insights_rounded, color: primary, size: 21),
-                tooltip: '서재 통계 & 분석',
-                constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
-                padding: const EdgeInsets.all(8),
-                onPressed: () {
-                  HapticFeedback.lightImpact();
-                  setState(() => _currentNavIndex = 2);
-                },
-              ),
-              const SizedBox(width: 4),
+
               IconButton(
                 icon: Icon(Icons.settings_remote_rounded, color: primary, size: 21),
                 tooltip: '번역 리모컨',
@@ -747,6 +733,91 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   });
                 },
               ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          // 정렬 선택 팝업 버튼 (44dp 안심 터치 타깃)
+          Theme(
+            data: Theme.of(context).copyWith(cardColor: theme.surfaceColor),
+            child: PopupMenuButton<String>(
+              tooltip: '정렬 기준',
+              initialValue: _sort,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+                side: BorderSide(color: theme.borderColor.withOpacity(0.85)),
+              ),
+              color: theme.surfaceColor,
+              onSelected: (val) {
+                HapticFeedback.selectionClick();
+                setState(() => _sort = val);
+                _loadLibrary();
+              },
+              child: Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: theme.surfaceColor,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: theme.borderColor.withOpacity(0.85),
+                    width: 1.0,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(theme.isDark ? 0.22 : 0.03),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Icon(
+                  Icons.sort_rounded,
+                  color: _sort != 'recent' ? HyperAestheticTheme.getAmbientPrimary(theme) : theme.textColor,
+                  size: 20,
+                ),
+              ),
+              itemBuilder: (ctx) => [
+                PopupMenuItem(
+                  value: 'recent',
+                  child: Row(
+                    children: [
+                      Icon(Icons.history_rounded, size: 18, color: _sort == 'recent' ? HyperAestheticTheme.getAmbientPrimary(theme) : theme.subTextColor),
+                      const SizedBox(width: 10),
+                      Text('최근 읽은 순', style: TextStyle(color: _sort == 'recent' ? HyperAestheticTheme.getAmbientPrimary(theme) : theme.textColor, fontWeight: _sort == 'recent' ? FontWeight.bold : FontWeight.normal, fontSize: 13)),
+                    ],
+                  ),
+                ),
+                PopupMenuItem(
+                  value: 'name',
+                  child: Row(
+                    children: [
+                      Icon(Icons.sort_by_alpha_rounded, size: 18, color: _sort == 'name' ? HyperAestheticTheme.getAmbientPrimary(theme) : theme.subTextColor),
+                      const SizedBox(width: 10),
+                      Text('가나다 이름순', style: TextStyle(color: _sort == 'name' ? HyperAestheticTheme.getAmbientPrimary(theme) : theme.textColor, fontWeight: _sort == 'name' ? FontWeight.bold : FontWeight.normal, fontSize: 13)),
+                    ],
+                  ),
+                ),
+                PopupMenuItem(
+                  value: 'chapters',
+                  child: Row(
+                    children: [
+                      Icon(Icons.format_list_numbered_rounded, size: 18, color: _sort == 'chapters' ? HyperAestheticTheme.getAmbientPrimary(theme) : theme.subTextColor),
+                      const SizedBox(width: 10),
+                      Text('회차 많은 순', style: TextStyle(color: _sort == 'chapters' ? HyperAestheticTheme.getAmbientPrimary(theme) : theme.textColor, fontWeight: _sort == 'chapters' ? FontWeight.bold : FontWeight.normal, fontSize: 13)),
+                    ],
+                  ),
+                ),
+                PopupMenuItem(
+                  value: 'pinned',
+                  child: Row(
+                    children: [
+                      Icon(Icons.star_rounded, size: 18, color: _sort == 'pinned' ? Colors.amber : theme.subTextColor),
+                      const SizedBox(width: 10),
+                      Text('즐겨찾기 우선', style: TextStyle(color: _sort == 'pinned' ? Colors.amber : theme.textColor, fontWeight: _sort == 'pinned' ? FontWeight.bold : FontWeight.normal, fontSize: 13)),
+                    ],
+                  ),
+                ),
+              ],
             ),
           ),
           const SizedBox(width: 8),
@@ -1395,36 +1466,49 @@ class _LibraryScreenState extends State<LibraryScreen> {
         final progress = (status.percentage / 100.0).clamp(0.0, 1.0);
         final primary = HyperAestheticTheme.getAmbientPrimary(theme);
 
-        return HyperGlassCard(
-          theme: theme,
-          margin: const EdgeInsets.fromLTRB(20, 6, 20, 10),
-          borderRadius: 16,
-          blur: 0,
-          opacity: 1.0,
-          glow: false,
-          padding: const EdgeInsets.all(14),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
+        return Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: () {
+              HapticFeedback.lightImpact();
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const RemoteControlScreen()),
+              );
+            },
+            borderRadius: BorderRadius.circular(16),
+            child: HyperGlassCard(
+              theme: theme,
+              margin: const EdgeInsets.fromLTRB(20, 6, 20, 10),
+              borderRadius: 16,
+              blur: 0,
+              opacity: 1.0,
+              glow: false,
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Container(
-                    width: 8,
-                    height: 8,
-                    decoration: const BoxDecoration(
-                      color: Color(0xFF10B981),
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    'PC 서버 실시간 번역 중',
-                    style: TextStyle(
-                      color: primary,
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
+                  Row(
+                    children: [
+                      Container(
+                        width: 8,
+                        height: 8,
+                        decoration: const BoxDecoration(
+                          color: Color(0xFF10B981),
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'PC 서버 실시간 번역 중',
+                        style: TextStyle(
+                          color: primary,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      Icon(Icons.open_in_new_rounded, size: 13, color: primary),
                   const Spacer(),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
@@ -1473,8 +1557,10 @@ class _LibraryScreenState extends State<LibraryScreen> {
               ),
             ],
           ),
-        );
-      },
+        ),
+      ),
+    );
+  },
     );
   }
 
@@ -1607,49 +1693,6 @@ class _LibraryScreenState extends State<LibraryScreen> {
             style: TextStyle(color: theme.subTextColor, fontSize: 11),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildReadingStatsView(ReaderThemeData theme) {
-    final primary = HyperAestheticTheme.getAmbientPrimary(theme);
-
-    return DefaultTabController(
-      length: 2,
-      child: Scaffold(
-        backgroundColor: Colors.transparent,
-        appBar: AppBar(
-          backgroundColor: theme.surfaceColor.withOpacity(0.8),
-          elevation: 0,
-          title: Text(
-            '서재 통계 & 분석',
-            style: TextStyle(color: theme.textColor, fontSize: 18, fontWeight: FontWeight.bold),
-          ),
-          bottom: TabBar(
-            indicatorColor: primary,
-            labelColor: primary,
-            unselectedLabelColor: theme.subTextColor,
-            labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-            unselectedLabelStyle: const TextStyle(fontSize: 13),
-            indicatorWeight: 3,
-            tabs: const [
-              Tab(
-                icon: Icon(Icons.analytics_rounded, size: 20),
-                text: '번역 & 품질 통계',
-              ),
-              Tab(
-                icon: Icon(Icons.grass_rounded, size: 20),
-                text: '내 독서 잔디',
-              ),
-            ],
-          ),
-        ),
-        body: TabBarView(
-          children: [
-            ServerAnalyticsView(theme: theme),
-            ReadingStatsSheet(theme: theme, isFullScreen: true),
-          ],
-        ),
       ),
     );
   }

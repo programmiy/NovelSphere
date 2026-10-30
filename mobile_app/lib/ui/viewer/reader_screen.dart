@@ -1346,7 +1346,9 @@ class _ReaderScreenState extends State<ReaderScreen> {
 
   // 문장 렌더러 (독립 한/일 폰트 적용 & 롱프레스 오역 수정 & 원문 대역 지원 & 탭 시 화면 컨트롤/네비게이션 연동)
   Widget _buildSentenceItem(Sentence sentence, ReaderThemeData theme) {
-    final showOriginal = PreferencesService.originalTextMode == 'bilingual';
+    final originalMode = PreferencesService.originalTextMode;
+    final showOriginal = originalMode == 'bilingual';
+    final showTooltip = originalMode == 'tooltip' && sentence.original.isNotEmpty;
 
     return Padding(
       padding: EdgeInsets.only(bottom: PreferencesService.paragraphSpacing),
@@ -1372,6 +1374,68 @@ class _ReaderScreenState extends State<ReaderScreen> {
                   fontName: PreferencesService.koreanFont,
                 ),
               ),
+              // 원문 툴팁 모드 (원문 말풍선 팝업)
+              if (showTooltip) ...[
+                const SizedBox(height: 3),
+                Tooltip(
+                  message: sentence.original,
+                  triggerMode: TooltipTriggerMode.tap,
+                  preferBelow: false,
+                  showDuration: const Duration(seconds: 5),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: theme.surfaceColor,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: theme.accentColor.withOpacity(0.45), width: 1.2),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(theme.isDark ? 0.35 : 0.08),
+                        blurRadius: 10,
+                        offset: const Offset(0, 3),
+                      ),
+                    ],
+                  ),
+                  textStyle: FontHelper.getJapaneseStyle(
+                    baseStyle: TextStyle(
+                      color: theme.textColor,
+                      fontSize: 13,
+                      height: 1.45,
+                    ),
+                    fontName: PreferencesService.japaneseFont,
+                  ),
+                  child: Container(
+                    margin: const EdgeInsets.only(top: 2),
+                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: theme.accentColor.withOpacity(0.10),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: theme.accentColor.withOpacity(0.25), width: 0.8),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          '原',
+                          style: TextStyle(
+                            color: theme.accentColor,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          '원문 보기',
+                          style: TextStyle(
+                            color: theme.subTextColor,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
               // 원문 대역 표시 (선택한 일본어 폰트 적용)
               if (showOriginal && sentence.original.isNotEmpty) ...[
                 const SizedBox(height: 4),

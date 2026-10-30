@@ -65,7 +65,8 @@ class SyncService {
   }
 
   /// PC 서버와의 연결 상태 확인 (Ping)
-  static Future<bool> pingServer([String? customUrl]) async {
+  /// PC 서버와의 연결 상태 확인 및 서버 정보(총 번역 문단 수 등) 반환
+  static Future<Map<String, dynamic>?> checkServerStatus([String? customUrl]) async {
     final raw = customUrl ?? PreferencesService.serverUrl;
     final serverUrl = PreferencesService.normalizeServerUrl(raw);
     try {
@@ -74,11 +75,19 @@ class SyncService {
         headers: PreferencesService.authHeaders,
       ).timeout(const Duration(seconds: 4));
       if (res.statusCode == 200) {
-        final data = jsonDecode(res.body);
-        return data['status'] == 'online';
+        final data = jsonDecode(res.body) as Map<String, dynamic>;
+        if (data['status'] == 'online') {
+          return data;
+        }
       }
     } catch (_) {}
-    return false;
+    return null;
+  }
+
+  /// PC 서버와의 연결 상태 확인 (Ping)
+  static Future<bool> pingServer([String? customUrl]) async {
+    final status = await checkServerStatus(customUrl);
+    return status != null;
   }
 
   /// [최초 1회 전체 동기화] PC 서버에서 최적화 모바일 DB 시드를 다운받아 로컬 DB로 구축하고,
@@ -92,6 +101,25 @@ class SyncService {
           message: '지정된 신뢰 Wi-Fi 환경이 아닙니다. 배터리 및 데이터 보호를 위해 동기화가 제한됩니다.',
         );
       }
+    }
+
+    final serverStatus = await checkServerStatus();
+    if (serverStatus == null) {
+      return SyncResult(
+        success: false,
+        message: 'PC 서버에 연결할 수 없습니다. PC 서버가 켜져 있는지 확인하세요.',
+      );
+    }
+
+    final serverTransCount = (serverStatus['total_translations'] as num?)?.toInt() ?? 0;
+    final mobileTransCount = await LocalDbService.getTotalSentenceCount();
+
+    // 🚨 [데이터 무결성 방어] 서버의 DB가 폰의 DB보다 문단수가 적을 경우 전체 시드 다운로드 차단
+    if (mobileTransCount > 0 && serverTransCount < mobileTransCount) {
+      return SyncResult(
+        success: false,
+        message: '동기화 차단: PC 서버 문단 수($serverTransCount)가 모바일($mobileTransCount)보다 적습니다. 데이터 유실 방지를 위해 동기화가 중단되었습니다.',
+      );
     }
 
     final serverUrl = PreferencesService.normalizeServerUrl(PreferencesService.serverUrl);
@@ -167,11 +195,22 @@ class SyncService {
       }
     }
 
-    final isAlive = await pingServer();
-    if (!isAlive) {
+    final serverStatus = await checkServerStatus();
+    if (serverStatus == null) {
       return SyncResult(
         success: false,
         message: 'PC 서버에 연결할 수 없습니다. PC 서버가 켜져 있는지 확인하세요.',
+      );
+    }
+
+    final serverTransCount = (serverStatus['total_translations'] as num?)?.toInt() ?? 0;
+    final mobileTransCount = await LocalDbService.getTotalSentenceCount();
+
+    // 🚨 [데이터 무결성 방어] 서버의 DB가 폰의 DB보다 문단수가 적을 경우 증분 동기화 차단
+    if (mobileTransCount > 0 && serverTransCount < mobileTransCount) {
+      return SyncResult(
+        success: false,
+        message: '동기화 차단: PC 서버 문단 수($serverTransCount)가 모바일($mobileTransCount)보다 적습니다. 데이터 유실 방지를 위해 동기화가 중단되었습니다.',
       );
     }
 

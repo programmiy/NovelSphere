@@ -518,6 +518,14 @@ class LocalDbService {
     return healedCount;
   }
 
+  /// [데이터 무결성 방어용] 모바일 로컬 DB에 적재된 총 번역 문단(문장) 수 집계
+  static Future<int> getTotalSentenceCount() async {
+    final db = await database;
+    final rows = await db.rawQuery('SELECT COALESCE(SUM(sentence_count), 0) as total FROM chapters');
+    if (rows.isEmpty) return 0;
+    return (rows.first['total'] as num?)?.toInt() ?? 0;
+  }
+
   static Future<List<Chapter>> getChapters(String bookName) async {
     final db = await database;
     // URL 중복 회차가 있다면 1회 자동 자가 치유 수행
