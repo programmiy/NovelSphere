@@ -1245,7 +1245,7 @@ tr.review-target-row:hover {
 /* 1. 미니멀 플로팅 HUD (Heads-Up Display) */
 #lanovel-hud {
     position: fixed;
-    top: 24px;
+    top: 150px;
     left: 24px;
     z-index: 2147483645;
     display: flex;
