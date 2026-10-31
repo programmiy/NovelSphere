@@ -125,7 +125,8 @@ class _GlossaryScreenState extends State<GlossaryScreen> {
         ],
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
+        // 하단 플로팅 글래스 독(서재/찾아바꾸기/설정) 간섭 방지를 위한 110px 하단 여백 확보
+        padding: const EdgeInsets.fromLTRB(20, 20, 20, 110),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [

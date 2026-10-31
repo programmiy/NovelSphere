@@ -548,7 +548,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ],
       ),
       body: ListView(
-        padding: const EdgeInsets.all(20),
+        // 하단 플로팅 글래스 독(서재/찾아바꾸기/설정) 간섭 방지를 위한 110px 하단 여백 확보
+        padding: const EdgeInsets.fromLTRB(20, 20, 20, 110),
         children: [
           // 1. 신뢰 Wi-Fi 2개 설정 섹션 (사용자 코멘트 반영)
           _buildSectionHeader(
