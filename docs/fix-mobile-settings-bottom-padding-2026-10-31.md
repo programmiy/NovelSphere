@@ -1,10 +1,12 @@
-# 모바일 앱 설정 및 찾아바꾸기 탭 하단 독 여백 확보 수정 보고서
+# 모바일 앱 설정 및 찾아바꾸기 탭 하단 독 여백 확보 수정 및 v1.7.2 배포 보고서
 
 - **작업 일자**: 2026-10-31
+- **버전**: `lanovel_reader` `v1.7.2+2026103101`
 - **대상 모듈**:
   - **모바일 설정 UI**: [settings_screen.dart](file:///c:/LANOVEL/mobile_app/lib/ui/settings/settings_screen.dart)
   - **모바일 찾아바꾸기 UI**: [glossary_screen.dart](file:///c:/LANOVEL/mobile_app/lib/ui/glossary/glossary_screen.dart)
   - **모바일 서재 메인 네비게이션**: [library_screen.dart](file:///c:/LANOVEL/mobile_app/lib/ui/library/library_screen.dart)
+  - **모바일 배포/버전**: [pubspec.yaml](file:///c:/LANOVEL/mobile_app/pubspec.yaml), [release_notes.json](file:///c:/LANOVEL/mobile_app/release_notes.json)
 
 ---
 
@@ -30,6 +32,12 @@
   - `SingleChildScrollView`의 패딩을 `const EdgeInsets.all(20)`에서 `const EdgeInsets.fromLTRB(20, 20, 20, 110)`으로 통일.
   - 최근 찾아바꾸기 규칙 및 버튼 목록이 하단 독과 겹치는 현상을 원천 차단.
 
+### 2-3. [버전 및 릴리즈 노트 갱신 & 릴리즈 빌드]
+- **파일**: [pubspec.yaml](file:///c:/LANOVEL/mobile_app/pubspec.yaml), [release_notes.json](file:///c:/LANOVEL/mobile_app/release_notes.json)
+- **버전 상향**: `v1.7.1+2026103001` -> `v1.7.2+2026103101`
+- **릴리즈 노트 갱신**: In-App OTA 버튼 및 찾아바꾸기 탭 플로팅 독 110px 세이프존 확보 내용 반영.
+- **배포 빌드**: `.\scripts\setup_mobile.ps1 -BuildApk`를 통해 릴리즈 APK 빌드 및 `server/static/lanovel-reader-release.apk` 동기화, 실시간 OTA 브로드캐스트 수행.
+
 ---
 
 ## 3. 검증 결과
@@ -39,3 +47,5 @@
    - **`No issues found!`** (경고 및 에러 0건)
 2. **단위 및 위젯 테스트 (`flutter test`)**:
    - **22개 테스트 전체 통과 (100% PASS)** (`All tests passed!`)
+3. **APK 릴리즈 빌드 (`setup_mobile.ps1 -BuildApk`)**:
+   - release APK 정상 컴파일 완료 및 `server/static/lanovel-reader-release.apk` 갱신
