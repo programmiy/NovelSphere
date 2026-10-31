@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert';
-import { chunkArray, createBudgetChunks } from '../src/core/chunker.ts';
+import { chunkArray, createBudgetChunks, selectSafePiggybackItems, isDialogueLine, isSceneBreakLine, CHUNK_BUDGET_CHARACTERS, CHUNK_HARD_MAX_ITEMS, CHUNK_PIGGYBACK_MAX_ITEMS } from '../src/core/chunker.ts';
 import { isTranslatableText, isPurePunctuationOnly, hasJapaneseText } from '../src/core/filters.ts';
 import {
   calculateAdaptiveChunkDelay,
@@ -19,57 +19,152 @@ test('chunker: chunkArray splits array by exact size', () => {
   assert.deepStrictEqual(chunkArray([], 2), []);
 });
 
-test('chunker: createBudgetChunks respects character budget and max item limit', () => {
+test('chunker: createBudgetChunks respects character budget and max item limit with balanced load', () => {
   const items = [
     { text: 'A'.repeat(100) },
     { text: 'B'.repeat(150) },
     { text: 'C'.repeat(50) }
   ];
 
-  // maxChars = 200: First chunk gets A (100), next B (150) exceeds 200, so B goes to chunk 2, C (50) fits in chunk 2 (150+50=200)
+  // maxChars = 200: [100] (100 chars) + [150, 50] (200 chars)
   const chunksByChar = createBudgetChunks(items, 200, 10);
   assert.strictEqual(chunksByChar.length, 2);
   assert.strictEqual(chunksByChar[0].length, 1);
   assert.strictEqual(chunksByChar[1].length, 2);
 
-  // maxItems = 2: Split by count regardless of chars
+  // maxItems = 2: Balanced split keeps each chunk <= 2 items and balances char load (100 vs 200 instead of 250 vs 50)
   const chunksByCount = createBudgetChunks(items, 10000, 2);
   assert.strictEqual(chunksByCount.length, 2);
-  assert.strictEqual(chunksByCount[0].length, 2);
-  assert.strictEqual(chunksByCount[1].length, 1);
+  assert.ok(chunksByCount.every((c) => c.length <= 2));
+  assert.deepStrictEqual(chunksByCount.flat(), items);
 
-  // Empty items
+  // Empty & single items
   assert.deepStrictEqual(createBudgetChunks([]), []);
+  assert.deepStrictEqual(createBudgetChunks([{ text: '단문' }]), [[{ text: '단문' }]]);
 });
 
-test('chunker: dynamic budget chunks expands item limit for short dialogue sentences', () => {
-  // 1. 짧은 대화문 70개 (문장당 10자, 총 700자): 45개에서 끊기지 않고 1개 청크(70개)로 결합
+test('chunker: smart pre-planned balanced chunking eliminates small remainder chunks and saves API calls', () => {
+  // 1. 짧은 대화문 70개 (총 ~700자): 1개 청크(70개) 원샷 완결
   const shortDialogueItems = Array.from({ length: 70 }, (_, i) => ({
     text: '「대화문_' + i + '」'
   }));
   const chunksShort = createBudgetChunks(shortDialogueItems);
-  assert.strictEqual(chunksShort.length, 1, '짧은 대화문 70개는 45개에서 끊기지 않고 1개 청크로 묶여야 함');
+  assert.strictEqual(chunksShort.length, 1);
   assert.strictEqual(chunksShort[0].length, 70);
 
-  // 2. 짧은 대화문 80개: 절대 상한인 75개에서 안전하게 1회 분할 (75개 + 5개 = 2개 청크)
+  // 2. 짧은 대화문 80개: 구형(75+5 자투리) 대신 균등 2청크로 분할하여 자투리 원천 제거
   const eightyDialogueItems = Array.from({ length: 80 }, (_, i) => ({
     text: '「단문_' + i + '」'
   }));
   const chunksEighty = createBudgetChunks(eightyDialogueItems);
-  assert.strictEqual(chunksEighty.length, 2, '절대 상한 75개에서 1회 분할되어야 함');
-  assert.strictEqual(chunksEighty[0].length, 75);
-  assert.strictEqual(chunksEighty[1].length, 5);
+  assert.strictEqual(chunksEighty.length, 2);
+  assert.ok(chunksEighty[0].length >= 34 && chunksEighty[0].length <= 42);
+  assert.ok(chunksEighty[1].length >= 38 && chunksEighty[1].length <= 46);
+  assert.deepStrictEqual(chunksEighty.flat(), eightyDialogueItems);
 
-  // 3. 밀도 높은 서술문: 문장당 35자 (45개 시점에 1,575자 >= 1,300자): 45개 시점에 정상 분할
-  const denseProseItems = Array.from({ length: 50 }, (_, i) => ({
-    text: 'A'.repeat(35)
+  // 3. 서술문 50개 (문장당 35자 = 1,750자): 구형(45+5 자투리) 대신 스위트 스폿 내 1묶음 원샷 흡수!
+  const dense50Items = Array.from({ length: 50 }, (_, i) => ({
+    id: 'p' + i,
+    text: '서'.repeat(35)
   }));
-  const chunksDense = createBudgetChunks(denseProseItems);
-  assert.strictEqual(chunksDense.length, 2, '1,300자 이상의 밀도 높은 문장은 45개에서 분할되어야 함');
-  assert.strictEqual(chunksDense[0].length, 45);
-  assert.strictEqual(chunksDense[1].length, 5);
+  const chunksDense50 = createBudgetChunks(dense50Items);
+  assert.strictEqual(chunksDense50.length, 1, "50문장 1,750자는 5개 자투리를 남기지 않고 1묶음으로 완결되어야 함");
+  assert.strictEqual(chunksDense50[0].length, 50);
+
+  // 4. 서술문 60개 (문장당 35자 = 2,100자): 2,000자 초과로 2묶음 분할하되 45+15 대신 가벼운 균등 2묶음(TTFB 가속 반영)
+  const dense60Items = Array.from({ length: 60 }, (_, i) => ({
+    id: 'p' + i,
+    text: '서'.repeat(35)
+  }));
+  const chunksDense60 = createBudgetChunks(dense60Items);
+  assert.strictEqual(chunksDense60.length, 2);
+  assert.ok(chunksDense60[0].length >= 25 && chunksDense60[0].length <= 31);
+  assert.ok(chunksDense60[1].length >= 29 && chunksDense60[1].length <= 35);
+  assert.ok(chunksDense60[0].length <= chunksDense60[1].length, "첫 묶음은 TTFB 체감 가속을 위해 뒤 묶음보다 가볍거나 같아야 함");
+
+  // 5. 105문장 혼합형 (문장당 26자 = 2,730자): 구형(45+45+15 = 3묶음) 대신 균등 2묶음(~48 + ~57)으로 압축 완결!
+  const mixed105Items = Array.from({ length: 105 }, (_, i) => ({
+    id: 'm' + i,
+    text: '혼'.repeat(26)
+  }));
+  const chunksMixed105 = createBudgetChunks(mixed105Items);
+  assert.strictEqual(chunksMixed105.length, 2, "45+45+15 자투리 3묶음 대신 균형 2묶음으로 API 호출 1회 절감");
+  assert.ok(chunksMixed105.every((c) => c.length >= 45 && c.length <= 60));
+  assert.deepStrictEqual(chunksMixed105.flat(), mixed105Items);
+
+  // 6. 고밀도 장편 105문장 (문장당 36자 = 3,780자): 3묶음 불가피 시 45+45+15 대신 ~32+36+37 균등 3분할
+  const heavy105Items = Array.from({ length: 105 }, (_, i) => ({
+    id: 'h' + i,
+    text: '장'.repeat(36)
+  }));
+  const chunksHeavy105 = createBudgetChunks(heavy105Items);
+  assert.strictEqual(chunksHeavy105.length, 3);
+  assert.ok(chunksHeavy105.every((c) => c.length >= 30 && c.length <= 40), "모든 묶음이 자투리 없이 30~40개 사이로 고르게 분배되어야 함");
 });
 
+test('chunker: handles skewed lengths, isolates giant outliers, snaps to natural boundaries, and guards retranslation', () => {
+  // 1. 극심한 글자 수 편차(Skewness): 전반부 100자 서술문 18개(1,800자) + 후반부 12자 대화문 50개(600자)
+  const skewedItems = [
+    ...Array.from({ length: 18 }, (_, i) => ({ id: 'long_' + i, text: '長'.repeat(100) })),
+    ...Array.from({ length: 50 }, (_, i) => ({ id: 'short_' + i, text: '「' + '短'.repeat(10) + '」' }))
+  ];
+  const skewedChunks = createBudgetChunks(skewedItems);
+  for (const ch of skewedChunks) {
+    const chars = ch.reduce((s, x) => s + x.text.length, 0);
+    assert.ok(chars <= CHUNK_BUDGET_CHARACTERS, `청크 글자 수(${chars})가 2,000자 상한을 초과하면 안 됨`);
+    assert.ok(ch.length <= CHUNK_HARD_MAX_ITEMS, `청크 문장 수(${ch.length})가 75개 상한을 초과하면 안 됨`);
+  }
+  assert.deepStrictEqual(skewedChunks.flat(), skewedItems);
+
+  // 2. 단일 거대 문장(Outlier >= 1,400자) 사전 격리
+  const withOutlier = [
+    ...Array.from({ length: 20 }, (_, i) => ({ id: 'pre_' + i, text: '前'.repeat(25) })),
+    { id: 'giant', text: '巨'.repeat(1600) },
+    ...Array.from({ length: 20 }, (_, i) => ({ id: 'post_' + i, text: '後'.repeat(25) }))
+  ];
+  const outlierChunks = createBudgetChunks(withOutlier);
+  assert.strictEqual(outlierChunks.length, 3);
+  assert.strictEqual(outlierChunks[1].length, 1);
+  assert.strictEqual(outlierChunks[1][0].id, 'giant');
+  assert.deepStrictEqual(outlierChunks.flat(), withOutlier);
+
+  // 3. 자연 경계 스내핑(Natural Boundary Snapping): 연속 대사 한복판을 피하고 장면 전환 기호 경계 선호
+  assert.strictEqual(isDialogueLine('　「おはよう！」'), true);
+  assert.strictEqual(isDialogueLine('地の文です。'), false);
+  assert.strictEqual(isSceneBreakLine('　◇　◇　◇　'), true);
+  assert.strictEqual(isSceneBreakLine('普通の文章'), false);
+
+  const dialogueAndBreakItems = Array.from({ length: 64 }, (_, i) => {
+    if (i === 29) return { id: String(i), text: "◇　◇　◇" }; // 목표 분할선(29~30 부근) 자연 장면전환 경계
+    if (i >= 26 && i <= 34) return { id: String(i), text: "「" + "あ".repeat(30) + "」" }; // 연속 대사 구간
+    return { id: String(i), text: "あ".repeat(32) };
+  });
+  const snappedChunks = createBudgetChunks(dialogueAndBreakItems);
+  assert.strictEqual(snappedChunks.length, 2);
+  // 절단점이 연속 대사 한복판이 아닌 장면 전환 기호(index 29) 전후로 스내핑되는지 확인
+  assert.ok(snappedChunks[0].length === 29 || snappedChunks[0].length === 30);
+
+  // 4. 재번역 모델(isRetranslation: true) 보수적 분할 보호
+  const borderItems = Array.from({ length: 52 }, (_, i) => ({ id: String(i), text: "文".repeat(33) })); // 1,716자
+  const normalModeChunks = createBudgetChunks(borderItems, CHUNK_BUDGET_CHARACTERS, 45, { isRetranslation: false });
+  const retranslateChunks = createBudgetChunks(borderItems, CHUNK_BUDGET_CHARACTERS, 45, { isRetranslation: true });
+  assert.strictEqual(normalModeChunks.length, 1, "기본 모델은 52문장 1,716자를 1묶음 원샷 처리");
+  assert.strictEqual(retranslateChunks.length, 2, "상위 재번역 모델은 레이턴시/503 보호를 위해 안전하게 2묶음 균등 분할");
+});
+
+test('chunker: selectSafePiggybackItems caps last-chunk empty item merge within budget and defers overflow', () => {
+  const baseChunk = Array.from({ length: 52 }, (_, i) => ({ id: "b" + i, text: "基".repeat(30) })); // 52개, 1,560자
+  const emptyCandidates = Array.from({ length: 25 }, (_, i) => ({ id: "e" + i, text: "空".repeat(30) })); // 25개, 750자
+
+  const { fitted, deferred } = selectSafePiggybackItems(baseChunk, emptyCandidates);
+  // 잔여 글자 예산: 2000 - 1560 = 440자 -> 30자 문장 최대 14개 수용 가능 (52 + 14 = 66 <= 68)
+  assert.strictEqual(fitted.length, 14);
+  assert.strictEqual(deferred.length, 11);
+  const mergedCount = baseChunk.length + fitted.length;
+  const mergedChars = [...baseChunk, ...fitted].reduce((s, x) => s + x.text.length, 0);
+  assert.ok(mergedCount <= CHUNK_PIGGYBACK_MAX_ITEMS);
+  assert.ok(mergedChars <= CHUNK_BUDGET_CHARACTERS);
+});
 test('filters: isTranslatableText accurately detects Japanese dialogue and prose', () => {
   // 1. Japanese content
   assert.strictEqual(isTranslatableText('こんにちは世界'), true);

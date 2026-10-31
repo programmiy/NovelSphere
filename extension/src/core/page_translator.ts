@@ -9,7 +9,13 @@ import {
   getPendingEmptyItems,
   PID_REGEX,
 } from './filters';
-import { createBudgetChunks, chunkArray, CHUNK_BUDGET_CHARACTERS, CHUNK_BUDGET_MAX_ITEMS } from './chunker';
+import {
+  createBudgetChunks,
+  chunkArray,
+  selectSafePiggybackItems,
+  CHUNK_BUDGET_CHARACTERS,
+  CHUNK_BUDGET_MAX_ITEMS,
+} from './chunker';
 import {
   detectCutoffInfo,
   calculateNextCutoffTimestamp,
@@ -475,7 +481,9 @@ export async function translateAllPTags(isRetranslation = false): Promise<void> 
     const sepPreview = sepCount > 0 ? state.activeSeparators.slice(0, 3).join(', ') + (sepCount > 3 ? ` 외 ${sepCount - 3}개` : '') : '없음';
     const modelDesc = isRetranslation ? '고성능 모델(Gemini 3.0 Flash)' : '기본 엔진';
     const turboDesc = state.isTurboMode ? ' ⚡쾌속모드' : '';
-    const chunks = createBudgetChunks(textsToTranslate, CHUNK_BUDGET_CHARACTERS, CHUNK_BUDGET_MAX_ITEMS);
+    const chunks = createBudgetChunks(textsToTranslate, CHUNK_BUDGET_CHARACTERS, CHUNK_BUDGET_MAX_ITEMS, {
+      isRetranslation,
+    });
     const totalChars = textsToTranslate.reduce((sum, item) => sum + (item.text ? item.text.length : 0), 0);
     logToSidebar(
       `[소설: ${state.currentNovelTitle || '기본'}] 총 ${textsToTranslate.length}개 문장(약 ${totalChars.toLocaleString()}자) 글자 수·토큰 예산 기반 ${chunks.length}개 최적 묶음으로 번역을 시작합니다. (${modelDesc}${turboDesc}, 구분선: ${sepPreview})`
@@ -732,20 +740,25 @@ export async function translateAllPTags(isRetranslation = false): Promise<void> 
           state.activeSeparators
         );
         if (emptyItems.length > 0) {
-          logToSidebar(
-            `[마지막 꾸러미 포함] 번역 완료 한스텝전, 이전 번역 중 빈칸(미완료) 문장 ${emptyItems.length}개를 마지막 번역꾸러미에 포함하여 함께 번역합니다.`
-          );
-          emptyItems.forEach((item) => {
-            const row = document.querySelector<HTMLTableRowElement>(`tr[data-pid="${item.id}"]`);
-            if (row) {
-              const cell = row.querySelector('.translated-text');
-              if (cell) {
-                cell.textContent = '⏳ 번역 중...';
-                (cell as HTMLElement).style.color = '';
+          const { fitted, deferred } = selectSafePiggybackItems(chunk, emptyItems);
+          if (fitted.length > 0) {
+            const deferredMsg =
+              deferred.length > 0 ? ` (예산 초과 ${deferred.length}개는 보완 꾸러미로 자동 이관)` : '';
+            logToSidebar(
+              `[마지막 꾸러미 포함] 번역 완료 한스텝전, 이전 번역 중 빈칸(미완료) 문장 ${fitted.length}개를 안전 예산 내에서 마지막 번역꾸러미에 포함합니다.${deferredMsg}`
+            );
+            fitted.forEach((item) => {
+              const row = document.querySelector<HTMLTableRowElement>(`tr[data-pid="${item.id}"]`);
+              if (row) {
+                const cell = row.querySelector('.translated-text');
+                if (cell) {
+                  cell.textContent = '⏳ 번역 중...';
+                  (cell as HTMLElement).style.color = '';
+                }
               }
-            }
-          });
-          currentChunk = [...chunk, ...emptyItems];
+            });
+            currentChunk = [...chunk, ...fitted];
+          }
         }
       }
 
@@ -846,7 +859,19 @@ export async function translateAllPTags(isRetranslation = false): Promise<void> 
             }
           }
         });
-        await translateChunk(remainingEmptyItems, remainingEmptyItems.length);
+        const recoveryChunks = createBudgetChunks(
+          remainingEmptyItems,
+          CHUNK_BUDGET_CHARACTERS,
+          CHUNK_BUDGET_MAX_ITEMS,
+          { isRetranslation }
+        );
+        for (const [rIdx, rChunk] of recoveryChunks.entries()) {
+          if (state.isTranslationCancelled) break;
+          await translateChunk(rChunk, rChunk.length);
+          if (rIdx < recoveryChunks.length - 1 && !state.isTranslationCancelled) {
+            await new Promise((resolve) => setTimeout(resolve, 2500));
+          }
+        }
       }
     }
 

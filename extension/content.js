@@ -1483,39 +1483,271 @@
     }
     return chunks;
   }
-  function createBudgetChunks(items, maxChars = CHUNK_BUDGET_CHARACTERS, maxItems = CHUNK_BUDGET_MAX_ITEMS, hardMaxItems, denseCharsThreshold) {
-    if (!items || items.length === 0) return [];
-    const resolvedHardLimit = hardMaxItems ?? (maxItems !== CHUNK_BUDGET_MAX_ITEMS ? maxItems : CHUNK_HARD_MAX_ITEMS);
-    const resolvedDenseThreshold = denseCharsThreshold ?? (maxItems !== CHUNK_BUDGET_MAX_ITEMS ? 0 : CHUNK_DENSE_CHARS_THRESHOLD);
-    const chunks = [];
-    let currentChunk = [];
-    let currentChars = 0;
-    for (const item of items) {
-      const itemLength = item.text ? item.text.length : 0;
-      const isCharOverflow = currentChars + itemLength > maxChars;
-      const isHardItemLimit = currentChunk.length >= resolvedHardLimit;
-      const isStandardItemLimit = currentChunk.length >= maxItems && currentChars >= resolvedDenseThreshold;
-      if (currentChunk.length > 0 && (isCharOverflow || isHardItemLimit || isStandardItemLimit)) {
-        chunks.push(currentChunk);
-        currentChunk = [];
-        currentChars = 0;
-      }
-      currentChunk.push(item);
-      currentChars += itemLength;
-    }
-    if (currentChunk.length > 0) {
-      chunks.push(currentChunk);
-    }
-    return chunks;
+  function isDialogueLine(text) {
+    if (!text) return false;
+    return DIALOGUE_START_RE.test(text);
   }
-  var CHUNK_BUDGET_CHARACTERS, CHUNK_BUDGET_MAX_ITEMS, CHUNK_HARD_MAX_ITEMS, CHUNK_DENSE_CHARS_THRESHOLD;
+  function isSceneBreakLine(text) {
+    if (!text) return true;
+    const trimmed = text.trim();
+    if (trimmed.length === 0) return true;
+    if (trimmed.length > 24) return false;
+    return !SCENE_BREAK_CONTENT_RE.test(trimmed);
+  }
+  function selectSafePiggybackItems(baseChunk, candidateEmptyItems, maxChars = CHUNK_BUDGET_CHARACTERS, maxItems = CHUNK_PIGGYBACK_MAX_ITEMS) {
+    if (!candidateEmptyItems || candidateEmptyItems.length === 0) {
+      return { fitted: [], deferred: [] };
+    }
+    let currentChars = baseChunk.reduce((sum, it) => sum + (it.text ? it.text.length : 0), 0);
+    let currentCount = baseChunk.length;
+    const fitted = [];
+    const deferred = [];
+    for (const item of candidateEmptyItems) {
+      const itemLen = item.text ? item.text.length : 0;
+      if (currentCount + 1 <= maxItems && currentChars + itemLen <= maxChars) {
+        fitted.push(item);
+        currentCount += 1;
+        currentChars += itemLen;
+      } else {
+        deferred.push(item);
+      }
+    }
+    return { fitted, deferred };
+  }
+  function solveBalancedPartition(seg, prefixChars, initialK, effectiveHardCharLimit, effectiveSoftCharLimit, resolvedHardLimit, isCustomLimits, enableNaturalBoundary, firstChunkWeightFactor) {
+    const n = seg.length;
+    const totalChars = prefixChars[n];
+    const boundaryAdjust = new Float64Array(n + 1);
+    if (enableNaturalBoundary) {
+      for (let i = 1; i < n; i++) {
+        const prevText = seg[i - 1].text || "";
+        const nextText = seg[i].text || "";
+        if (isSceneBreakLine(prevText) || isSceneBreakLine(nextText)) {
+          boundaryAdjust[i] = -0.08;
+        } else {
+          const prevDiag = isDialogueLine(prevText);
+          const nextDiag = isDialogueLine(nextText);
+          if (prevDiag && nextDiag) {
+            boundaryAdjust[i] = 0.06;
+          } else if (prevDiag && !nextDiag) {
+            boundaryAdjust[i] = -0.03;
+          }
+        }
+      }
+    }
+    const charPressure = totalChars > 0 ? Math.min(1, totalChars / Math.max(1, effectiveHardCharLimit)) : 0;
+    const charWeight = totalChars > 0 ? isCustomLimits ? 0.65 * charPressure : 0.65 : 0;
+    const itemWeight = 1 - charWeight;
+    for (let targetK = Math.max(1, Math.min(initialK, n)); targetK <= n; targetK++) {
+      const targetShares = new Float64Array(targetK + 1);
+      if (!isCustomLimits && targetK >= 2 && firstChunkWeightFactor < 1) {
+        const firstShare = 1 / targetK * firstChunkWeightFactor;
+        const restShare = (1 - firstShare) / (targetK - 1);
+        targetShares[1] = firstShare;
+        for (let c = 2; c <= targetK; c++) targetShares[c] = restShare;
+      } else {
+        for (let c = 1; c <= targetK; c++) targetShares[c] = 1 / targetK;
+      }
+      const stride = n + 1;
+      const dp = new Float64Array((targetK + 1) * stride);
+      dp.fill(Infinity);
+      const parent = new Int32Array((targetK + 1) * stride);
+      dp[0] = 0;
+      for (let c = 1; c <= targetK; c++) {
+        const maxI = n - (targetK - c);
+        const prevRowOffset = (c - 1) * stride;
+        const currRowOffset = c * stride;
+        const targetShare = targetShares[c];
+        for (let i = c; i <= maxI; i++) {
+          const minP = Math.max(c - 1, i - resolvedHardLimit);
+          let bestCost = Infinity;
+          let bestP = -1;
+          for (let p = i - 1; p >= minP; p--) {
+            const segChars = prefixChars[i] - prefixChars[p];
+            if (segChars > effectiveHardCharLimit) {
+              break;
+            }
+            const prevCost = dp[prevRowOffset + p];
+            if (prevCost === Infinity) continue;
+            const segLen = i - p;
+            const actualShare = charWeight * (totalChars > 0 ? segChars / totalChars : 0) + itemWeight * (segLen / n);
+            const diff = actualShare - targetShare;
+            let cost = prevCost + diff * diff * 100;
+            if (!isCustomLimits) {
+              if (n >= 30 && segLen < 12) {
+                const shortfall = 12 - segLen;
+                cost += shortfall * shortfall * 0.25;
+              }
+              if (segChars > effectiveSoftCharLimit) {
+                const overRatio = (segChars - effectiveSoftCharLimit) / Math.max(1, effectiveHardCharLimit);
+                cost += overRatio * overRatio * 25;
+              }
+            }
+            if (i < n) {
+              cost += boundaryAdjust[i];
+            }
+            if (cost < bestCost) {
+              bestCost = cost;
+              bestP = p;
+            }
+          }
+          if (bestP !== -1) {
+            dp[currRowOffset + i] = bestCost;
+            parent[currRowOffset + i] = bestP;
+          }
+        }
+      }
+      if (dp[targetK * stride + n] < Infinity) {
+        const result = new Array(targetK);
+        let curr = n;
+        for (let c = targetK; c >= 1; c--) {
+          const p = parent[c * stride + curr];
+          result[c - 1] = seg.slice(p, curr);
+          curr = p;
+        }
+        return result;
+      }
+    }
+    const fallback = [];
+    let cur = [];
+    let curChars = 0;
+    for (const item of seg) {
+      const len = item.text ? item.text.length : 0;
+      if (cur.length > 0 && (curChars + len > effectiveHardCharLimit || cur.length >= resolvedHardLimit)) {
+        fallback.push(cur);
+        cur = [];
+        curChars = 0;
+      }
+      cur.push(item);
+      curChars += len;
+    }
+    if (cur.length > 0) fallback.push(cur);
+    return fallback;
+  }
+  function createBudgetChunks(items, maxChars = CHUNK_BUDGET_CHARACTERS, maxItems = CHUNK_BUDGET_MAX_ITEMS, hardMaxItemsOrOptions, denseCharsThreshold) {
+    if (!items || items.length === 0) return [];
+    if (items.length === 1) return [[items[0]]];
+    const opts = typeof hardMaxItemsOrOptions === "object" && hardMaxItemsOrOptions !== null ? hardMaxItemsOrOptions : { hardMaxItems: hardMaxItemsOrOptions, denseCharsThreshold };
+    const explicitHardMax = opts.hardMaxItems;
+    const isCustomLimits = maxChars !== CHUNK_BUDGET_CHARACTERS || maxItems !== CHUNK_BUDGET_MAX_ITEMS || explicitHardMax !== void 0 || opts.denseCharsThreshold !== void 0;
+    const isRetranslation = Boolean(opts.isRetranslation);
+    const resolvedHardLimit = Math.max(
+      1,
+      explicitHardMax ?? (maxItems !== CHUNK_BUDGET_MAX_ITEMS ? maxItems : isRetranslation ? 60 : CHUNK_HARD_MAX_ITEMS)
+    );
+    const effectiveHardCharLimit = Math.max(
+      1,
+      !isCustomLimits && isRetranslation ? Math.min(maxChars, 1750) : maxChars
+    );
+    const effectiveSoftCharLimit = isCustomLimits ? effectiveHardCharLimit : isRetranslation ? 1550 : CHUNK_SOFT_BUDGET_CHARACTERS;
+    const singleShotCharLimit = isCustomLimits ? effectiveHardCharLimit : isRetranslation ? 1600 : CHUNK_SINGLE_SHOT_MAX_CHARS;
+    const enableNaturalBoundary = !isCustomLimits && opts.enableNaturalBoundary !== false;
+    const firstChunkWeightFactor = opts.firstChunkWeightFactor ?? 0.92;
+    const lengths = new Int32Array(items.length);
+    for (let i = 0; i < items.length; i++) {
+      lengths[i] = items[i].text ? items[i].text.length : 0;
+    }
+    const partitionNormalSegment = (seg) => {
+      const n = seg.length;
+      if (n === 0) return [];
+      if (n === 1) return [seg];
+      const prefixChars = new Int32Array(n + 1);
+      for (let i = 0; i < n; i++) {
+        prefixChars[i + 1] = prefixChars[i] + (seg[i].text ? seg[i].text.length : 0);
+      }
+      const totalChars = prefixChars[n];
+      if (isCustomLimits) {
+        if (n <= resolvedHardLimit && totalChars <= effectiveHardCharLimit) {
+          return [seg];
+        }
+        const k2 = Math.max(
+          2,
+          Math.ceil(totalChars / effectiveHardCharLimit),
+          Math.ceil(n / resolvedHardLimit)
+        );
+        return solveBalancedPartition(
+          seg,
+          prefixChars,
+          k2,
+          effectiveHardCharLimit,
+          effectiveSoftCharLimit,
+          resolvedHardLimit,
+          true,
+          false,
+          1
+        );
+      }
+      const avgChars = totalChars / n;
+      const densityRatio = Math.max(0, Math.min(1, (avgChars - 18) / (34 - 18)));
+      const maxDialogueSingle = isRetranslation ? 58 : 74;
+      const maxDenseSingle = isRetranslation ? 45 : CHUNK_SINGLE_SHOT_DENSE_ITEMS;
+      const singleShotItemCap = Math.min(
+        resolvedHardLimit,
+        Math.round(maxDialogueSingle - densityRatio * (maxDialogueSingle - maxDenseSingle))
+      );
+      if (n <= singleShotItemCap && totalChars <= singleShotCharLimit && totalChars + n * 2 <= effectiveHardCharLimit) {
+        return [seg];
+      }
+      const maxDialogueMulti = isRetranslation ? 52 : 70;
+      const maxDenseMulti = isRetranslation ? 42 : 50;
+      const multiChunkItemCap = Math.min(
+        resolvedHardLimit,
+        Math.round(maxDialogueMulti - densityRatio * (maxDialogueMulti - maxDenseMulti))
+      );
+      const k = Math.max(
+        2,
+        Math.ceil(totalChars / effectiveSoftCharLimit),
+        Math.ceil(n / multiChunkItemCap)
+      );
+      return solveBalancedPartition(
+        seg,
+        prefixChars,
+        k,
+        effectiveHardCharLimit,
+        effectiveSoftCharLimit,
+        resolvedHardLimit,
+        false,
+        enableNaturalBoundary,
+        firstChunkWeightFactor
+      );
+    };
+    const outlierCharCutoff = isRetranslation ? 1250 : CHUNK_OUTLIER_CHAR_THRESHOLD;
+    const allChunks = [];
+    let normalBuffer = [];
+    for (let i = 0; i < items.length; i++) {
+      const len = lengths[i];
+      const cannotMergePrev = i === 0 || lengths[i - 1] + len > effectiveHardCharLimit;
+      const cannotMergeNext = i === items.length - 1 || len + lengths[i + 1] > effectiveHardCharLimit;
+      const isOutlier = len >= effectiveHardCharLimit || !isCustomLimits && len >= outlierCharCutoff || cannotMergePrev && cannotMergeNext;
+      if (isOutlier) {
+        if (normalBuffer.length > 0) {
+          allChunks.push(...partitionNormalSegment(normalBuffer));
+          normalBuffer = [];
+        }
+        allChunks.push([items[i]]);
+      } else {
+        normalBuffer.push(items[i]);
+      }
+    }
+    if (normalBuffer.length > 0) {
+      allChunks.push(...partitionNormalSegment(normalBuffer));
+    }
+    return allChunks;
+  }
+  var CHUNK_BUDGET_CHARACTERS, CHUNK_SOFT_BUDGET_CHARACTERS, CHUNK_SINGLE_SHOT_MAX_CHARS, CHUNK_BUDGET_MAX_ITEMS, CHUNK_SINGLE_SHOT_DENSE_ITEMS, CHUNK_HARD_MAX_ITEMS, CHUNK_OUTLIER_CHAR_THRESHOLD, CHUNK_PIGGYBACK_MAX_ITEMS, DIALOGUE_START_RE, SCENE_BREAK_CONTENT_RE;
   var init_chunker = __esm({
     "src/core/chunker.ts"() {
       "use strict";
       CHUNK_BUDGET_CHARACTERS = 2e3;
+      CHUNK_SOFT_BUDGET_CHARACTERS = 1840;
+      CHUNK_SINGLE_SHOT_MAX_CHARS = 1850;
       CHUNK_BUDGET_MAX_ITEMS = 45;
+      CHUNK_SINGLE_SHOT_DENSE_ITEMS = 54;
       CHUNK_HARD_MAX_ITEMS = 75;
-      CHUNK_DENSE_CHARS_THRESHOLD = 1300;
+      CHUNK_OUTLIER_CHAR_THRESHOLD = 1400;
+      CHUNK_PIGGYBACK_MAX_ITEMS = 68;
+      DIALOGUE_START_RE = /^[\s\u3000]*[「『（(“"']/u;
+      SCENE_BREAK_CONTENT_RE = /[\p{L}\p{N}]/u;
     }
   });
 
@@ -4633,7 +4865,9 @@
       const sepPreview = sepCount > 0 ? state.activeSeparators.slice(0, 3).join(", ") + (sepCount > 3 ? ` \uC678 ${sepCount - 3}\uAC1C` : "") : "\uC5C6\uC74C";
       const modelDesc = isRetranslation ? "\uACE0\uC131\uB2A5 \uBAA8\uB378(Gemini 3.0 Flash)" : "\uAE30\uBCF8 \uC5D4\uC9C4";
       const turboDesc = state.isTurboMode ? " \u26A1\uCF8C\uC18D\uBAA8\uB4DC" : "";
-      const chunks = createBudgetChunks(textsToTranslate, CHUNK_BUDGET_CHARACTERS, CHUNK_BUDGET_MAX_ITEMS);
+      const chunks = createBudgetChunks(textsToTranslate, CHUNK_BUDGET_CHARACTERS, CHUNK_BUDGET_MAX_ITEMS, {
+        isRetranslation
+      });
       const totalChars = textsToTranslate.reduce((sum, item) => sum + (item.text ? item.text.length : 0), 0);
       logToSidebar(
         `[\uC18C\uC124: ${state.currentNovelTitle || "\uAE30\uBCF8"}] \uCD1D ${textsToTranslate.length}\uAC1C \uBB38\uC7A5(\uC57D ${totalChars.toLocaleString()}\uC790) \uAE00\uC790 \uC218\xB7\uD1A0\uD070 \uC608\uC0B0 \uAE30\uBC18 ${chunks.length}\uAC1C \uCD5C\uC801 \uBB36\uC74C\uC73C\uB85C \uBC88\uC5ED\uC744 \uC2DC\uC791\uD569\uB2C8\uB2E4. (${modelDesc}${turboDesc}, \uAD6C\uBD84\uC120: ${sepPreview})`
@@ -4862,20 +5096,24 @@
             state.activeSeparators
           );
           if (emptyItems.length > 0) {
-            logToSidebar(
-              `[\uB9C8\uC9C0\uB9C9 \uAFB8\uB7EC\uBBF8 \uD3EC\uD568] \uBC88\uC5ED \uC644\uB8CC \uD55C\uC2A4\uD15D\uC804, \uC774\uC804 \uBC88\uC5ED \uC911 \uBE48\uCE78(\uBBF8\uC644\uB8CC) \uBB38\uC7A5 ${emptyItems.length}\uAC1C\uB97C \uB9C8\uC9C0\uB9C9 \uBC88\uC5ED\uAFB8\uB7EC\uBBF8\uC5D0 \uD3EC\uD568\uD558\uC5EC \uD568\uAED8 \uBC88\uC5ED\uD569\uB2C8\uB2E4.`
-            );
-            emptyItems.forEach((item) => {
-              const row = document.querySelector(`tr[data-pid="${item.id}"]`);
-              if (row) {
-                const cell = row.querySelector(".translated-text");
-                if (cell) {
-                  cell.textContent = "\u23F3 \uBC88\uC5ED \uC911...";
-                  cell.style.color = "";
+            const { fitted, deferred } = selectSafePiggybackItems(chunk, emptyItems);
+            if (fitted.length > 0) {
+              const deferredMsg = deferred.length > 0 ? ` (\uC608\uC0B0 \uCD08\uACFC ${deferred.length}\uAC1C\uB294 \uBCF4\uC644 \uAFB8\uB7EC\uBBF8\uB85C \uC790\uB3D9 \uC774\uAD00)` : "";
+              logToSidebar(
+                `[\uB9C8\uC9C0\uB9C9 \uAFB8\uB7EC\uBBF8 \uD3EC\uD568] \uBC88\uC5ED \uC644\uB8CC \uD55C\uC2A4\uD15D\uC804, \uC774\uC804 \uBC88\uC5ED \uC911 \uBE48\uCE78(\uBBF8\uC644\uB8CC) \uBB38\uC7A5 ${fitted.length}\uAC1C\uB97C \uC548\uC804 \uC608\uC0B0 \uB0B4\uC5D0\uC11C \uB9C8\uC9C0\uB9C9 \uBC88\uC5ED\uAFB8\uB7EC\uBBF8\uC5D0 \uD3EC\uD568\uD569\uB2C8\uB2E4.${deferredMsg}`
+              );
+              fitted.forEach((item) => {
+                const row = document.querySelector(`tr[data-pid="${item.id}"]`);
+                if (row) {
+                  const cell = row.querySelector(".translated-text");
+                  if (cell) {
+                    cell.textContent = "\u23F3 \uBC88\uC5ED \uC911...";
+                    cell.style.color = "";
+                  }
                 }
-              }
-            });
-            currentChunk = [...chunk, ...emptyItems];
+              });
+              currentChunk = [...chunk, ...fitted];
+            }
           }
         }
         const currentChunkChars = currentChunk.reduce((sum, it) => sum + (it.text ? it.text.length : 0), 0);
@@ -4965,7 +5203,19 @@
               }
             }
           });
-          await translateChunk(remainingEmptyItems, remainingEmptyItems.length);
+          const recoveryChunks = createBudgetChunks(
+            remainingEmptyItems,
+            CHUNK_BUDGET_CHARACTERS,
+            CHUNK_BUDGET_MAX_ITEMS,
+            { isRetranslation }
+          );
+          for (const [rIdx, rChunk] of recoveryChunks.entries()) {
+            if (state.isTranslationCancelled) break;
+            await translateChunk(rChunk, rChunk.length);
+            if (rIdx < recoveryChunks.length - 1 && !state.isTranslationCancelled) {
+              await new Promise((resolve) => setTimeout(resolve, 2500));
+            }
+          }
         }
       }
       sortSidebar(allParagraphs.map((p) => p.id));
