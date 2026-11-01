@@ -9,6 +9,7 @@ import time
 import datetime
 import logging
 import threading
+import zoneinfo
 from typing import Optional, Dict, Any
 from sqlalchemy import text
 from server.database import SessionLocal, engine
@@ -17,11 +18,22 @@ from server.models import ApiCallLog, Base
 logger = logging.getLogger(__name__)
 _QUOTA_LOCK = threading.Lock()
 
+try:
+    _LA_TZ = zoneinfo.ZoneInfo("America/Los_Angeles")
+    _KST_TZ = zoneinfo.ZoneInfo("Asia/Seoul")
+except Exception:
+    # tzdata 부재 환경 대비 완벽한 UTC 오프셋 fallback
+    from datetime import timezone, timedelta
+    _LA_TZ = timezone(timedelta(hours=-8))
+    _KST_TZ = timezone(timedelta(hours=9))
+
 __all__ = [
     "Base",
     "engine",
     "is_us_dst",
     "get_quota_reset_hour",
+    "get_next_quota_reset_dt",
+    "get_next_quota_reset_hour",
     "get_current_quota_window_start",
     "get_current_quota_window_start_ts",
     "get_quota_summary",
@@ -33,31 +45,81 @@ __all__ = [
 DEFAULT_QUOTA_LIMIT = 500
 
 
+def _to_kst_datetime(dt: Optional[datetime.datetime] = None) -> datetime.datetime:
+    """입력 datetime을 KST 타임존(tz-aware) 객체로 표준화."""
+    if dt is None:
+        return datetime.datetime.now(_KST_TZ)
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=_KST_TZ)
+    return dt.astimezone(_KST_TZ)
+
+
 def is_us_dst(dt: Optional[datetime.datetime] = None) -> bool:
     """
-    미국 서머타임(Daylight Saving Time, PDT) 적용 여부 판별.
-    시작: 3월 둘째 주 일요일 02:00
-    종료: 11월 첫째 주 일요일 02:00
+    미국 서머타임(Daylight Saving Time, PDT) 적용 여부 실시간 판별.
+    IANA 타임존(America/Los_Angeles) 기준 실제 일광절약시간 적용 여부(dst != 0)를 판정합니다.
     """
-    if dt is None:
-        dt = datetime.datetime.now()
-    year = dt.year
+    kst_dt = _to_kst_datetime(dt)
+    la_dt = kst_dt.astimezone(_LA_TZ)
+    dst = la_dt.dst()
+    if dst is not None:
+        return dst.total_seconds() > 0
+
+    # Fallback (tzdata가 없는 초경량 환경): UTC 기준 정확한 서머타임 룰
+    # 시작: 3월 둘째 일요일 02:00 PST (10:00 UTC)
+    # 종료: 11월 첫째 일요일 02:00 PDT (09:00 UTC)
+    utc_dt = kst_dt.astimezone(datetime.timezone.utc)
+    year = utc_dt.year
     first_sun_mar = (6 - datetime.date(year, 3, 1).weekday()) % 7 + 1
-    dst_start = datetime.datetime(year, 3, first_sun_mar + 7, 2, 0)
-
+    second_sun_mar = first_sun_mar + 7
     first_sun_nov = (6 - datetime.date(year, 11, 1).weekday()) % 7 + 1
-    dst_end = datetime.datetime(year, 11, first_sun_nov, 2, 0)
 
-    return dst_start <= dt < dst_end
+    dst_start_utc = datetime.datetime(year, 3, second_sun_mar, 10, 0, tzinfo=datetime.timezone.utc)
+    dst_end_utc = datetime.datetime(year, 11, first_sun_nov, 9, 0, tzinfo=datetime.timezone.utc)
+    return dst_start_utc <= utc_dt < dst_end_utc
+
+
+def get_current_quota_window_start(now: Optional[datetime.datetime] = None) -> datetime.datetime:
+    """
+    현재 유효한 Gemini API 일일 쿼터 주기의 시작 시각(KST, tz-naive)을 반환합니다.
+    미국 태평양(America/Los_Angeles) 당일 자정(00:00:00)을 KST로 변환하여,
+    서머타임 시작(3월) 및 해제(11월) 전환일에도 1초 오차 없이 정확한 시작점을 산출합니다.
+    """
+    kst_dt = _to_kst_datetime(now)
+    la_dt = kst_dt.astimezone(_LA_TZ)
+    la_midnight = la_dt.replace(hour=0, minute=0, second=0, microsecond=0)
+    return la_midnight.astimezone(_KST_TZ).replace(tzinfo=None)
+
+
+def get_current_quota_window_start_ts(now: Optional[datetime.datetime] = None) -> int:
+    """현재 쿼터 주기의 시작 시각을 Unix timestamp(초)로 반환합니다."""
+    return int(get_current_quota_window_start(now).timestamp())
+
+
+def get_next_quota_reset_dt(now: Optional[datetime.datetime] = None) -> datetime.datetime:
+    """
+    다음 Gemini API 일일 쿼터 리셋 예정 시각(KST, tz-naive)을 반환합니다.
+    미국 태평양(America/Los_Angeles) 익일 자정(00:00:00)을 KST로 변환합니다.
+    """
+    kst_dt = _to_kst_datetime(now)
+    la_dt = kst_dt.astimezone(_LA_TZ)
+    la_today_midnight = la_dt.replace(hour=0, minute=0, second=0, microsecond=0)
+    la_tomorrow_midnight = (la_today_midnight + datetime.timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    return la_tomorrow_midnight.astimezone(_KST_TZ).replace(tzinfo=None)
+
+
+def get_next_quota_reset_hour(now: Optional[datetime.datetime] = None) -> int:
+    """다음 Gemini API 쿼터 리셋 예정 시각의 한국 시각 시간(16 또는 17)을 반환합니다."""
+    return get_next_quota_reset_dt(now).hour
 
 
 def get_quota_reset_hour(dt: Optional[datetime.datetime] = None) -> int:
     """
-    Gemini API 일일 쿼터 초기화 시점(미국 태평양 자정)의 한국 시간(KST) 시간(hour) 반환:
-    - 서머타임(PDT, UTC-7): 한국(UTC+9) 기준 오후 4시 (16시)
-    - 표준시(PST, UTC-8): 한국(UTC+9) 기준 오후 5시 (17시)
+    현재 유효한 Gemini API 일일 쿼터 주기의 시작 기준 한국 시각 시간(16 또는 17) 반환:
+    - 서머타임 윈도우(PDT): 한국 오후 4시 (16시)
+    - 표준시 윈도우(PST): 한국 오후 5시 (17시)
     """
-    return 16 if is_us_dst(dt) else 17
+    return get_current_quota_window_start(dt).hour
 
 
 def get_today_start(now: Optional[datetime.datetime] = None) -> datetime.datetime:
@@ -70,27 +132,6 @@ def get_today_start(now: Optional[datetime.datetime] = None) -> datetime.datetim
 def get_today_start_ts(now: Optional[datetime.datetime] = None) -> int:
     """오늘 한국 시간(KST) 자정(00:00:00)의 Unix timestamp(초)를 반환합니다."""
     return int(get_today_start(now).timestamp())
-
-
-def get_current_quota_window_start(now: Optional[datetime.datetime] = None) -> datetime.datetime:
-    """
-    현재 유효한 쿼터 주기의 시작 시각(KST)을 반환합니다.
-    - 현재 시각이 오늘 reset_hour(16시 또는 17시) 이상인 경우 -> 오늘 reset_hour
-    - 현재 시각이 오늘 reset_hour 미만인 경우 -> 어제 reset_hour
-    """
-    if now is None:
-        now = datetime.datetime.now()
-    reset_hour = get_quota_reset_hour(now)
-    today_reset = now.replace(hour=reset_hour, minute=0, second=0, microsecond=0)
-    if now >= today_reset:
-        return today_reset
-    else:
-        return today_reset - datetime.timedelta(days=1)
-
-
-def get_current_quota_window_start_ts(now: Optional[datetime.datetime] = None) -> int:
-    """현재 쿼터 주기의 시작 시각을 Unix timestamp(초)로 반환합니다."""
-    return int(get_current_quota_window_start(now).timestamp())
 
 
 def record_api_call(model: Optional[str] = None, status_code: int = 200) -> None:
@@ -179,7 +220,9 @@ def get_quota_summary(quota_limit: int = DEFAULT_QUOTA_LIMIT) -> Dict[str, Any]:
     - quota_limit: 기본 모델 할당량 (기본 500)
     - percentage: 사용 백분율 (최대 100.0%)
     - raw_percentage: 초과분 포함 순수 백분율
-    - quota_reset_hour: 초기화 시각 (16 또는 17)
+    - quota_reset_hour: 현재 주기 시작 기준 초기화 시각 (16 또는 17)
+    - next_reset_hour: 다음 쿼터 리셋 예정 시각 (16 또는 17)
+    - next_reset_ts: 다음 쿼터 리셋 예정 Unix timestamp
     - window_start_ts: 현재 주기 시작 timestamp
     - today_start_ts: 현재 주기 시작 timestamp (16시/17시 기준)
     - today_translations_count: 현재 주기 내 번역된 문단 수
@@ -191,6 +234,9 @@ def get_quota_summary(quota_limit: int = DEFAULT_QUOTA_LIMIT) -> Dict[str, Any]:
     raw_pct = round((calls / limit) * 100, 1)
     pct = min(raw_pct, 100.0)
     reset_hour = get_quota_reset_hour()
+    next_reset_dt = get_next_quota_reset_dt()
+    next_reset_hour = next_reset_dt.hour
+    next_reset_ts = int(next_reset_dt.timestamp())
     window_start_ts = get_current_quota_window_start_ts()
     trans_count = get_today_translations_count()
     episodes_count = get_today_episodes_count()
@@ -201,6 +247,8 @@ def get_quota_summary(quota_limit: int = DEFAULT_QUOTA_LIMIT) -> Dict[str, Any]:
         "percentage": pct,
         "raw_percentage": raw_pct,
         "quota_reset_hour": reset_hour,
+        "next_reset_hour": next_reset_hour,
+        "next_reset_ts": next_reset_ts,
         "window_start_ts": window_start_ts,
         "today_start_ts": window_start_ts,
         "today_translations_count": trans_count,

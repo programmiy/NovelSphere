@@ -1753,15 +1753,44 @@
 
   // src/core/turbo.ts
   function isUsDstRule(d = /* @__PURE__ */ new Date()) {
-    const year = d.getFullYear();
-    const march1 = new Date(year, 2, 1);
-    const firstSunMarch = (7 - march1.getDay()) % 7 + 1;
+    const utcMs = d.getTime();
+    const year = new Date(utcMs).getUTCFullYear();
+    const march1 = new Date(Date.UTC(year, 2, 1));
+    const firstSunMarch = (7 - march1.getUTCDay()) % 7 + 1;
     const secondSunMarch = firstSunMarch + 7;
-    const dstStart = new Date(year, 2, secondSunMarch, 2, 0, 0);
-    const nov1 = new Date(year, 10, 1);
-    const firstSunNov = (7 - nov1.getDay()) % 7 + 1;
-    const dstEnd = new Date(year, 10, firstSunNov, 2, 0, 0);
-    return d >= dstStart && d < dstEnd;
+    const dstStartUtc = Date.UTC(year, 2, secondSunMarch, 10, 0, 0);
+    const nov1 = new Date(Date.UTC(year, 10, 1));
+    const firstSunNov = (7 - nov1.getUTCDay()) % 7 + 1;
+    const dstEndUtc = Date.UTC(year, 10, firstSunNov, 9, 0, 0);
+    return utcMs >= dstStartUtc && utcMs < dstEndUtc;
+  }
+  function getNextLaMidnightTimestamp(now = /* @__PURE__ */ new Date()) {
+    try {
+      const currentLaDate = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "America/Los_Angeles"
+      }).format(now);
+      let low = now.getTime();
+      let high = now.getTime() + 27 * 3600 * 1e3;
+      while (high - low > 1e3) {
+        const mid = Math.floor((low + high) / 2);
+        const midDate = new Intl.DateTimeFormat("en-CA", {
+          timeZone: "America/Los_Angeles"
+        }).format(new Date(mid));
+        if (midDate === currentLaDate) {
+          low = mid;
+        } else {
+          high = mid;
+        }
+      }
+      return Math.ceil(high / 1e3) * 1e3;
+    } catch (_) {
+      const target = new Date(now.getTime());
+      target.setHours(isUsDstRule(now) ? 16 : 17, 0, 0, 0);
+      if (now.getTime() >= target.getTime()) {
+        target.setDate(target.getDate() + 1);
+      }
+      return target.getTime();
+    }
   }
   function detectCutoffInfo(turboCutoffHour = null) {
     if (turboCutoffHour === 16) {
@@ -1792,12 +1821,15 @@
     }
   }
   function calculateNextCutoffTimestamp(cutoffHour) {
-    const now = /* @__PURE__ */ new Date();
-    const target = new Date(now.getFullYear(), now.getMonth(), now.getDate(), cutoffHour, 0, 0, 0);
-    if (now.getTime() >= target.getTime()) {
-      target.setDate(target.getDate() + 1);
+    if (cutoffHour === 16 || cutoffHour === 17) {
+      const now = /* @__PURE__ */ new Date();
+      const target = new Date(now.getFullYear(), now.getMonth(), now.getDate(), cutoffHour, 0, 0, 0);
+      if (now.getTime() >= target.getTime()) {
+        target.setDate(target.getDate() + 1);
+      }
+      return target.getTime();
     }
-    return target.getTime();
+    return getNextLaMidnightTimestamp(/* @__PURE__ */ new Date());
   }
   function checkCutoffTimeReached(turboCutoffHour, turboTargetTimestamp) {
     let target = turboTargetTimestamp;
@@ -1808,19 +1840,36 @@
     return Date.now() >= target;
   }
   function getCurrentQuotaWindow(now = /* @__PURE__ */ new Date(), turboCutoffHour = null) {
-    const cutoffHour = detectCutoffInfo(turboCutoffHour).hour;
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, "0");
-    const day = String(now.getDate()).padStart(2, "0");
-    const hour = now.getHours();
-    if (hour < cutoffHour) {
-      const prev = new Date(now.getTime() - 24 * 3600 * 1e3);
-      const pYear = prev.getFullYear();
-      const pMonth = String(prev.getMonth() + 1).padStart(2, "0");
-      const pDay = String(prev.getDate()).padStart(2, "0");
-      return `${pYear}-${pMonth}-${pDay}_${cutoffHour}`;
+    if (turboCutoffHour === 16 || turboCutoffHour === 17) {
+      const year = now.getFullYear();
+      const month = String(now.getMonth() + 1).padStart(2, "0");
+      const day = String(now.getDate()).padStart(2, "0");
+      const hour = now.getHours();
+      if (hour < turboCutoffHour) {
+        const prev = new Date(now.getTime() - 24 * 3600 * 1e3);
+        const pYear = prev.getFullYear();
+        const pMonth = String(prev.getMonth() + 1).padStart(2, "0");
+        const pDay = String(prev.getDate()).padStart(2, "0");
+        return `${pYear}-${pMonth}-${pDay}_${turboCutoffHour}`;
+      }
+      return `${year}-${month}-${day}_${turboCutoffHour}`;
     }
-    return `${year}-${month}-${day}_${cutoffHour}`;
+    try {
+      const laDate = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "America/Los_Angeles"
+      }).format(now);
+      const info = detectCutoffInfo(turboCutoffHour);
+      return `${laDate}_${info.hour}`;
+    } catch (_) {
+      const info = detectCutoffInfo(turboCutoffHour);
+      const cutoffHour = info.hour;
+      const hour = now.getHours();
+      if (hour < cutoffHour) {
+        const prev = new Date(now.getTime() - 24 * 3600 * 1e3);
+        return `${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, "0")}-${String(prev.getDate()).padStart(2, "0")}_${cutoffHour}`;
+      }
+      return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}_${cutoffHour}`;
+    }
   }
   var init_turbo = __esm({
     "src/core/turbo.ts"() {

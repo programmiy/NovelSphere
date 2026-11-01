@@ -24,6 +24,8 @@ from server.notifications import notify_api_error
 from server.quota import (
     is_us_dst,
     get_quota_reset_hour,
+    get_next_quota_reset_dt,
+    get_next_quota_reset_hour,
     get_current_quota_window_start_ts,
 )
 from server.rule_classifier import (
@@ -68,31 +70,44 @@ logger = logging.getLogger(__name__)
 # --- Global State for Quota Reset Stop Condition ---
 class _QuotaStopState:
     """
-    17시 안전 중단 플래그를 스레드 안전하게 관리하는 상태 컨테이너.
-    모든 읽기/쓰기는 반드시 self.lock을 획득한 상태에서 수행됩니다.
+    일일 쿼터 초기화(16시/17시) 정각 도달 시 안전 중단 플래그를 스레드 안전하게 관리하는 상태 컨테이너.
+    서머타임 시작(3월) 및 해제(11월) 전환일에도 정확한 리셋 타임스탬프 기준으로 정각 진입 시 1회 중단합니다.
     """
     def __init__(self):
         self.lock = threading.Lock()
-        self._started_before_cutoff = False
+        self._target_reset_ts = 0
+        self._armed = False
 
-    def check_and_update(self, now: datetime.datetime, cutoff_hour: int) -> bool:
+    def check_and_update(self, now: datetime.datetime, next_reset_dt: datetime.datetime) -> bool:
         """
-        현재 시간을 기준으로 플래그를 갱신하고, 번역 중단 여부를 반환합니다.
-        반환값: True이면 503을 던져야 함.
+        현재 시각과 다음 리셋 정각 시각(next_reset_dt)을 비교하여 정각 중단 여부를 반환합니다.
+        - 리셋 시각 1시간 전 이내에 번역 중이면 무장(_armed = True).
+        - 리셋 시각 이상이 되는 순간 최초 1회 중단(True 반환) 후 무장 해제.
         """
+        now_ts = int(now.timestamp())
+        reset_ts = int(next_reset_dt.timestamp())
+
         with self.lock:
-            if now.hour < (cutoff_hour - 1):
-                self._started_before_cutoff = False
-            if now.hour < cutoff_hour:
-                self._started_before_cutoff = True
-            if self._started_before_cutoff and now.hour >= cutoff_hour:
-                self._started_before_cutoff = False
+            if self._target_reset_ts != reset_ts:
+                self._target_reset_ts = reset_ts
+                self._armed = False
+
+            # 리셋 60분 전부터 리셋 직전까지 번역 중이면 무장
+            if (reset_ts - 3600) <= now_ts < reset_ts:
+                self._armed = True
+            elif now_ts < (reset_ts - 3600) or now_ts >= (reset_ts + 600):
+                self._armed = False
+
+            # 무장된 상태에서 정각 타임스탬프 도달 시 즉시 1회 중단 발동
+            if self._armed and now_ts >= reset_ts:
+                self._armed = False
                 return True
         return False
 
     def reset(self):
         with self.lock:
-            self._started_before_cutoff = False
+            self._target_reset_ts = 0
+            self._armed = False
 
 _stop_state = _QuotaStopState()
 
@@ -209,10 +224,11 @@ def _post_process_translated_text(item_text: str, raw_trans: str) -> tuple:
 )
 def translate_texts(req: TranslateRequest, db: Session = Depends(get_db)):
     now = datetime.datetime.now()
-    cutoff_hour = get_quota_reset_hour(now)
+    next_reset_dt = get_next_quota_reset_dt(now)
+    cutoff_hour = next_reset_dt.hour
 
     # --- Quota Reset Boundary-Crossing Logic (Thread-safe via _QuotaStopState) ---
-    if _stop_state.check_and_update(now, cutoff_hour):
+    if _stop_state.check_and_update(now, next_reset_dt):
         display_hour = cutoff_hour if cutoff_hour <= 12 else cutoff_hour - 12
         logger.critical(f"초기화 시간(오후 {display_hour}시)이 되어, 이전에 시작된 자동 번역 프로세스를 중지합니다.")
         raise HTTPException(
