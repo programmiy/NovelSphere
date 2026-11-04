@@ -109,11 +109,157 @@ export function togglePageApplyStatus(): void {
   setPageApplyStatus(!state.isPageApplied, true);
 }
 
+
+let pillElement: HTMLElement | null = null;
+let currentHoverPid: string | null = null;
+let pillHideTimer: ReturnType<typeof setTimeout> | null = null;
+
+export function ensureParagraphActionPill(): HTMLElement {
+  if (pillElement && document.body.contains(pillElement)) {
+    return pillElement;
+  }
+
+  pillElement = document.createElement('div');
+  pillElement.id = 'lanovel-p-action-pill';
+  pillElement.className = 'lanovel-p-action-pill';
+  pillElement.innerHTML = `
+    <div class="pill-btn-group">
+      <button id="lanovel-pill-exclude-before-btn" class="pill-exclude-btn pill-btn-before" title="첫 문단부터 이 문단까지 (위쪽 머리말/공지) 번역 제외">
+        <span class="pill-btn-icon">⬆️</span>
+        <span class="pill-btn-text">위로 제외</span>
+      </button>
+      <button id="lanovel-pill-exclude-after-btn" class="pill-exclude-btn pill-btn-after" title="이 문단부터 본문 끝까지 (아래쪽 후기/사설) 번역 제외">
+        <span class="pill-btn-icon">⬇️</span>
+        <span class="pill-btn-text">아래로 제외</span>
+      </button>
+      <button id="lanovel-pill-restore-btn" class="pill-exclude-btn pill-btn-restore is-excluded" style="display: none;" title="이 문단 번역 제외 해제 (복원)">
+        <span class="pill-btn-icon">↩️</span>
+        <span class="pill-btn-text">제외 해제</span>
+      </button>
+    </div>
+  `;
+
+  document.body.appendChild(pillElement);
+
+  const beforeBtn = pillElement.querySelector('#lanovel-pill-exclude-before-btn') as HTMLButtonElement | null;
+  const afterBtn = pillElement.querySelector('#lanovel-pill-exclude-after-btn') as HTMLButtonElement | null;
+  const restoreBtn = pillElement.querySelector('#lanovel-pill-restore-btn') as HTMLButtonElement | null;
+
+  if (beforeBtn) {
+    beforeBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      if (!currentHoverPid) return;
+      const targetPid = currentHoverPid;
+      const { excludeParagraphAndBefore } = await import('./row_actions');
+      await excludeParagraphAndBefore(targetPid);
+      updatePillState(targetPid, true);
+    });
+  }
+
+  if (afterBtn) {
+    afterBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      if (!currentHoverPid) return;
+      const targetPid = currentHoverPid;
+      const { excludeParagraphAndAfter } = await import('./row_actions');
+      await excludeParagraphAndAfter(targetPid);
+      updatePillState(targetPid, true);
+    });
+  }
+
+  if (restoreBtn) {
+    restoreBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      if (!currentHoverPid) return;
+      const targetPid = currentHoverPid;
+      const { restoreExcludedParagraphAndAfter } = await import('./row_actions');
+      await restoreExcludedParagraphAndAfter(targetPid);
+      updatePillState(targetPid, false);
+    });
+  }
+
+  pillElement.addEventListener('mouseenter', () => {
+    if (pillHideTimer) {
+      clearTimeout(pillHideTimer);
+      pillHideTimer = null;
+    }
+  });
+
+  pillElement.addEventListener('mouseleave', () => {
+    pillHideTimer = setTimeout(() => {
+      if (pillElement) pillElement.style.display = 'none';
+      currentHoverPid = null;
+    }, 250);
+  });
+
+  return pillElement;
+}
+
+function updatePillState(pid: string, isExcluded: boolean): void {
+  if (!pillElement) return;
+  const beforeBtn = pillElement.querySelector('#lanovel-pill-exclude-before-btn') as HTMLElement | null;
+  const afterBtn = pillElement.querySelector('#lanovel-pill-exclude-after-btn') as HTMLElement | null;
+  const restoreBtn = pillElement.querySelector('#lanovel-pill-restore-btn') as HTMLElement | null;
+
+  if (isExcluded) {
+    if (beforeBtn) beforeBtn.style.display = 'none';
+    if (afterBtn) afterBtn.style.display = 'none';
+    if (restoreBtn) restoreBtn.style.display = 'inline-flex';
+  } else {
+    if (beforeBtn) beforeBtn.style.display = 'inline-flex';
+    if (afterBtn) afterBtn.style.display = 'inline-flex';
+    if (restoreBtn) restoreBtn.style.display = 'none';
+  }
+}
+
+export function positionPillForParagraph(p: HTMLElement): void {
+  const pill = ensureParagraphActionPill();
+  currentHoverPid = p.id;
+
+  const isExcluded =
+    state.manualExcludedPids.has(p.id) ||
+    Boolean(p.textContent && state.exclusionSet.has(p.textContent.trim()));
+  updatePillState(p.id, isExcluded);
+
+  const rect = p.getBoundingClientRect();
+  const scrollTop = window.scrollY || document.documentElement.scrollTop;
+  const scrollLeft = window.scrollX || document.documentElement.scrollLeft;
+
+  // 문단 오른쪽 끝 상단에 자연스럽게 플로팅 (버튼 그룹 너비 고려)
+  const pillTop = scrollTop + rect.top - 16;
+  const pillLeft = scrollLeft + Math.max(rect.left + 5, rect.right - 170);
+
+  pill.style.top = `${Math.max(10, pillTop)}px`;
+  pill.style.left = `${pillLeft}px`;
+  pill.style.display = 'block';
+
+  if (pillHideTimer) {
+    clearTimeout(pillHideTimer);
+    pillHideTimer = null;
+  }
+}
+
 export function setupParagraphInteraction(): void {
   const paragraphs = getTargetParagraphs();
   paragraphs.forEach((p) => {
     if (p.dataset.lanovelLinked) return;
     p.dataset.lanovelLinked = 'true';
+
+    p.addEventListener('mouseenter', () => {
+      positionPillForParagraph(p);
+    });
+
+    p.addEventListener('mouseleave', () => {
+      pillHideTimer = setTimeout(() => {
+        if (pillElement && !pillElement.matches(':hover')) {
+          pillElement.style.display = 'none';
+          currentHoverPid = null;
+        }
+      }, 250);
+    });
 
     p.addEventListener('click', async (e: MouseEvent) => {
       // ⚡ Alt + 클릭: 해당 문단부터 본문 끝까지 번역 제외/복원 즉시 토글

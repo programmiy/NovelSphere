@@ -3,7 +3,7 @@ import { state } from '../core/state';
 import { TranslationRecord } from '../types/novel';
 import { detectCutoffInfo, calculateNextCutoffTimestamp } from '../core/turbo';
 import { checkIsVerbatimOrParaphrased } from '../core/filters';
-import { saveSingleTranslation, retranslateSingleRow, excludeParagraphAndAfter, restoreExcludedParagraphAndAfter } from '../core/row_actions';
+import { saveSingleTranslation, retranslateSingleRow, excludeParagraphAndBefore, excludeParagraphAndAfter, restoreExcludedParagraphAndAfter } from '../core/row_actions';
 import { updateReviewCardTranslation } from './review_panel';
 import { bindSeparatorPanelEvents } from './separator_panel';
 import { toggleQuickJumpFromSidebar } from './toc_quick_jump';
@@ -395,6 +395,14 @@ function bindRowEvents(row: HTMLTableRowElement, pid: string, originalText: stri
     });
   }
 
+  const excludeBeforeBtn = row.querySelector<HTMLButtonElement>('.exclude-before-btn');
+  if (excludeBeforeBtn) {
+    excludeBeforeBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      excludeParagraphAndBefore(pid);
+    });
+  }
+
   const excludeBtn = row.querySelector<HTMLButtonElement>('.exclude-after-btn');
   if (excludeBtn) {
     excludeBtn.addEventListener('click', (e) => {
@@ -479,7 +487,8 @@ export function addEntryToSidebar(t: TranslationRecord): void {
       <div class="action-btns">
         <button class="save-btn" disabled title="수정한 번역 저장">저장</button>
         <button class="retranslate-row-btn" title="이 문장만 즉시 재번역">🔄</button>
-        <button class="exclude-after-btn" title="이 문단부터 본문 끝까지 번역 제외">✂️</button>
+        <button class="exclude-before-btn" title="첫 문단부터 이 문단까지 (위쪽 머리말) 번역 제외">⬆️</button>
+        <button class="exclude-after-btn" title="이 문단부터 본문 끝까지 (아래쪽 후기) 번역 제외">⬇️</button>
       </div>
     </td>
   `;
@@ -500,13 +509,21 @@ export function addPlaceholderRows(items: Array<{ id: string; text: string }>): 
     if (isReviewTarget) row.classList.add('review-target-row');
     const reviewBadgeHtml = isReviewTarget ? `<span class="review-badge">⚡재검수</span>` : '';
 
+    const isExcluded = state.manualExcludedPids.has(item.id) || state.exclusionSet.has(item.text);
+    if (isExcluded) {
+      row.classList.add('lanovel-excluded-row');
+      row.dataset.userDeleted = 'true';
+    }
+
     row.innerHTML = `
       <td class="original-text">${reviewBadgeHtml}${escapeHtml(item.text)}</td>
-      <td class="translated-text">⏳ 번역 중...</td>
+      <td class="translated-text"${isExcluded ? ' style="color:#ef4444;"' : ''}>${isExcluded ? '🚫 [번역 제외됨]' : '⏳ 번역 중...'}</td>
       <td>
         <div class="action-btns">
           <button class="save-btn" disabled title="수정한 번역 저장">저장</button>
           <button class="retranslate-row-btn" disabled title="이 문장만 즉시 재번역">🔄</button>
+          <button class="exclude-before-btn"${isExcluded ? ' style="display:none;"' : ''} title="첫 문단부터 이 문단까지 (위쪽 머리말) 번역 제외">⬆️</button>
+          <button class="exclude-after-btn${isExcluded ? ' is-excluded' : ''}" title="${isExcluded ? '이 문단 번역 제외 해제 (복원)' : '이 문단부터 본문 끝까지 (아래쪽 후기) 번역 제외'}">${isExcluded ? '↩️' : '⬇️'}</button>
         </div>
       </td>
     `;
@@ -531,6 +548,7 @@ export function updateSidebarWithTranslations(
       row = tableBody.insertRow(0);
       row.dataset.pid = item.id;
       if (isReviewTarget) row.classList.add('review-target-row');
+      const isExcluded = state.manualExcludedPids.has(item.id) || state.exclusionSet.has(item.original);
       row.innerHTML = `
         <td class="original-text">${reviewBadgeHtml}${escapeHtml(item.original)}</td>
         <td class="translated-text" contenteditable="true">${escapeHtml(item.translated)}</td>
@@ -538,6 +556,8 @@ export function updateSidebarWithTranslations(
           <div class="action-btns">
             <button class="save-btn" disabled title="수정한 번역 저장">저장</button>
             <button class="retranslate-row-btn" title="이 문장만 즉시 재번역">🔄</button>
+            <button class="exclude-before-btn"${isExcluded ? ' style="display:none;"' : ''} title="첫 문단부터 이 문단까지 (위쪽 머리말) 번역 제외">⬆️</button>
+            <button class="exclude-after-btn${isExcluded ? ' is-excluded' : ''}" title="${isExcluded ? '이 문단 번역 제외 해제 (복원)' : '이 문단부터 본문 끝까지 (아래쪽 후기) 번역 제외'}">${isExcluded ? '↩️' : '⬇️'}</button>
           </div>
         </td>
       `;
@@ -553,6 +573,25 @@ export function updateSidebarWithTranslations(
       if (saveBtn) saveBtn.disabled = true;
       const retranslateBtn = row.querySelector<HTMLButtonElement>('.retranslate-row-btn');
       if (retranslateBtn) retranslateBtn.disabled = false;
+      let excludeBtn = row.querySelector<HTMLButtonElement>('.exclude-after-btn');
+      if (!excludeBtn) {
+        const actionBtns = row.querySelector('.action-btns');
+        if (actionBtns) {
+          excludeBtn = document.createElement('button');
+          excludeBtn.className = 'exclude-after-btn';
+          excludeBtn.textContent = '✂️';
+          excludeBtn.title = '이 문단부터 본문 끝까지 번역 제외';
+          actionBtns.appendChild(excludeBtn);
+          excludeBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (state.manualExcludedPids.has(item.id) || excludeBtn?.classList.contains('is-excluded')) {
+              restoreExcludedParagraphAndAfter(item.id);
+            } else {
+              excludeParagraphAndAfter(item.id);
+            }
+          });
+        }
+      }
     }
 
     if (isReviewTarget) {

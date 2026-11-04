@@ -2561,11 +2561,129 @@
       }
     }
   }
+  function ensureParagraphActionPill() {
+    if (pillElement && document.body.contains(pillElement)) {
+      return pillElement;
+    }
+    pillElement = document.createElement("div");
+    pillElement.id = "lanovel-p-action-pill";
+    pillElement.className = "lanovel-p-action-pill";
+    pillElement.innerHTML = `
+    <div class="pill-btn-group">
+      <button id="lanovel-pill-exclude-before-btn" class="pill-exclude-btn pill-btn-before" title="\uCCAB \uBB38\uB2E8\uBD80\uD130 \uC774 \uBB38\uB2E8\uAE4C\uC9C0 (\uC704\uCABD \uBA38\uB9AC\uB9D0/\uACF5\uC9C0) \uBC88\uC5ED \uC81C\uC678">
+        <span class="pill-btn-icon">\u2B06\uFE0F</span>
+        <span class="pill-btn-text">\uC704\uB85C \uC81C\uC678</span>
+      </button>
+      <button id="lanovel-pill-exclude-after-btn" class="pill-exclude-btn pill-btn-after" title="\uC774 \uBB38\uB2E8\uBD80\uD130 \uBCF8\uBB38 \uB05D\uAE4C\uC9C0 (\uC544\uB798\uCABD \uD6C4\uAE30/\uC0AC\uC124) \uBC88\uC5ED \uC81C\uC678">
+        <span class="pill-btn-icon">\u2B07\uFE0F</span>
+        <span class="pill-btn-text">\uC544\uB798\uB85C \uC81C\uC678</span>
+      </button>
+      <button id="lanovel-pill-restore-btn" class="pill-exclude-btn pill-btn-restore is-excluded" style="display: none;" title="\uC774 \uBB38\uB2E8 \uBC88\uC5ED \uC81C\uC678 \uD574\uC81C (\uBCF5\uC6D0)">
+        <span class="pill-btn-icon">\u21A9\uFE0F</span>
+        <span class="pill-btn-text">\uC81C\uC678 \uD574\uC81C</span>
+      </button>
+    </div>
+  `;
+    document.body.appendChild(pillElement);
+    const beforeBtn = pillElement.querySelector("#lanovel-pill-exclude-before-btn");
+    const afterBtn = pillElement.querySelector("#lanovel-pill-exclude-after-btn");
+    const restoreBtn = pillElement.querySelector("#lanovel-pill-restore-btn");
+    if (beforeBtn) {
+      beforeBtn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        if (!currentHoverPid) return;
+        const targetPid = currentHoverPid;
+        const { excludeParagraphAndBefore: excludeParagraphAndBefore2 } = await Promise.resolve().then(() => (init_row_actions(), row_actions_exports));
+        await excludeParagraphAndBefore2(targetPid);
+        updatePillState(targetPid, true);
+      });
+    }
+    if (afterBtn) {
+      afterBtn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        if (!currentHoverPid) return;
+        const targetPid = currentHoverPid;
+        const { excludeParagraphAndAfter: excludeParagraphAndAfter2 } = await Promise.resolve().then(() => (init_row_actions(), row_actions_exports));
+        await excludeParagraphAndAfter2(targetPid);
+        updatePillState(targetPid, true);
+      });
+    }
+    if (restoreBtn) {
+      restoreBtn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        if (!currentHoverPid) return;
+        const targetPid = currentHoverPid;
+        const { restoreExcludedParagraphAndAfter: restoreExcludedParagraphAndAfter2 } = await Promise.resolve().then(() => (init_row_actions(), row_actions_exports));
+        await restoreExcludedParagraphAndAfter2(targetPid);
+        updatePillState(targetPid, false);
+      });
+    }
+    pillElement.addEventListener("mouseenter", () => {
+      if (pillHideTimer) {
+        clearTimeout(pillHideTimer);
+        pillHideTimer = null;
+      }
+    });
+    pillElement.addEventListener("mouseleave", () => {
+      pillHideTimer = setTimeout(() => {
+        if (pillElement) pillElement.style.display = "none";
+        currentHoverPid = null;
+      }, 250);
+    });
+    return pillElement;
+  }
+  function updatePillState(pid, isExcluded) {
+    if (!pillElement) return;
+    const beforeBtn = pillElement.querySelector("#lanovel-pill-exclude-before-btn");
+    const afterBtn = pillElement.querySelector("#lanovel-pill-exclude-after-btn");
+    const restoreBtn = pillElement.querySelector("#lanovel-pill-restore-btn");
+    if (isExcluded) {
+      if (beforeBtn) beforeBtn.style.display = "none";
+      if (afterBtn) afterBtn.style.display = "none";
+      if (restoreBtn) restoreBtn.style.display = "inline-flex";
+    } else {
+      if (beforeBtn) beforeBtn.style.display = "inline-flex";
+      if (afterBtn) afterBtn.style.display = "inline-flex";
+      if (restoreBtn) restoreBtn.style.display = "none";
+    }
+  }
+  function positionPillForParagraph(p) {
+    const pill = ensureParagraphActionPill();
+    currentHoverPid = p.id;
+    const isExcluded = state.manualExcludedPids.has(p.id) || Boolean(p.textContent && state.exclusionSet.has(p.textContent.trim()));
+    updatePillState(p.id, isExcluded);
+    const rect = p.getBoundingClientRect();
+    const scrollTop = window.scrollY || document.documentElement.scrollTop;
+    const scrollLeft = window.scrollX || document.documentElement.scrollLeft;
+    const pillTop = scrollTop + rect.top - 16;
+    const pillLeft = scrollLeft + Math.max(rect.left + 5, rect.right - 170);
+    pill.style.top = `${Math.max(10, pillTop)}px`;
+    pill.style.left = `${pillLeft}px`;
+    pill.style.display = "block";
+    if (pillHideTimer) {
+      clearTimeout(pillHideTimer);
+      pillHideTimer = null;
+    }
+  }
   function setupParagraphInteraction() {
     const paragraphs = getTargetParagraphs();
     paragraphs.forEach((p) => {
       if (p.dataset.lanovelLinked) return;
       p.dataset.lanovelLinked = "true";
+      p.addEventListener("mouseenter", () => {
+        positionPillForParagraph(p);
+      });
+      p.addEventListener("mouseleave", () => {
+        pillHideTimer = setTimeout(() => {
+          if (pillElement && !pillElement.matches(":hover")) {
+            pillElement.style.display = "none";
+            currentHoverPid = null;
+          }
+        }, 250);
+      });
       p.addEventListener("click", async (e) => {
         if (e.altKey) {
           e.preventDefault();
@@ -2639,6 +2757,7 @@
     }
     return true;
   }
+  var pillElement, currentHoverPid, pillHideTimer;
   var init_dom_applier = __esm({
     "src/core/dom_applier.ts"() {
       "use strict";
@@ -2646,6 +2765,9 @@
       init_state();
       init_filters();
       init_sidebar();
+      pillElement = null;
+      currentHoverPid = null;
+      pillHideTimer = null;
     }
   });
 
@@ -2653,6 +2775,7 @@
   var row_actions_exports = {};
   __export(row_actions_exports, {
     excludeParagraphAndAfter: () => excludeParagraphAndAfter,
+    excludeParagraphAndBefore: () => excludeParagraphAndBefore,
     restoreExcludedParagraphAndAfter: () => restoreExcludedParagraphAndAfter,
     retranslateSingleRow: () => retranslateSingleRow,
     saveSingleTranslation: () => saveSingleTranslation
@@ -2842,17 +2965,10 @@
       if (retranslateBtn) retranslateBtn.disabled = false;
     }
   }
-  async function excludeParagraphAndAfter(startPid) {
-    if (!startPid) return;
+  async function applyExclusionToParagraphs(targets, pivotPid, directionLabel, icon) {
+    if (!targets || targets.length === 0) return;
     const url = getCleanUrl();
     const allParagraphs = getTargetParagraphs();
-    const startIndex = allParagraphs.findIndex((p) => p.id === startPid);
-    if (startIndex === -1) {
-      logToSidebar(`[\uC81C\uC678 \uC2E4\uD328] \uB300\uC0C1 \uBB38\uB2E8(${startPid})\uC744 \uBCF8\uBB38\uC5D0\uC11C \uCC3E\uC744 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4.`, "log-error");
-      return;
-    }
-    const targets = allParagraphs.slice(startIndex);
-    if (targets.length === 0) return;
     const targetPids = [];
     const targetOriginals = [];
     const existingTranslationIds = [];
@@ -2898,11 +3014,15 @@
         if (saveBtn) saveBtn.disabled = true;
         const retransBtn = row.querySelector(".retranslate-row-btn");
         if (retransBtn) retransBtn.disabled = true;
-        const excludeBtn = row.querySelector(".exclude-after-btn");
-        if (excludeBtn) {
-          excludeBtn.classList.add("is-excluded");
-          excludeBtn.textContent = "\u21A9\uFE0F";
-          excludeBtn.title = "\uC774 \uBB38\uB2E8 \uBC88\uC5ED \uC81C\uC678 \uD574\uC81C (\uBCF5\uC6D0)";
+        const excludeAfterBtn = row.querySelector(".exclude-after-btn");
+        if (excludeAfterBtn) {
+          excludeAfterBtn.classList.add("is-excluded");
+          excludeAfterBtn.textContent = "\u21A9\uFE0F";
+          excludeAfterBtn.title = "\uC774 \uBB38\uB2E8 \uBC88\uC5ED \uC81C\uC678 \uD574\uC81C (\uBCF5\uC6D0)";
+        }
+        const excludeBeforeBtn = row.querySelector(".exclude-before-btn");
+        if (excludeBeforeBtn) {
+          excludeBeforeBtn.style.display = "none";
         }
       }
       if (state.reviewTargetPids && state.reviewTargetPids.has(pid)) {
@@ -2911,12 +3031,12 @@
     });
     updateApplyButtonUI(state.isPageApplied, allParagraphs.length);
     showLanovelHud(
-      `\uBB38\uB2E8(${startPid})\uBD80\uD130 \uB05D\uAE4C\uC9C0 ${targets.length}\uAC1C \uBB38\uB2E8\uC744 \uBC88\uC5ED \uC81C\uC678\uD588\uC2B5\uB2C8\uB2E4. (\uCC28\uB840 \uB3C4\uB2EC \uC2DC \uC790\uB3D9 \uAC74\uB108\uB700)`,
-      "\u2702\uFE0F",
+      `\uBB38\uB2E8(${pivotPid}) \uAE30\uC900 ${directionLabel} ${targets.length}\uAC1C \uBB38\uB2E8\uC744 \uC81C\uC678\uD588\uC2B5\uB2C8\uB2E4. (\uCC28\uB840 \uC2DC \uAC74\uB108\uB700)`,
+      icon,
       3e3
     );
     logToSidebar(
-      `\u2702\uFE0F [\uBB38\uB2E8 \uC774\uD6C4 \uC81C\uC678] \uBB38\uB2E8(${startPid})\uBD80\uD130 \uB05D\uAE4C\uC9C0 ${targets.length}\uAC1C \uBB38\uB2E8\uC744 \uBC88\uC5ED \uB300\uC0C1\uC5D0\uC11C \uC81C\uC678\uD588\uC2B5\uB2C8\uB2E4. (\uC9C4\uD589 \uC911 \uCC28\uB840 \uC2DC \uC790\uB3D9 \uAC74\uB108\uB700)`
+      `${icon} [\uBB38\uB2E8 ${directionLabel} \uC81C\uC678] \uBB38\uB2E8(${pivotPid}) \uAE30\uC900 ${targets.length}\uAC1C \uBB38\uB2E8\uC744 \uBC88\uC5ED \uB300\uC0C1\uC5D0\uC11C \uC81C\uC678\uD588\uC2B5\uB2C8\uB2E4. (\uC9C4\uD589 \uC911 \uCC28\uB840 \uC2DC \uC790\uB3D9 \uAC74\uB108\uB700)`
     );
     try {
       await serverFetch("http://127.0.0.1:8001/translations/exclude", {
@@ -2929,16 +3049,46 @@
         })
       });
     } catch (e) {
-      console.warn("[excludeParagraphAndAfter] Server sync failed:", e);
+      console.warn("[applyExclusionToParagraphs] Server sync failed:", e);
     }
+  }
+  async function excludeParagraphAndBefore(endPid) {
+    if (!endPid) return;
+    const allParagraphs = getTargetParagraphs();
+    const endIndex = allParagraphs.findIndex((p) => p.id === endPid);
+    if (endIndex === -1) {
+      logToSidebar(`[\uC81C\uC678 \uC2E4\uD328] \uB300\uC0C1 \uBB38\uB2E8(${endPid})\uC744 \uBCF8\uBB38\uC5D0\uC11C \uCC3E\uC744 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4.`, "log-error");
+      return;
+    }
+    const targets = allParagraphs.slice(0, endIndex + 1);
+    await applyExclusionToParagraphs(targets, endPid, "\uC704\uCABD(\uBA38\uB9AC\uB9D0)", "\u2B06\uFE0F");
+  }
+  async function excludeParagraphAndAfter(startPid) {
+    if (!startPid) return;
+    const allParagraphs = getTargetParagraphs();
+    const startIndex = allParagraphs.findIndex((p) => p.id === startPid);
+    if (startIndex === -1) {
+      logToSidebar(`[\uC81C\uC678 \uC2E4\uD328] \uB300\uC0C1 \uBB38\uB2E8(${startPid})\uC744 \uBCF8\uBB38\uC5D0\uC11C \uCC3E\uC744 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4.`, "log-error");
+      return;
+    }
+    const targets = allParagraphs.slice(startIndex);
+    await applyExclusionToParagraphs(targets, startPid, "\uC544\uB798\uCABD(\uD6C4\uAE30)", "\u2B07\uFE0F");
   }
   async function restoreExcludedParagraphAndAfter(startPid) {
     if (!startPid) return;
     const url = getCleanUrl();
     const allParagraphs = getTargetParagraphs();
-    const startIndex = allParagraphs.findIndex((p) => p.id === startPid);
-    if (startIndex === -1) return;
-    const targets = allParagraphs.slice(startIndex);
+    const targetIndex = allParagraphs.findIndex((p) => p.id === startPid);
+    if (targetIndex === -1) return;
+    let startIdx = targetIndex;
+    while (startIdx > 0 && state.manualExcludedPids.has(allParagraphs[startIdx - 1].id)) {
+      startIdx--;
+    }
+    let endIdx = targetIndex;
+    while (endIdx < allParagraphs.length - 1 && state.manualExcludedPids.has(allParagraphs[endIdx + 1].id)) {
+      endIdx++;
+    }
+    const targets = allParagraphs.slice(startIdx, endIdx + 1);
     if (targets.length === 0) return;
     const restoredOriginals = [];
     targets.forEach((p) => {
@@ -2968,17 +3118,21 @@
         if (saveBtn) saveBtn.disabled = true;
         const retransBtn = row.querySelector(".retranslate-row-btn");
         if (retransBtn) retransBtn.disabled = false;
-        const excludeBtn = row.querySelector(".exclude-after-btn");
-        if (excludeBtn) {
-          excludeBtn.classList.remove("is-excluded");
-          excludeBtn.textContent = "\u2702\uFE0F";
-          excludeBtn.title = "\uC774 \uBB38\uB2E8\uBD80\uD130 \uBCF8\uBB38 \uB05D\uAE4C\uC9C0 \uBC88\uC5ED \uC81C\uC678";
+        const excludeAfterBtn = row.querySelector(".exclude-after-btn");
+        if (excludeAfterBtn) {
+          excludeAfterBtn.classList.remove("is-excluded");
+          excludeAfterBtn.textContent = "\u2B07\uFE0F";
+          excludeAfterBtn.title = "\uC774 \uBB38\uB2E8\uBD80\uD130 \uBCF8\uBB38 \uB05D\uAE4C\uC9C0 \uBC88\uC5ED \uC81C\uC678";
+        }
+        const excludeBeforeBtn = row.querySelector(".exclude-before-btn");
+        if (excludeBeforeBtn) {
+          excludeBeforeBtn.style.display = "inline-block";
         }
       }
     });
     updateApplyButtonUI(state.isPageApplied, allParagraphs.length);
-    showLanovelHud(`\uBB38\uB2E8(${startPid}) \uC774\uD6C4 ${targets.length}\uAC1C \uBB38\uB2E8\uC758 \uC81C\uC678\uB97C \uD574\uC81C\uD588\uC2B5\uB2C8\uB2E4.`, "\u21A9\uFE0F", 2500);
-    logToSidebar(`\u21A9\uFE0F [\uC81C\uC678 \uD574\uC81C] \uBB38\uB2E8(${startPid}) \uC774\uD6C4 ${targets.length}\uAC1C \uBB38\uB2E8\uC758 \uBC88\uC5ED \uC81C\uC678\uB97C \uD574\uC81C\uD588\uC2B5\uB2C8\uB2E4.`);
+    showLanovelHud(`\uBB38\uB2E8(${startPid}) \uC8FC\uBCC0 ${targets.length}\uAC1C \uBB38\uB2E8\uC758 \uC81C\uC678\uB97C \uD574\uC81C\uD588\uC2B5\uB2C8\uB2E4.`, "\u21A9\uFE0F", 2500);
+    logToSidebar(`\u21A9\uFE0F [\uC81C\uC678 \uD574\uC81C] \uBB38\uB2E8(${startPid}) \uC8FC\uBCC0 ${targets.length}\uAC1C \uBB38\uB2E8\uC758 \uBC88\uC5ED \uC81C\uC678\uB97C \uD574\uC81C\uD588\uC2B5\uB2C8\uB2E4.`);
     try {
       await serverFetch("http://127.0.0.1:8001/translations/restore_excluded", {
         method: "POST",
@@ -4396,6 +4550,13 @@
         retranslateSingleRow(pid, originalText);
       });
     }
+    const excludeBeforeBtn = row.querySelector(".exclude-before-btn");
+    if (excludeBeforeBtn) {
+      excludeBeforeBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        excludeParagraphAndBefore(pid);
+      });
+    }
     const excludeBtn = row.querySelector(".exclude-after-btn");
     if (excludeBtn) {
       excludeBtn.addEventListener("click", (e) => {
@@ -4470,7 +4631,8 @@
       <div class="action-btns">
         <button class="save-btn" disabled title="\uC218\uC815\uD55C \uBC88\uC5ED \uC800\uC7A5">\uC800\uC7A5</button>
         <button class="retranslate-row-btn" title="\uC774 \uBB38\uC7A5\uB9CC \uC989\uC2DC \uC7AC\uBC88\uC5ED">\u{1F504}</button>
-        <button class="exclude-after-btn" title="\uC774 \uBB38\uB2E8\uBD80\uD130 \uBCF8\uBB38 \uB05D\uAE4C\uC9C0 \uBC88\uC5ED \uC81C\uC678">\u2702\uFE0F</button>
+        <button class="exclude-before-btn" title="\uCCAB \uBB38\uB2E8\uBD80\uD130 \uC774 \uBB38\uB2E8\uAE4C\uC9C0 (\uC704\uCABD \uBA38\uB9AC\uB9D0) \uBC88\uC5ED \uC81C\uC678">\u2B06\uFE0F</button>
+        <button class="exclude-after-btn" title="\uC774 \uBB38\uB2E8\uBD80\uD130 \uBCF8\uBB38 \uB05D\uAE4C\uC9C0 (\uC544\uB798\uCABD \uD6C4\uAE30) \uBC88\uC5ED \uC81C\uC678">\u2B07\uFE0F</button>
       </div>
     </td>
   `;
@@ -4486,13 +4648,20 @@
       const isReviewTarget = state.reviewTargetPids && state.reviewTargetPids.has(item.id);
       if (isReviewTarget) row.classList.add("review-target-row");
       const reviewBadgeHtml = isReviewTarget ? `<span class="review-badge">\u26A1\uC7AC\uAC80\uC218</span>` : "";
+      const isExcluded = state.manualExcludedPids.has(item.id) || state.exclusionSet.has(item.text);
+      if (isExcluded) {
+        row.classList.add("lanovel-excluded-row");
+        row.dataset.userDeleted = "true";
+      }
       row.innerHTML = `
       <td class="original-text">${reviewBadgeHtml}${escapeHtml(item.text)}</td>
-      <td class="translated-text">\u23F3 \uBC88\uC5ED \uC911...</td>
+      <td class="translated-text"${isExcluded ? ' style="color:#ef4444;"' : ""}>${isExcluded ? "\u{1F6AB} [\uBC88\uC5ED \uC81C\uC678\uB428]" : "\u23F3 \uBC88\uC5ED \uC911..."}</td>
       <td>
         <div class="action-btns">
           <button class="save-btn" disabled title="\uC218\uC815\uD55C \uBC88\uC5ED \uC800\uC7A5">\uC800\uC7A5</button>
           <button class="retranslate-row-btn" disabled title="\uC774 \uBB38\uC7A5\uB9CC \uC989\uC2DC \uC7AC\uBC88\uC5ED">\u{1F504}</button>
+          <button class="exclude-before-btn"${isExcluded ? ' style="display:none;"' : ""} title="\uCCAB \uBB38\uB2E8\uBD80\uD130 \uC774 \uBB38\uB2E8\uAE4C\uC9C0 (\uC704\uCABD \uBA38\uB9AC\uB9D0) \uBC88\uC5ED \uC81C\uC678">\u2B06\uFE0F</button>
+          <button class="exclude-after-btn${isExcluded ? " is-excluded" : ""}" title="${isExcluded ? "\uC774 \uBB38\uB2E8 \uBC88\uC5ED \uC81C\uC678 \uD574\uC81C (\uBCF5\uC6D0)" : "\uC774 \uBB38\uB2E8\uBD80\uD130 \uBCF8\uBB38 \uB05D\uAE4C\uC9C0 (\uC544\uB798\uCABD \uD6C4\uAE30) \uBC88\uC5ED \uC81C\uC678"}">${isExcluded ? "\u21A9\uFE0F" : "\u2B07\uFE0F"}</button>
         </div>
       </td>
     `;
@@ -4511,6 +4680,7 @@
         row = tableBody.insertRow(0);
         row.dataset.pid = item.id;
         if (isReviewTarget) row.classList.add("review-target-row");
+        const isExcluded = state.manualExcludedPids.has(item.id) || state.exclusionSet.has(item.original);
         row.innerHTML = `
         <td class="original-text">${reviewBadgeHtml}${escapeHtml(item.original)}</td>
         <td class="translated-text" contenteditable="true">${escapeHtml(item.translated)}</td>
@@ -4518,6 +4688,8 @@
           <div class="action-btns">
             <button class="save-btn" disabled title="\uC218\uC815\uD55C \uBC88\uC5ED \uC800\uC7A5">\uC800\uC7A5</button>
             <button class="retranslate-row-btn" title="\uC774 \uBB38\uC7A5\uB9CC \uC989\uC2DC \uC7AC\uBC88\uC5ED">\u{1F504}</button>
+            <button class="exclude-before-btn"${isExcluded ? ' style="display:none;"' : ""} title="\uCCAB \uBB38\uB2E8\uBD80\uD130 \uC774 \uBB38\uB2E8\uAE4C\uC9C0 (\uC704\uCABD \uBA38\uB9AC\uB9D0) \uBC88\uC5ED \uC81C\uC678">\u2B06\uFE0F</button>
+            <button class="exclude-after-btn${isExcluded ? " is-excluded" : ""}" title="${isExcluded ? "\uC774 \uBB38\uB2E8 \uBC88\uC5ED \uC81C\uC678 \uD574\uC81C (\uBCF5\uC6D0)" : "\uC774 \uBB38\uB2E8\uBD80\uD130 \uBCF8\uBB38 \uB05D\uAE4C\uC9C0 (\uC544\uB798\uCABD \uD6C4\uAE30) \uBC88\uC5ED \uC81C\uC678"}">${isExcluded ? "\u21A9\uFE0F" : "\u2B07\uFE0F"}</button>
           </div>
         </td>
       `;
@@ -4533,6 +4705,25 @@
         if (saveBtn) saveBtn.disabled = true;
         const retranslateBtn = row.querySelector(".retranslate-row-btn");
         if (retranslateBtn) retranslateBtn.disabled = false;
+        let excludeBtn = row.querySelector(".exclude-after-btn");
+        if (!excludeBtn) {
+          const actionBtns = row.querySelector(".action-btns");
+          if (actionBtns) {
+            excludeBtn = document.createElement("button");
+            excludeBtn.className = "exclude-after-btn";
+            excludeBtn.textContent = "\u2702\uFE0F";
+            excludeBtn.title = "\uC774 \uBB38\uB2E8\uBD80\uD130 \uBCF8\uBB38 \uB05D\uAE4C\uC9C0 \uBC88\uC5ED \uC81C\uC678";
+            actionBtns.appendChild(excludeBtn);
+            excludeBtn.addEventListener("click", (e) => {
+              e.stopPropagation();
+              if (state.manualExcludedPids.has(item.id) || excludeBtn?.classList.contains("is-excluded")) {
+                restoreExcludedParagraphAndAfter(item.id);
+              } else {
+                excludeParagraphAndAfter(item.id);
+              }
+            });
+          }
+        }
       }
       if (isReviewTarget) {
         updateReviewCardTranslation(item.id, `\uBC88\uC5ED: ${item.translated}`, false);

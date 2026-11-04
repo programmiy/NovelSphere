@@ -1,7 +1,7 @@
 # LANOVEL 종합 코드베이스 기능 및 함수 레퍼런스 (Architectural & Functional Reference)
 
 > **문서 목적**: AI 어시스턴트가 사용자 요구사항 및 구어체 지시를 입력받았을 때, 혼선이나 회귀(Regression) 없이 전체 아키텍처와 1:1 타깃 코드를 0초 만에 직관적으로 파악할 수 있도록 압축 정리한 단일 진실 공급원(SSOT) 기술 레퍼런스입니다.
-> **최신 동기화 일자**: 2026-11-04 (번역 진행 중 특정 문단 이후 실시간 동적 제외 & 차례 도달 시 자동 건너뛰기 엔진 전면 구축: `state.manualExcludedPids` 기반 0ms 판정, `translateChunk` 전송 직전 동적 필터링 및 비행 중 응답 방어, 본문 `Alt+클릭` 및 사이드바 `[✂️]` 버튼 연동 `excludeParagraphAndAfter`/`restoreExcludedParagraphAndAfter`, 백엔드 `POST /translations/exclude` URL+원문 목록 미번역·기번역 일괄 안전 아카이브 지원 완료; 미국 서머타임(DST) 실시간 정각 안전 중단; 사전 전수 계획 DP 균형 청킹 `chunker.ts`; 모바일 110px 여백 및 릴리즈 빌드 스킬 완비)
+> **최신 동기화 일자**: 2026-11-04 (번역 진행 중 본문 직접 조작 스마트 플로팅 액션 위젯 `#lanovel-p-action-pill` 및 양방향[⬆️ 위로 제외/⬇️ 아래로 제외] 실시간 동적 제외 & 자동 건너뛰기 엔진 전면 구축 완료: `state.manualExcludedPids` 기반 0ms 판정, `translateChunk` 전송 직전 동적 필터링 및 비행 중 응답 방어, 본문 문단 호버 시 `[⬆️ 위로 제외]` `[⬇️ 아래로 제외]` `[↩️ 제외 해제]` 미니 알약 버튼 노출, 사이드바 460px 가로 스크롤 방지 25% 컬럼 확장 및 번역 중 `addPlaceholderRows` 상시 버튼 노출 보장; 백엔드 `POST /translations/exclude` URL+원문 목록 미번역·기번역 일괄 안전 아카이브 지원 완료; 미국 서머타임(DST) 실시간 정각 안전 중단; 사전 전수 계획 DP 균형 청킹 `chunker.ts`; 모바일 110px 여백 및 릴리즈 빌드 스킬 완비)
 
 ---
 
@@ -33,7 +33,7 @@
 | **소설 큐 러너** | `server/novel_queue.py` | **원격 소설 연속 번역 대기열 엔진**: `QueueRunner`, `NovelQueueManager`, NovelUp+ (`novelup.plus`) 공식 바인딩, 신데렐라 모드(17시 쿼터 중단 및 익일 자율 복구), 3회 재시도 및 건너뛰기 안전장치 |
 | **특별 적재** | `server/routers/special_batch.py` | 배치 번역/보정본 검수 UI(`/special_batch`), 카드 헤더 [🔗 원본 ↗] 링크, 승인 시 원래 소설 폴더 자동 상속, 미분류(None) 보존, 일괄 승인 |
 | **AI 검수 파이프라인** | `server/routers/ai_review.py`<br>`scripts/fetch_unreviewed.py`<br>`scripts/insert_reviewed_items.py` | **AI 검수 큐 & 대량 배치 적재 엔진**: 미번역·촉음/장음 오염 이상치 3,163건 전량 복원 및 룰베이스/고품질 번역 적재 완결, `ai_review_queue` 7,800여 건 웹 검수 UI([`/ai_review`](http://localhost:8001/ai_review)) 연동, `ALLOW_PROD_DB_WRITE="1"` 안전 가드 |
-| **크롬 확장** | `extension/` | **TypeScript + esbuild 단일 책임 모듈화 구조**: `src/content.ts`, `src/background/` (`remote_ws.ts`, `queue_tabs.ts`, `index.ts`), `src/scrapers/` (`syosetu.ts`, `kakuyomu.ts` 등), `src/core/` (**`state.ts` 실시간 `manualExcludedPids`**, `chunker.ts`, `filters.ts`, `turbo.ts`, `separators.ts`, `adaptive_throttle.ts`, **`dom_applier.ts`(본문 Alt+클릭 제외 토글)**, **`row_actions.ts`(`excludeParagraphAndAfter`, `restoreExcludedParagraphAndAfter`)**, **`page_translator.ts`(청크 전송 직전 0ms 차단 및 비행 중 방어)**, `queue_session.ts`), `src/ui/` (**`sidebar.ts` 각 행 `[✂️]` 버튼**, `review_panel.ts`, `separator_panel.ts`, `hud.ts`, `key_nav.ts`, `toc_quick_jump.ts`) |
+| **크롬 확장** | `extension/` | **TypeScript + esbuild 단일 책임 모듈화 구조**: `src/content.ts`, `src/background/` (`remote_ws.ts`, `queue_tabs.ts`, `index.ts`), `src/scrapers/` (`syosetu.ts`, `kakuyomu.ts` 등), `src/core/` (**`state.ts` 실시간 `manualExcludedPids`**, `chunker.ts`, `filters.ts`, `turbo.ts`, `separators.ts`, `adaptive_throttle.ts`, **`dom_applier.ts`(본문 호버 스마트 플로팅 액션 위젯 `#lanovel-p-action-pill` 및 Alt+클릭 제외 토글)**, **`row_actions.ts`(`excludeParagraphAndBefore`, `excludeParagraphAndAfter`, `restoreExcludedParagraphAndAfter`)**, **`page_translator.ts`(청크 전송 직전 0ms 차단 및 비행 중 방어)**, `queue_session.ts`), `src/ui/` (**`sidebar.ts` 각 행 `[⬆️]` `[⬇️]` 버튼 및 번역 중 상시 노출**, `review_panel.ts`, `separator_panel.ts`, `hud.ts`, `key_nav.ts`, `toc_quick_jump.ts`) |
 | **모바일 앱** | `mobile_app/lib/`<br>`mobile_app/shaders/` | **하이퍼 에스테틱 Luminary UI & Impeller GLSL 셰이더 (v1.7.2)** (하단 플로팅 글래스 독 110px 여백 확보, 원문 툴팁 모드, 목차 드로어 자동 추적, 서재 4종 정렬 엔진, 실시간 번역 진행 배너 리모컨 연결, 서버 동기화 차단 안전장치) |
 | **웹 프론트** | `server/static/admin/` | **ES 모듈 분리 관리자 UI**: `admin-main.js`, `admin-tree.js`, `admin-state.js`, `admin-dock.js`, `admin-analytics.js`(KST 24시간 활동 프로필·하루 시작 16시/17시 인디케이터), `admin-restore.js`, `admin-find-replace.js` |
 | **웹 프론트** | `server/static/` | `viewer.js` (3D 닉시관 인디케이터, 사전 & 용례 학습 패널), `library.js` (증기 차분기관 톱니/배관/압력계 대시보드), `admin-fx.js` (사이버네틱 오디오 & 파티클 엔진) |
@@ -49,17 +49,17 @@
            ▲
            │ DOM 파싱 (p/l 태그, 소설명 감지, 구분선 감지, 다음 화 '次へ' 자동 이동)
            │ 스마트 키보드 내비게이션 (]/L 다음화+자동번역, [/H 이전화, O/T 목차, N 미번역 퀵점프)
-           │ 본문 Alt+클릭 문단 이후 실시간 번역 제외/복원 토글
+           │ 본문 마우스 호버 스마트 플로팅 위젯 [⬆️ 위로 제외] [⬇️ 아래로 제외] [↩️ 제외 해제]
            │ URL 해시(#L15, #p15) 기반 특정 단락 순간이동 + 펄스 발광 + 화면 비율 65% 이상 시 사이드바 동기화
            ▼
 [ 크롬 확장 프로그램 (extension/src/ -> build.js -> extension/content.js & background.js) ]
-    - src/core/row_actions.ts: excludeParagraphAndAfter, restoreExcludedParagraphAndAfter
+    - src/core/row_actions.ts: excludeParagraphAndBefore, excludeParagraphAndAfter, restoreExcludedParagraphAndAfter
     - src/core/page_translator.ts: translateChunk 호출 직전 state.isPidExcluded() 실시간 차단 (0ms 스킵)
     - src/core/state.ts: manualExcludedPids, isPidExcluded (PID 및 원문 실시간 필터)
-    - src/core/dom_applier.ts: jumpToParagraph(rawPid), Alt+클릭 문단 제외 토글, hashchange 감지
+    - src/core/dom_applier.ts: ensureParagraphActionPill, positionPillForParagraph, jumpToParagraph(rawPid)
     - src/core/turbo.ts: getNextLaMidnightTimestamp(이진 탐색) 기반 정각 타임스탬프 계산 및 LA 일자별 쿼터 윈도우
     - src/background/remote_ws.ts: WebSocket(ws://127.0.0.1:8001/api/remote/ws) + HTTP 폴링 백오프, 원격 명령 실행
-    - src/ui/: 사이드바(sidebar.ts 행별 [✂️] 버튼), 알림 센터 연계 검수 패널(review_panel.ts), 구분선 자동 제외/복원 패널(separator_panel.ts), 플로팅 HUD(hud.ts), 목차 배지 & 퀵점프 패널 (toc_quick_jump.ts)
+    - src/ui/: 사이드바(sidebar.ts 행별 [⬆️][⬇️] 버튼 및 25% 가로 스크롤 방지 컬럼), 알림 센터 검수 패널, 구분선 패널, 플로팅 HUD, 목차 배지
            │ HTTP (POST /translate, GET /api/rpm_status, POST /translations/exclude, POST /translations/restore_excluded, POST /api/check_translated_urls, POST /api/import-toc, WS /api/remote/ws, POST /api/remote/queue/event)
            ▼
 [ FastAPI 백엔드 서버 (server/server.py: 8001 포트) ]
@@ -82,7 +82,7 @@
 
 | 사용자 발화 / 요청 예시 | 연관 파일 및 핵심 함수 | 핵심 처리 내용 |
 | :--- | :--- | :--- |
-| **"번역 도중에 특정 문단 제외해줘 / 이 문단부터 끝까지 번역하지 마 / 번역 중에 작가의 말 건너뛰어줘 / 제외한 문단 차례 와도 번역 안 되게 해줘"** | `extension/src/core/page_translator.ts`<br>`extension/src/core/row_actions.ts`<br>`extension/src/core/state.ts`<br>`extension/src/core/dom_applier.ts`<br>`extension/src/ui/sidebar.ts`<br>`extension/content.css`<br>`server/routers/translation.py`<br>`tests/test_exclude_restore.py`<br>`docs/feat-realtime-paragraph-exclusion-2026-11-04.md` | 번역 진행 도중 작가의 말·후기가 시작되는 문단을 발견했을 때 본문 `Alt+클릭` 또는 사이드바 `[✂️]` 버튼을 누르면 해당 문단부터 본문 끝까지 모든 문단을 즉시 번역 제외 처리(`excludeParagraphAndAfter`). `translateChunk` 전송 직전 `state.isPidExcluded`로 필터링하여 해당 문단 차례가 와도 Gemini API 호출을 0회로 건너뛰며, 기번역문은 원문 복원 및 `POST /translations/exclude`를 통해 `TranslationTrash` 보관 및 `ExcludedSentence`에 영구 등록. `[↩️]` 클릭 시 `restoreExcludedParagraphAndAfter`로 즉시 복원. |
+| **"본문에서 바로 특정 문단 위/아래 번역 제외해줘 / 사이드바 스크롤 안 하고 본문에서 제외하게 해줘 / 번역 도중에도 제외 버튼 보이게 해줘 / 위쪽 문단만 제외해줘"** | `extension/src/core/dom_applier.ts`<br>`extension/src/core/row_actions.ts`<br>`extension/src/core/page_translator.ts`<br>`extension/src/core/state.ts`<br>`extension/src/ui/sidebar.ts`<br>`extension/content.css`<br>`server/routers/translation.py`<br>`docs/feat-realtime-paragraph-exclusion-2026-11-04.md` | 사이드바 가로 스크롤 및 번역 중 플레이스홀더 버튼 누락 문제를 완벽히 해결하기 위해 본문 문단 마우스 호버 스마트 플로팅 액션 위젯(`#lanovel-p-action-pill`) 구축. 본문 문단에 마우스를 올리면 `[⬆️ 위로 제외]`(첫 문단부터 해당 문단까지 머리말 제외)와 `[⬇️ 아래로 제외]`(해당 문단부터 본문 끝까지 후기 제외) 미니 알약 버튼이 나타나 즉시 실행. 제외된 문단은 `[↩️ 제외 해제]`로 복원 지원. 번역 진행 도중에도 0ms로 Gemini API 호출을 건너뛰며, 사이드바 액션 컬럼 너비 25% 확장 및 번역 중 상시 노출 완비. |
 | **"서머타임 언제부터야? / 16시 17시 초기화 시간 안 맞아 / 초기화 시간 정각에 멈추는 게 안 맞아 / 서머타임 판정기준 오류"** | `server/quota.py`<br>`server/routers/translation.py`<br>`extension/src/core/turbo.ts`<br>`tests/test_quota_reset_guard.py`<br>`docs/fix-us-dst-timezone-parity-2026-11-01.md` | Python `zoneinfo("America/Los_Angeles")` 및 크롬 확장 이진 탐색 엔진을 도입하여 한국-미국 16~17시간 시차를 0ms 오차로 해소. 서머타임 시작(3월) 및 해제(11월) 전환일에도 LA 자정 기준 쿼터 윈도우 시작(`get_current_quota_window_start`)과 다음 리셋 정각(`get_next_quota_reset_dt`)을 산출하고, 절대 타임스탬프 기반 `_QuotaStopState`로 16시/17시 정각 안전 중단(503)을 100% 무결점으로 보장. |
 | **"HUD 알림 보강해줘 / 다음 번역 타이머 띄워줘 / HUD에 번역 진행도 표시" / "알림 위치 좌상단으로 옮겨줘 / 확장이 알림에 가려"** | `extension/src/ui/hud.ts`<br>`extension/content.css`<br>`extension/src/core/page_translator.ts`<br>`extension/src/content.ts` | 화면 우측 사이드바 및 상단 컨트롤 가림 간섭을 원천 방지하기 위해 플로팅 HUD(#lanovel-hud) 위치를 동일 높이의 좌상단(`top: 150px; left: 24px`)으로 150px 하향 재배치하여 상단바 및 사이드바 간섭 방지. `showLanovelProgressHud` 및 `startLanovelCountdownHud`를 탑재하여 번역 묶음 진행도(백분율, N/M문장, 그라디언트 프로그레스 바), 묶음 간 대기 및 다음 화 이동 적응형 지연(8s~55s)의 실시간 초 단위 카운트다운 타이머, 번역 완료 통계(총 문장수 및 이번 연속 N화)를 시각적으로 즉각 안내 |
 | **"오염된 번역 복원해줘 / AI 검수 큐에 배치 번역 적재해줘 / 이상치 번역 일괄 재번역"** | `scripts/fetch_unreviewed.py`<br>`scripts/insert_reviewed_items.py`<br>`server/routers/ai_review.py`<br>`server/models.py` | 기존 70만여 문장 중 촉음/장음/미번역 가나 오염 및 슬롭 이상치 문장 3,163건을 전량 추출하여 고품질 라노벨 문체(호칭 사이시옷 등) 및 정규식 규칙으로 재번역. `ALLOW_PROD_DB_WRITE="1"` 안전 가드 아래 운영 DB 원본 불변을 보장하며 `ai_review_queue`에 `pending_review` 상태로 전량 적재하여 미검수 잔여 0건 완결. 웹 검수 UI([`/ai_review`](http://localhost:8001/ai_review))에서 원클릭 검수 및 승인 지원. |
@@ -99,7 +99,7 @@
 | **"검색할 때 렉 너무 심해" / "화면 멈춰"** | `server/static/admin/admin-tree.js`<br>`server/static/admin.css` | 검색 시 모든 회차의 테이블 행을 강제로 그리던 `shouldRenderImmediately` 제거. 회차 아코디언은 기본 접힘(`isUrlGroupCollapsed = true`) 및 일치 뱃지 표시, 클릭 시 `renderUrlGroupContent()`를 통한 0.01초 지연 로딩(Lazy Loading)으로 DOM 폭발 렉 99.8% 제거. |
 | **"텍스트 칠 때마다 동적 검색하는 거 리소스 낭비야" / "Enter나 버튼 눌러서 검색하게 해줘"** | `server/templates/admin.html`<br>`server/static/admin/admin-main.js`<br>`server/static/admin.css` | 실시간 300ms 디바운스 검색 리스너 폐지. 타이핑 중 렌더링 0회. `Enter` 키 또는 `[검색]` 버튼 클릭 시에만 1회 검색 실행 및 첫 소설 자동 점프. 이미 검색된 상태에서 재차 `Enter` 시 다음 일치 소설, `Shift+Enter` 시 이전 소설 순환. `Esc` 또는 `[✕]` 클릭 시 검색 초기화. |
 | **"확장 프로그램 수정하고 빌드해줘" / "확장 빌드해줘"** | `extension/build.js`<br>`extension/package.json` | `npm run build`로 20ms 내에 `content.js`와 `background.js` 초고속 번들링. `npm run typecheck`로 타입 오류 선제 검사. |
-| **"확장 프로그램 검수 패널 / 재번역 검수 / 제외 단락 복원"** | `extension/src/ui/review_panel.ts`<br>`extension/src/ui/separator_panel.ts`<br>`extension/src/core/row_actions.ts` | 알림 센터 연계 재번역 검수(`#review-target-panel`, `✓ 검수 완료`), 구분선 자동 제외 검수 및 복원(`#separator-exclude-panel`, `🛡️`), 개별 행 저장 및 단건 재번역(`🔄`), **지정 문단 이후 일괄 제외(`✂️`) 및 복원(`↩️`)**. |
+| **"확장 프로그램 검수 패널 / 재번역 검수 / 제외 단락 복원"** | `extension/src/ui/review_panel.ts`<br>`extension/src/ui/separator_panel.ts`<br>`extension/src/core/row_actions.ts` | 알림 센터 연계 재번역 검수(`#review-target-panel`, `✓ 검수 완료`), 구분선 자동 제외 검수 및 복원(`#separator-exclude-panel`, `🛡️`), 개별 행 저장 및 단건 재번역(`🔄`), **본문 플로팅 위젯 및 사이드바 연동 머리말/후기 양방향 제외(`[⬆️] [⬇️]`) 및 복원(`[↩️]`)**. |
 | **"원격 제어 안 돼" / "모바일 리모컨 상태 안 올라와"** | `extension/src/background/remote_ws.ts`<br>`extension/src/core/state.ts` | WebSocket(`ws://127.0.0.1:8001/api/remote/ws`) 연결 상태 점검. `state.broadcastStatus()`를 통해 주기적(2초) 및 상태 변화 시 직접 디스패치. |
 | **"최근 소설이 분당 번역수가 늘어나서 rpm제한에 걸려"** | `extension/src/core/adaptive_throttle.ts`<br>`server/services/rpm_manager.py` | 최근 5분간 번역된 회차 수를 실시간 추적하여, 회차가 많을수록 다음 화 이동 대기시간을 8초에서 최대 55초까지 계단식으로 늘려 분당 호출 폭증 차단. |
 | **"키보드로 다음화 넘어가게 해줘" / "단축키로 다음화 이동"** | `extension/src/ui/key_nav.ts`<br>`extension/src/ui/hud.ts` | `]` 또는 `L` 누르면 세션 플래그 설정 후 다음 화로 이동 -> 새 페이지 로드 즉시 자동 번역 시작 + 플로팅 HUD 안내. |
