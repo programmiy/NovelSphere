@@ -115,7 +115,20 @@ export function setupParagraphInteraction(): void {
     if (p.dataset.lanovelLinked) return;
     p.dataset.lanovelLinked = 'true';
 
-    p.addEventListener('click', () => {
+    p.addEventListener('click', async (e: MouseEvent) => {
+      // ⚡ Alt + 클릭: 해당 문단부터 본문 끝까지 번역 제외/복원 즉시 토글
+      if (e.altKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        const { excludeParagraphAndAfter, restoreExcludedParagraphAndAfter } = await import('./row_actions');
+        if (state.manualExcludedPids.has(p.id)) {
+          await restoreExcludedParagraphAndAfter(p.id);
+        } else {
+          await excludeParagraphAndAfter(p.id);
+        }
+        return;
+      }
+
       const selection = window.getSelection();
       if (selection && selection.toString().trim().length > 0) return;
 

@@ -6,6 +6,8 @@ import { getCleanUrl } from './page_translator';
 import { getScraper } from '../scrapers';
 import { logToSidebar, updateApplyButtonUI } from '../ui/sidebar';
 import { updateReviewCardTranslation } from '../ui/review_panel';
+import { showLanovelHud } from '../ui/hud';
+import { getTargetParagraphs } from './dom_applier';
 
 /**
  * 단일 행 번역을 캐시, 본문 DOM, 검수 카드 및 서버에 즉시 저장합니다.
@@ -215,5 +217,196 @@ export async function retranslateSingleRow(pid: string, originalText: string): P
     }
   } finally {
     if (retranslateBtn) retranslateBtn.disabled = false;
+  }
+}
+
+
+/**
+ * 지정된 문단(startPid)부터 본문 끝까지의 모든 문단을 번역 제외 처리합니다.
+ * 번역 진행 중에도 즉시 반영되어 해당 문단들의 번역 차례가 와도 건너뜁니다.
+ */
+export async function excludeParagraphAndAfter(startPid: string): Promise<void> {
+  if (!startPid) return;
+  const url = getCleanUrl();
+  const allParagraphs = getTargetParagraphs();
+
+  const startIndex = allParagraphs.findIndex((p) => p.id === startPid);
+  if (startIndex === -1) {
+    logToSidebar(`[제외 실패] 대상 문단(${startPid})을 본문에서 찾을 수 없습니다.`, 'log-error');
+    return;
+  }
+
+  const targets = allParagraphs.slice(startIndex);
+  if (targets.length === 0) return;
+
+  const targetPids: string[] = [];
+  const targetOriginals: string[] = [];
+  const existingTranslationIds: number[] = [];
+
+  targets.forEach((p) => {
+    const pid = p.id;
+    targetPids.push(pid);
+
+    // 1. 상태 머신 즉시 등록 (실시간 번역 차단)
+    state.manualExcludedPids.add(pid);
+    state.userDeletedTranslationPids.add(pid);
+
+    const rawText = p.innerHTML.replace(/<br\s*\/?>/gi, ' ').replace(/<[^>]*>/g, '').trim();
+    const cached = state.translationCache.get(pid);
+    const originalText = (cached && cached.original) || rawText;
+
+    if (originalText) {
+      const cleanedText = originalText.replace(/([あアいイうウえエおオ])\1{2,}/g, '$1ー');
+      state.exclusionSet.add(cleanedText);
+      state.exclusionSet.add(originalText);
+      targetOriginals.push(originalText);
+    }
+
+    if (cached && (cached as any).id) {
+      existingTranslationIds.push((cached as any).id);
+    }
+
+    // 2. 캐시 삭제
+    state.translationCache.delete(pid);
+
+    // 3. 본문 DOM 원문 복원 및 제외 스타일 적용
+    if (p.dataset.lanovelOriginalHtml) {
+      p.innerHTML = p.dataset.lanovelOriginalHtml;
+      p.classList.remove('lanovel-applied-text');
+      if (p.dataset.lanovelOriginalStyle) {
+        p.setAttribute('style', p.dataset.lanovelOriginalStyle);
+      } else {
+        p.removeAttribute('style');
+      }
+    }
+    p.classList.add('lanovel-excluded-paragraph');
+
+    // 4. 사이드바 행 UI 제외 갱신
+    const row = document.querySelector<HTMLTableRowElement>(`tr[data-pid="${pid}"]`);
+    if (row) {
+      row.classList.add('lanovel-excluded-row');
+      row.dataset.userDeleted = 'true';
+      const cell = row.querySelector('.translated-text');
+      if (cell) {
+        cell.textContent = '🚫 [번역 제외됨]';
+        (cell as HTMLElement).style.color = '#ef4444';
+        cell.setAttribute('contenteditable', 'false');
+      }
+      const saveBtn = row.querySelector<HTMLButtonElement>('.save-btn');
+      if (saveBtn) saveBtn.disabled = true;
+      const retransBtn = row.querySelector<HTMLButtonElement>('.retranslate-row-btn');
+      if (retransBtn) retransBtn.disabled = true;
+      const excludeBtn = row.querySelector<HTMLButtonElement>('.exclude-after-btn');
+      if (excludeBtn) {
+        excludeBtn.classList.add('is-excluded');
+        excludeBtn.textContent = '↩️';
+        excludeBtn.title = '이 문단 번역 제외 해제 (복원)';
+      }
+    }
+
+    if (state.reviewTargetPids && state.reviewTargetPids.has(pid)) {
+      updateReviewCardTranslation(pid, '🚫 [사용자에 의해 번역 제외됨]', true);
+    }
+  });
+
+  updateApplyButtonUI(state.isPageApplied, allParagraphs.length);
+
+  showLanovelHud(
+    `문단(${startPid})부터 끝까지 ${targets.length}개 문단을 번역 제외했습니다. (차례 도달 시 자동 건너뜀)`,
+    '✂️',
+    3000
+  );
+  logToSidebar(
+    `✂️ [문단 이후 제외] 문단(${startPid})부터 끝까지 ${targets.length}개 문단을 번역 대상에서 제외했습니다. (진행 중 차례 시 자동 건너뜀)`
+  );
+
+  // 서버 동기화: 백엔드에 excluded_sentences 및 휴지통 보관 요청
+  try {
+    await serverFetch('http://127.0.0.1:8001/translations/exclude', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        url: url,
+        originals: targetOriginals,
+        ids: existingTranslationIds,
+      }),
+    });
+  } catch (e: any) {
+    console.warn('[excludeParagraphAndAfter] Server sync failed:', e);
+  }
+}
+
+/**
+ * 지정된 문단(startPid)부터 본문 끝까지의 번역 제외 상태를 해제(복원)합니다.
+ */
+export async function restoreExcludedParagraphAndAfter(startPid: string): Promise<void> {
+  if (!startPid) return;
+  const url = getCleanUrl();
+  const allParagraphs = getTargetParagraphs();
+
+  const startIndex = allParagraphs.findIndex((p) => p.id === startPid);
+  if (startIndex === -1) return;
+
+  const targets = allParagraphs.slice(startIndex);
+  if (targets.length === 0) return;
+
+  const restoredOriginals: string[] = [];
+
+  targets.forEach((p) => {
+    const pid = p.id;
+    state.manualExcludedPids.delete(pid);
+    state.userDeletedTranslationPids.delete(pid);
+
+    const rawText = p.innerHTML.replace(/<br\s*\/?>/gi, ' ').replace(/<[^>]*>/g, '').trim();
+    if (rawText) {
+      const cleanedText = rawText.replace(/([あアいイうウえエおオ])\1{2,}/g, '$1ー');
+      state.exclusionSet.delete(cleanedText);
+      state.exclusionSet.delete(rawText);
+      restoredOriginals.push(rawText);
+    }
+
+    p.classList.remove('lanovel-excluded-paragraph');
+
+    const row = document.querySelector<HTMLTableRowElement>(`tr[data-pid="${pid}"]`);
+    if (row) {
+      row.classList.remove('lanovel-excluded-row');
+      delete row.dataset.userDeleted;
+      row.removeAttribute('data-user-deleted');
+
+      const cell = row.querySelector('.translated-text');
+      if (cell) {
+        cell.textContent = '';
+        (cell as HTMLElement).style.color = '';
+        cell.setAttribute('contenteditable', 'true');
+      }
+      const saveBtn = row.querySelector<HTMLButtonElement>('.save-btn');
+      if (saveBtn) saveBtn.disabled = true;
+      const retransBtn = row.querySelector<HTMLButtonElement>('.retranslate-row-btn');
+      if (retransBtn) retransBtn.disabled = false;
+      const excludeBtn = row.querySelector<HTMLButtonElement>('.exclude-after-btn');
+      if (excludeBtn) {
+        excludeBtn.classList.remove('is-excluded');
+        excludeBtn.textContent = '✂️';
+        excludeBtn.title = '이 문단부터 본문 끝까지 번역 제외';
+      }
+    }
+  });
+
+  updateApplyButtonUI(state.isPageApplied, allParagraphs.length);
+
+  showLanovelHud(`문단(${startPid}) 이후 ${targets.length}개 문단의 제외를 해제했습니다.`, '↩️', 2500);
+  logToSidebar(`↩️ [제외 해제] 문단(${startPid}) 이후 ${targets.length}개 문단의 번역 제외를 해제했습니다.`);
+
+  try {
+    await serverFetch('http://127.0.0.1:8001/translations/restore_excluded', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        url: url,
+        originals: restoredOriginals,
+      }),
+    });
+  } catch (e: any) {
+    console.warn('[restoreExcludedParagraphAndAfter] Server sync failed:', e);
   }
 }

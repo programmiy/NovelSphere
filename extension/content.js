@@ -331,6 +331,7 @@
         isPageApplied = false;
         translationsLoadedPromise = null;
         userDeletedTranslationPids = /* @__PURE__ */ new Set();
+        manualExcludedPids = /* @__PURE__ */ new Set();
         // 소설 및 구분선 상태
         currentNovelTitle = "";
         activeSeparators = [...DEFAULT_GLOBAL_SEPARATORS];
@@ -371,6 +372,16 @@
         reportIntervalTimer = null;
         constructor() {
           this.startStatusReporting();
+        }
+        isPidExcluded(pid, originalText) {
+          if (this.manualExcludedPids.has(String(pid))) return true;
+          if (originalText) {
+            const cleaned = originalText.replace(/([あアいイうウえエおオ])\1{2,}/g, "$1\u30FC").trim();
+            if (this.exclusionSet.has(cleaned) || this.exclusionSet.has(originalText.trim())) {
+              return true;
+            }
+          }
+          return false;
         }
         isReviewMode() {
           const hasHash = typeof window !== "undefined" && window.location && window.location.hash.includes("lanovel_review");
@@ -2299,7 +2310,353 @@
     }
   });
 
+  // src/ui/hud.ts
+  function escapeHtml2(text) {
+    const map = {
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#039;"
+    };
+    return text.replace(/[&<>"']/g, (m) => map[m]);
+  }
+  function getOrCreateHud() {
+    let hud = document.getElementById("lanovel-hud");
+    if (!hud) {
+      hud = document.createElement("div");
+      hud.id = "lanovel-hud";
+      document.body.appendChild(hud);
+    }
+    return hud;
+  }
+  function clearLanovelHudTimers() {
+    if (hudTimer) {
+      clearTimeout(hudTimer);
+      hudTimer = null;
+    }
+    if (countdownInterval) {
+      clearInterval(countdownInterval);
+      countdownInterval = null;
+    }
+  }
+  function hideLanovelHud(immediate = false) {
+    clearLanovelHudTimers();
+    const hud = document.getElementById("lanovel-hud");
+    if (!hud) return;
+    if (immediate) {
+      hud.classList.remove("visible", "detailed");
+      hud.innerHTML = "";
+    } else {
+      hud.classList.remove("visible");
+      hudTimer = setTimeout(() => {
+        hud.classList.remove("detailed");
+        hud.innerHTML = "";
+        hudTimer = null;
+      }, 260);
+    }
+  }
+  function showLanovelHud(message, icon = "\u{1F4D6}", durationMs = 2200) {
+    clearLanovelHudTimers();
+    const hud = getOrCreateHud();
+    hud.classList.remove("detailed");
+    hud.innerHTML = `<span class="hud-icon">${icon}</span><span class="hud-message">${escapeHtml2(message)}</span>`;
+    hud.classList.add("visible");
+    if (durationMs > 0) {
+      hudTimer = setTimeout(() => {
+        hideLanovelHud(false);
+      }, durationMs);
+    }
+  }
+  function showLanovelProgressHud(options) {
+    clearLanovelHudTimers();
+    const hud = getOrCreateHud();
+    const icon = options.icon || "\u{1F4D6}";
+    const title = options.title || "\uBC88\uC5ED \uC9C4\uD589 \uC911";
+    const total = Math.max(1, options.total);
+    const current = Math.max(0, Math.min(options.current, total));
+    const pct = Math.min(100, Math.round(current / total * 100));
+    let chunkInfo = "";
+    if (options.chunkIndex !== void 0 && options.chunkTotal !== void 0 && options.chunkTotal > 0) {
+      chunkInfo = `<span class="hud-chunk-info">${options.chunkIndex}/${options.chunkTotal} \uBB36\uC74C</span>`;
+    }
+    const subtext = options.subtext ? escapeHtml2(options.subtext) : `${current}/${total}\uBB38\uC7A5 (${pct}%)`;
+    hud.classList.add("detailed");
+    hud.innerHTML = `
+    <div class="hud-detailed-wrapper">
+      <div class="hud-header-row">
+        <div class="hud-header-left">
+          <span class="hud-icon">${icon}</span>
+          <span class="hud-title">${escapeHtml2(title)}</span>
+        </div>
+        <span class="hud-badge hud-badge-progress">${pct}%</span>
+      </div>
+      <div class="hud-progress-track">
+        <div class="hud-progress-fill" style="width: ${pct}%;"></div>
+      </div>
+      <div class="hud-footer-row">
+        <span class="hud-subtext">${subtext}</span>
+        ${chunkInfo}
+      </div>
+    </div>
+  `;
+    hud.classList.add("visible");
+    if (options.durationMs && options.durationMs > 0) {
+      hudTimer = setTimeout(() => {
+        hideLanovelHud(false);
+      }, options.durationMs);
+    }
+  }
+  function startLanovelCountdownHud(options) {
+    clearLanovelHudTimers();
+    const hud = getOrCreateHud();
+    const icon = options.icon || "\u23F3";
+    const title = options.title || "\uB2E4\uC74C \uC791\uC5C5 \uB300\uAE30 \uC911";
+    const totalSeconds = Math.max(1, options.totalSeconds);
+    let remaining = totalSeconds;
+    const renderCountdown = (sec) => {
+      const pct = Math.max(0, Math.min(100, Math.round(sec / totalSeconds * 100)));
+      const subtext = options.subtext ? escapeHtml2(options.subtext) : `\uB0A8\uC740 \uC2DC\uAC04: ${sec}\uCD08`;
+      hud.classList.add("detailed");
+      hud.innerHTML = `
+      <div class="hud-detailed-wrapper">
+        <div class="hud-header-row">
+          <div class="hud-header-left">
+            <span class="hud-icon">${icon}</span>
+            <span class="hud-title">${escapeHtml2(title)}</span>
+          </div>
+          <span class="hud-badge hud-badge-timer">${sec}\uCD08</span>
+        </div>
+        <div class="hud-progress-track">
+          <div class="hud-progress-fill hud-fill-timer" style="width: ${pct}%;"></div>
+        </div>
+        <div class="hud-footer-row">
+          <span class="hud-subtext">${subtext}</span>
+          <span class="hud-chunk-info">\uB300\uAE30 \uC911</span>
+        </div>
+      </div>
+    `;
+      hud.classList.add("visible");
+    };
+    renderCountdown(remaining);
+    countdownInterval = setInterval(() => {
+      remaining--;
+      if (remaining > 0) {
+        const badge = hud.querySelector(".hud-badge-timer");
+        if (badge) badge.textContent = `${remaining}\uCD08`;
+        const fill = hud.querySelector(".hud-fill-timer");
+        if (fill) {
+          const pct = Math.max(0, Math.min(100, Math.round(remaining / totalSeconds * 100)));
+          fill.style.width = `${pct}%`;
+        }
+      } else {
+        clearLanovelHudTimers();
+        const badge = hud.querySelector(".hud-badge-timer");
+        if (badge) badge.textContent = "0\uCD08";
+        const fill = hud.querySelector(".hud-fill-timer");
+        if (fill) fill.style.width = "0%";
+        if (options.onFinish) {
+          options.onFinish();
+        }
+      }
+    }, 1e3);
+    return () => {
+      clearLanovelHudTimers();
+      hideLanovelHud(false);
+    };
+  }
+  var hudTimer, countdownInterval;
+  var init_hud = __esm({
+    "src/ui/hud.ts"() {
+      "use strict";
+      hudTimer = null;
+      countdownInterval = null;
+    }
+  });
+
+  // src/core/dom_applier.ts
+  function getCleanUrl() {
+    return window.location.href.split("#")[0].trim();
+  }
+  function getTargetParagraphs() {
+    const allParagraphs = document.querySelectorAll("p[id]");
+    return Array.from(allParagraphs).filter((p) => !p.classList.contains("blank") && PID_REGEX.test(p.id));
+  }
+  function applyTranslationsToPage(translations, logNotification = true) {
+    if (!translations || translations.length === 0) return;
+    const translationMap = new Map(translations.map((t) => [t.pid || t.id, t.translated]));
+    const paragraphs = getTargetParagraphs();
+    let replacementCount = 0;
+    paragraphs.forEach((p) => {
+      if (translationMap.has(p.id)) {
+        const translatedText = translationMap.get(p.id);
+        if (translatedText && !translatedText.includes("\uBC88\uC5ED \uC2E4\uD328") && !translatedText.includes("API \uC624\uB958")) {
+          if (!p.dataset.lanovelOriginalHtml) {
+            p.dataset.lanovelOriginalHtml = p.innerHTML;
+            p.dataset.lanovelOriginalStyle = p.getAttribute("style") || "";
+          }
+          p.innerHTML = translatedText;
+          p.classList.add("lanovel-applied-text");
+          const appliedStyle = { color: "#E2E8F0", fontFamily: "TwoCon" };
+          Object.assign(p.style, appliedStyle);
+          replacementCount++;
+        }
+      }
+    });
+    if (logNotification && replacementCount > 0) {
+      logToSidebar(`\uD398\uC774\uC9C0\uC5D0 \uBC88\uC5ED ${replacementCount}\uAC1C\uB97C \uC801\uC6A9\uD588\uC2B5\uB2C8\uB2E4.`);
+    }
+    updateApplyButtonUI(true, paragraphs.length);
+    setupParagraphInteraction();
+  }
+  function restoreOriginalPage() {
+    const paragraphs = getTargetParagraphs();
+    let restoredCount = 0;
+    paragraphs.forEach((p) => {
+      if (p.dataset.lanovelOriginalHtml) {
+        p.innerHTML = p.dataset.lanovelOriginalHtml;
+        if (p.dataset.lanovelOriginalStyle) {
+          p.setAttribute("style", p.dataset.lanovelOriginalStyle);
+        } else {
+          p.removeAttribute("style");
+        }
+        p.classList.remove("lanovel-applied-text");
+        restoredCount++;
+      }
+    });
+    logToSidebar(`\uBCF8\uBB38\uC744 \uC6D0\uBB38\uC73C\uB85C \uBCF5\uC6D0\uD588\uC2B5\uB2C8\uB2E4 (${restoredCount}\uAC1C \uBB38\uB2E8).`);
+    updateApplyButtonUI(false, paragraphs.length);
+    setupParagraphInteraction();
+  }
+  async function setPageApplyStatus(applied, syncStorageAndServer = true) {
+    state.isPageApplied = applied;
+    if (state.isPageApplied) {
+      const allTranslations = Array.from(state.translationCache.values());
+      applyTranslationsToPage(allTranslations, true);
+    } else {
+      restoreOriginalPage();
+    }
+    const paragraphs = getTargetParagraphs();
+    updateApplyButtonUI(state.isPageApplied, paragraphs.length);
+    if (syncStorageAndServer) {
+      const cleanUrl = getCleanUrl();
+      const currentUrl = window.location.href;
+      try {
+        await serverFetch("http://127.0.0.1:8001/api/urls/apply", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url: cleanUrl, apply: state.isPageApplied })
+        });
+      } catch (e) {
+        console.warn("[setPageApplyStatus] Failed to sync apply status to server:", e);
+      }
+      try {
+        const statusObj = { applied: state.isPageApplied, timestamp: Date.now() };
+        await chrome.storage.local.set({
+          ["status-" + cleanUrl]: statusObj,
+          ["status-" + currentUrl]: statusObj
+        });
+      } catch (e) {
+        console.warn("[setPageApplyStatus] Failed to sync apply status to chrome storage:", e);
+      }
+    }
+  }
+  function setupParagraphInteraction() {
+    const paragraphs = getTargetParagraphs();
+    paragraphs.forEach((p) => {
+      if (p.dataset.lanovelLinked) return;
+      p.dataset.lanovelLinked = "true";
+      p.addEventListener("click", async (e) => {
+        if (e.altKey) {
+          e.preventDefault();
+          e.stopPropagation();
+          const { excludeParagraphAndAfter: excludeParagraphAndAfter2, restoreExcludedParagraphAndAfter: restoreExcludedParagraphAndAfter2 } = await Promise.resolve().then(() => (init_row_actions(), row_actions_exports));
+          if (state.manualExcludedPids.has(p.id)) {
+            await restoreExcludedParagraphAndAfter2(p.id);
+          } else {
+            await excludeParagraphAndAfter2(p.id);
+          }
+          return;
+        }
+        const selection = window.getSelection();
+        if (selection && selection.toString().trim().length > 0) return;
+        p.classList.remove("lanovel-highlight-pulse");
+        void p.offsetWidth;
+        p.classList.add("lanovel-highlight-pulse");
+        setTimeout(() => {
+          p.classList.remove("lanovel-highlight-pulse");
+        }, 1600);
+        const row = document.querySelector(`tr[data-pid="${p.id}"]`);
+        if (row) {
+          showSidebar();
+          row.scrollIntoView({ behavior: "smooth", block: "center" });
+          row.classList.remove("lanovel-row-highlight");
+          void row.offsetWidth;
+          row.classList.add("lanovel-row-highlight");
+          setTimeout(() => {
+            row.classList.remove("lanovel-row-highlight");
+          }, 1600);
+        }
+      });
+    });
+  }
+  function jumpToParagraph(rawPid) {
+    if (!rawPid) return false;
+    const cleanPid = rawPid.replace(/^#/, "").trim();
+    if (!cleanPid) return false;
+    let targetP = document.getElementById(cleanPid);
+    if (!targetP && cleanPid.startsWith("p")) {
+      targetP = document.getElementById(cleanPid.slice(1));
+    }
+    if (!targetP && !cleanPid.startsWith("p") && !cleanPid.startsWith("L")) {
+      targetP = document.getElementById("p" + cleanPid) || document.getElementById("L" + cleanPid);
+    }
+    if (!targetP) {
+      targetP = document.querySelector(`[data-pid="${cleanPid}"]`) || document.querySelector(`p#${cleanPid}`);
+    }
+    if (!targetP) return false;
+    targetP.scrollIntoView({ behavior: "smooth", block: "center" });
+    targetP.classList.remove("lanovel-highlight-pulse");
+    void targetP.offsetWidth;
+    targetP.classList.add("lanovel-highlight-pulse");
+    setTimeout(() => {
+      targetP?.classList.remove("lanovel-highlight-pulse");
+    }, 1600);
+    const availWidth = window.screen && (window.screen.availWidth || window.screen.width) || 1920;
+    const screenRatio = window.innerWidth / availWidth;
+    if (screenRatio >= 0.65) {
+      const row = document.querySelector(`tr[data-pid="${cleanPid}"]`) || document.querySelector(`tr[data-pid="${targetP.id}"]`);
+      if (row) {
+        showSidebar();
+        row.scrollIntoView({ behavior: "smooth", block: "center" });
+        row.classList.remove("lanovel-row-highlight");
+        void row.offsetWidth;
+        row.classList.add("lanovel-row-highlight");
+        setTimeout(() => {
+          row?.classList.remove("lanovel-row-highlight");
+        }, 1600);
+      }
+    }
+    return true;
+  }
+  var init_dom_applier = __esm({
+    "src/core/dom_applier.ts"() {
+      "use strict";
+      init_api_client();
+      init_state();
+      init_filters();
+      init_sidebar();
+    }
+  });
+
   // src/core/row_actions.ts
+  var row_actions_exports = {};
+  __export(row_actions_exports, {
+    excludeParagraphAndAfter: () => excludeParagraphAndAfter,
+    restoreExcludedParagraphAndAfter: () => restoreExcludedParagraphAndAfter,
+    retranslateSingleRow: () => retranslateSingleRow,
+    saveSingleTranslation: () => saveSingleTranslation
+  });
   async function saveSingleTranslation(pid, originalText, newTranslatedText) {
     const url = getCleanUrl();
     const scraper = getScraper();
@@ -2485,6 +2842,156 @@
       if (retranslateBtn) retranslateBtn.disabled = false;
     }
   }
+  async function excludeParagraphAndAfter(startPid) {
+    if (!startPid) return;
+    const url = getCleanUrl();
+    const allParagraphs = getTargetParagraphs();
+    const startIndex = allParagraphs.findIndex((p) => p.id === startPid);
+    if (startIndex === -1) {
+      logToSidebar(`[\uC81C\uC678 \uC2E4\uD328] \uB300\uC0C1 \uBB38\uB2E8(${startPid})\uC744 \uBCF8\uBB38\uC5D0\uC11C \uCC3E\uC744 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4.`, "log-error");
+      return;
+    }
+    const targets = allParagraphs.slice(startIndex);
+    if (targets.length === 0) return;
+    const targetPids = [];
+    const targetOriginals = [];
+    const existingTranslationIds = [];
+    targets.forEach((p) => {
+      const pid = p.id;
+      targetPids.push(pid);
+      state.manualExcludedPids.add(pid);
+      state.userDeletedTranslationPids.add(pid);
+      const rawText = p.innerHTML.replace(/<br\s*\/?>/gi, " ").replace(/<[^>]*>/g, "").trim();
+      const cached = state.translationCache.get(pid);
+      const originalText = cached && cached.original || rawText;
+      if (originalText) {
+        const cleanedText = originalText.replace(/([あアいイうウえエおオ])\1{2,}/g, "$1\u30FC");
+        state.exclusionSet.add(cleanedText);
+        state.exclusionSet.add(originalText);
+        targetOriginals.push(originalText);
+      }
+      if (cached && cached.id) {
+        existingTranslationIds.push(cached.id);
+      }
+      state.translationCache.delete(pid);
+      if (p.dataset.lanovelOriginalHtml) {
+        p.innerHTML = p.dataset.lanovelOriginalHtml;
+        p.classList.remove("lanovel-applied-text");
+        if (p.dataset.lanovelOriginalStyle) {
+          p.setAttribute("style", p.dataset.lanovelOriginalStyle);
+        } else {
+          p.removeAttribute("style");
+        }
+      }
+      p.classList.add("lanovel-excluded-paragraph");
+      const row = document.querySelector(`tr[data-pid="${pid}"]`);
+      if (row) {
+        row.classList.add("lanovel-excluded-row");
+        row.dataset.userDeleted = "true";
+        const cell = row.querySelector(".translated-text");
+        if (cell) {
+          cell.textContent = "\u{1F6AB} [\uBC88\uC5ED \uC81C\uC678\uB428]";
+          cell.style.color = "#ef4444";
+          cell.setAttribute("contenteditable", "false");
+        }
+        const saveBtn = row.querySelector(".save-btn");
+        if (saveBtn) saveBtn.disabled = true;
+        const retransBtn = row.querySelector(".retranslate-row-btn");
+        if (retransBtn) retransBtn.disabled = true;
+        const excludeBtn = row.querySelector(".exclude-after-btn");
+        if (excludeBtn) {
+          excludeBtn.classList.add("is-excluded");
+          excludeBtn.textContent = "\u21A9\uFE0F";
+          excludeBtn.title = "\uC774 \uBB38\uB2E8 \uBC88\uC5ED \uC81C\uC678 \uD574\uC81C (\uBCF5\uC6D0)";
+        }
+      }
+      if (state.reviewTargetPids && state.reviewTargetPids.has(pid)) {
+        updateReviewCardTranslation(pid, "\u{1F6AB} [\uC0AC\uC6A9\uC790\uC5D0 \uC758\uD574 \uBC88\uC5ED \uC81C\uC678\uB428]", true);
+      }
+    });
+    updateApplyButtonUI(state.isPageApplied, allParagraphs.length);
+    showLanovelHud(
+      `\uBB38\uB2E8(${startPid})\uBD80\uD130 \uB05D\uAE4C\uC9C0 ${targets.length}\uAC1C \uBB38\uB2E8\uC744 \uBC88\uC5ED \uC81C\uC678\uD588\uC2B5\uB2C8\uB2E4. (\uCC28\uB840 \uB3C4\uB2EC \uC2DC \uC790\uB3D9 \uAC74\uB108\uB700)`,
+      "\u2702\uFE0F",
+      3e3
+    );
+    logToSidebar(
+      `\u2702\uFE0F [\uBB38\uB2E8 \uC774\uD6C4 \uC81C\uC678] \uBB38\uB2E8(${startPid})\uBD80\uD130 \uB05D\uAE4C\uC9C0 ${targets.length}\uAC1C \uBB38\uB2E8\uC744 \uBC88\uC5ED \uB300\uC0C1\uC5D0\uC11C \uC81C\uC678\uD588\uC2B5\uB2C8\uB2E4. (\uC9C4\uD589 \uC911 \uCC28\uB840 \uC2DC \uC790\uB3D9 \uAC74\uB108\uB700)`
+    );
+    try {
+      await serverFetch("http://127.0.0.1:8001/translations/exclude", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          url,
+          originals: targetOriginals,
+          ids: existingTranslationIds
+        })
+      });
+    } catch (e) {
+      console.warn("[excludeParagraphAndAfter] Server sync failed:", e);
+    }
+  }
+  async function restoreExcludedParagraphAndAfter(startPid) {
+    if (!startPid) return;
+    const url = getCleanUrl();
+    const allParagraphs = getTargetParagraphs();
+    const startIndex = allParagraphs.findIndex((p) => p.id === startPid);
+    if (startIndex === -1) return;
+    const targets = allParagraphs.slice(startIndex);
+    if (targets.length === 0) return;
+    const restoredOriginals = [];
+    targets.forEach((p) => {
+      const pid = p.id;
+      state.manualExcludedPids.delete(pid);
+      state.userDeletedTranslationPids.delete(pid);
+      const rawText = p.innerHTML.replace(/<br\s*\/?>/gi, " ").replace(/<[^>]*>/g, "").trim();
+      if (rawText) {
+        const cleanedText = rawText.replace(/([あアいイうウえエおオ])\1{2,}/g, "$1\u30FC");
+        state.exclusionSet.delete(cleanedText);
+        state.exclusionSet.delete(rawText);
+        restoredOriginals.push(rawText);
+      }
+      p.classList.remove("lanovel-excluded-paragraph");
+      const row = document.querySelector(`tr[data-pid="${pid}"]`);
+      if (row) {
+        row.classList.remove("lanovel-excluded-row");
+        delete row.dataset.userDeleted;
+        row.removeAttribute("data-user-deleted");
+        const cell = row.querySelector(".translated-text");
+        if (cell) {
+          cell.textContent = "";
+          cell.style.color = "";
+          cell.setAttribute("contenteditable", "true");
+        }
+        const saveBtn = row.querySelector(".save-btn");
+        if (saveBtn) saveBtn.disabled = true;
+        const retransBtn = row.querySelector(".retranslate-row-btn");
+        if (retransBtn) retransBtn.disabled = false;
+        const excludeBtn = row.querySelector(".exclude-after-btn");
+        if (excludeBtn) {
+          excludeBtn.classList.remove("is-excluded");
+          excludeBtn.textContent = "\u2702\uFE0F";
+          excludeBtn.title = "\uC774 \uBB38\uB2E8\uBD80\uD130 \uBCF8\uBB38 \uB05D\uAE4C\uC9C0 \uBC88\uC5ED \uC81C\uC678";
+        }
+      }
+    });
+    updateApplyButtonUI(state.isPageApplied, allParagraphs.length);
+    showLanovelHud(`\uBB38\uB2E8(${startPid}) \uC774\uD6C4 ${targets.length}\uAC1C \uBB38\uB2E8\uC758 \uC81C\uC678\uB97C \uD574\uC81C\uD588\uC2B5\uB2C8\uB2E4.`, "\u21A9\uFE0F", 2500);
+    logToSidebar(`\u21A9\uFE0F [\uC81C\uC678 \uD574\uC81C] \uBB38\uB2E8(${startPid}) \uC774\uD6C4 ${targets.length}\uAC1C \uBB38\uB2E8\uC758 \uBC88\uC5ED \uC81C\uC678\uB97C \uD574\uC81C\uD588\uC2B5\uB2C8\uB2E4.`);
+    try {
+      await serverFetch("http://127.0.0.1:8001/translations/restore_excluded", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          url,
+          originals: restoredOriginals
+        })
+      });
+    } catch (e) {
+      console.warn("[restoreExcludedParagraphAndAfter] Server sync failed:", e);
+    }
+  }
   var init_row_actions = __esm({
     "src/core/row_actions.ts"() {
       "use strict";
@@ -2495,6 +3002,8 @@
       init_scrapers();
       init_sidebar();
       init_review_panel();
+      init_hud();
+      init_dom_applier();
     }
   });
 
@@ -2953,170 +3462,6 @@
       init_page_translator();
       init_sidebar();
       init_review_panel();
-    }
-  });
-
-  // src/ui/hud.ts
-  function escapeHtml2(text) {
-    const map = {
-      "&": "&amp;",
-      "<": "&lt;",
-      ">": "&gt;",
-      '"': "&quot;",
-      "'": "&#039;"
-    };
-    return text.replace(/[&<>"']/g, (m) => map[m]);
-  }
-  function getOrCreateHud() {
-    let hud = document.getElementById("lanovel-hud");
-    if (!hud) {
-      hud = document.createElement("div");
-      hud.id = "lanovel-hud";
-      document.body.appendChild(hud);
-    }
-    return hud;
-  }
-  function clearLanovelHudTimers() {
-    if (hudTimer) {
-      clearTimeout(hudTimer);
-      hudTimer = null;
-    }
-    if (countdownInterval) {
-      clearInterval(countdownInterval);
-      countdownInterval = null;
-    }
-  }
-  function hideLanovelHud(immediate = false) {
-    clearLanovelHudTimers();
-    const hud = document.getElementById("lanovel-hud");
-    if (!hud) return;
-    if (immediate) {
-      hud.classList.remove("visible", "detailed");
-      hud.innerHTML = "";
-    } else {
-      hud.classList.remove("visible");
-      hudTimer = setTimeout(() => {
-        hud.classList.remove("detailed");
-        hud.innerHTML = "";
-        hudTimer = null;
-      }, 260);
-    }
-  }
-  function showLanovelHud(message, icon = "\u{1F4D6}", durationMs = 2200) {
-    clearLanovelHudTimers();
-    const hud = getOrCreateHud();
-    hud.classList.remove("detailed");
-    hud.innerHTML = `<span class="hud-icon">${icon}</span><span class="hud-message">${escapeHtml2(message)}</span>`;
-    hud.classList.add("visible");
-    if (durationMs > 0) {
-      hudTimer = setTimeout(() => {
-        hideLanovelHud(false);
-      }, durationMs);
-    }
-  }
-  function showLanovelProgressHud(options) {
-    clearLanovelHudTimers();
-    const hud = getOrCreateHud();
-    const icon = options.icon || "\u{1F4D6}";
-    const title = options.title || "\uBC88\uC5ED \uC9C4\uD589 \uC911";
-    const total = Math.max(1, options.total);
-    const current = Math.max(0, Math.min(options.current, total));
-    const pct = Math.min(100, Math.round(current / total * 100));
-    let chunkInfo = "";
-    if (options.chunkIndex !== void 0 && options.chunkTotal !== void 0 && options.chunkTotal > 0) {
-      chunkInfo = `<span class="hud-chunk-info">${options.chunkIndex}/${options.chunkTotal} \uBB36\uC74C</span>`;
-    }
-    const subtext = options.subtext ? escapeHtml2(options.subtext) : `${current}/${total}\uBB38\uC7A5 (${pct}%)`;
-    hud.classList.add("detailed");
-    hud.innerHTML = `
-    <div class="hud-detailed-wrapper">
-      <div class="hud-header-row">
-        <div class="hud-header-left">
-          <span class="hud-icon">${icon}</span>
-          <span class="hud-title">${escapeHtml2(title)}</span>
-        </div>
-        <span class="hud-badge hud-badge-progress">${pct}%</span>
-      </div>
-      <div class="hud-progress-track">
-        <div class="hud-progress-fill" style="width: ${pct}%;"></div>
-      </div>
-      <div class="hud-footer-row">
-        <span class="hud-subtext">${subtext}</span>
-        ${chunkInfo}
-      </div>
-    </div>
-  `;
-    hud.classList.add("visible");
-    if (options.durationMs && options.durationMs > 0) {
-      hudTimer = setTimeout(() => {
-        hideLanovelHud(false);
-      }, options.durationMs);
-    }
-  }
-  function startLanovelCountdownHud(options) {
-    clearLanovelHudTimers();
-    const hud = getOrCreateHud();
-    const icon = options.icon || "\u23F3";
-    const title = options.title || "\uB2E4\uC74C \uC791\uC5C5 \uB300\uAE30 \uC911";
-    const totalSeconds = Math.max(1, options.totalSeconds);
-    let remaining = totalSeconds;
-    const renderCountdown = (sec) => {
-      const pct = Math.max(0, Math.min(100, Math.round(sec / totalSeconds * 100)));
-      const subtext = options.subtext ? escapeHtml2(options.subtext) : `\uB0A8\uC740 \uC2DC\uAC04: ${sec}\uCD08`;
-      hud.classList.add("detailed");
-      hud.innerHTML = `
-      <div class="hud-detailed-wrapper">
-        <div class="hud-header-row">
-          <div class="hud-header-left">
-            <span class="hud-icon">${icon}</span>
-            <span class="hud-title">${escapeHtml2(title)}</span>
-          </div>
-          <span class="hud-badge hud-badge-timer">${sec}\uCD08</span>
-        </div>
-        <div class="hud-progress-track">
-          <div class="hud-progress-fill hud-fill-timer" style="width: ${pct}%;"></div>
-        </div>
-        <div class="hud-footer-row">
-          <span class="hud-subtext">${subtext}</span>
-          <span class="hud-chunk-info">\uB300\uAE30 \uC911</span>
-        </div>
-      </div>
-    `;
-      hud.classList.add("visible");
-    };
-    renderCountdown(remaining);
-    countdownInterval = setInterval(() => {
-      remaining--;
-      if (remaining > 0) {
-        const badge = hud.querySelector(".hud-badge-timer");
-        if (badge) badge.textContent = `${remaining}\uCD08`;
-        const fill = hud.querySelector(".hud-fill-timer");
-        if (fill) {
-          const pct = Math.max(0, Math.min(100, Math.round(remaining / totalSeconds * 100)));
-          fill.style.width = `${pct}%`;
-        }
-      } else {
-        clearLanovelHudTimers();
-        const badge = hud.querySelector(".hud-badge-timer");
-        if (badge) badge.textContent = "0\uCD08";
-        const fill = hud.querySelector(".hud-fill-timer");
-        if (fill) fill.style.width = "0%";
-        if (options.onFinish) {
-          options.onFinish();
-        }
-      }
-    }, 1e3);
-    return () => {
-      clearLanovelHudTimers();
-      hideLanovelHud(false);
-    };
-  }
-  var hudTimer, countdownInterval;
-  var init_hud = __esm({
-    "src/ui/hud.ts"() {
-      "use strict";
-      hudTimer = null;
-      countdownInterval = null;
     }
   });
 
@@ -4051,6 +4396,17 @@
         retranslateSingleRow(pid, originalText);
       });
     }
+    const excludeBtn = row.querySelector(".exclude-after-btn");
+    if (excludeBtn) {
+      excludeBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (state.manualExcludedPids.has(pid) || excludeBtn.classList.contains("is-excluded")) {
+          restoreExcludedParagraphAndAfter(pid);
+        } else {
+          excludeParagraphAndAfter(pid);
+        }
+      });
+    }
     row.addEventListener("click", (e) => {
       handleSidebarRowClick(pid, e);
     });
@@ -4114,6 +4470,7 @@
       <div class="action-btns">
         <button class="save-btn" disabled title="\uC218\uC815\uD55C \uBC88\uC5ED \uC800\uC7A5">\uC800\uC7A5</button>
         <button class="retranslate-row-btn" title="\uC774 \uBB38\uC7A5\uB9CC \uC989\uC2DC \uC7AC\uBC88\uC5ED">\u{1F504}</button>
+        <button class="exclude-after-btn" title="\uC774 \uBB38\uB2E8\uBD80\uD130 \uBCF8\uBB38 \uB05D\uAE4C\uC9C0 \uBC88\uC5ED \uC81C\uC678">\u2702\uFE0F</button>
       </div>
     </td>
   `;
@@ -4397,170 +4754,6 @@
     }
   });
 
-  // src/core/dom_applier.ts
-  function getCleanUrl() {
-    return window.location.href.split("#")[0].trim();
-  }
-  function getTargetParagraphs() {
-    const allParagraphs = document.querySelectorAll("p[id]");
-    return Array.from(allParagraphs).filter((p) => !p.classList.contains("blank") && PID_REGEX.test(p.id));
-  }
-  function applyTranslationsToPage(translations, logNotification = true) {
-    if (!translations || translations.length === 0) return;
-    const translationMap = new Map(translations.map((t) => [t.pid || t.id, t.translated]));
-    const paragraphs = getTargetParagraphs();
-    let replacementCount = 0;
-    paragraphs.forEach((p) => {
-      if (translationMap.has(p.id)) {
-        const translatedText = translationMap.get(p.id);
-        if (translatedText && !translatedText.includes("\uBC88\uC5ED \uC2E4\uD328") && !translatedText.includes("API \uC624\uB958")) {
-          if (!p.dataset.lanovelOriginalHtml) {
-            p.dataset.lanovelOriginalHtml = p.innerHTML;
-            p.dataset.lanovelOriginalStyle = p.getAttribute("style") || "";
-          }
-          p.innerHTML = translatedText;
-          p.classList.add("lanovel-applied-text");
-          const appliedStyle = { color: "#E2E8F0", fontFamily: "TwoCon" };
-          Object.assign(p.style, appliedStyle);
-          replacementCount++;
-        }
-      }
-    });
-    if (logNotification && replacementCount > 0) {
-      logToSidebar(`\uD398\uC774\uC9C0\uC5D0 \uBC88\uC5ED ${replacementCount}\uAC1C\uB97C \uC801\uC6A9\uD588\uC2B5\uB2C8\uB2E4.`);
-    }
-    updateApplyButtonUI(true, paragraphs.length);
-    setupParagraphInteraction();
-  }
-  function restoreOriginalPage() {
-    const paragraphs = getTargetParagraphs();
-    let restoredCount = 0;
-    paragraphs.forEach((p) => {
-      if (p.dataset.lanovelOriginalHtml) {
-        p.innerHTML = p.dataset.lanovelOriginalHtml;
-        if (p.dataset.lanovelOriginalStyle) {
-          p.setAttribute("style", p.dataset.lanovelOriginalStyle);
-        } else {
-          p.removeAttribute("style");
-        }
-        p.classList.remove("lanovel-applied-text");
-        restoredCount++;
-      }
-    });
-    logToSidebar(`\uBCF8\uBB38\uC744 \uC6D0\uBB38\uC73C\uB85C \uBCF5\uC6D0\uD588\uC2B5\uB2C8\uB2E4 (${restoredCount}\uAC1C \uBB38\uB2E8).`);
-    updateApplyButtonUI(false, paragraphs.length);
-    setupParagraphInteraction();
-  }
-  async function setPageApplyStatus(applied, syncStorageAndServer = true) {
-    state.isPageApplied = applied;
-    if (state.isPageApplied) {
-      const allTranslations = Array.from(state.translationCache.values());
-      applyTranslationsToPage(allTranslations, true);
-    } else {
-      restoreOriginalPage();
-    }
-    const paragraphs = getTargetParagraphs();
-    updateApplyButtonUI(state.isPageApplied, paragraphs.length);
-    if (syncStorageAndServer) {
-      const cleanUrl = getCleanUrl();
-      const currentUrl = window.location.href;
-      try {
-        await serverFetch("http://127.0.0.1:8001/api/urls/apply", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ url: cleanUrl, apply: state.isPageApplied })
-        });
-      } catch (e) {
-        console.warn("[setPageApplyStatus] Failed to sync apply status to server:", e);
-      }
-      try {
-        const statusObj = { applied: state.isPageApplied, timestamp: Date.now() };
-        await chrome.storage.local.set({
-          ["status-" + cleanUrl]: statusObj,
-          ["status-" + currentUrl]: statusObj
-        });
-      } catch (e) {
-        console.warn("[setPageApplyStatus] Failed to sync apply status to chrome storage:", e);
-      }
-    }
-  }
-  function setupParagraphInteraction() {
-    const paragraphs = getTargetParagraphs();
-    paragraphs.forEach((p) => {
-      if (p.dataset.lanovelLinked) return;
-      p.dataset.lanovelLinked = "true";
-      p.addEventListener("click", () => {
-        const selection = window.getSelection();
-        if (selection && selection.toString().trim().length > 0) return;
-        p.classList.remove("lanovel-highlight-pulse");
-        void p.offsetWidth;
-        p.classList.add("lanovel-highlight-pulse");
-        setTimeout(() => {
-          p.classList.remove("lanovel-highlight-pulse");
-        }, 1600);
-        const row = document.querySelector(`tr[data-pid="${p.id}"]`);
-        if (row) {
-          showSidebar();
-          row.scrollIntoView({ behavior: "smooth", block: "center" });
-          row.classList.remove("lanovel-row-highlight");
-          void row.offsetWidth;
-          row.classList.add("lanovel-row-highlight");
-          setTimeout(() => {
-            row.classList.remove("lanovel-row-highlight");
-          }, 1600);
-        }
-      });
-    });
-  }
-  function jumpToParagraph(rawPid) {
-    if (!rawPid) return false;
-    const cleanPid = rawPid.replace(/^#/, "").trim();
-    if (!cleanPid) return false;
-    let targetP = document.getElementById(cleanPid);
-    if (!targetP && cleanPid.startsWith("p")) {
-      targetP = document.getElementById(cleanPid.slice(1));
-    }
-    if (!targetP && !cleanPid.startsWith("p") && !cleanPid.startsWith("L")) {
-      targetP = document.getElementById("p" + cleanPid) || document.getElementById("L" + cleanPid);
-    }
-    if (!targetP) {
-      targetP = document.querySelector(`[data-pid="${cleanPid}"]`) || document.querySelector(`p#${cleanPid}`);
-    }
-    if (!targetP) return false;
-    targetP.scrollIntoView({ behavior: "smooth", block: "center" });
-    targetP.classList.remove("lanovel-highlight-pulse");
-    void targetP.offsetWidth;
-    targetP.classList.add("lanovel-highlight-pulse");
-    setTimeout(() => {
-      targetP?.classList.remove("lanovel-highlight-pulse");
-    }, 1600);
-    const availWidth = window.screen && (window.screen.availWidth || window.screen.width) || 1920;
-    const screenRatio = window.innerWidth / availWidth;
-    if (screenRatio >= 0.65) {
-      const row = document.querySelector(`tr[data-pid="${cleanPid}"]`) || document.querySelector(`tr[data-pid="${targetP.id}"]`);
-      if (row) {
-        showSidebar();
-        row.scrollIntoView({ behavior: "smooth", block: "center" });
-        row.classList.remove("lanovel-row-highlight");
-        void row.offsetWidth;
-        row.classList.add("lanovel-row-highlight");
-        setTimeout(() => {
-          row?.classList.remove("lanovel-row-highlight");
-        }, 1600);
-      }
-    }
-    return true;
-  }
-  var init_dom_applier = __esm({
-    "src/core/dom_applier.ts"() {
-      "use strict";
-      init_api_client();
-      init_state();
-      init_filters();
-      init_sidebar();
-    }
-  });
-
   // src/core/page_translator.ts
   function sleepResponsive(getDelayFn) {
     return new Promise((resolve) => {
@@ -4835,6 +5028,7 @@
         return;
       }
       if (!isRetranslation) {
+        state.manualExcludedPids.clear();
         await ensureTranslationsLoaded();
       }
       const prepScraper = getScraper();
@@ -4934,6 +5128,17 @@
       sortSidebarDescending(allParagraphs.map((p) => p.id));
       async function translateChunk(items, chunkSize) {
         if (state.isTranslationCancelled) return;
+        const activeItems = items.filter((item) => !state.isPidExcluded(item.id, item.text));
+        if (activeItems.length === 0) {
+          logToSidebar(`[\uC2E4\uC2DC\uAC04 \uC81C\uC678] \uBB36\uC74C\uC758 \uBAA8\uB4E0 \uBB38\uB2E8(${items.length}\uAC1C)\uC774 \uBC88\uC5ED \uC81C\uC678\uB418\uC5B4 Gemini API \uD638\uCD9C\uC744 \uAC74\uB108\uB701\uB2C8\uB2E4.`);
+          return;
+        }
+        if (activeItems.length < items.length) {
+          logToSidebar(
+            `[\uC2E4\uC2DC\uAC04 \uC81C\uC678] \uBB36\uC74C \uB0B4 ${items.length - activeItems.length}\uAC1C \uC81C\uC678 \uBB38\uB2E8\uC744 \uBC30\uC81C\uD558\uACE0 ${activeItems.length}\uBB38\uC7A5\uB9CC \uBC88\uC5ED\uD569\uB2C8\uB2E4.`
+          );
+        }
+        items = activeItems;
         const MAX_MESSAGE_RETRIES = 5;
         for (let attempt = 0; attempt < MAX_MESSAGE_RETRIES; attempt++) {
           try {
@@ -4989,6 +5194,9 @@
               }
             }
             if (response && response.translations) {
+              response.translations = response.translations.filter(
+                (t) => !state.isPidExcluded(String(t.id), t.original)
+              );
               const censoredItems = response.translations.filter(
                 (t) => t.censored || t.translated && t.translated.includes("[\uAC80\uC5F4\uB85C \uC778\uD574 \uBC88\uC5ED \uC0DD\uB7B5]")
               );
@@ -5084,6 +5292,8 @@
       }
       async function handleFailure(failedItems, currentChunkSize) {
         if (state.isTranslationCancelled) return;
+        failedItems = failedItems.filter((item) => !state.isPidExcluded(item.id, item.text));
+        if (failedItems.length === 0) return;
         if (currentChunkSize > 1 && failedItems.length > 1) {
           const newChunkSize = Math.ceil(currentChunkSize / 2);
           logToSidebar(`\uBB36\uC74C \uB2E8\uC704\uB97C ${newChunkSize}\uC73C\uB85C \uC904\uC5EC \uC7AC\uC2DC\uB3C4\uD569\uB2C8\uB2E4.`);

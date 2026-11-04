@@ -630,3 +630,35 @@ test('syosetu: SyosetuScraper accurately resolves workKey, TOC URL and ignores .
 
 
 
+
+
+import { ExtensionState } from '../src/core/state.ts';
+
+test('state & dynamic exclusion: isPidExcluded accurately filters excluded PIDs and texts', () => {
+  const testState = new ExtensionState();
+
+  testState.manualExcludedPids.add('p15');
+  testState.manualExcludedPids.add('p16');
+  testState.exclusionSet.add('이것은 제외 문장입니다.');
+
+  // 1. PID 기반 제외 확인
+  assert.strictEqual(testState.isPidExcluded('p15'), true);
+  assert.strictEqual(testState.isPidExcluded('p16'), true);
+  assert.strictEqual(testState.isPidExcluded('p14'), false);
+
+  // 2. 원문 텍스트 기반 제외 확인
+  assert.strictEqual(testState.isPidExcluded('p99', '이것은 제외 문장입니다.'), true);
+  assert.strictEqual(testState.isPidExcluded('p99', '정상적인 소설 문장'), false);
+
+  // 3. 청크 실시간 필터링 시뮬레이션
+  const chunk = [
+    { id: 'p13', text: '정상 문장 1' },
+    { id: 'p14', text: '정상 문장 2' },
+    { id: 'p15', text: '후기 시작 문장' },
+    { id: 'p16', text: '후기 두 번째 문장' }
+  ];
+
+  const activeItems = chunk.filter((item: any) => !testState.isPidExcluded(item.id, item.text));
+  assert.strictEqual(activeItems.length, 2);
+  assert.deepStrictEqual(activeItems.map((it: any) => it.id), ['p13', 'p14']);
+});

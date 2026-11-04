@@ -13,6 +13,7 @@ export class ExtensionState {
   public isPageApplied = false;
   public translationsLoadedPromise: Promise<TranslationRecord[] | null> | null = null;
   public userDeletedTranslationPids = new Set<string>();
+  public manualExcludedPids = new Set<string>();
 
   // 소설 및 구분선 상태
   public currentNovelTitle = '';
@@ -60,6 +61,17 @@ export class ExtensionState {
 
   constructor() {
     this.startStatusReporting();
+  }
+
+  public isPidExcluded(pid: string, originalText?: string): boolean {
+    if (this.manualExcludedPids.has(String(pid))) return true;
+    if (originalText) {
+      const cleaned = originalText.replace(/([あアいイうウえエおオ])\1{2,}/g, '$1ー').trim();
+      if (this.exclusionSet.has(cleaned) || this.exclusionSet.has(originalText.trim())) {
+        return true;
+      }
+    }
+    return false;
   }
 
   public isReviewMode(): boolean {

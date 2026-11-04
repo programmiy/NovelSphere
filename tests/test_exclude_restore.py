@@ -147,3 +147,54 @@ def test_exclude_and_restore_cycle():
     # Trash cleaned
     assert db.query(TranslationTrash).filter(TranslationTrash.url == "https://test.com/novel/1").count() == 0
     db.close()
+
+
+def test_exclude_by_url_and_originals():
+    from server.server import app
+    from server.models import Translation, ExcludedSentence, TranslationTrash
+    import server.database as sdb
+
+    client = TestClient(app)
+    db = sdb.SessionLocal()
+
+    # 1. 기존 번역 레코드 1건 추가 (p50: 번역 완료)
+    t = Translation(
+        url="https://test.com/novel/2",
+        pid="p50",
+        original="ここまで読んでいただきありがとうございます！",
+        translated="여기까지 읽어주셔서 감사합니다!",
+        timestamp=123456789,
+        title="2화"
+    )
+    db.add(t)
+    db.commit()
+    db.close()
+
+    # 2. 미번역 문장(p51)과 기번역 문장(p50)을 url + originals로 일괄 제외 요청
+    exclude_payload = {
+        "url": "https://test.com/novel/2",
+        "originals": [
+            "ここまで読んでいただきありがとうございます！",
+            "次回更新は明日20時予定です。"
+        ]
+    }
+    res = client.post("/translations/exclude", json=exclude_payload)
+    assert res.status_code == 200
+
+    # 3. 검증:
+    db = sdb.SessionLocal()
+    # 3-1. ExcludedSentence에 두 문장 모두 등록되었는가?
+    excluded_items = db.query(ExcludedSentence).filter(ExcludedSentence.url == "https://test.com/novel/2").all()
+    assert len(excluded_items) == 2
+    excluded_texts = {item.original for item in excluded_items}
+    assert "ここまで読んでいただきありがとうございます！" in excluded_texts
+    assert "次回更新は明日20時予定です。" in excluded_texts
+
+    # 3-2. 기존 번역문은 translations에서 삭제되고 TranslationTrash에 아카이브되었는가?
+    assert db.query(Translation).filter(Translation.url == "https://test.com/novel/2").count() == 0
+    trash = db.query(TranslationTrash).filter(TranslationTrash.url == "https://test.com/novel/2").first()
+    assert trash is not None
+    assert trash.translated == "여기까지 읽어주셔서 감사합니다!"
+    assert trash.reason_category == "excluded"
+
+    db.close()

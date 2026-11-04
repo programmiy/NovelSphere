@@ -1731,3 +1731,58 @@ tr.review-target-row:hover {
 
 
 
+
+/* ==========================================================================
+   실시간 문단 제외 스타일 (Real-time Paragraph Exclusion)
+   ========================================================================== */
+
+/* 본문 문단 제외 스타일 */
+.lanovel-excluded-paragraph {
+    opacity: 0.52 !important;
+    border-left: 3px dashed #ef4444 !important;
+    padding-left: 8px !important;
+    transition: all 0.2s ease !important;
+    text-decoration: line-through !important;
+    text-decoration-color: rgba(239, 68, 68, 0.6) !important;
+}
+
+/* 사이드바 테이블 제외 행 스타일 */
+tr.lanovel-excluded-row {
+    opacity: 0.6 !important;
+    background-color: rgba(239, 68, 68, 0.08) !important;
+}
+
+tr.lanovel-excluded-row .translated-text {
+    font-style: italic !important;
+    color: #ef4444 !important;
+}
+
+/* 사이드바 제외 버튼 스타일 */
+.exclude-after-btn {
+    background: rgba(239, 68, 68, 0.15);
+    border: 1px solid rgba(239, 68, 68, 0.35);
+    color: #ef4444;
+    border-radius: 4px;
+    padding: 2px 6px;
+    font-size: 11px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.exclude-after-btn:hover {
+    background: rgba(239, 68, 68, 0.3);
+    border-color: #ef4444;
+    transform: scale(1.05);
+}
+
+.exclude-after-btn.is-excluded {
+    background: rgba(16, 185, 129, 0.15);
+    border: 1px solid rgba(16, 185, 129, 0.35);
+    color: #10b981;
+}
+
+.exclude-after-btn.is-excluded:hover {
+    background: rgba(16, 185, 129, 0.3);
+    border-color: #10b981;
+    transform: scale(1.05);
+}

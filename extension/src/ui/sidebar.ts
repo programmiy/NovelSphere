@@ -3,7 +3,7 @@ import { state } from '../core/state';
 import { TranslationRecord } from '../types/novel';
 import { detectCutoffInfo, calculateNextCutoffTimestamp } from '../core/turbo';
 import { checkIsVerbatimOrParaphrased } from '../core/filters';
-import { saveSingleTranslation, retranslateSingleRow } from '../core/row_actions';
+import { saveSingleTranslation, retranslateSingleRow, excludeParagraphAndAfter, restoreExcludedParagraphAndAfter } from '../core/row_actions';
 import { updateReviewCardTranslation } from './review_panel';
 import { bindSeparatorPanelEvents } from './separator_panel';
 import { toggleQuickJumpFromSidebar } from './toc_quick_jump';
@@ -395,6 +395,18 @@ function bindRowEvents(row: HTMLTableRowElement, pid: string, originalText: stri
     });
   }
 
+  const excludeBtn = row.querySelector<HTMLButtonElement>('.exclude-after-btn');
+  if (excludeBtn) {
+    excludeBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (state.manualExcludedPids.has(pid) || excludeBtn.classList.contains('is-excluded')) {
+        restoreExcludedParagraphAndAfter(pid);
+      } else {
+        excludeParagraphAndAfter(pid);
+      }
+    });
+  }
+
   row.addEventListener('click', (e) => {
     handleSidebarRowClick(pid, e);
   });
@@ -467,6 +479,7 @@ export function addEntryToSidebar(t: TranslationRecord): void {
       <div class="action-btns">
         <button class="save-btn" disabled title="수정한 번역 저장">저장</button>
         <button class="retranslate-row-btn" title="이 문장만 즉시 재번역">🔄</button>
+        <button class="exclude-after-btn" title="이 문단부터 본문 끝까지 번역 제외">✂️</button>
       </div>
     </td>
   `;

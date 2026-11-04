@@ -125,7 +125,9 @@ class TranslateRequest(BaseModel):
 
 
 class ExcludeRequest(BaseModel):
-    ids: List[int]
+    ids: Optional[List[int]] = []
+    url: Optional[str] = None
+    originals: Optional[List[str]] = []
 
 
 class RestoreExcludedItem(BaseModel):
@@ -567,50 +569,94 @@ def get_excluded_sentences(url: str, db: Session = Depends(get_db)):
     "/translations/exclude",
     tags=["Translation"],
     summary="번역 기록 제외",
-    description="지정된 ID의 번역 기록을 제외 목록에 추가하고 휴지통에 보관 후 삭제합니다."
+    description="지정된 ID 또는 URL/원문 목록의 번역 기록을 제외 목록에 추가하고 휴지통에 보관 후 삭제합니다."
 )
 def exclude_translations(req: ExcludeRequest, db: Session = Depends(get_db)):
     excluded_count = 0
     now = int(time.time())
     batch_id = f"exclude_{int(now * 1000)}"
-    for translation_id in req.ids:
-        translation_to_exclude = db.query(Translation).filter(Translation.id == translation_id).first()
-        if translation_to_exclude:
-            # 1. Add to excluded_sentences if not already there
+
+    # 1. ID 기반 제외 (기존 동작 100% 보존)
+    if req.ids:
+        for translation_id in req.ids:
+            translation_to_exclude = db.query(Translation).filter(Translation.id == translation_id).first()
+            if translation_to_exclude:
+                existing_excluded = db.query(ExcludedSentence).filter(
+                    ExcludedSentence.url == translation_to_exclude.url,
+                    ExcludedSentence.original == translation_to_exclude.original
+                ).first()
+                if not existing_excluded:
+                    new_excluded = ExcludedSentence(
+                        url=translation_to_exclude.url,
+                        original=translation_to_exclude.original
+                    )
+                    db.add(new_excluded)
+
+                trash_item = TranslationTrash(
+                    original_translation_id=translation_to_exclude.id,
+                    url=translation_to_exclude.url,
+                    pid=translation_to_exclude.pid,
+                    original=translation_to_exclude.original,
+                    translated=translation_to_exclude.translated,
+                    timestamp=translation_to_exclude.timestamp,
+                    folderName=translation_to_exclude.folderName,
+                    title=translation_to_exclude.title,
+                    toc_sort_order=translation_to_exclude.toc_sort_order,
+                    reason_category="excluded",
+                    deleted_at=now,
+                    cleanup_batch_id=batch_id
+                )
+                db.add(trash_item)
+                db.delete(translation_to_exclude)
+                excluded_count += 1
+
+    # 2. URL + 원문 텍스트 목록 기반 제외 (미번역 문장 및 번역 완료 문장 모두 커버)
+    if req.url and req.originals:
+        clean_url = req.url.split('#')[0].strip()
+        for original_text in req.originals:
+            if not original_text or not original_text.strip():
+                continue
+            text = original_text.strip()
+            # 2-1. ExcludedSentence 테이블에 등록
             existing_excluded = db.query(ExcludedSentence).filter(
-                ExcludedSentence.url == translation_to_exclude.url,
-                ExcludedSentence.original == translation_to_exclude.original
+                ExcludedSentence.url == clean_url,
+                ExcludedSentence.original == text
             ).first()
             if not existing_excluded:
                 new_excluded = ExcludedSentence(
-                    url=translation_to_exclude.url,
-                    original=translation_to_exclude.original
+                    url=clean_url,
+                    original=text
                 )
                 db.add(new_excluded)
 
-            # 2. Archive to TranslationTrash so translation text is never lost
-            trash_item = TranslationTrash(
-                original_translation_id=translation_to_exclude.id,
-                url=translation_to_exclude.url,
-                pid=translation_to_exclude.pid,
-                original=translation_to_exclude.original,
-                translated=translation_to_exclude.translated,
-                timestamp=translation_to_exclude.timestamp,
-                folderName=translation_to_exclude.folderName,
-                title=translation_to_exclude.title,
-                toc_sort_order=translation_to_exclude.toc_sort_order,
-                reason_category="excluded",
-                deleted_at=now,
-                cleanup_batch_id=batch_id
-            )
-            db.add(trash_item)
+            # 2-2. translations 테이블에 이미 번역 레코드가 있다면 휴지통 보관 후 삭제
+            active_translations = db.query(Translation).filter(
+                Translation.url == clean_url,
+                Translation.original == text
+            ).all()
+            for trans in active_translations:
+                trash_item = TranslationTrash(
+                    original_translation_id=trans.id,
+                    url=trans.url,
+                    pid=trans.pid,
+                    original=trans.original,
+                    translated=trans.translated,
+                    timestamp=trans.timestamp,
+                    folderName=trans.folderName,
+                    title=trans.title,
+                    toc_sort_order=trans.toc_sort_order,
+                    reason_category="excluded",
+                    deleted_at=now,
+                    cleanup_batch_id=batch_id
+                )
+                db.add(trash_item)
+                db.delete(trans)
+                excluded_count += 1
 
-            # 3. Delete from active translations
-            db.delete(translation_to_exclude)
-            excluded_count += 1
     db.commit()
-    from server.backup_utils import record_legitimate_deletion
-    record_legitimate_deletion(excluded_count, reason="exclude_translation")
+    if excluded_count > 0:
+        from server.backup_utils import record_legitimate_deletion
+        record_legitimate_deletion(excluded_count, reason="exclude_translation")
     return {"message": f"{excluded_count}개의 항목이 제외 목록 및 휴지통에 안전하게 보관되었습니다."}
 
 

@@ -389,6 +389,7 @@ export async function translateAllPTags(isRetranslation = false): Promise<void> 
     }
 
     if (!isRetranslation) {
+      state.manualExcludedPids.clear();
       await ensureTranslationsLoaded();
     }
 
@@ -505,6 +506,20 @@ export async function translateAllPTags(isRetranslation = false): Promise<void> 
     // 묶음 번역 헬퍼
     async function translateChunk(items: Array<{ id: string; text: string }>, chunkSize: number): Promise<void> {
       if (state.isTranslationCancelled) return;
+
+      // ⚡ 실시간 번역 제외 반영: 사용자가 번역 진행 중 제외한 문단(및 그 이후 문단)은 API 호출 목록에서 즉시 필터링
+      const activeItems = items.filter((item) => !state.isPidExcluded(item.id, item.text));
+      if (activeItems.length === 0) {
+        logToSidebar(`[실시간 제외] 묶음의 모든 문단(${items.length}개)이 번역 제외되어 Gemini API 호출을 건너뜁니다.`);
+        return;
+      }
+      if (activeItems.length < items.length) {
+        logToSidebar(
+          `[실시간 제외] 묶음 내 ${items.length - activeItems.length}개 제외 문단을 배제하고 ${activeItems.length}문장만 번역합니다.`
+        );
+      }
+      items = activeItems;
+
       const MAX_MESSAGE_RETRIES = 5;
 
       for (let attempt = 0; attempt < MAX_MESSAGE_RETRIES; attempt++) {
@@ -568,6 +583,10 @@ export async function translateAllPTags(isRetranslation = false): Promise<void> 
           }
 
           if (response && response.translations) {
+            // 요청 중 사용자가 제외를 눌렀을 수 있으므로 실시간 제외 필터링
+            response.translations = response.translations.filter(
+              (t: any) => !state.isPidExcluded(String(t.id), t.original)
+            );
             const censoredItems = response.translations.filter(
               (t: any) => t.censored || (t.translated && t.translated.includes('[검열로 인해 번역 생략]'))
             );
@@ -668,6 +687,8 @@ export async function translateAllPTags(isRetranslation = false): Promise<void> 
 
     async function handleFailure(failedItems: Array<{ id: string; text: string }>, currentChunkSize: number): Promise<void> {
       if (state.isTranslationCancelled) return;
+      failedItems = failedItems.filter((item) => !state.isPidExcluded(item.id, item.text));
+      if (failedItems.length === 0) return;
       if (currentChunkSize > 1 && failedItems.length > 1) {
         const newChunkSize = Math.ceil(currentChunkSize / 2);
         logToSidebar(`묶음 단위를 ${newChunkSize}으로 줄여 재시도합니다.`);
