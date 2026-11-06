@@ -5,6 +5,9 @@ import { TranslationRecord, ParagraphItem } from '../types/novel';
 import {
   isTranslatableText,
   isPurePunctuationOnly,
+  isPureMathOrPunctuation,
+  updateBracketDepth,
+  hasJapaneseText,
   checkIsVerbatimOrParaphrased,
   getPendingEmptyItems,
   PID_REGEX,
@@ -293,20 +296,36 @@ export function hasUntranslatedParagraphs(): boolean {
 
   const sepAnalysis = analyzeSeparatorSections(validParagraphs, state.activeSeparators);
 
+  let bracketDepth = 0;
+  let consecutiveBracketLines = 0;
   for (const item of validParagraphs) {
     if (sepAnalysis.prefacePids.has(item.pid)) continue;
     if (sepAnalysis.afterwordPids.has(item.pid)) continue;
     if (sepAnalysis.separatorPids.has(item.pid)) continue;
+
+    const cleanedText = item.text.replace(/([あアいイうウえエおオ])\1{2,}/g, '$1ー');
+    const wasInBracket = bracketDepth > 0;
+    bracketDepth = updateBracketDepth(bracketDepth, cleanedText);
+    const inBracket = wasInBracket || bracketDepth > 0;
+
+    if (inBracket && !hasJapaneseText(cleanedText)) {
+      consecutiveBracketLines++;
+      if (consecutiveBracketLines > 30) {
+        bracketDepth = 0;
+        consecutiveBracketLines = 0;
+      }
+    } else {
+      consecutiveBracketLines = 0;
+    }
 
     const cached = state.translationCache.get(item.pid);
     if (cached && cached.translated && cached.translated.trim()) {
       continue;
     }
 
-    const cleanedText = item.text.replace(/([あアいイうウえエおオ])\1{2,}/g, '$1ー');
     if (state.exclusionSet.has(cleanedText)) continue;
 
-    if (isTranslatableText(cleanedText)) {
+    if (isTranslatableText(cleanedText, inBracket)) {
       return true;
     }
   }
@@ -423,21 +442,37 @@ export async function translateAllPTags(isRetranslation = false): Promise<void> 
     const textsToTranslate: Array<{ id: string; text: string }> = [];
     const instantPunctuationItems: Array<{ id: string; original: string; translated: string }> = [];
 
+    let bracketDepth = 0;
+    let consecutiveBracketLines = 0;
     validParagraphs.forEach((item) => {
       if (sepAnalysis.prefacePids.has(item.pid)) return;
       if (sepAnalysis.afterwordPids.has(item.pid)) return;
       if (sepAnalysis.separatorPids.has(item.pid)) return;
+
+      const cleanedText = item.text.replace(/([あアいイうウえエおオ])\1{2,}/g, '$1ー');
+      const wasInBracket = bracketDepth > 0;
+      bracketDepth = updateBracketDepth(bracketDepth, cleanedText);
+      const inBracket = wasInBracket || bracketDepth > 0;
+
+      if (inBracket && !hasJapaneseText(cleanedText)) {
+        consecutiveBracketLines++;
+        if (consecutiveBracketLines > 30) {
+          bracketDepth = 0;
+          consecutiveBracketLines = 0;
+        }
+      } else {
+        consecutiveBracketLines = 0;
+      }
 
       const cached = state.translationCache.get(item.pid);
       if (cached && cached.translated && cached.translated.trim()) {
         return;
       }
 
-      const cleanedText = item.text.replace(/([あアいイうウえエおオ])\1{2,}/g, '$1ー');
       if (state.exclusionSet.has(cleanedText)) return;
 
-      if (cleanedText && isTranslatableText(cleanedText)) {
-        if (isPurePunctuationOnly(cleanedText)) {
+      if (cleanedText && isTranslatableText(cleanedText, inBracket)) {
+        if (isPureMathOrPunctuation(cleanedText)) {
           instantPunctuationItems.push({ id: item.pid, original: cleanedText, translated: cleanedText });
         } else {
           textsToTranslate.push({ id: item.pid, text: cleanedText });
@@ -445,7 +480,7 @@ export async function translateAllPTags(isRetranslation = false): Promise<void> 
       }
     });
 
-    // ⚡ 순수 문장부호/기호 문장 즉시 대입 (Fast-Path)
+    // ⚡ 순수 문장부호/기호/수식 문장 즉시 대입 (Fast-Path)
     if (instantPunctuationItems.length > 0) {
       instantPunctuationItems.forEach((item) => {
         state.userDeletedTranslationPids.delete(String(item.id));
@@ -458,7 +493,7 @@ export async function translateAllPTags(isRetranslation = false): Promise<void> 
         applyTranslationsToPage(instantPunctuationItems, false);
       }
       await saveAllTranslations(instantPunctuationItems);
-      logToSidebar(`[즉시 대입] 문자 없는 문장부호 문장 ${instantPunctuationItems.length}개를 즉시 적용했습니다.`);
+      logToSidebar(`[즉시 대입] 순수 기호/수식 문장 ${instantPunctuationItems.length}개를 API 호출 없이 즉시 적용했습니다.`);
     }
 
     if (textsToTranslate.length === 0) {

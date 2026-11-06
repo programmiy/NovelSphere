@@ -1,7 +1,7 @@
 # LANOVEL 종합 코드베이스 기능 및 함수 레퍼런스 (Architectural & Functional Reference)
 
 > **문서 목적**: AI 어시스턴트가 사용자 요구사항 및 구어체 지시를 입력받았을 때, 혼선이나 회귀(Regression) 없이 전체 아키텍처와 1:1 타깃 코드를 0초 만에 직관적으로 파악할 수 있도록 압축 정리한 단일 진실 공급원(SSOT) 기술 레퍼런스입니다.
-> **최신 동기화 일자**: 2026-11-06 (미분류 보관함 새 폴더 일괄 등록 이름 예약 저장 및 원클릭 즉시 등록 시스템 완비: `novel_works.custom_folder_name` 스키마 및 `POST /api/unclassified_novels/save_custom_folder` 엔드포인트 구축, 관리자 드로어 `admin-drawer.js` `[💾 저장]`·`[✕]` 해제·예약 소설 최상단 정렬 & 카드 메인 제목 표시·선택 상태 지속 복원 및 `[📁 '○○○' 즉시 등록]` 원클릭 처리 지원; 구글 게이트웨이 쿼터 동기화[503 과부하 응답 전건 계측] 및 17시/16시 정각 쿼터 리셋 인메모리 퍼센티지[0/500 시 0.0%] 고착 버그 완결; 모바일 앱 v1.7.5+2026110603 배너 연동; 번역 진행 중 본문 호버 스마트 플로팅 위젯 `#lanovel-p-action-pill` 양방향 동적 제외; 미국 DST 실시간 정각 안전 중단; Windows asyncio Proactor WinError 10054 클라이언트 소켓 셧다운 노이즈 무음화 패치 완비)
+> **최신 동기화 일자**: 2026-11-07 (대화/인용 괄호 컨텍스트 추적 및 순수 수식/기호 Fast-Path 자동 대입 시스템 구축: `filters.ts`(대화 괄호 컨텍스트 `updateBracketDepth`·`isPureMathOrPunctuation` 수식/기호 Fast-Path)의 `updateBracketDepth`·`isPureMathOrPunctuation` 및 `page_translator.ts`의 다전문단 대사 누락 방지·Fast-Path 즉시 대입 완비; 미분류 보관함 수식 단락 5건 안전 적재; 미분류 보관함 새 폴더 일괄 등록 이름 예약 저장 및 원클릭 즉시 등록; 구글 게이트웨이 쿼터 동기화[503 전건 계측] 및 17시/16시 정각 쿼터 리셋 0.0% 완결)
 
 ---
 
@@ -86,6 +86,7 @@
 
 | 사용자 발화 / 요청 예시 | 연관 파일 및 핵심 함수 | 핵심 처리 내용 |
 | :--- | :--- | :--- |
+| **"괄호 안에 수식이 안 번역돼 / 1+7=8만 인식되고 나머지는 인식 못해 / 다전문단 대사 누락 / 수식 문단 번역 건너뜀"** | `extension/src/core/filters.ts`<br>`extension/src/core/page_translator.ts`<br>`extension/tests/core.test.ts`<br>`docs/feat-multiline-dialogue-bracket-tracking-2026-11-07.md` | 카쿠요무 등에서 작가가 퀴즈나 수식 대사를 여러 `<p>`로 분할 작성 시 가나/한자가 없는 중간 수식(`2＋9=11` 등)이 누락되던 문제를 해결하기 위해 `updateBracketDepth()` 괄호 컨텍스트 추적을 탑재. 괄호가 닫히기 전까지는 모든 문단을 파이프라인에 포함하되, 가나/한자가 없는 순수 수식/기호/변수 문단은 `isPureMathOrPunctuation()`을 거쳐 Gemini API 호출 0회인 Fast-Path(0ms 원문 즉시 대입)로 사이드바 등록 및 페이지 번역 테마 스타일을 100% 일괄 적용. |
 | **"WinError 10054 / _call_connection_lost 에러 / 현재 연결은 원격 호스트에 의해 강제로 끊겼습니다 / asyncio ERROR"** | `server/server.py`<br>`docs/fix-windows-connection-reset-10054-2026-11-06.md` | Windows ProactorEventLoop에서 브라우저 탭 닫기/새로고침 시 `_call_connection_lost`가 소켓을 닫으려다 발생하는 CPython 고유의 무해한 `WinError 10054`(ConnectionResetError) 노이즈를 `server.py` 상단 몽키패치 및 `windows_iocp_exception_handler` 필터로 완벽 무음화. |
 | **"미분류 소설 이름 저장해두고 나중에 버튼만 누르게 해줘 / 새 폴더 일괄 등록 이름 저장 / 미분류 폴더명 예약 등록 / 웹 캐시 지우니까 저장된게 사라졌어"** | `server/routers/unclassified.py`<br>`server/templates/admin.html`<br>`server/static/admin.css`<br>`server/static/admin/admin-drawer.js`<br>`docs/fix-unclassified-preset-display-persistence-2026-11-06.md` | 미분류 소설 폴더명 예약 저장(`novel_works.custom_folder_name`) 후 새로고침 시 다른 소설이 기본 선택되거나 원제만 보여 유실된 것처럼 오인되는 현상을 해결. 예약된 소설을 최상단 우선 정렬하고 카드 메인 제목을 황금빛 예약 폴더명으로 전환하며 `localStorage` 기반 선택 지속 복원 완비. |
 | **"미분류 소설 이름 저장해두고 나중에 버튼만 누르게 해줘 / 새 폴더 일괄 등록 이름 저장 / 미분류 폴더명 예약 등록"** | `server/routers/unclassified.py`<br>`server/templates/admin.html`<br>`server/static/admin.css`<br>`server/static/admin/admin-drawer.js`<br>`tests/test_unclassified.py`<br>`docs/feat-unclassified-custom-folder-preset-2026-11-06.md` | 미분류 보관함에서 새 폴더로 일괄 등록 시 매번 이름을 입력해야 하는 번거로움을 해소하기 위해 `novel_works.custom_folder_name` 영구 저장 및 `POST /api/unclassified_novels/save_custom_folder` 엔드포인트 구축. 입력창 옆 `[💾 저장]` 버튼(또는 Enter)으로 원하는 폴더명을 미리 예약해두면, 나중에 보관함에 진입했을 때 `[📁 '○○○' 즉시 등록]` 버튼 클릭 한 번으로 일괄 귀속 완료. 좌측 소설 카드에도 `[🏷️ 예약: ○○○]` 배지가 표시되어 한눈에 식별 가능. |

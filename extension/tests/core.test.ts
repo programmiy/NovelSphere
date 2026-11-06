@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert';
 import { chunkArray, createBudgetChunks, selectSafePiggybackItems, isDialogueLine, isSceneBreakLine, CHUNK_BUDGET_CHARACTERS, CHUNK_HARD_MAX_ITEMS, CHUNK_PIGGYBACK_MAX_ITEMS } from '../src/core/chunker.ts';
-import { isTranslatableText, isPurePunctuationOnly, hasJapaneseText } from '../src/core/filters.ts';
+import { isTranslatableText, isPurePunctuationOnly, isPureMathOrPunctuation, updateBracketDepth, hasJapaneseText } from '../src/core/filters.ts';
 import {
   calculateAdaptiveChunkDelay,
   calculateAdaptiveEpisodeDelay,
@@ -203,6 +203,33 @@ test('filters: hasJapaneseText detects kana and kanji', () => {
   assert.strictEqual(hasJapaneseText('Hello World'), false);
   assert.strictEqual(hasJapaneseText('한국어 문장'), false);
   assert.strictEqual(hasJapaneseText('12345!'), false);
+});
+
+test('filters: bracket tracking and math fast-path in dialogue block', () => {
+  // Bracket depth tracking
+  let depth = 0;
+  depth = updateBracketDepth(depth, '「1＋7=8');
+  assert.strictEqual(depth, 1);
+  assert.strictEqual(isTranslatableText('「1＋7=8', false), true);
+
+  // Subsequent math lines inside open bracket
+  assert.strictEqual(isTranslatableText('2＋9=11', depth > 0), true);
+  assert.strictEqual(isPureMathOrPunctuation('2＋9=11'), true);
+
+  assert.strictEqual(isTranslatableText('8＋2=A', depth > 0), true);
+  assert.strictEqual(isPureMathOrPunctuation('8＋2=A'), true);
+
+  assert.strictEqual(isTranslatableText('24＋1=C', depth > 0), true);
+  assert.strictEqual(isPureMathOrPunctuation('24＋1=C'), true);
+
+  // Closing bracket line
+  depth = updateBracketDepth(depth, 'A.B.Cに入る数字を出せ。」');
+  assert.strictEqual(depth, 0);
+  assert.strictEqual(isTranslatableText('A.B.Cに入る数字を出せ。」', false), true);
+  assert.strictEqual(isPureMathOrPunctuation('A.B.Cに入る数字を出せ。」'), false);
+
+  // Outside bracket plain math is false for isTranslatableText
+  assert.strictEqual(isTranslatableText('2＋9=11', false), false);
 });
 
 test('throttle: normal mode defaults to 5s chunk delay and 60s episode delay', () => {

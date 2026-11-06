@@ -1341,10 +1341,24 @@
   });
 
   // src/core/filters.ts
-  function isTranslatableText(text) {
+  function updateBracketDepth(currentDepth, text) {
+    if (!text) return currentDepth;
+    const opens = (text.match(/[「『（(【《〈〔“]/g) || []).length;
+    const closes = (text.match(/[」』）)】》〉〕”]/g) || []).length;
+    const quotes = (text.match(/"/g) || []).length;
+    let nextDepth = currentDepth + opens - closes;
+    if (quotes % 2 !== 0) {
+      nextDepth += currentDepth > 0 ? -1 : 1;
+    }
+    return Math.max(0, nextDepth);
+  }
+  function isTranslatableText(text, inBracket = false) {
     if (!text || typeof text !== "string") return false;
     const trimmed = text.trim();
     if (!trimmed) return false;
+    if (inBracket) {
+      return true;
+    }
     if (JAPANESE_REGEX.test(trimmed)) {
       return true;
     }
@@ -1367,6 +1381,23 @@
     }
     return true;
   }
+  function isPureMathOrPunctuation(text) {
+    if (!text || typeof text !== "string") return false;
+    const trimmed = text.trim();
+    if (!trimmed) return false;
+    if (/[\u3040-\u309f\u30a0-\u30fa\u30fd-\u30ff\u4e00-\u9faf\u3400-\u4dbf\uac00-\ud7a3]/.test(trimmed)) {
+      return false;
+    }
+    if (!/[a-zA-Z]/.test(trimmed)) {
+      return true;
+    }
+    const words = trimmed.match(/[a-zA-Z]+/g) || [];
+    const isAllShortVariables = words.every((w) => w.length <= 2);
+    if (isAllShortVariables && /[0-9+\-*/=<>:.,＋＝]/.test(trimmed)) {
+      return true;
+    }
+    return false;
+  }
   function hasJapaneseText(text) {
     if (!text) return false;
     if (/^[っッ\s]+$/.test(text)) return false;
@@ -1374,7 +1405,7 @@
   }
   function isSymbolOrPunctOnly(text) {
     if (!text) return true;
-    return isPurePunctuationOnly(text);
+    return isPureMathOrPunctuation(text);
   }
   function containsChinese(text) {
     if (!text) return false;
@@ -5140,17 +5171,31 @@
       }
     });
     const sepAnalysis = analyzeSeparatorSections(validParagraphs, state.activeSeparators);
+    let bracketDepth = 0;
+    let consecutiveBracketLines = 0;
     for (const item of validParagraphs) {
       if (sepAnalysis.prefacePids.has(item.pid)) continue;
       if (sepAnalysis.afterwordPids.has(item.pid)) continue;
       if (sepAnalysis.separatorPids.has(item.pid)) continue;
+      const cleanedText = item.text.replace(/([あアいイうウえエおオ])\1{2,}/g, "$1\u30FC");
+      const wasInBracket = bracketDepth > 0;
+      bracketDepth = updateBracketDepth(bracketDepth, cleanedText);
+      const inBracket = wasInBracket || bracketDepth > 0;
+      if (inBracket && !hasJapaneseText(cleanedText)) {
+        consecutiveBracketLines++;
+        if (consecutiveBracketLines > 30) {
+          bracketDepth = 0;
+          consecutiveBracketLines = 0;
+        }
+      } else {
+        consecutiveBracketLines = 0;
+      }
       const cached = state.translationCache.get(item.pid);
       if (cached && cached.translated && cached.translated.trim()) {
         continue;
       }
-      const cleanedText = item.text.replace(/([あアいイうウえエおオ])\1{2,}/g, "$1\u30FC");
       if (state.exclusionSet.has(cleanedText)) continue;
-      if (isTranslatableText(cleanedText)) {
+      if (isTranslatableText(cleanedText, inBracket)) {
         return true;
       }
     }
@@ -5249,18 +5294,32 @@
       }
       const textsToTranslate = [];
       const instantPunctuationItems = [];
+      let bracketDepth = 0;
+      let consecutiveBracketLines = 0;
       validParagraphs.forEach((item) => {
         if (sepAnalysis.prefacePids.has(item.pid)) return;
         if (sepAnalysis.afterwordPids.has(item.pid)) return;
         if (sepAnalysis.separatorPids.has(item.pid)) return;
+        const cleanedText = item.text.replace(/([あアいイうウえエおオ])\1{2,}/g, "$1\u30FC");
+        const wasInBracket = bracketDepth > 0;
+        bracketDepth = updateBracketDepth(bracketDepth, cleanedText);
+        const inBracket = wasInBracket || bracketDepth > 0;
+        if (inBracket && !hasJapaneseText(cleanedText)) {
+          consecutiveBracketLines++;
+          if (consecutiveBracketLines > 30) {
+            bracketDepth = 0;
+            consecutiveBracketLines = 0;
+          }
+        } else {
+          consecutiveBracketLines = 0;
+        }
         const cached = state.translationCache.get(item.pid);
         if (cached && cached.translated && cached.translated.trim()) {
           return;
         }
-        const cleanedText = item.text.replace(/([あアいイうウえエおオ])\1{2,}/g, "$1\u30FC");
         if (state.exclusionSet.has(cleanedText)) return;
-        if (cleanedText && isTranslatableText(cleanedText)) {
-          if (isPurePunctuationOnly(cleanedText)) {
+        if (cleanedText && isTranslatableText(cleanedText, inBracket)) {
+          if (isPureMathOrPunctuation(cleanedText)) {
             instantPunctuationItems.push({ id: item.pid, original: cleanedText, translated: cleanedText });
           } else {
             textsToTranslate.push({ id: item.pid, text: cleanedText });
@@ -5278,7 +5337,7 @@
           applyTranslationsToPage(instantPunctuationItems, false);
         }
         await saveAllTranslations(instantPunctuationItems);
-        logToSidebar(`[\uC989\uC2DC \uB300\uC785] \uBB38\uC790 \uC5C6\uB294 \uBB38\uC7A5\uBD80\uD638 \uBB38\uC7A5 ${instantPunctuationItems.length}\uAC1C\uB97C \uC989\uC2DC \uC801\uC6A9\uD588\uC2B5\uB2C8\uB2E4.`);
+        logToSidebar(`[\uC989\uC2DC \uB300\uC785] \uC21C\uC218 \uAE30\uD638/\uC218\uC2DD \uBB38\uC7A5 ${instantPunctuationItems.length}\uAC1C\uB97C API \uD638\uCD9C \uC5C6\uC774 \uC989\uC2DC \uC801\uC6A9\uD588\uC2B5\uB2C8\uB2E4.`);
       }
       if (textsToTranslate.length === 0) {
         if (instantPunctuationItems.length > 0) {

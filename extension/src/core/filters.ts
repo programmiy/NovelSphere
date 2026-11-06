@@ -9,10 +9,41 @@ export const PID_REGEX = /^[a-zA-Z][a-zA-Z0-9]*$/;
  * 2. 대화/인용 괄호가 포함된 문장 (예: 「……」, 「……？」, 『……』, （……） 등).
  * 3. 소설 지문의 말줄임표/대시/부호로 구성된 침묵·호흡 문단.
  */
-export function isTranslatableText(text: string): boolean {
+/**
+ * 문단 텍스트 내의 열림/닫힘 대화 괄호를 검사하여 누적 괄호 깊이(bracket depth)를 갱신합니다.
+ * - 열림 괄호: 「, 『, （, (, 【, 《, 〈, 〔, “
+ * - 닫힘 괄호: 」, 』, ）, ), 】, 》, 〉, 〕, ”
+ * - 큰따옴표: 짝이 맞지 않으면 토글
+ */
+export function updateBracketDepth(currentDepth: number, text: string): number {
+  if (!text) return currentDepth;
+  const opens = (text.match(/[「『（(【《〈〔“]/g) || []).length;
+  const closes = (text.match(/[」』）)】》〉〕”]/g) || []).length;
+  const quotes = (text.match(/"/g) || []).length;
+
+  let nextDepth = currentDepth + opens - closes;
+  if (quotes % 2 !== 0) {
+    nextDepth += currentDepth > 0 ? -1 : 1;
+  }
+  return Math.max(0, nextDepth);
+}
+
+/**
+ * 웹소설 본문 문단이 번역 대상인지 판별합니다.
+ * 0. 대화/인용 괄호가 닫히기 전 블록 내부 문단(inBracket=true)인 경우 번역 대상 포함.
+ * 1. 일본어 문자 (히라가나, 가타카나, 한자) 포함 시 번역 대상.
+ * 2. 대화/인용 괄호가 포함된 문장 (예: 「……」, 「……？」, 『……』, （……）, 「――」 등).
+ * 3. 소설 지문의 말줄임표/대시/부호로 구성된 침묵·호흡 문단.
+ */
+export function isTranslatableText(text: string, inBracket = false): boolean {
   if (!text || typeof text !== 'string') return false;
   const trimmed = text.trim();
   if (!trimmed) return false;
+
+  // 0. 대화/인용 괄호가 닫히기 전 블록 내부 문단인 경우 무조건 번역 파이프라인에 포함
+  if (inBracket) {
+    return true;
+  }
 
   // 1. 일본어 문자 (히라가나, 가타카나, 한자) 포함
   if (JAPANESE_REGEX.test(trimmed)) {
@@ -52,6 +83,37 @@ export function isPurePunctuationOnly(text: string): boolean {
   return true;
 }
 
+/**
+ * 일본어(가나/한자)나 한글이 전혀 없고, 오직 숫자, 사칙연산/수식 기호, 문장부호, 단일 영문 변수 등으로만 구성되어
+ * 번역 API 호출 없이 원문 그대로 즉시 대입할 수 있는 순수 수식/기호 문장인지 판별합니다.
+ * -> Fast-path: API 번역 호출 없이 원문 그대로 번역문으로 자동 대입합니다.
+ */
+export function isPureMathOrPunctuation(text: string): boolean {
+  if (!text || typeof text !== 'string') return false;
+  const trimmed = text.trim();
+  if (!trimmed) return false;
+
+  // 히라가나, 가타카나, 한자(CJK), 한글이 하나라도 있으면 번역 대상 (Fast-path 제외)
+  if (/[\u3040-\u309f\u30a0-\u30fa\u30fd-\u30ff\u4e00-\u9faf\u3400-\u4dbf\uac00-\ud7a3]/.test(trimmed)) {
+    return false;
+  }
+
+  // 1. 기존 순수 문장부호/기호/숫자 (알파벳 없는 경우: '2＋9=11', '1+7=8', '……', '――')
+  if (!/[a-zA-Z]/.test(trimmed)) {
+    return true;
+  }
+
+  // 2. 알파벳이 포함되어 있더라도, 일반 영어 문장이 아니라 단일 문자/변수 기반의 수식/식별자인 경우
+  // 예: '8＋2=A', '10＋6=B', '24＋1=C'
+  const words = trimmed.match(/[a-zA-Z]+/g) || [];
+  const isAllShortVariables = words.every((w) => w.length <= 2);
+  if (isAllShortVariables && /[0-9+\-*/=<>:.,＋＝]/.test(trimmed)) {
+    return true;
+  }
+
+  return false;
+}
+
 export function hasJapaneseText(text: string): boolean {
   if (!text) return false;
   if (/^[っッ\s]+$/.test(text)) return false;
@@ -60,7 +122,7 @@ export function hasJapaneseText(text: string): boolean {
 
 export function isSymbolOrPunctOnly(text: string): boolean {
   if (!text) return true;
-  return isPurePunctuationOnly(text);
+  return isPureMathOrPunctuation(text);
 }
 
 const SIMPLIFIED_CHINESE_CHARS = new Set(
