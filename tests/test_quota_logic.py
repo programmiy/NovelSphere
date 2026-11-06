@@ -74,7 +74,7 @@ def test_server_quota_module():
     assert summary["quota_reset_hour"] in (16, 17)
     assert "window_start_ts" in summary
 
-def test_quota_excludes_503():
+def test_quota_records_all_attempts_including_503():
     from server.quota import (
         get_quota_summary,
         record_api_call,
@@ -90,20 +90,11 @@ def test_quota_excludes_503():
     
     initial_count = get_today_api_call_count()
     
-    # 1. 503 호출은 record_api_call에서 저장되지 않아야 함
+    # 1. 구글 게이트웨이는 503 과부하 응답도 일일 쿼터를 1회 차감하므로 로컬에서도 정확히 기록되어야 함
     record_api_call(model="test-gemini-503", status_code=503)
-    assert get_today_api_call_count() == initial_count
-    
-    # 2. DB에 직접 503 레코드가 삽입되어 있더라도 get_today_api_call_count에서 제외되어야 함
-    now_ts = int(time.time())
-    with SessionLocal() as db:
-        manual_503 = ApiCallLog(timestamp=now_ts, model="manual-503", status_code=503)
-        db.add(manual_503)
-        db.commit()
-        
-    assert get_today_api_call_count() == initial_count
-    
-    # 3. 200 성공 호출은 정상적으로 카운트되어야 함
-    record_api_call(model="test-gemini-200", status_code=200)
     assert get_today_api_call_count() == initial_count + 1
+    
+    # 2. 200 성공 호출도 정상적으로 카운트되어야 함
+    record_api_call(model="test-gemini-200", status_code=200)
+    assert get_today_api_call_count() == initial_count + 2
 

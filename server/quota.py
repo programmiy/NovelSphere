@@ -135,9 +135,7 @@ def get_today_start_ts(now: Optional[datetime.datetime] = None) -> int:
 
 
 def record_api_call(model: Optional[str] = None, status_code: int = 200) -> None:
-    """Gemini API 호출 내역을 DB에 기록합니다 (503 서비스 과부하는 계측에서 원천 제외)."""
-    if status_code == 503:
-        return
+    """Gemini API 호출 내역을 DB에 기록합니다 (구글 게이트웨이에서 503 과부하 응답도 일일 쿼터를 1회 차감하므로 정확한 쿼터 동기화를 위해 전건 기록)."""
     now_ts = int(time.time())
     try:
         with SessionLocal() as db:
@@ -157,10 +155,7 @@ def _seed_calls_from_translations_if_needed(db, window_start_ts: int) -> int:
     최초 적용 시 기존 오늘자 번역 데이터(distinct timestamp)를 API 호출 건수로 동기화.
     """
     try:
-        count = db.query(ApiCallLog).filter(
-            ApiCallLog.timestamp >= window_start_ts,
-            ApiCallLog.status_code != 503
-        ).count()
+        count = db.query(ApiCallLog).filter(ApiCallLog.timestamp >= window_start_ts).count()
         if count == 0:
             batch_times = db.execute(
                 text("SELECT DISTINCT timestamp FROM translations WHERE timestamp >= :ts"),
@@ -179,13 +174,10 @@ def _seed_calls_from_translations_if_needed(db, window_start_ts: int) -> int:
 
 
 def get_today_api_call_count() -> int:
-    """현재 쿼터 주기(오후 4시/5시 기준) 내의 유효 API 호출 횟수를 반환합니다 (503 과부하 제외)."""
+    """현재 쿼터 주기(오후 4시/5시 기준) 내의 API 호출 횟수를 반환합니다 (구글 게이트웨이 실제 소모량과 100% 일치)."""
     window_start_ts = get_current_quota_window_start_ts()
     with SessionLocal() as db:
-        count = db.query(ApiCallLog).filter(
-            ApiCallLog.timestamp >= window_start_ts,
-            ApiCallLog.status_code != 503
-        ).count()
+        count = db.query(ApiCallLog).filter(ApiCallLog.timestamp >= window_start_ts).count()
         if count == 0:
             count = _seed_calls_from_translations_if_needed(db, window_start_ts)
         return count

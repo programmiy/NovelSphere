@@ -203,6 +203,7 @@ def get_status_summary():
         "current_sentence": trans_status.get("current_sentence", 0),
         "total_sentences": trans_status.get("total_sentences", 0),
         "percentage": trans_status.get("percentage", 0),
+        "quota_percentage": trans_status.get("quota_percentage", trans_status.get("percentage", 0)),
         "episode_count": trans_status.get("episode_count", 0),
         "status_text": trans_status.get("status_text", "대기 중"),
         "review_pending_count": review_count,

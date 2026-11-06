@@ -164,7 +164,17 @@ function updateStatistics(groupedData) {
         const apiQuotaStatItem = document.getElementById('apiQuotaStatItem');
         const calls = state.latestQuotaSummary.api_calls_today || 0;
         const limit = state.latestQuotaSummary.api_quota_limit || 500;
-        const pct = state.latestQuotaSummary.percentage || 0;
+        // 0호출 시 0.0% 강제 보장 및 quota_percentage 우선 참조
+        let pct = 0;
+        if (calls > 0) {
+            if (typeof state.latestQuotaSummary.quota_percentage === 'number') {
+                pct = state.latestQuotaSummary.quota_percentage;
+            } else if (typeof state.latestQuotaSummary.percentage === 'number') {
+                pct = state.latestQuotaSummary.percentage;
+            } else {
+                pct = Number(((calls / limit) * 100).toFixed(1));
+            }
+        }
         const resetHour = state.latestQuotaSummary.quota_reset_hour || 16;
         
         if (apiQuotaCountEl) {
@@ -179,6 +189,8 @@ function updateStatistics(groupedData) {
                 apiQuotaStatItem.style.borderColor = 'rgba(239, 68, 68, 0.7)';
             } else if (pct >= 70) {
                 apiQuotaStatItem.style.borderColor = 'rgba(245, 158, 11, 0.7)';
+            } else {
+                apiQuotaStatItem.style.borderColor = '';
             }
         }
 
