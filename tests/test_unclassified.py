@@ -47,6 +47,7 @@ def override_settings(tmp_path_factory):
             novel_title TEXT NOT NULL,
             work_url TEXT,
             matched_folder TEXT,
+            custom_folder_name TEXT,
             created_at INTEGER,
             updated_at INTEGER
         );
@@ -153,3 +154,73 @@ def test_unclassified_sorting_and_assignment(override_settings):
     assert rows[1][2] == 1
     assert rows[2][1] == "3화 결말"
     assert rows[2][2] == 2
+
+
+def test_save_custom_folder_and_one_click_assignment(override_settings):
+    from server.server import app
+    client = TestClient(app)
+    db_path = override_settings
+
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM translations")
+    cursor.execute("DELETE FROM novel_works")
+    cursor.execute("DELETE FROM book_activity")
+
+    work_id = "16817139555497699999"
+    work_url = f"https://kakuyomu.jp/works/{work_id}"
+
+    # Pre-cache title
+    cursor.execute("""
+        INSERT INTO novel_works (work_id, platform, novel_title, work_url, custom_folder_name, created_at, updated_at)
+        VALUES (?, 'Kakuyomu', '원제 소설', ?, NULL, 100, 100)
+    """, (f"kakuyomu:{work_id}", work_url))
+
+    cursor.execute("""
+        INSERT INTO translations (url, pid, original, translated, timestamp, folderName, title, toc_sort_order)
+        VALUES (?, 'p1', '원문', '번역', 1000, NULL, '1화 프롤로그', NULL)
+    """, (f"https://kakuyomu.jp/works/{work_id}/episodes/1",))
+    conn.commit()
+    conn.close()
+
+    # 1. Save custom folder name preset
+    save_res = client.post("/api/unclassified_novels/save_custom_folder", json={
+        "work_id": f"kakuyomu:{work_id}",
+        "custom_folder_name": "예약저장된_한국어_제목",
+        "work_url": work_url
+    })
+    assert save_res.status_code == 200
+    assert save_res.json()["success"] is True
+    assert save_res.json()["custom_folder_name"] == "예약저장된_한국어_제목"
+
+    # 2. Verify GET /api/unclassified_novels returns custom_folder_name
+    get_res = client.get("/api/unclassified_novels")
+    assert get_res.status_code == 200
+    novels = get_res.json()["novels"]
+    assert len(novels) == 1
+    assert novels[0]["novel_title"] == "원제 소설"
+    assert novels[0]["custom_folder_name"] == "예약저장된_한국어_제목"
+
+    # 3. Assign folder using the preset saved name (button click)
+    assign_res = client.post("/api/unclassified_novels/assign_folder", json={
+        "work_id": f"kakuyomu:{work_id}",
+        "target_folder": novels[0]["custom_folder_name"],
+        "work_url": work_url
+    })
+    assert assign_res.status_code == 200
+    assert assign_res.json()["success"] is True
+
+    # 4. Verify DB updated
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    cursor.execute("SELECT folderName FROM translations WHERE url LIKE ?", (f"%{work_id}%",))
+    rows = cursor.fetchall()
+    assert len(rows) == 1
+    assert rows[0][0] == "예약저장된_한국어_제목"
+
+    # Verify custom_folder_name in novel_works was cleared after assign
+    cursor.execute("SELECT custom_folder_name, matched_folder FROM novel_works WHERE work_id = ?", (f"kakuyomu:{work_id}",))
+    nw = cursor.fetchone()
+    assert nw[0] is None
+    assert nw[1] == "예약저장된_한국어_제목"
+    conn.close()

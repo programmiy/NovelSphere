@@ -25,10 +25,15 @@ def ensure_novel_works_table():
             novel_title TEXT NOT NULL,
             work_url TEXT NOT NULL,
             matched_folder TEXT,
+            custom_folder_name TEXT,
             created_at INTEGER NOT NULL,
             updated_at INTEGER NOT NULL
         )
     """)
+    cursor.execute("PRAGMA table_info(novel_works)")
+    cols = [col[1] for col in cursor.fetchall()]
+    if "custom_folder_name" not in cols:
+        cursor.execute("ALTER TABLE novel_works ADD COLUMN custom_folder_name TEXT")
     conn.commit()
     conn.close()
 
@@ -286,6 +291,11 @@ def get_unclassified_novels():
         matched_row = cursor.fetchone()
         matched_folder = matched_row["folderName"] if matched_row else None
 
+        # Fetch custom_folder_name if preset
+        cursor.execute("SELECT custom_folder_name FROM novel_works WHERE work_id = ?", (wid,))
+        nw_row = cursor.fetchone()
+        custom_folder_name = nw_row["custom_folder_name"] if nw_row and nw_row.get("custom_folder_name") else None
+
         # Sort episodes strictly by min_id ASC (reading/translation order)
         data["episodes"].sort(key=lambda x: x.get("min_id", 0))
 
@@ -294,6 +304,7 @@ def get_unclassified_novels():
             "platform": data["platform"],
             "work_url": data["work_url"],
             "novel_title": title,
+            "custom_folder_name": custom_folder_name,
             "matched_existing_folder": matched_folder,
             "total_episodes": len(data["episodes"]),
             "total_paragraphs": data["total_paragraphs"],
@@ -389,10 +400,10 @@ def assign_unclassified_novel_folder(req: AssignFolderRequest):
                 is_visible = 1
         """, (target_folder, now_ts))
 
-        # Update novel_works cache
+        # Update novel_works cache (assign 완료 시 custom_folder_name 초기화 및 matched_folder 설정)
         cursor.execute("""
             UPDATE novel_works
-            SET matched_folder = ?, updated_at = ?
+            SET matched_folder = ?, custom_folder_name = NULL, updated_at = ?
             WHERE work_id = ?
         """, (target_folder, now_ts, req.work_id))
 
@@ -411,6 +422,47 @@ def assign_unclassified_novel_folder(req: AssignFolderRequest):
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         conn.close()
+
+class SaveCustomFolderRequest(BaseModel):
+    work_id: str
+    custom_folder_name: str
+    work_url: Optional[str] = None
+
+@router.post("/save_custom_folder")
+def save_custom_folder(req: SaveCustomFolderRequest):
+    """
+    Saves or clears a preset custom folder name for an unclassified novel work.
+    If custom_folder_name is empty, clears the preset.
+    """
+    custom_name = req.custom_folder_name.strip()
+    conn = get_sqlite_conn(as_dict=True)
+    cursor = conn.cursor()
+    now_ts = int(time.time())
+
+    cursor.execute("SELECT work_id FROM novel_works WHERE work_id = ?", (req.work_id,))
+    row = cursor.fetchone()
+    if not row and req.work_url:
+        meta = parse_work_metadata(req.work_url)
+        cursor.execute("""
+            INSERT INTO novel_works (work_id, platform, novel_title, work_url, custom_folder_name, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (req.work_id, meta["platform"], custom_name or "제목 미상 소설", meta["work_url"], custom_name or None, now_ts, now_ts))
+    else:
+        cursor.execute("""
+            UPDATE novel_works
+            SET custom_folder_name = ?, updated_at = ?
+            WHERE work_id = ?
+        """, (custom_name if custom_name else None, now_ts, req.work_id))
+
+    conn.commit()
+    conn.close()
+
+    return {
+        "success": True,
+        "work_id": req.work_id,
+        "custom_folder_name": custom_name or None,
+        "message": f"폴더명 '{custom_name}'이(가) 예약 저장되었습니다." if custom_name else "예약된 폴더명이 해제되었습니다."
+    }
 
 class DeleteNovelRequest(BaseModel):
     work_id: str

@@ -4234,10 +4234,153 @@ body.dark-mode .insight-row {
     margin-top: 14px;
 }
 
+/* Unclassified Master Novel Card & Preset Custom Badge */
+.unclassified-novel-card {
+    background: rgba(15, 23, 42, 0.45);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: var(--border-radius-sm);
+    padding: 12px 14px;
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.unclassified-novel-card:hover {
+    background: rgba(30, 41, 59, 0.6);
+    border-color: rgba(56, 189, 248, 0.4);
+    transform: translateY(-1px);
+}
+
+.unclassified-novel-card.active {
+    background: rgba(14, 116, 144, 0.25);
+    border-color: var(--primary-color);
+    box-shadow: 0 0 12px rgba(6, 182, 212, 0.25);
+}
+
+.unclassified-novel-card .card-title {
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--text-main);
+    line-height: 1.4;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.unclassified-novel-card .card-meta {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11.5px;
+    color: var(--text-muted);
+}
+
+.card-smart-badge {
+    background: rgba(16, 185, 129, 0.15);
+    color: #34d399;
+    border: 1px solid rgba(16, 185, 129, 0.4);
+    font-size: 10.5px;
+    font-weight: 700;
+    padding: 1px 6px;
+    border-radius: 4px;
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    max-width: 140px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.card-custom-badge {
+    background: rgba(245, 158, 11, 0.15);
+    color: #fbbf24;
+    border: 1px solid rgba(245, 158, 11, 0.45);
+    font-size: 10.5px;
+    font-weight: 700;
+    padding: 1px 6px;
+    border-radius: 4px;
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    max-width: 140px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .new-folder-action-group, .existing-folder-action-group {
     display: flex;
     gap: 6px;
     align-items: center;
+}
+
+.new-folder-action-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+}
+
+.new-folder-input-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.new-folder-input-wrapper .form-input {
+    min-width: 200px;
+    padding-right: 8px;
+}
+
+.btn-save-custom-name {
+    padding: 6px 10px;
+    font-size: 12px;
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    white-space: nowrap;
+    border-color: rgba(245, 158, 11, 0.4);
+    color: #fbbf24;
+}
+.btn-save-custom-name:hover {
+    background: rgba(245, 158, 11, 0.15);
+    border-color: #f59e0b;
+}
+
+.btn-clear-custom-name {
+    padding: 4px 7px;
+    font-size: 12px;
+    color: var(--text-muted);
+    cursor: pointer;
+    border: none;
+    background: transparent;
+}
+.btn-clear-custom-name:hover {
+    color: #ef4444;
+}
+
+.custom-folder-saved-notice {
+    width: 100%;
+    margin-top: 4px;
+    font-size: 12px;
+    color: #fbbf24;
+    background: rgba(245, 158, 11, 0.1);
+    border: 1px dashed rgba(245, 158, 11, 0.35);
+    border-radius: 6px;
+    padding: 4px 10px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.btn-assign-new-folder.has-preset {
+    background: linear-gradient(135deg, #0ea5e9, #0284c7);
+    box-shadow: 0 0 10px rgba(14, 165, 233, 0.4);
+    font-weight: 700;
 }
 
 .card-platform-badge {

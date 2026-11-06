@@ -335,16 +335,94 @@ function initUnclassifiedDrawer() {
         assignNewFolderBtn.addEventListener('click', async () => {
             if (!currentSelectedUnclassifiedNovel) return;
             const input = document.getElementById('assignNewFolderNameInput');
-            const folderName = input ? input.value.trim() : '';
+            const inputVal = input ? input.value.trim() : '';
+            const novel = currentSelectedUnclassifiedNovel;
+            const folderName = inputVal || novel.custom_folder_name || novel.novel_title;
             if (!folderName) {
                 showToast('등록할 새 폴더명을 입력해주세요.', 'warning');
                 return;
             }
-            const novel = currentSelectedUnclassifiedNovel;
-            if (!confirm(`'${novel.novel_title}'의 모든 회차를 새 폴더 '${folderName}'(으)로 일괄 등록하시겠습니까?`)) {
+            if (!confirm(`'${novel.novel_title}'의 모든 회차를 폴더 '${folderName}'(으)로 일괄 등록하시겠습니까?`)) {
                 return;
             }
             await executeAssignFolder(novel.work_id, folderName, novel.work_url);
+        });
+    }
+
+    const saveCustomFolderNameBtn = document.getElementById('saveCustomFolderNameBtn');
+    if (saveCustomFolderNameBtn) {
+        saveCustomFolderNameBtn.addEventListener('click', async () => {
+            if (!currentSelectedUnclassifiedNovel) return;
+            const input = document.getElementById('assignNewFolderNameInput');
+            const customName = input ? input.value.trim() : '';
+            if (!customName) {
+                showToast('저장할 폴더 이름을 입력해주세요.', 'warning');
+                return;
+            }
+            const novel = currentSelectedUnclassifiedNovel;
+            saveCustomFolderNameBtn.disabled = true;
+            try {
+                const res = await fetch('/api/unclassified_novels/save_custom_folder', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        work_id: novel.work_id,
+                        custom_folder_name: customName,
+                        work_url: novel.work_url
+                    })
+                });
+                if (!res.ok) {
+                    const err = await res.json();
+                    throw new Error(err.detail || '폴더명 저장에 실패했습니다.');
+                }
+                const data = await res.json();
+                novel.custom_folder_name = customName;
+                showToast(data.message || `폴더명 '${customName}'(이)가 예약 저장되었습니다.`, 'success');
+                selectUnclassifiedNovel(novel);
+                renderUnclassifiedNovelList();
+            } catch (e) {
+                console.error('save custom folder error:', e);
+                showToast(`저장 오류: ${e.message}`, 'error');
+            } finally {
+                saveCustomFolderNameBtn.disabled = false;
+            }
+        });
+    }
+
+    const clearCustomFolderNameBtn = document.getElementById('clearCustomFolderNameBtn');
+    if (clearCustomFolderNameBtn) {
+        clearCustomFolderNameBtn.addEventListener('click', async () => {
+            if (!currentSelectedUnclassifiedNovel) return;
+            const novel = currentSelectedUnclassifiedNovel;
+            try {
+                const res = await fetch('/api/unclassified_novels/save_custom_folder', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        work_id: novel.work_id,
+                        custom_folder_name: '',
+                        work_url: novel.work_url
+                    })
+                });
+                if (!res.ok) throw new Error('저장된 이름 해제 실패');
+                novel.custom_folder_name = null;
+                showToast('예약 저장된 폴더명이 해제되었습니다.', 'info');
+                selectUnclassifiedNovel(novel);
+                renderUnclassifiedNovelList();
+            } catch (e) {
+                showToast(`해제 오류: ${e.message}`, 'error');
+            }
+        });
+    }
+
+    const newFolderInputEl = document.getElementById('assignNewFolderNameInput');
+    if (newFolderInputEl) {
+        newFolderInputEl.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                const saveBtn = document.getElementById('saveCustomFolderNameBtn');
+                if (saveBtn) saveBtn.click();
+            }
         });
     }
 
@@ -595,10 +673,20 @@ function renderUnclassifiedNovelList() {
             </span>
         ` : '';
 
+        const customBadgeHtml = novel.custom_folder_name ? `
+            <span class="card-custom-badge" title="예약 저장된 폴더명: '${escapeHtml(novel.custom_folder_name)}'">
+                <span class="material-icons" style="font-size: 13px;">bookmark</span>
+                ${escapeHtml(novel.custom_folder_name)}
+            </span>
+        ` : '';
+
         card.innerHTML = `
-            <div style="display: flex; justify-content: space-between; align-items: center;">
+            <div style="display: flex; justify-content: space-between; align-items: center; gap: 4px;">
                 <span class="card-platform-badge ${platformClass}">${escapeHtml(novel.platform)}</span>
-                ${smartBadgeHtml}
+                <div style="display: flex; gap: 4px; align-items: center; overflow: hidden;">
+                    ${smartBadgeHtml}
+                    ${customBadgeHtml}
+                </div>
             </div>
             <div class="card-title" title="${escapeHtml(novel.novel_title)}">${escapeHtml(novel.novel_title)}</div>
             <div class="card-meta">
@@ -660,10 +748,33 @@ function selectUnclassifiedNovel(novel) {
         smartMergeContainer.style.display = 'none';
     }
 
-    // 새 폴더 입력창 기본값 채우기 (추출된 소설 원제)
+    // 새 폴더 입력창 및 예약 저장 상태 세팅
     const newFolderInput = document.getElementById('assignNewFolderNameInput');
-    if (newFolderInput) {
-        newFolderInput.value = novel.novel_title;
+    const assignBtn = document.getElementById('assignNewFolderBtn');
+    const saveNameBtn = document.getElementById('saveCustomFolderNameBtn');
+    const clearNameBtn = document.getElementById('clearCustomFolderNameBtn');
+    const noticeWrap = document.getElementById('customFolderSavedNotice');
+    const noticeText = document.getElementById('customFolderSavedText');
+
+    if (novel.custom_folder_name) {
+        if (newFolderInput) newFolderInput.value = novel.custom_folder_name;
+        if (noticeWrap) noticeWrap.style.display = 'flex';
+        if (noticeText) noticeText.innerHTML = `예약 저장된 폴더명: <strong>${escapeHtml(novel.custom_folder_name)}</strong>`;
+        if (clearNameBtn) clearNameBtn.style.display = 'inline-block';
+        if (assignBtn) {
+            assignBtn.classList.add('has-preset');
+            assignBtn.innerHTML = `📁 '${escapeHtml(novel.custom_folder_name)}' 즉시 등록`;
+        }
+        if (saveNameBtn) saveNameBtn.textContent = '수정 저장';
+    } else {
+        if (newFolderInput) newFolderInput.value = novel.novel_title;
+        if (noticeWrap) noticeWrap.style.display = 'none';
+        if (clearNameBtn) clearNameBtn.style.display = 'none';
+        if (assignBtn) {
+            assignBtn.classList.remove('has-preset');
+            assignBtn.innerHTML = '📁 새 폴더로 등록';
+        }
+        if (saveNameBtn) saveNameBtn.textContent = '💾 저장';
     }
 
     // 기존 폴더 드롭다운 채우기
