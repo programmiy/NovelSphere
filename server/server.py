@@ -55,6 +55,18 @@ if os.name == "nt":
                 self.call_soon(loop)
             asyncio.proactor_events.BaseProactorEventLoop._start_serving = _patched_start_serving
             asyncio.proactor_events.BaseProactorEventLoop._iocp_patch_applied = True
+
+        # Silence harmless client disconnect reset noise (WinError 10054 in _call_connection_lost)
+        if hasattr(asyncio.proactor_events, "_ProactorBasePipeTransport"):
+            _orig_call_conn_lost = asyncio.proactor_events._ProactorBasePipeTransport._call_connection_lost
+            def _silenced_call_connection_lost(self, exc):
+                try:
+                    _orig_call_conn_lost(self, exc)
+                except (ConnectionResetError, OSError) as e:
+                    if getattr(e, "winerror", None) in (10054, 64, 121, 1236) or isinstance(e, ConnectionResetError):
+                        return
+                    raise
+            asyncio.proactor_events._ProactorBasePipeTransport._call_connection_lost = _silenced_call_connection_lost
     except Exception:
         pass
 import subprocess
@@ -213,7 +225,8 @@ async def lifespan(app: FastAPI):
             orig_handler = loop.get_exception_handler()
             def windows_iocp_exception_handler(l, context):
                 exc = context.get("exception")
-                if isinstance(exc, OSError) and getattr(exc, "winerror", None) in (64, 121, 1236):
+                if (isinstance(exc, ConnectionResetError) or
+                    (isinstance(exc, OSError) and getattr(exc, "winerror", None) in (64, 121, 1236, 10054))):
                     return
                 if orig_handler:
                     orig_handler(l, context)
