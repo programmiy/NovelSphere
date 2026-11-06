@@ -653,9 +653,18 @@ function renderUnclassifiedNovelList() {
         return;
     }
 
+    // 정렬: 예약 저장된 폴더명이 있는 소설을 최상단에 우선 배치
+    novels.sort((a, b) => {
+        const aHas = Boolean(a.custom_folder_name);
+        const bHas = Boolean(b.custom_folder_name);
+        if (aHas !== bHas) return aHas ? -1 : 1;
+        return (b.total_paragraphs || 0) - (a.total_paragraphs || 0);
+    });
+
     novels.forEach(novel => {
         const card = document.createElement('div');
         card.className = 'unclassified-novel-card';
+        card.dataset.workId = novel.work_id;
         if (currentSelectedUnclassifiedNovel && currentSelectedUnclassifiedNovel.work_id === novel.work_id) {
             card.classList.add('active');
         }
@@ -673,22 +682,33 @@ function renderUnclassifiedNovelList() {
             </span>
         ` : '';
 
-        const customBadgeHtml = novel.custom_folder_name ? `
+        const hasPreset = Boolean(novel.custom_folder_name);
+        const displayTitle = hasPreset ? novel.custom_folder_name : novel.novel_title;
+        const subTitleHtml = hasPreset ? `
+            <div class="card-sub-title" title="원제: ${escapeHtml(novel.novel_title)}">
+                원제: ${escapeHtml(novel.novel_title)}
+            </div>
+        ` : '';
+
+        const customBadgeHtml = hasPreset ? `
             <span class="card-custom-badge" title="예약 저장된 폴더명: '${escapeHtml(novel.custom_folder_name)}'">
                 <span class="material-icons" style="font-size: 13px;">bookmark</span>
-                ${escapeHtml(novel.custom_folder_name)}
+                예약됨
             </span>
         ` : '';
 
         card.innerHTML = `
             <div style="display: flex; justify-content: space-between; align-items: center; gap: 4px;">
                 <span class="card-platform-badge ${platformClass}">${escapeHtml(novel.platform)}</span>
-                <div style="display: flex; gap: 4px; align-items: center; overflow: hidden;">
+                <div style="display: flex; gap: 4px; align-items: center;">
                     ${smartBadgeHtml}
                     ${customBadgeHtml}
                 </div>
             </div>
-            <div class="card-title" title="${escapeHtml(novel.novel_title)}">${escapeHtml(novel.novel_title)}</div>
+            <div class="card-title ${hasPreset ? 'has-preset-title' : ''}" title="${escapeHtml(displayTitle)}">
+                ${hasPreset ? '<span style="color: #fbbf24; margin-right: 4px;">🔖</span>' : ''}${escapeHtml(displayTitle)}
+            </div>
+            ${subTitleHtml}
             <div class="card-meta">
                 <span><strong style="color: var(--primary-color);">${novel.total_episodes}</strong>개 회차</span>
                 <span><strong>${novel.total_paragraphs.toLocaleString()}</strong>단락</span>
@@ -704,16 +724,39 @@ function renderUnclassifiedNovelList() {
         container.appendChild(card);
     });
 
-    // 자동 선택: 아직 선택된 소설이 없으면 첫 번째 소설 선택
-    if (!currentSelectedUnclassifiedNovel && novels.length > 0) {
-        selectUnclassifiedNovel(novels[0]);
-        const firstCard = container.querySelector('.unclassified-novel-card');
-        if (firstCard) firstCard.classList.add('active');
+    // 자동 선택: 이전에 선택했던 소설 또는 예약 저장된 소설 우선 선택
+    let targetNovel = null;
+    let savedWorkId = null;
+    try {
+        savedWorkId = localStorage.getItem('lanovel:last-unclassified-work-id');
+    } catch (e) {}
+
+    if (savedWorkId) {
+        targetNovel = novels.find(n => n.work_id === savedWorkId);
+    }
+    if (!targetNovel && currentSelectedUnclassifiedNovel) {
+        targetNovel = novels.find(n => n.work_id === currentSelectedUnclassifiedNovel.work_id);
+    }
+    if (!targetNovel && novels.length > 0) {
+        targetNovel = novels[0];
+    }
+
+    if (targetNovel) {
+        selectUnclassifiedNovel(targetNovel);
+        container.querySelectorAll('.unclassified-novel-card').forEach(c => {
+            if (c.dataset.workId === targetNovel.work_id) c.classList.add('active');
+            else c.classList.remove('active');
+        });
     }
 }
 
 function selectUnclassifiedNovel(novel) {
     currentSelectedUnclassifiedNovel = novel;
+    if (novel && novel.work_id) {
+        try {
+            localStorage.setItem('lanovel:last-unclassified-work-id', novel.work_id);
+        } catch (e) {}
+    }
     const emptyNotice = document.getElementById('unclassifiedDetailEmptyNotice');
     const content = document.getElementById('unclassifiedDetailContent');
     if (!emptyNotice || !content) return;

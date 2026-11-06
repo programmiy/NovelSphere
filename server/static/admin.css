@@ -4269,6 +4269,22 @@ body.dark-mode .insight-row {
     white-space: nowrap;
 }
 
+.unclassified-novel-card .card-title.has-preset-title {
+    color: #fbbf24;
+    font-weight: 700;
+    font-size: 14px;
+}
+
+.card-sub-title {
+    font-size: 11px;
+    color: var(--text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    opacity: 0.8;
+    margin-top: -2px;
+}
+
 .unclassified-novel-card .card-meta {
     display: flex;
     justify-content: space-between;
