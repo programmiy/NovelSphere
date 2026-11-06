@@ -378,6 +378,30 @@ test('separators: analyzeSeparatorSections populates excludedPidMap with preface
   });
 });
 
+test('separators: DEFAULT_GLOBAL_SEPARATORS includes plain あとがき and detects it as separator', async () => {
+  const { analyzeSeparatorSections, DEFAULT_GLOBAL_SEPARATORS, checkSeparatorMatch } = await import('../src/core/separators.ts');
+
+  assert.strictEqual(DEFAULT_GLOBAL_SEPARATORS.includes('あとがき'), true);
+  assert.strictEqual(checkSeparatorMatch('あとがき', DEFAULT_GLOBAL_SEPARATORS), 'あとがき');
+  assert.strictEqual(checkSeparatorMatch('――あとがき――', DEFAULT_GLOBAL_SEPARATORS), 'あとがき');
+
+  const paragraphs = Array.from({ length: 20 }, (_, idx) => {
+    const pid = 'p' + (idx + 1);
+    let text = '본문 문장 ' + (idx + 1);
+    if (idx === 18) text = 'あとがき';
+    return { pid, text, element: {} as any };
+  });
+
+  const analysis = analyzeSeparatorSections(paragraphs, DEFAULT_GLOBAL_SEPARATORS);
+  assert.strictEqual(analysis.separatorPids.has('p19'), true);
+  assert.strictEqual(analysis.afterwordPids.has('p20'), true);
+  assert.deepStrictEqual(analysis.excludedPidMap.get('p19'), {
+    matchedSep: 'あとがき',
+    isSubsequent: false,
+    isPreface: false,
+  });
+});
+
 test('state & filters: isReviewMode and checkIsVerbatimOrParaphrased work as expected', async () => {
   const { ExtensionState } = await import('../src/core/state.ts');
   const { checkIsVerbatimOrParaphrased } = await import('../src/core/filters.ts');

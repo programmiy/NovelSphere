@@ -6,6 +6,7 @@ export const DEFAULT_GLOBAL_SEPARATORS: string[] = [
   '＜あとがき＞',
   '&lt;あとがき&gt;',
   '【あとがき】',
+  'あとがき',
   '＜解説＞',
   '【大事なお知らせ】',
   '【宣伝】',

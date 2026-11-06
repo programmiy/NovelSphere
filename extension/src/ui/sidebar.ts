@@ -118,7 +118,7 @@ export function injectSidebar(): void {
         <div class="sep-form-group">
           <label class="sep-checkbox-label">
             <input type="checkbox" id="use-global-defaults-check" checked>
-            <span>공통 후기 키워드 포함 (＜あとがき＞, 【大事なお知らせ】 등)</span>
+            <span>공통 후기 키워드 포함 (あとがき, ＜あとがき＞, 【大事なお知らせ】 등)</span>
           </label>
         </div>
         <div class="sep-section-title">적용 중인 구분선 목록:</div>

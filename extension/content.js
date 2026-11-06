@@ -296,6 +296,7 @@
         "\uFF1C\u3042\u3068\u304C\u304D\uFF1E",
         "&lt;\u3042\u3068\u304C\u304D&gt;",
         "\u3010\u3042\u3068\u304C\u304D\u3011",
+        "\u3042\u3068\u304C\u304D",
         "\uFF1C\u89E3\u8AAC\uFF1E",
         "\u3010\u5927\u4E8B\u306A\u304A\u77E5\u3089\u305B\u3011",
         "\u3010\u5BA3\u4F1D\u3011",
@@ -4305,7 +4306,7 @@
         <div class="sep-form-group">
           <label class="sep-checkbox-label">
             <input type="checkbox" id="use-global-defaults-check" checked>
-            <span>\uACF5\uD1B5 \uD6C4\uAE30 \uD0A4\uC6CC\uB4DC \uD3EC\uD568 (\uFF1C\u3042\u3068\u304C\u304D\uFF1E, \u3010\u5927\u4E8B\u306A\u304A\u77E5\u3089\u305B\u3011 \uB4F1)</span>
+            <span>\uACF5\uD1B5 \uD6C4\uAE30 \uD0A4\uC6CC\uB4DC \uD3EC\uD568 (\u3042\u3068\u304C\u304D, \uFF1C\u3042\u3068\u304C\u304D\uFF1E, \u3010\u5927\u4E8B\u306A\u304A\u77E5\u3089\u305B\u3011 \uB4F1)</span>
           </label>
         </div>
         <div class="sep-section-title">\uC801\uC6A9 \uC911\uC778 \uAD6C\uBD84\uC120 \uBAA9\uB85D:</div>
