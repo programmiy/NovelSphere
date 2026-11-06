@@ -2,8 +2,9 @@
 
 ## 1. 개요 및 목적
 - **목적**:
-  1. **구글 게이트웨이와 로컬 쿼터 계측 100% 동기화**: 구글 Gemini API는 요청이 서버 과부하(`503 UNAVAILABLE`)로 실패하더라도 게이트웨이 레벨에서 일일 쿼터(RPD, Requests Per Day)를 1회 소모한 것으로 차감함. 로컬에서 503을 계측에서 제외할 경우 로컬 카운터(예: 450회)와 구글 실제 쿼터(500회 소진) 간에 괴리가 발생하여, "50회 남음" 상태에서 429(RESOURCE_EXHAUSTED)가 발생하는 모순을 방지하기 위해 구글에 전달된 모든 요청(503 포함)을 정상 계측으로 복원.
+  1. **구글 게이트웨이와 로컬 쿼터 계측 100% 동기화**: 구글 Gemini API는 요청이 서버 과부하(`503 UNAVAILABLE / Overload`)로 실패하더라도 게이트웨이 레벨에서 일일 쿼터(RPD, Requests Per Day)를 1회 소모한 것으로 차감함. 로컬에서 503을 계측에서 제외할 경우 로컬 카운터(예: 450회)와 구글 실제 쿼터(500회 소진) 간에 괴리가 발생하여, "50회 남음" 상태에서 429(RESOURCE_EXHAUSTED)가 발생하는 모순을 방지하기 위해 구글에 전달된 모든 요청(503 포함)을 정상 계측으로 복원.
   2. **17시/16시 쿼터 리셋 인메모리 퍼센티지 고착 버그 해결**: 일일 쿼터 초기화 시점(한국 17시/16시)에 호출 횟수(`api_calls_today`)는 0회로 리셋되었으나, 인메모리 현황판의 진행 백분율(`percentage = 90.2%`)이 초기화되지 않고 직전 수치로 남아있던 버그 해결.
+  3. **모바일 앱 대시보드 및 서재 배너 쿼터 동기화 완비**: `StatusDashboardService`에 `quotaPercentage`를 정식 도입하고 비활성/0호출 시 0.0% 강제 보정 적용.
 
 ---
 
@@ -26,9 +27,12 @@
   - `calls === 0`일 때 무조건 `pct = 0`으로 강제 보정.
   - `pct < 70`일 때 빨간색/주황색 테두리를 기본 테두리로 복원(`apiQuotaStatItem.style.borderColor = ''`).
 
-### 2.3. 모바일 앱 동기화 및 릴리즈 빌드
-- 모바일 앱 `StatusDashboardService`가 서버의 0/500(0.0%)을 받아 안드로이드 알림창 및 서재 상단 배너를 정상 표시.
-- 버전 판올림: `v1.7.4+2026110602` 릴리즈 APK 컴파일 완료.
+### 2.3. 모바일 앱 동기화 및 릴리즈 빌드 (`mobile_app/`)
+- **`StatusDashboardService` (`mobile_app/lib/services/status_dashboard_service.dart`)**:
+  - `quotaPercentage` 필드 정식 탑재 및 `calls == 0 && !active` 시 `percentage = 0.0` 강제 가드 추가.
+- **`LibraryScreen` (`mobile_app/lib/ui/library/library_screen.dart`)**:
+  - 상단 배너에 `status.quotaPercentage`를 1순위로 바인딩하여 쿼터 리셋 시 즉각 `API 쿼터 0.0%`로 동기화.
+- 버전 판올림: `v1.7.5+2026110603` 릴리즈 APK 컴파일 완료.
 
 ---
 
@@ -36,3 +40,4 @@
 - `tests/test_quota_logic.py`: 503 포함 전건 계측 검증 및 쿼터 윈도우 계산 단위 테스트 3건 통과.
 - `tests/test_notifications.py`: 알림 및 번역 상태 10건 전체 통과.
 - `get_translation_status()` 실행 결과: 0/500 시 `percentage: 0.0`, `quota_percentage: 0.0` 출력 확인.
+- 모바일 릴리즈 APK 컴파일 및 `server/static/lanovel-reader-release.apk` 동기화 확인.

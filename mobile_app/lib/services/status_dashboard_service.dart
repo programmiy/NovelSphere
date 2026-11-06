@@ -20,6 +20,7 @@ class DashboardStatusData {
   final Map<String, dynamic> apiErrorsByType;
   final int apiCallsToday;
   final int apiQuotaLimit;
+  final double quotaPercentage;
   final int quotaResetHour;
   final int todayTranslationsCount;
   final int updatedAt;
@@ -39,6 +40,7 @@ class DashboardStatusData {
     required this.apiErrorsByType,
     this.apiCallsToday = 0,
     this.apiQuotaLimit = 500,
+    this.quotaPercentage = 0.0,
     this.quotaResetHour = 16,
     this.todayTranslationsCount = 0,
     required this.updatedAt,
@@ -46,21 +48,33 @@ class DashboardStatusData {
 
   factory DashboardStatusData.fromJson(Map<String, dynamic> json) {
     final apiErrors = json['api_errors'] as Map<String, dynamic>? ?? {};
+    final bool active = json['is_active'] as bool? ?? false;
+    final int calls = (json['api_calls_today'] as num?)?.toInt() ?? 0;
+    final int limit = (json['api_quota_limit'] as num?)?.toInt() ?? 500;
+    
+    // 호출 수가 0이거나 비활성 시 직전 회차 진행률 고착 방어
+    final double rawPct = (json['percentage'] as num?)?.toDouble() ?? 0.0;
+    final double effPct = (calls == 0 && !active) ? 0.0 : rawPct;
+    
+    final double qPct = (json['quota_percentage'] as num?)?.toDouble() ??
+        (calls == 0 ? 0.0 : ((calls / (limit > 0 ? limit : 500)) * 100.0));
+
     return DashboardStatusData(
-      isActive: json['is_active'] as bool? ?? false,
+      isActive: active,
       bookTitle: json['book_title'] as String?,
       currentEpisodeTitle: json['current_episode_title'] as String?,
       currentSentence: (json['current_sentence'] as num?)?.toInt() ?? 0,
       totalSentences: (json['total_sentences'] as num?)?.toInt() ?? 0,
-      percentage: (json['percentage'] as num?)?.toDouble() ?? 0.0,
+      percentage: effPct,
       episodeCount: (json['episode_count'] as num?)?.toInt() ?? 0,
       statusText: json['status_text'] as String? ?? '대기 중',
       reviewPendingCount: (json['review_pending_count'] as num?)?.toInt() ?? 0,
       apiErrorsTotal: (apiErrors['total'] as num?)?.toInt() ?? 0,
       apiErrorsSummary: apiErrors['summary_text'] as String? ?? '오류 없음',
       apiErrorsByType: (apiErrors['by_type'] as Map<String, dynamic>?) ?? {},
-      apiCallsToday: (json['api_calls_today'] as num?)?.toInt() ?? 0,
-      apiQuotaLimit: (json['api_quota_limit'] as num?)?.toInt() ?? 500,
+      apiCallsToday: calls,
+      apiQuotaLimit: limit,
+      quotaPercentage: qPct,
       quotaResetHour: (json['quota_reset_hour'] as num?)?.toInt() ?? 16,
       todayTranslationsCount: (json['today_translations_count'] as num?)?.toInt() ?? 0,
       updatedAt: (json['updated_at'] as num?)?.toInt() ?? 0,

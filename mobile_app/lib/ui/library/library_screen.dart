@@ -1517,7 +1517,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Text(
-                      'API 쿼터 ${status.percentage.toStringAsFixed(1)}%',
+                      'API 쿼터 ${status.quotaPercentage.toStringAsFixed(1)}%',
                       style: const TextStyle(
                         color: Color(0xFF10B981),
                         fontSize: 11,
