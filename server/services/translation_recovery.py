@@ -237,7 +237,8 @@ def _recover_verbatim_items(
             _record_call_timestamp()
             res = gemini_session.post(api_url, json=plain_payload, headers=headers, timeout=60)
             model_name = api_url.split('/models/')[1].split(':')[0] if '/models/' in api_url else 'gemini'
-            record_api_call(model=model_name, status_code=res.status_code)
+            if res.status_code != 503:
+                record_api_call(model=model_name, status_code=res.status_code)
             if res.status_code in (429, 503):
                 recycle_gemini_session()
             if res.ok:

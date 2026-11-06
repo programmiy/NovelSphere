@@ -118,12 +118,14 @@ def call_gemini_api(api_url: str, prompt: str, api_key: Optional[str] = None, sy
 
     try:
         response = session.post(api_url, json=payload, headers=headers, timeout=timeout)
-        record_api_call(model=model_name, status_code=response.status_code)
+        if response.status_code != 503:
+            record_api_call(model=model_name, status_code=response.status_code)
         response.raise_for_status()
         return response.json()
     except requests.exceptions.RequestException as e:
         status_code = getattr(getattr(e, 'response', None), 'status_code', 500)
-        record_api_call(model=model_name, status_code=status_code)
+        if status_code != 503:
+            record_api_call(model=model_name, status_code=status_code)
         if status_code in (429, 503):
             recycle_gemini_session()
         raise
