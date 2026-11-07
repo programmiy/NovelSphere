@@ -98,3 +98,35 @@ def test_quota_records_all_attempts_including_503():
     record_api_call(model="test-gemini-200", status_code=200)
     assert get_today_api_call_count() == initial_count + 2
 
+def test_call_gemini_api_no_duplicate_on_error(monkeypatch):
+    from server.services.translation_engine import call_gemini_api
+    from server.quota import get_today_api_call_count, Base, engine
+    import requests
+    
+    Base.metadata.create_all(bind=engine)
+    initial_count = get_today_api_call_count()
+    
+    # 503 에러 응답 모킹
+    class Mock503Response:
+        status_code = 503
+        def raise_for_status(self):
+            err = requests.exceptions.HTTPError("503 Service Unavailable")
+            err.response = self
+            raise err
+        def json(self):
+            return {}
+
+    class MockSession:
+        def post(self, *args, **kwargs):
+            return Mock503Response()
+
+    monkeypatch.setattr("server.services.translation_engine.get_gemini_session", lambda: MockSession())
+    
+    try:
+        call_gemini_api("https://generativelanguage.googleapis.com/v1beta/models/test-model:generateContent", "test prompt")
+    except requests.exceptions.HTTPError:
+        pass
+        
+    # 503 발생 시 정확히 1회만 카운트되어야 함 (중복 2회 카운트 방지 검증)
+    assert get_today_api_call_count() == initial_count + 1
+

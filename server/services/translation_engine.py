@@ -122,8 +122,11 @@ def call_gemini_api(api_url: str, prompt: str, api_key: Optional[str] = None, sy
         response.raise_for_status()
         return response.json()
     except requests.exceptions.RequestException as e:
+        # HTTP 응답(503, 429 등)을 이미 받은 경우 try 블록에서 이미 1회 기록되었으므로 중복 기록 방지
+        # 네트워크 단절/타임아웃으로 response 자체가 없을 때만 500으로 1회 기록
+        if getattr(e, 'response', None) is None:
+            record_api_call(model=model_name, status_code=500)
         status_code = getattr(getattr(e, 'response', None), 'status_code', 500)
-        record_api_call(model=model_name, status_code=status_code)
         if status_code in (429, 503):
             recycle_gemini_session()
         raise
