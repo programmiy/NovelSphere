@@ -1,0 +1,889 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>원문 수집기 & 수동 번역 스튜디오 | LANOVEL</title>
+    <!-- Fonts & Icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;900&family=Special+Elite&family=Courier+Prime:wght@400;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <link rel="stylesheet" href="/static/library.css?v=3.8">
+    <style>
+        :root {
+            --bg-primary: #12141a;
+            --bg-secondary: #1a1e28;
+            --bg-card: #222736;
+            --border-color: #384259;
+            --accent-gold: #e5b95f;
+            --accent-cyan: #3bd6c6;
+            --accent-red: #ff5e7e;
+            --text-main: #f0f3fa;
+            --text-muted: #8c97b2;
+            --code-bg: #0b0c10;
+        }
+
+        body {
+            background-color: var(--bg-primary);
+            color: var(--text-main);
+            font-family: 'Pretendard', sans-serif;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+
+        .collector-navbar {
+            background: linear-gradient(180deg, #1f2533 0%, #161a24 100%);
+            border-bottom: 2px solid #2e3648;
+            padding: 12px 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+        }
+        .collector-brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .collector-brand .material-icons {
+            font-size: 28px;
+            color: var(--accent-gold);
+        }
+        .collector-brand h1 {
+            margin: 0;
+            font-size: 18px;
+            font-family: 'Cinzel', serif;
+            letter-spacing: 1px;
+            color: var(--accent-gold);
+        }
+        .collector-brand span.sub {
+            font-size: 11px;
+            color: var(--text-muted);
+            letter-spacing: 0.5px;
+        }
+
+        .tab-nav {
+            display: flex;
+            gap: 8px;
+        }
+        .tab-btn {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid var(--border-color);
+            color: var(--text-muted);
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            transition: all 0.2s ease;
+        }
+        .tab-btn:hover {
+            color: var(--text-main);
+            border-color: var(--accent-gold);
+        }
+        .tab-btn.active {
+            background: rgba(229, 185, 95, 0.15);
+            border-color: var(--accent-gold);
+            color: var(--accent-gold);
+            box-shadow: 0 0 12px rgba(229, 185, 95, 0.25);
+        }
+
+        .collector-container {
+            max-width: 1280px;
+            margin: 20px auto;
+            padding: 0 20px;
+            width: calc(100% - 40px);
+            box-sizing: border-box;
+            flex: 1;
+        }
+
+        .tab-pane {
+            display: none;
+        }
+        .tab-pane.active {
+            display: block;
+        }
+
+        .card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+        }
+
+        .card-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 16px;
+            border-bottom: 1px solid rgba(255,255,255,0.06);
+            padding-bottom: 12px;
+        }
+        .card-title {
+            margin: 0;
+            font-size: 16px;
+            font-weight: 700;
+            color: var(--accent-gold);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        /* 입력 폼 */
+        .input-group {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 14px;
+        }
+        .text-input {
+            flex: 1;
+            background: var(--code-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 10px 14px;
+            color: var(--text-main);
+            font-size: 14px;
+            outline: none;
+            transition: border 0.2s;
+        }
+        .text-input:focus {
+            border-color: var(--accent-cyan);
+            box-shadow: 0 0 8px rgba(59, 214, 198, 0.2);
+        }
+
+        .btn-action {
+            background: linear-gradient(135deg, #e5b95f 0%, #b88d3b 100%);
+            color: #12141a;
+            border: none;
+            border-radius: 6px;
+            padding: 10px 20px;
+            font-size: 13px;
+            font-weight: 700;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            transition: all 0.2s ease;
+        }
+        .btn-action:hover {
+            filter: brightness(1.1);
+            transform: translateY(-1px);
+        }
+        .btn-action.btn-stop {
+            background: linear-gradient(135deg, #ff5e7e 0%, #c4324f 100%);
+            color: #fff;
+        }
+        .btn-action:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        /* 배지 & 상태 칩 */
+        .badge-bar {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-top: 10px;
+        }
+        .badge-chip {
+            background: rgba(255,255,255,0.06);
+            border: 1px solid var(--border-color);
+            border-radius: 20px;
+            padding: 4px 12px;
+            font-size: 12px;
+            color: var(--text-muted);
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .badge-chip strong {
+            color: var(--text-main);
+        }
+        .badge-chip.gold { border-color: var(--accent-gold); color: var(--accent-gold); }
+        .badge-chip.cyan { border-color: var(--accent-cyan); color: var(--accent-cyan); }
+        .badge-chip.green { border-color: #48bb78; color: #48bb78; }
+        .badge-chip.red { border-color: var(--accent-red); color: var(--accent-red); }
+
+        /* 프로그레스 & 게이지 */
+        .progress-box {
+            background: var(--code-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 16px;
+        }
+        .progress-header {
+            display: flex;
+            justify-content: space-between;
+            font-size: 13px;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+        .progress-track {
+            height: 14px;
+            background: rgba(255,255,255,0.08);
+            border-radius: 7px;
+            overflow: hidden;
+            position: relative;
+        }
+        .progress-bar-fill {
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(90deg, #3bd6c6 0%, #e5b95f 100%);
+            transition: width 0.3s ease;
+            box-shadow: 0 0 10px rgba(59, 214, 198, 0.4);
+        }
+
+        /* 쿨다운 타이머 알림 박스 */
+        .cooldown-alert {
+            background: rgba(229, 185, 95, 0.12);
+            border: 1px solid var(--accent-gold);
+            border-radius: 8px;
+            padding: 14px 18px;
+            margin-bottom: 16px;
+            display: none;
+            align-items: center;
+            gap: 14px;
+            animation: pulseGlow 2s infinite alternate;
+        }
+        @keyframes pulseGlow {
+            from { box-shadow: 0 0 4px rgba(229,185,95,0.2); }
+            to { box-shadow: 0 0 16px rgba(229,185,95,0.5); }
+        }
+        .cooldown-alert .timer-val {
+            font-family: 'Cinzel', serif;
+            font-size: 24px;
+            font-weight: 900;
+            color: var(--accent-gold);
+            min-width: 80px;
+        }
+
+        /* 콘솔 로그 창 */
+        .console-terminal {
+            background: var(--code-bg);
+            border: 1px solid #232938;
+            border-radius: 8px;
+            padding: 14px;
+            font-family: 'Courier Prime', monospace;
+            font-size: 12px;
+            height: 240px;
+            overflow-y: auto;
+            color: #9daec8;
+            line-height: 1.6;
+        }
+        .console-line {
+            margin-bottom: 4px;
+            word-break: break-all;
+        }
+        .console-line.success { color: #4ade80; }
+        .console-line.warn { color: #facc15; }
+        .console-line.error { color: #f87171; }
+
+        /* 수동 번역 스튜디오 스타일 */
+        .studio-layout {
+            display: grid;
+            grid-template-columns: 320px 1fr;
+            gap: 20px;
+        }
+        @media (max-width: 900px) {
+            .studio-layout { grid-template-columns: 1fr; }
+        }
+
+        .ep-list {
+            max-height: 650px;
+            overflow-y: auto;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            background: var(--code-bg);
+        }
+        .ep-item {
+            padding: 10px 14px;
+            border-bottom: 1px solid rgba(255,255,255,0.04);
+            cursor: pointer;
+            font-size: 13px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            transition: background 0.15s;
+        }
+        .ep-item:hover {
+            background: rgba(255,255,255,0.04);
+        }
+        .ep-item.active {
+            background: rgba(229, 185, 95, 0.15);
+            border-left: 3px solid var(--accent-gold);
+            color: var(--accent-gold);
+            font-weight: 700;
+        }
+
+        .trans-editor-box {
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+            max-height: 650px;
+            overflow-y: auto;
+            padding-right: 6px;
+        }
+        .sentence-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 12px 16px;
+            transition: border 0.2s;
+        }
+        .sentence-card:focus-within {
+            border-color: var(--accent-cyan);
+            box-shadow: 0 0 8px rgba(59, 214, 198, 0.2);
+        }
+        .sentence-header {
+            display: flex;
+            justify-content: space-between;
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-bottom: 6px;
+            font-family: 'Courier Prime', monospace;
+        }
+        .sentence-original {
+            font-size: 14px;
+            line-height: 1.6;
+            color: #d1d9e6;
+            margin-bottom: 10px;
+            background: rgba(0,0,0,0.2);
+            padding: 8px 12px;
+            border-radius: 6px;
+            border-left: 3px solid #4a5568;
+        }
+        .sentence-textarea {
+            width: 100%;
+            background: var(--code-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 8px 12px;
+            color: #fff;
+            font-size: 14px;
+            line-height: 1.5;
+            resize: vertical;
+            min-height: 50px;
+            box-sizing: border-box;
+            outline: none;
+            font-family: inherit;
+        }
+        .sentence-textarea:focus {
+            border-color: var(--accent-gold);
+        }
+    </style>
+</head>
+<body>
+
+    <nav class="collector-navbar">
+        <div class="collector-brand">
+            <span class="material-icons">file_download</span>
+            <div>
+                <h1>RAW NOVEL COLLECTOR</h1>
+                <span class="sub">검열 회피용 원문 일괄 수집기 & 수동 번역 스튜디오</span>
+            </div>
+        </div>
+
+        <div class="tab-nav">
+            <button class="tab-btn active" id="tabBtnCollector" onclick="switchTab('collector')">
+                <span class="material-icons">cloud_download</span> 원문 일괄 수집
+            </button>
+            <button class="tab-btn" id="tabBtnStudio" onclick="switchTab('studio')">
+                <span class="material-icons">translate</span> 수동 번역 스튜디오
+            </button>
+            <a href="/" class="tab-btn" style="text-decoration:none;">
+                <span class="material-icons">local_library</span> 서재로 이동
+            </a>
+        </div>
+    </nav>
+
+    <div class="collector-container">
+
+        <!-- =================================================================== -->
+        <!-- 1. 원문 일괄 수집 탭 -->
+        <!-- =================================================================== -->
+        <div class="tab-pane active" id="paneCollector">
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">
+                        <span class="material-icons">link</span> 소설 목차 주소 입력
+                    </h2>
+                    <span class="badge-chip gold">Gemini API 번역 0회 · 순수 원문만 보관</span>
+                </div>
+
+                <div class="input-group">
+                    <input type="text" id="novelUrlInput" class="text-input" placeholder="소설 목차 URL 입력 (예: https://ncode.syosetu.com/n1234ab/ 또는 https://kakuyomu.jp/works/1234...)" />
+                    <button class="btn-action" id="prepareBtn" onclick="prepareNovel()">
+                        <span class="material-icons">search</span> 목차 분석
+                    </button>
+                </div>
+
+                <!-- 분석 결과 패널 -->
+                <div id="prepareResultPanel" style="display: none;">
+                    <div class="input-group" style="margin-top: 10px;">
+                        <input type="text" id="customFolderInput" class="text-input" placeholder="서재 폴더명 (비워두면 웹소설 제목 자동 적용)" />
+                        <button class="btn-action" id="startBtn" onclick="startCollection()">
+                            <span class="material-icons">play_arrow</span> 수집 시작
+                        </button>
+                        <button class="btn-action btn-stop" id="stopBtn" onclick="stopCollection()" style="display: none;">
+                            <span class="material-icons">stop</span> 중지
+                        </button>
+                    </div>
+
+                    <div class="badge-bar">
+                        <span class="badge-chip gold" id="chipTitle">작품: <strong>-</strong></span>
+                        <span class="badge-chip" id="chipTotal">전체: <strong>0화</strong></span>
+                        <span class="badge-chip green" id="chipExisting">기수집(스킵): <strong>0화</strong></span>
+                        <span class="badge-chip cyan" id="chipNew">신규 수집: <strong>0화</strong></span>
+                        <span class="badge-chip">정책: <strong>2.5초 간격 · 12화마다 120초 쿨다운</strong></span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 12화 안전 쿨다운 휴식 타이머 HUD -->
+            <div class="cooldown-alert" id="cooldownAlert">
+                <span class="material-icons" style="font-size: 32px; color: var(--accent-gold);">hourglass_top</span>
+                <div style="flex: 1;">
+                    <strong style="color: var(--accent-gold); font-size: 15px;">🛡️ 웹사이트 보호용 쿨다운 휴식 중</strong>
+                    <div style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">
+                        연속 12화 수집을 완료하여 사이트 차단을 원천 방지하기 위해 안전하게 휴식합니다. 시간이 지나면 자동으로 재개됩니다.
+                    </div>
+                </div>
+                <div class="timer-val" id="cooldownTimerText">120s</div>
+            </div>
+
+            <!-- 실시간 진행도 게이지 -->
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">
+                        <span class="material-icons">speed</span> 실시간 수집 현황
+                    </h2>
+                    <span class="badge-chip cyan" id="statusBadge">대기 중</span>
+                </div>
+
+                <div class="progress-box">
+                    <div class="progress-header">
+                        <span id="progressEpisodeText">대기 중...</span>
+                        <span id="progressPercentText" style="color: var(--accent-gold);">0%</span>
+                    </div>
+                    <div class="progress-track">
+                        <div class="progress-bar-fill" id="progressBar"></div>
+                    </div>
+                    <div style="margin-top: 8px; font-size: 12px; color: var(--text-muted); display: flex; justify-content: space-between;">
+                        <span id="progressStatsText">저장: 0화 | 스킵: 0화 | 수집 문단: 0개</span>
+                        <span style="color: #4ade80;">번역문 빈칸 보존 · 미분류 격리 차단</span>
+                    </div>
+                </div>
+
+                <!-- 터미널 콘솔 로그 -->
+                <div class="console-terminal" id="consoleTerminal">
+                    <div class="console-line">[시스템] 원문 전용 수집기 대시보드가 준비되었습니다.</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- =================================================================== -->
+        <!-- 2. 수동 번역 스튜디오 탭 -->
+        <!-- =================================================================== -->
+        <div class="tab-pane" id="paneStudio">
+            <div class="card" style="padding: 14px 20px; margin-bottom: 14px;">
+                <div style="display: flex; gap: 14px; align-items: center; justify-content: space-between; flex-wrap: wrap;">
+                    <div style="display: flex; gap: 10px; align-items: center;">
+                        <span class="material-icons" style="color: var(--accent-gold);">book</span>
+                        <select id="studioNovelSelect" class="text-input" style="min-width: 280px;" onchange="loadStudioEpisodes()">
+                            <option value="">수동 번역 소설을 선택하세요...</option>
+                        </select>
+                        <button class="btn-action" style="padding: 8px 14px;" onclick="loadStudioNovels()">
+                            <span class="material-icons">refresh</span> 새로고침
+                        </button>
+                    </div>
+
+                    <div style="display: flex; gap: 10px; align-items: center;" id="studioActionBar" style="display: none;">
+                        <button class="btn-action" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); color:#fff;" onclick="saveCurrentEpisodeTranslations()">
+                            <span class="material-icons">verified</span> 번역 저장 & ✅ 검수완료 적용
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="studio-layout">
+                <!-- 회차 목록 -->
+                <div class="card" style="padding: 14px;">
+                    <div class="card-header" style="margin-bottom: 10px; padding-bottom: 8px;">
+                        <h3 class="card-title" style="font-size: 14px;">회차 목록</h3>
+                        <span class="badge-chip" id="studioEpCountBadge">0화</span>
+                    </div>
+                    <div class="ep-list" id="studioEpList">
+                        <div style="padding: 20px; text-align: center; color: var(--text-muted); font-size: 12px;">
+                            소설을 선택하면 회차 목록이 표시됩니다.
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 문단별 번역 에디터 -->
+                <div class="card" style="padding: 14px;">
+                    <div class="card-header" style="margin-bottom: 10px; padding-bottom: 8px;">
+                        <h3 class="card-title" id="studioCurrentEpTitle" style="font-size: 14px;">
+                            회차를 선택하여 수동 번역을 시작하세요
+                        </h3>
+                        <span class="badge-chip green" id="studioReviewedBadge" style="display:none;">✅ 검수완료</span>
+                    </div>
+
+                    <div class="trans-editor-box" id="studioSentenceBox">
+                        <div style="padding: 40px; text-align: center; color: var(--text-muted); font-size: 13px;">
+                            좌측 회차 목록에서 번역할 회차를 선택해주세요.
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- 스크립트 로직 -->
+    <script>
+        let currentSse = null;
+        let activeNovelUrl = "";
+        let currentFolder = "";
+        let currentEpUrl = "";
+        let currentSentenceItems = [];
+
+        // 탭 전환
+        function switchTab(tab) {
+            document.getElementById('paneCollector').classList.toggle('active', tab === 'collector');
+            document.getElementById('paneStudio').classList.toggle('active', tab === 'studio');
+            document.getElementById('tabBtnCollector').classList.toggle('active', tab === 'collector');
+            document.getElementById('tabBtnStudio').classList.toggle('active', tab === 'studio');
+
+            if (tab === 'studio') {
+                loadStudioNovels();
+            }
+        }
+
+        // 콘솔 로그 추가
+        function appendConsole(msg, type = '') {
+            const term = document.getElementById('consoleTerminal');
+            const line = document.createElement('div');
+            line.className = `console-line ${type}`;
+            line.textContent = msg;
+            term.appendChild(line);
+            term.scrollTop = term.scrollHeight;
+        }
+
+        // 1. 목차 분석
+        async function prepareNovel() {
+            const url = document.getElementById('novelUrlInput').value.trim();
+            if (!url) {
+                alert('소설 목차 URL을 입력해주세요.');
+                return;
+            }
+
+            const btn = document.getElementById('prepareBtn');
+            btn.disabled = true;
+            btn.innerHTML = '<span class="material-icons">hourglass_empty</span> 분석 중...';
+            appendConsole(`[목차 분석] URL 확인 중: ${url}`);
+
+            try {
+                const res = await fetch('/api/collector/prepare', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url })
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.detail || '목차 분석 실패');
+
+                activeNovelUrl = url;
+                document.getElementById('prepareResultPanel').style.display = 'block';
+                document.getElementById('customFolderInput').value = data.novel_title;
+
+                document.getElementById('chipTitle').innerHTML = `작품: <strong>${data.novel_title}</strong>`;
+                document.getElementById('chipTotal').innerHTML = `전체: <strong>${data.total_episodes}화</strong>`;
+                document.getElementById('chipExisting').innerHTML = `기수집(스킵): <strong>${data.existing_count}화</strong>`;
+                document.getElementById('chipNew').innerHTML = `신규 수집: <strong>${data.new_count}화</strong>`;
+
+                appendConsole(`✅ 목차 분석 완료: '${data.novel_title}' (전체 ${data.total_episodes}화 중 ${data.new_count}화 수집 대상)`, 'success');
+            } catch (err) {
+                alert(`오류: ${err.message}`);
+                appendConsole(`❌ 목차 분석 실패: ${err.message}`, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '<span class="material-icons">search</span> 목차 분석';
+            }
+        }
+
+        // 2. 수집 시작
+        async function startCollection() {
+            if (!activeNovelUrl) {
+                alert('먼저 목차를 분석해주세요.');
+                return;
+            }
+            const folderName = document.getElementById('customFolderInput').value.trim();
+
+            document.getElementById('startBtn').style.display = 'none';
+            document.getElementById('stopBtn').style.display = 'inline-flex';
+
+            try {
+                const res = await fetch('/api/collector/start', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        url: activeNovelUrl,
+                        custom_folder_name: folderName,
+                        delay_sec: 2.5,
+                        batch_size: 12,
+                        rest_sec: 120,
+                        skip_existing: true
+                    })
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.detail || '수집 시작 실패');
+
+                appendConsole(`🚀 원문 수집 작업이 백그라운드에서 시작되었습니다.`, 'success');
+                initSse();
+            } catch (err) {
+                alert(`오류: ${err.message}`);
+                document.getElementById('startBtn').style.display = 'inline-flex';
+                document.getElementById('stopBtn').style.display = 'none';
+            }
+        }
+
+        // 3. 수집 중지
+        async function stopCollection() {
+            try {
+                await fetch('/api/collector/stop', { method: 'POST' });
+                appendConsole(`⏹️ 수집 중지 요청을 전송했습니다.`, 'warn');
+            } catch (err) {
+                alert(`오류: ${err.message}`);
+            }
+        }
+
+        // SSE 실시간 상태 연동
+        function initSse() {
+            if (currentSse) {
+                currentSse.close();
+            }
+
+            currentSse = new EventSource('/api/collector/stream');
+            currentSse.onmessage = (event) => {
+                const state = JSON.parse(event.data);
+                updateCollectorUI(state);
+            };
+
+            currentSse.onerror = () => {
+                // 재연결 대기
+            };
+        }
+
+        function updateCollectorUI(state) {
+            const statusBadge = document.getElementById('statusBadge');
+            const progressBar = document.getElementById('progressBar');
+            const progressPercentText = document.getElementById('progressPercentText');
+            const progressEpisodeText = document.getElementById('progressEpisodeText');
+            const progressStatsText = document.getElementById('progressStatsText');
+            const cooldownAlert = document.getElementById('cooldownAlert');
+            const cooldownTimerText = document.getElementById('cooldownTimerText');
+
+            statusBadge.textContent =
+                state.status === 'running' ? '수집 진행 중' :
+                state.status === 'resting' ? '쿨다운 휴식 중' :
+                state.status === 'completed' ? '수집 완료' :
+                state.status === 'stopped' ? '중지됨' : '대기 중';
+
+            statusBadge.className = `badge-chip ${
+                state.status === 'running' ? 'cyan' :
+                state.status === 'resting' ? 'gold' :
+                state.status === 'completed' ? 'green' : 'red'
+            }`;
+
+            progressBar.style.width = `${state.progress_percent || 0}%`;
+            progressPercentText.textContent = `${state.progress_percent || 0}%`;
+
+            if (state.status === 'resting') {
+                cooldownAlert.style.display = 'flex';
+                cooldownTimerText.textContent = `${state.rest_remaining_seconds}s`;
+                progressEpisodeText.textContent = `⏳ 안전 쿨다운 휴식 중 (${state.rest_remaining_seconds}초 남음)`;
+            } else {
+                cooldownAlert.style.display = 'none';
+                progressEpisodeText.textContent = state.current_episode_title ? `제 ${state.completed_episodes + state.skipped_episodes}화: ${state.current_episode_title}` : '진행 대기';
+            }
+
+            progressStatsText.textContent = `저장: ${state.completed_episodes}화 | 스킵: ${state.skipped_episodes}화 / 전체 ${state.total_episodes}화 | 수집 문단: ${state.saved_paragraphs_count.toLocaleString()}개`;
+
+            if (state.recent_logs && state.recent_logs.length > 0) {
+                const lastLog = state.recent_logs[state.recent_logs.length - 1];
+                const term = document.getElementById('consoleTerminal');
+                if (term.lastChild && term.lastChild.textContent !== lastLog) {
+                    appendConsole(lastLog);
+                }
+            }
+
+            if (state.status === 'completed' || state.status === 'stopped' || state.status === 'error') {
+                document.getElementById('startBtn').style.display = 'inline-flex';
+                document.getElementById('stopBtn').style.display = 'none';
+            } else {
+                document.getElementById('startBtn').style.display = 'none';
+                document.getElementById('stopBtn').style.display = 'inline-flex';
+            }
+        }
+
+        // 페이지 로드 시 초기 상태 확인
+        window.addEventListener('DOMContentLoaded', async () => {
+            initSse();
+            try {
+                const res = await fetch('/api/collector/status');
+                const state = await res.json();
+                updateCollectorUI(state);
+            } catch (_) {}
+        });
+
+        // ===================================================================
+        // 2. 수동 번역 스튜디오 JS 로직
+        // ===================================================================
+
+        async function loadStudioNovels() {
+            try {
+                const res = await fetch('/api/collector/manual_novels');
+                const data = await res.json();
+                const sel = document.getElementById('studioNovelSelect');
+                sel.innerHTML = '<option value="">수동 번역 소설을 선택하세요...</option>';
+
+                for (const n of data.novels) {
+                    const opt = document.createElement('option');
+                    opt.value = n.folderName;
+                    opt.textContent = `${n.folderName} (${n.translation_percent}% 완료, ${n.total_episodes}화${n.is_book_reviewed ? ' ✅' : ''})`;
+                    sel.appendChild(opt);
+                }
+            } catch (err) {
+                console.error('소설 목록 로드 실패:', err);
+            }
+        }
+
+        async function loadStudioEpisodes() {
+            const folder = document.getElementById('studioNovelSelect').value;
+            if (!folder) return;
+            currentFolder = folder;
+
+            try {
+                const res = await fetch(`/api/collector/episodes?folder_name=${encodeURIComponent(folder)}`);
+                const data = await res.json();
+
+                const listEl = document.getElementById('studioEpList');
+                document.getElementById('studioEpCountBadge').textContent = `${data.episodes.length}화`;
+                listEl.innerHTML = '';
+
+                data.episodes.forEach((ep, idx) => {
+                    const item = document.createElement('div');
+                    item.className = 'ep-item';
+                    item.innerHTML = `
+                        <div style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:210px;">
+                            ${idx + 1}. ${escapeHtml(ep.title)}
+                        </div>
+                        <div style="font-size:11px; display:flex; gap:4px; align-items:center;">
+                            <span style="color:${ep.is_completed ? '#4ade80' : '#8c97b2'}">${ep.translated_paragraphs}/${ep.total_paragraphs}</span>
+                            ${ep.is_reviewed ? '<span style="color:#4ade80;">✅</span>' : ''}
+                        </div>
+                    `;
+                    item.onclick = () => loadStudioEpisodeContent(ep.url, ep.title, item);
+                    listEl.appendChild(item);
+                });
+            } catch (err) {
+                alert(`회차 목록 로드 실패: ${err.message}`);
+            }
+        }
+
+        async function loadStudioEpisodeContent(url, title, el) {
+            currentEpUrl = url;
+            document.querySelectorAll('.ep-item').forEach(i => i.classList.remove('active'));
+            if (el) el.classList.add('active');
+
+            const titleEl = document.getElementById('studioCurrentEpTitle');
+            const revBadge = document.getElementById('studioReviewedBadge');
+            const box = document.getElementById('studioSentenceBox');
+            titleEl.textContent = title;
+            box.innerHTML = '<div style="padding:40px; text-align:center; color:var(--text-muted);">문단을 불러오는 중...</div>';
+
+            try {
+                const res = await fetch(`/api/collector/episode_content?url=${encodeURIComponent(url)}`);
+                const data = await res.json();
+                currentSentenceItems = data.items;
+
+                revBadge.style.display = data.is_reviewed ? 'inline-flex' : 'none';
+                box.innerHTML = '';
+
+                data.items.forEach((item, idx) => {
+                    const card = document.createElement('div');
+                    card.className = 'sentence-card';
+                    card.innerHTML = `
+                        <div class="sentence-header">
+                            <span>#${idx + 1} (${escapeHtml(item.pid || '')})</span>
+                        </div>
+                        <div class="sentence-original">${escapeHtml(item.original)}</div>
+                        <textarea class="sentence-textarea" data-id="${item.id}" placeholder="직접 번역문을 입력하세요...">${escapeHtml(item.translated || '')}</textarea>
+                    `;
+                    box.appendChild(card);
+                });
+            } catch (err) {
+                alert(`문단 불러오기 실패: ${err.message}`);
+            }
+        }
+
+        async function saveCurrentEpisodeTranslations() {
+            if (!currentEpUrl || !currentFolder) {
+                alert('먼저 회차를 선택해주세요.');
+                return;
+            }
+
+            const textareas = document.querySelectorAll('.sentence-textarea');
+            const payloadItems = [];
+            textareas.forEach(ta => {
+                const id = parseInt(ta.getAttribute('data-id'), 10);
+                payloadItems.push({
+                    id: id,
+                    translated: ta.value
+                });
+            });
+
+            try {
+                const res = await fetch('/api/collector/save_manual_translations', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        url: currentEpUrl,
+                        folder_name: currentFolder,
+                        items: payloadItems,
+                        mark_as_reviewed: true
+                    })
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.detail || '저장 실패');
+
+                alert(data.message);
+                document.getElementById('studioReviewedBadge').style.display = 'inline-flex';
+                loadStudioEpisodes(); // 회차 목록 갱신
+            } catch (err) {
+                alert(`저장 실패: ${err.message}`);
+            }
+        }
+
+        function escapeHtml(text) {
+            return String(text || '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+        }
+    </script>
+</body>
+</html>

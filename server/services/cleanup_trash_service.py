@@ -14,7 +14,7 @@ from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from server.models import Translation, TranslationTrash, CleanupNotification, CleanupQueuedItem
+from server.models import Translation, TranslationTrash, CleanupNotification, CleanupQueuedItem, ManualTranslationNovel
 from server.rule_classifier import classify_translation
 from server.utils import natural_sort_key
 
@@ -48,8 +48,9 @@ def move_items_to_cleanup(ids: List[int], db: Session) -> Dict[str, Any]:
 
 
 def get_cleanup_queue_data(db: Session) -> Dict[str, Any]:
-    """원문 복제·변형 정리 대기열을 조회합니다."""
+    """원문 복제·변형 정리 대기열을 조회합니다 (수동 번역/검열 회피 소설 원천 제외)."""
     queued_ids = {row.translation_id for row in db.query(CleanupQueuedItem).all()}
+    manual_folders = {r[0] for r in db.query(ManualTranslationNovel.folderName).all()}
 
     # 1. 1차 후보 쿼리 (원문=번역문, 빈번역, 일본어 가나 및 한자/중국어 포함 번역)
     candidate_regex = r'[\u3040-\u309f\u30a0-\u30fa\u4e00-\u9faf\u3400-\u4dbf]'
@@ -69,6 +70,9 @@ def get_cleanup_queue_data(db: Session) -> Dict[str, Any]:
 
     for t in candidates:
         t_dict = t._asdict()
+        # 수동 번역 및 검열 회피 소설은 빈칸/원문 복제 감지 대상에서 완전히 제외
+        if t_dict.get('folderName') in manual_folders:
+            continue
         t_id = t_dict.get("id")
         ori = t_dict.get("original") or ""
         tra = t_dict.get("translated") or ""
@@ -187,6 +191,9 @@ def delete_cleanup_queue_items(req: CleanupDeleteRequest, db: Session) -> Dict[s
     batch_id = str(uuid.uuid4())[:8]
 
     episodes_map = defaultdict(lambda: {"novel_title": "", "episode_title": "", "url": "", "count": 0})
+
+    manual_folders = {r[0] for r in db.query(ManualTranslationNovel.folderName).all()}
+    target_translations = [t for t in target_translations if t.folderName not in manual_folders]
 
     for t in target_translations:
         cat = classify_translation(t.original, t.translated)

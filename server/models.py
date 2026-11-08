@@ -253,3 +253,19 @@ class RemoteSetting(Base):
 
     key = Column(String(64), primary_key=True)
     value = Column(Text, nullable=False, default="")
+
+
+class ManualTranslationNovel(Base):
+    """
+    검열 회피/수동 번역용 원문 보관 소설 목록.
+    - 원문 수집기(Collector)로 수집되었거나 수동 번역으로 지정된 소설.
+    - translations 테이블의 빈 번역(translated='') 레코드가 빈칸 감지기/복원센터에 의해
+      삭제되거나 이상치로 감지되지 않도록 안전하게 화이트리스트 처리합니다.
+    """
+    __tablename__ = 'manual_translation_novels'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    folderName = Column(Text, nullable=False, unique=True, index=True)
+    source_url = Column(Text, nullable=True)
+    created_at = Column(BigInteger, nullable=False)
+    is_completed = Column(Integer, nullable=False, default=0)

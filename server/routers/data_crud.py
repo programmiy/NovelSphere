@@ -23,6 +23,7 @@ from server.database import get_db, get_sqlite_conn
 from server.models import (
     AppliedUrl,
     CleanupQueuedItem,
+    ManualTranslationNovel,
     Translation,
     TranslationTrash,
     UrlMetadata,
@@ -193,6 +194,7 @@ def upsert_translations(items: List[TranslationItem], db: Session = Depends(get_
     # 2. 배치 내 URL에 해당하는 기존 번역 데이터를 1번 쿼리로 일괄 조회하여 N+1 제거
     existing_translations = db.query(Translation).filter(Translation.url.in_(urls_in_batch)).all()
     existing_map = {(t.url, t.pid): t for t in existing_translations}
+    manual_folders = {r[0] for r in db.query(ManualTranslationNovel.folderName).all()}
 
     # 검수완료된 회차/도서의 수정/삽입 차단 가드
     from server.services.reviewed_service import reviewed_service
@@ -310,14 +312,24 @@ def upsert_translations(items: List[TranslationItem], db: Session = Depends(get_
                     del existing_map[key]
             continue
 
-        # 번역문이 빈 문자열이거나 None인 경우: Translation 테이블에 빈 레코드로 적재하지 않음
+        # 수동 번역 및 검열 회피 소설 여부 확인
+        is_manual_novel = bool(
+            (item.folderName and item.folderName.strip() in manual_folders) or
+            (inherited_folder and inherited_folder in manual_folders)
+        )
+
+        # 번역문이 빈 문자열이거나 None인 경우:
+        # 일반 소설은 적재하지 않고 삭제하지만, 수동 번역 소설은 원문 보존을 위해 빈 레코드("")로 정상 유지
         if not target_trans or not str(target_trans).strip():
-            if existing_translation:
-                db.delete(existing_translation)
-                deleted_existing_count += 1
-                if key in existing_map:
-                    del existing_map[key]
-            continue
+            if not is_manual_novel:
+                if existing_translation:
+                    db.delete(existing_translation)
+                    deleted_existing_count += 1
+                    if key in existing_map:
+                        del existing_map[key]
+                continue
+            else:
+                target_trans = ""
 
         explicit_folder = item.folderName.strip() if (item.folderName and item.folderName.strip() and item.folderName.strip() not in ('Unknown', '미분류')) else None
         target_folder = explicit_folder or inherited_folder
