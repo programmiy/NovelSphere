@@ -220,6 +220,11 @@ def test_collector_api_endpoints(client):
     assert res_novels.status_code == 200
     assert "novels" in res_novels.json()
 
+    # 4. 회차 목록 조회 엔드포인트 검증 (SQLAlchemy case 집계)
+    res_eps = client.get("/api/collector/episodes?folder_name=테스트_검열회피_소설")
+    assert res_eps.status_code == 200
+    assert "episodes" in res_eps.json()
+
 
 @patch("server.services.collector_service.requests.get")
 def test_syosetu_toc_and_paragraph_scraper(mock_get):

@@ -72,6 +72,9 @@
 - **실시간 SSE 스트림 캐싱 완전 우회**: `/api/collector/stream` 및 스트리밍 엔드포인트는 서비스 워커가 fetch를 가로채거나 캐싱하지 않고 브라우저 네이티브 네트워크로 직접 연결되도록 바이패스 처리.
 - **수집기 대기 상태(`idle`) 버튼 토글 수정**: 초기 대기 상태에서 [수집 시작] 버튼이 숨겨지고 [중지] 버튼이 노출되던 UI 분기 오류를 해결하여 정상적으로 [수집 시작]이 동작하도록 수정. URL 인풋 및 폴더명 인풋에 엔터(Enter) 키 즉시 실행 리스너 바인딩.
 
+### 2.7 회차 목록 집계 500 에러 해결 (`server/routers/collector.py`)
+- **SQLAlchemy case 구문 문법 수정**: `list_novel_episodes`(`/api/collector/episodes`)에서 `func.case(..., else_=0)`로 잘못 호출되어 발생하던 `TypeError: Function.__init__() got an unexpected keyword argument 'else_'`를 해결. `from sqlalchemy import case` 임포트 후 `case((condition, 1), else_=0)` 형태로 표준화하여 500 에러를 원천 차단하고 번역 완료 문단 집계가 정상 동작하도록 수정.
+
 ## 3. 검증 결과
 - `tests/test_raw_collector.py` 6종 단위/통합 테스트 전건 통과:
   1. `test_models_manual_translation_novel_crud`: PASS

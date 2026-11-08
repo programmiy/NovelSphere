@@ -227,7 +227,7 @@ def list_novel_episodes(folder_name: str, db: Session = Depends(sdb.get_db)):
         raise HTTPException(status_code=400, detail="소설 폴더명을 지정해주세요.")
 
     # URL별 대표 제목, 목차 순서, 문단 수 집계
-    from sqlalchemy import func
+    from sqlalchemy import func, case
     rows = (
         db.query(
             Translation.url,
@@ -235,7 +235,7 @@ def list_novel_episodes(folder_name: str, db: Session = Depends(sdb.get_db)):
             func.min(Translation.toc_sort_order).label("sort_order"),
             func.count(Translation.id).label("total_p"),
             func.sum(
-                func.case(
+                case(
                     (Translation.translated.isnot(None) & (Translation.translated != ""), 1),
                     else_=0
                 )
