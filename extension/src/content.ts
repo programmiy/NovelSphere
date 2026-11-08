@@ -95,6 +95,26 @@ async function init(): Promise<void> {
       return;
     }
 
+    // 0. 원문 수집기 전용(검열 회피/수동) 소설 감지 시 확장을 완전히 비활성화
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 1000);
+      const checkResp = await serverFetch(
+        'http://127.0.0.1:8001/api/collector/check_extension_excluded?url=' + encodeURIComponent(currentUrl),
+        { signal: controller.signal }
+      );
+      clearTimeout(timeoutId);
+      if (checkResp.ok) {
+        const checkData = await checkResp.json();
+        if (checkData.excluded) {
+          console.log(
+            '[LANOVEL] 원문 수집 전용 소설 감지 (' + (checkData.folder_name || '') + '): 확장을 완전히 비활성화합니다. URL: ' + currentUrl
+          );
+          return;
+        }
+      }
+    } catch (_) {}
+
     console.log('[LANOVEL] 웹소설 번역 확장 프로그램 초기화 시작...');
     const scraper = getScraper();
     state.onExtractEpisodeTitle = () => scraper.extractEpisodeTitle();

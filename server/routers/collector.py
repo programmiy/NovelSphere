@@ -461,3 +461,45 @@ def hdtrans_status():
     """초벌 번역 러너의 현재 상태 및 실시간 로그/통계 조회"""
     return hdtrans_service.hdtrans_runner.get_status()
 
+
+@router.get("/api/collector/check_extension_excluded")
+def check_extension_excluded(url: str = "", db: Session = Depends(sdb.get_db)):
+    """
+    현재 URL이 원문 수집기 전용(검열 회피/수동 번역) 소설에 속하는지 검사.
+    확장 프로그램이 해당 소설을 인식하지 못하도록 조기 차단하기 위한 엔드포인트.
+    """
+    if not url or not url.strip():
+        return {"excluded": False}
+
+    clean_url = url.split("?")[0].split("#")[0].rstrip("/")
+
+    # 1. ManualTranslationNovel의 source_url 확인
+    manual_novels = db.query(ManualTranslationNovel).all()
+    for n in manual_novels:
+        if not n.source_url:
+            continue
+        clean_source = n.source_url.split("?")[0].split("#")[0].rstrip("/")
+        # 목차 URL이거나 회차 URL의 prefix인 경우
+        if clean_url == clean_source or clean_url.startswith(clean_source + "/"):
+            return {
+                "excluded": True,
+                "folder_name": n.folderName,
+                "reason": "manual_collector_novel",
+                "source_url": n.source_url
+            }
+
+        # 2. 해당 소설의 translations 테이블에 이미 적재된 회차 URL인지 확인
+        exists = db.query(Translation.id).filter(
+            Translation.folderName == n.folderName,
+            Translation.url.like(clean_url + "%")
+        ).first()
+        if exists:
+            return {
+                "excluded": True,
+                "folder_name": n.folderName,
+                "reason": "manual_collector_novel_episode"
+            }
+
+    return {"excluded": False}
+
+

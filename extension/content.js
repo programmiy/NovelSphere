@@ -6062,6 +6062,25 @@
         console.log(`[LANOVEL] \uD604\uC7AC URL(${currentUrl})\uC774 \uD5C8\uC6A9 \uBAA9\uB85D\uC5D0 \uC5C6\uC5B4 \uD655\uC7A5\uC744 \uBE44\uD65C\uC131\uD654\uD569\uB2C8\uB2E4.`);
         return;
       }
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 1e3);
+        const checkResp = await serverFetch(
+          "http://127.0.0.1:8001/api/collector/check_extension_excluded?url=" + encodeURIComponent(currentUrl),
+          { signal: controller.signal }
+        );
+        clearTimeout(timeoutId);
+        if (checkResp.ok) {
+          const checkData = await checkResp.json();
+          if (checkData.excluded) {
+            console.log(
+              "[LANOVEL] \uC6D0\uBB38 \uC218\uC9D1 \uC804\uC6A9 \uC18C\uC124 \uAC10\uC9C0 (" + (checkData.folder_name || "") + "): \uD655\uC7A5\uC744 \uC644\uC804\uD788 \uBE44\uD65C\uC131\uD654\uD569\uB2C8\uB2E4. URL: " + currentUrl
+            );
+            return;
+          }
+        }
+      } catch (_) {
+      }
       console.log("[LANOVEL] \uC6F9\uC18C\uC124 \uBC88\uC5ED \uD655\uC7A5 \uD504\uB85C\uADF8\uB7A8 \uCD08\uAE30\uD654 \uC2DC\uC791...");
       const scraper = getScraper();
       state.onExtractEpisodeTitle = () => scraper.extractEpisodeTitle();

@@ -201,7 +201,7 @@ def test_save_manual_translations_with_review_completion(db_session, client):
     assert reviewed_service.is_chapter_reviewed(ep_url, folder) is True
 
 
-def test_collector_api_endpoints(client):
+def test_collector_api_endpoints(client, db_session):
     """원문 수집기 라우터 및 상태/목록 엔드포인트 동작 검증"""
     # 1. 웹 UI 페이지 렌더링
     res = client.get("/raw_collector")
@@ -233,6 +233,35 @@ def test_collector_api_endpoints(client):
     res_hd_stop = client.post("/api/collector/hdtrans/stop")
     assert res_hd_stop.status_code == 200
     assert res_hd_stop.json()["status"] == "stopped"
+
+    # 6. 확장 프로그램 인식 차단 여부 검사 엔드포인트 검증
+    test_folder = "테스트_확장차단_소설"
+    novel = ManualTranslationNovel(
+        folderName=test_folder,
+        source_url="https://ncode.syosetu.com/n12345/",
+        created_at=int(time.time()),
+        is_completed=0
+    )
+    db_session.add(novel)
+    db_session.commit()
+
+    # 6-1. 원문 수집기에 등록된 소설 (목차 URL) -> 차단(True)
+    res_exc_toc = client.get("/api/collector/check_extension_excluded?url=https://ncode.syosetu.com/n12345/")
+    assert res_exc_toc.status_code == 200
+    assert res_exc_toc.json()["excluded"] is True
+    assert res_exc_toc.json()["folder_name"] == test_folder
+
+    # 6-2. 원문 수집기에 등록된 소설 (회차 URL) -> 차단(True)
+    res_exc_ep = client.get("/api/collector/check_extension_excluded?url=https://ncode.syosetu.com/n12345/1/")
+    assert res_exc_ep.status_code == 200
+    assert res_exc_ep.json()["excluded"] is True
+
+    # 6-3. 동일 사이트의 다른 소설 URL -> 차단 안 함(False - 정상 인식 허용)
+    res_non_exc = client.get("/api/collector/check_extension_excluded?url=https://ncode.syosetu.com/n99999/1/")
+    assert res_non_exc.status_code == 200
+    assert res_non_exc.json()["excluded"] is False
+
+
 
 
 
