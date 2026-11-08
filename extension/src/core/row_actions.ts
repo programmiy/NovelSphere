@@ -20,13 +20,14 @@ export async function saveSingleTranslation(
   const url = getCleanUrl();
   const scraper = getScraper();
   const title = scraper.extractEpisodeTitle() || document.title;
+  const novelFolder = (state.currentNovelTitle && state.currentNovelTitle !== '기본 소설') ? state.currentNovelTitle : null;
   const record = {
     url: url,
     pid: pid,
     original: originalText,
     translated: newTranslatedText,
     timestamp: Math.floor(Date.now() / 1000),
-    folderName: null,
+    folderName: novelFolder,
     title: title,
   };
 

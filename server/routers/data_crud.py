@@ -24,6 +24,7 @@ from server.models import (
     AppliedUrl,
     CleanupQueuedItem,
     Translation,
+    TranslationTrash,
     UrlMetadata,
 )
 from server.notifications import update_translation_status
@@ -227,6 +228,52 @@ def upsert_translations(items: List[TranslationItem], db: Session = Depends(get_
         if item.url and item.toc_sort_order is not None:
             url_to_toc_order[item.url] = item.toc_sort_order
 
+    # URL별 기존 폴더명 맵 구성 (소설 폴더 자동 상속용: 'Unknown', '미분류' 제외)
+    url_to_folder = {}
+    for t in existing_translations:
+        if t.url and t.folderName and t.folderName.strip() and t.folderName.strip() not in ('Unknown', '미분류'):
+            if t.url not in url_to_folder:
+                url_to_folder[t.url] = t.folderName.strip()
+
+    for item in items:
+        if item.url and item.folderName and item.folderName.strip() and item.folderName.strip() not in ('Unknown', '미분류'):
+            url_to_folder[item.url] = item.folderName.strip()
+
+    missing_folder_urls = urls_in_batch - set(url_to_folder.keys())
+    if missing_folder_urls:
+        inherited_rows = db.query(Translation.url, Translation.folderName).filter(
+            Translation.url.in_(missing_folder_urls),
+            Translation.folderName.isnot(None),
+            Translation.folderName != "",
+            Translation.folderName != "Unknown",
+            Translation.folderName != "미분류"
+        ).all()
+        for u, f in inherited_rows:
+            if u not in url_to_folder and f and f.strip():
+                url_to_folder[u] = f.strip()
+
+    # URL별 기존 번역 일시 맵 구성 (동일 회차 기존 번역 일시 상속용: 과거 회차 재검수/복원 시 오늘 번역 실적 왜곡 원천 차단)
+    url_to_base_timestamp = {}
+    for t in existing_translations:
+        if t.url and t.timestamp and t.url not in url_to_base_timestamp:
+            url_to_base_timestamp[t.url] = t.timestamp
+
+    missing_ts_urls = urls_in_batch - set(url_to_base_timestamp.keys())
+    if missing_ts_urls:
+        inherited_ts_rows = db.query(Translation.url, Translation.timestamp).filter(
+            Translation.url.in_(missing_ts_urls),
+            Translation.timestamp.isnot(None)
+        ).all()
+        for u, ts in inherited_ts_rows:
+            if u not in url_to_base_timestamp and ts:
+                url_to_base_timestamp[u] = ts
+
+    # 휴지통(TranslationTrash)에 보관되었던 단락의 원본 timestamp 맵 조회
+    trash_items = db.query(TranslationTrash.url, TranslationTrash.pid, TranslationTrash.timestamp).filter(
+        TranslationTrash.url.in_(urls_in_batch)
+    ).all()
+    trash_ts_map = {(row.url, row.pid): row.timestamp for row in trash_items if row.timestamp}
+
     verbatim_items_to_clean = []
     target_title = None
     deleted_existing_count = 0
@@ -236,6 +283,7 @@ def upsert_translations(items: List[TranslationItem], db: Session = Depends(get_
         existing_translation = existing_map.get(key)
         target_title = url_to_title.get(item.url) if item.url else (clean_chapter_title(item.title, item.url) if item.title else None)
         target_toc_order = item.toc_sort_order if item.toc_sort_order is not None else url_to_toc_order.get(item.url)
+        inherited_folder = url_to_folder.get(item.url) if item.url else None
 
         target_trans = item.translated
         # 룰베이스 원문 괄호(「」, 『』) 누락 복원
@@ -251,7 +299,7 @@ def upsert_translations(items: List[TranslationItem], db: Session = Depends(get_
                 "original": item.original,
                 "translated": target_trans,
                 "url": item.url,
-                "folderName": item.folderName,
+                "folderName": item.folderName or inherited_folder,
                 "title": target_title or item.title,
                 "category": item_cat
             })
@@ -271,24 +319,38 @@ def upsert_translations(items: List[TranslationItem], db: Session = Depends(get_
                     del existing_map[key]
             continue
 
+        explicit_folder = item.folderName.strip() if (item.folderName and item.folderName.strip() and item.folderName.strip() not in ('Unknown', '미분류')) else None
+        target_folder = explicit_folder or inherited_folder
+
         if existing_translation:
             existing_translation.translated = target_trans
-            existing_translation.timestamp = item.timestamp
-            if item.folderName is not None and item.folderName.strip():
-                existing_translation.folderName = item.folderName.strip()
+            # 기존 번역 텍스트 수정 시 원래 번역 일시(timestamp) 보존 (신규 번역이 아니므로 오늘 번역 실적 왜곡 방지)
+            if not existing_translation.timestamp:
+                existing_translation.timestamp = item.timestamp
+
+            # 폴더명 보정: 명시적 폴더명이 있거나 기존 폴더가 비어있던 경우 상속 폴더로 자동 귀속
+            if explicit_folder:
+                existing_translation.folderName = explicit_folder
+            elif (not existing_translation.folderName or existing_translation.folderName.strip() in ('Unknown', '미분류')) and target_folder:
+                existing_translation.folderName = target_folder
+
             if target_title:
                 existing_translation.title = target_title
             if target_toc_order is not None:
                 existing_translation.toc_sort_order = target_toc_order
             updated_count += 1
         else:
-            new_folder = item.folderName.strip() if (item.folderName and item.folderName.strip()) else None
+            new_folder = target_folder if target_folder else None
+            # timestamp 상속: 1순위 휴지통 원본 시각, 2순위 동일 URL 기존 회차 시각, 3순위 신규 회차 시각(item.timestamp)
+            inherited_ts = trash_ts_map.get(key) or url_to_base_timestamp.get(item.url)
+            final_ts = inherited_ts if inherited_ts else item.timestamp
+
             new_translation = Translation(
                 url=item.url,
                 pid=item.pid,
                 original=item.original,
                 translated=target_trans,
-                timestamp=item.timestamp,
+                timestamp=final_ts,
                 folderName=new_folder,
                 title=target_title or item.title,
                 toc_sort_order=target_toc_order
@@ -297,14 +359,23 @@ def upsert_translations(items: List[TranslationItem], db: Session = Depends(get_
             existing_map[key] = new_translation
             inserted_count += 1
 
-    # 동일 URL을 공유하는 모든 단락의 제목 및 toc_sort_order를 최신 상태로 원자적 동기화
-    all_target_urls = set(url_to_title.keys()).union(set(url_to_toc_order.keys()))
+    # 동일 URL을 공유하는 모든 단락의 제목, toc_sort_order 및 유효 소설 폴더명을 최신 상태로 원자적 동기화
+    all_target_urls = set(url_to_title.keys()).union(set(url_to_toc_order.keys())).union(set(url_to_folder.keys()))
     for u in all_target_urls:
         update_data = {}
         if u in url_to_title and url_to_title[u]:
             update_data[Translation.title] = url_to_title[u]
         if u in url_to_toc_order and url_to_toc_order[u] is not None:
             update_data[Translation.toc_sort_order] = url_to_toc_order[u]
+        if u in url_to_folder and url_to_folder[u]:
+            # 동일 URL 내에 아직 폴더명이 비어있거나 '미분류'인 레코드가 있다면 이번에 결정된 유효 소설 폴더명으로 일괄 동기화
+            db.query(Translation).filter(
+                Translation.url == u,
+                (Translation.folderName.is_(None) | (Translation.folderName == '') | (Translation.folderName == 'Unknown') | (Translation.folderName == '미분류'))
+            ).update(
+                {Translation.folderName: url_to_folder[u]},
+                synchronize_session=False
+            )
         if update_data:
             db.query(Translation).filter(Translation.url == u).update(
                 update_data,

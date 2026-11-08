@@ -339,13 +339,14 @@ export async function saveAllTranslations(itemsToSave: any[]): Promise<void> {
   const url = getCleanUrl();
   const scraper = getScraper();
   const title = scraper.extractEpisodeTitle() || document.title;
+  const novelFolder = (state.currentNovelTitle && state.currentNovelTitle !== '기본 소설') ? state.currentNovelTitle : null;
   const records = validItems.map((item) => ({
     url: url,
     pid: item.id || item.pid,
     original: item.original,
     translated: item.translated,
     timestamp: Math.floor(Date.now() / 1000),
-    folderName: null,
+    folderName: novelFolder,
     title: title,
   }));
 

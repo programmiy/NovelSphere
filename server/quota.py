@@ -13,7 +13,7 @@ import zoneinfo
 from typing import Optional, Dict, Any
 from sqlalchemy import text
 from server.database import SessionLocal, engine
-from server.models import ApiCallLog, Base
+from server.models import ApiCallLog, Base, Translation
 
 logger = logging.getLogger(__name__)
 _QUOTA_LOCK = threading.Lock()
@@ -174,24 +174,46 @@ def _seed_calls_from_translations_if_needed(db, window_start_ts: int) -> int:
 
 
 def get_today_api_call_count() -> int:
-    """현재 쿼터 주기(오후 4시/5시 기준) 내의 API 호출 횟수를 반환합니다 (구글 게이트웨이 실제 소모량과 100% 일치)."""
+    """현재 쿼터 주기(오후 4시/5시 기준) 내의 API 호출 횟수를 반환합니다 (실제 구글 게이트웨이 호출량과 100% 일치)."""
     window_start_ts = get_current_quota_window_start_ts()
     with SessionLocal() as db:
-        count = db.query(ApiCallLog).filter(ApiCallLog.timestamp >= window_start_ts).count()
-        if count == 0:
-            count = _seed_calls_from_translations_if_needed(db, window_start_ts)
+        # gemini-default(과거 번역 timestamp 기반 가짜 시드 레코드)는 실제 API 호출이 아니므로 제외
+        count = db.query(ApiCallLog).filter(
+            ApiCallLog.timestamp >= window_start_ts,
+            ApiCallLog.model != "gemini-default"
+        ).count()
         return count
 
 
 def get_today_translations_count() -> int:
-    """오늘(Gemini API 쿼터 초기화 16시/17시 KST 기준) 번역된 총 문단 수를 반환합니다."""
+    """오늘(Gemini API 쿼터 초기화 16시/17시 KST 기준) 새로 번역된 총 문단 수를 반환합니다 (과거 회차의 단순 수정/재검수/복원 문단 제외)."""
     window_ts = get_current_quota_window_start_ts()
     try:
         with SessionLocal() as db:
-            count = db.execute(
-                text("SELECT count(*) FROM translations WHERE timestamp >= :ts"),
-                {"ts": window_ts}
-            ).scalar()
+            # 1. 오늘 timestamp를 가진 고유 회차 URL 목록 수집
+            today_urls = db.query(Translation.url).filter(
+                Translation.timestamp >= window_ts,
+                Translation.url.isnot(None)
+            ).distinct().all()
+            today_urls = [u[0] for u in today_urls if u[0]]
+            if not today_urls:
+                return 0
+
+            # 2. 과거(window_ts 이전)에 이미 번역된 이력이 있는 회차(재검수/수정/복원)는 오늘 신규 번역에서 제외
+            past_urls = set(
+                row[0] for row in db.query(Translation.url).filter(
+                    Translation.url.in_(today_urls),
+                    Translation.timestamp < window_ts
+                ).distinct().all()
+            )
+            pure_today_urls = [u for u in today_urls if u not in past_urls]
+            if not pure_today_urls:
+                return 0
+
+            count = db.query(Translation).filter(
+                Translation.timestamp >= window_ts,
+                Translation.url.in_(pure_today_urls)
+            ).count()
             return count or 0
     except Exception as e:
         logger.warning(f"[QuotaTracker] 오늘 번역 문단 수 조회 실패: {e}")
@@ -199,15 +221,26 @@ def get_today_translations_count() -> int:
 
 
 def get_today_episodes_count() -> int:
-    """오늘(Gemini API 쿼터 초기화 16시/17시 KST 기준) 번역된 총 고유 회차(distinct URL) 수를 반환합니다."""
+    """오늘(Gemini API 쿼터 초기화 16시/17시 KST 기준) 번역된 총 신규 회차(distinct URL) 수를 반환합니다 (과거 회차의 단순 수정/재검수/복원 회차 제외)."""
     window_ts = get_current_quota_window_start_ts()
     try:
         with SessionLocal() as db:
-            count = db.execute(
-                text("SELECT count(DISTINCT url) FROM translations WHERE timestamp >= :ts"),
-                {"ts": window_ts}
-            ).scalar()
-            return count or 0
+            today_urls = db.query(Translation.url).filter(
+                Translation.timestamp >= window_ts,
+                Translation.url.isnot(None)
+            ).distinct().all()
+            today_urls = [u[0] for u in today_urls if u[0]]
+            if not today_urls:
+                return 0
+
+            past_urls = set(
+                row[0] for row in db.query(Translation.url).filter(
+                    Translation.url.in_(today_urls),
+                    Translation.timestamp < window_ts
+                ).distinct().all()
+            )
+            pure_today_urls = [u for u in today_urls if u not in past_urls]
+            return len(pure_today_urls)
     except Exception as e:
         logger.warning(f"[QuotaTracker] 오늘 번역 회차 수 조회 실패: {e}")
         return 0

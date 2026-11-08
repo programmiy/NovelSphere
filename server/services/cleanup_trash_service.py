@@ -279,8 +279,26 @@ def restore_trash_items(req: RestoreRequest, db: Session) -> Dict[str, Any]:
     if not items_to_restore:
         return {"success": True, "restored_count": 0, "message": "복원할 항목이 없습니다."}
 
+    # 복원 대상 URL들 중 기존 DB의 유효한 folderName 조회 (소설 폴더 자동 상속용)
+    restore_urls = {item.url for item in items_to_restore if item.url}
+    url_to_folder = {}
+    if restore_urls:
+        valid_folders = db.query(Translation.url, Translation.folderName).filter(
+            Translation.url.in_(restore_urls),
+            Translation.folderName.isnot(None),
+            Translation.folderName != "",
+            Translation.folderName != "Unknown",
+            Translation.folderName != "미분류"
+        ).all()
+        for u, f in valid_folders:
+            if u not in url_to_folder and f and f.strip():
+                url_to_folder[u] = f.strip()
+
     restored_count = 0
     for item in items_to_restore:
+        inherited_folder = url_to_folder.get(item.url) if item.url else None
+        target_folder = item.folderName.strip() if (item.folderName and item.folderName.strip() and item.folderName.strip() not in ('Unknown', '미분류')) else inherited_folder
+
         existing = db.query(Translation).filter(
             Translation.url == item.url,
             Translation.pid == item.pid,
@@ -290,9 +308,12 @@ def restore_trash_items(req: RestoreRequest, db: Session) -> Dict[str, Any]:
         if existing:
             existing.translated = item.translated
             existing.timestamp = item.timestamp
-            existing.folderName = item.folderName
-            existing.title = item.title
-            existing.toc_sort_order = item.toc_sort_order
+            if target_folder:
+                existing.folderName = target_folder
+            elif not existing.folderName:
+                existing.folderName = item.folderName
+            existing.title = item.title or existing.title
+            existing.toc_sort_order = item.toc_sort_order or existing.toc_sort_order
         else:
             new_t = Translation(
                 url=item.url,
@@ -300,7 +321,7 @@ def restore_trash_items(req: RestoreRequest, db: Session) -> Dict[str, Any]:
                 original=item.original,
                 translated=item.translated,
                 timestamp=item.timestamp,
-                folderName=item.folderName,
+                folderName=target_folder,
                 title=item.title,
                 toc_sort_order=item.toc_sort_order
             )

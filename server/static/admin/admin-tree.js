@@ -961,10 +961,13 @@ async function handleHistoryClick(e) {
                 showToast('오류: 저장할 원본 항목을 찾을 수 없습니다.', 'error');
                 return;
             }
+            const rowFolder = itemRow.closest('.folder-group')?.dataset?.folder || itemRow.querySelector('.translated-text')?.dataset?.folder;
+            const effectiveFolder = (originalItem.folderName && originalItem.folderName !== '미분류' && originalItem.folderName !== 'Unknown') ? originalItem.folderName : (rowFolder && rowFolder !== '미분류' ? rowFolder : null);
             const updatedItemPayload = {
                 ...originalItem,
+                folderName: effectiveFolder || originalItem.folderName,
                 translated: newTranslatedText,
-                timestamp: Math.floor(Date.now() / 1000)
+                timestamp: originalItem.timestamp || Math.floor(Date.now() / 1000)
             };
             delete updatedItemPayload.id;
             try {
