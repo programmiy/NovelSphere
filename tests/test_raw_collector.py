@@ -261,6 +261,22 @@ def test_collector_api_endpoints(client, db_session):
     assert res_non_exc.status_code == 200
     assert res_non_exc.json()["excluded"] is False
 
+    # 7. prepare 엔드포인트 필드명 호환성 검증 (undefined 방어)
+    with patch("server.routers.collector.fetch_toc_and_title") as mock_fetch:
+        mock_fetch.return_value = ("테스트작품", [{"title": "1화", "url": "https://ncode.syosetu.com/n12345/1/"}])
+        res_prep = client.post("/api/collector/prepare", json={"url": "https://ncode.syosetu.com/n12345/"})
+        assert res_prep.status_code == 200
+        pdata = res_prep.json()
+        assert pdata["clean_url"] == "https://ncode.syosetu.com/n12345/"
+        assert pdata["title"] == "테스트작품"
+        assert pdata["novel_title"] == "테스트작품"
+        assert pdata["folder_name"] == "테스트작품"
+        assert pdata["total_episodes"] == 1
+        assert pdata["existing_episodes"] == 0
+        assert pdata["new_episodes"] == 1
+        assert pdata["existing_count"] == 0
+        assert pdata["new_count"] == 1
+
 
 
 

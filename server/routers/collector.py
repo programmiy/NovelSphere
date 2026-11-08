@@ -39,6 +39,7 @@ class PrepareRequest(BaseModel):
 class StartRequest(BaseModel):
     url: str
     custom_folder_name: Optional[str] = None
+    folder_name: Optional[str] = None
     delay_sec: float = 2.5
     batch_size: int = 12
     rest_sec: int = 120
@@ -100,9 +101,15 @@ def prepare_collection(req: PrepareRequest, db: Session = Depends(sdb.get_db)):
 
     return {
         "success": True,
+        "clean_url": url,
+        "url": url,
+        "title": novel_title,
         "novel_title": novel_title,
+        "folder_name": novel_title,
         "total_episodes": len(episodes),
+        "existing_episodes": existing_count,
         "existing_count": existing_count,
+        "new_episodes": new_count,
         "new_count": new_count,
         "episodes": episodes[:30],  # 상위 30개 미리보기
         "has_more": len(episodes) > 30
@@ -116,10 +123,12 @@ def start_collection(req: StartRequest):
     if not url:
         raise HTTPException(status_code=400, detail="소설 URL을 입력해주세요.")
 
+    folder_to_use = (req.custom_folder_name or req.folder_name or "").strip() or None
+
     try:
         result = raw_collector.start_collection(
             novel_url=url,
-            custom_folder_name=req.custom_folder_name,
+            custom_folder_name=folder_to_use,
             delay_sec=req.delay_sec,
             batch_size=req.batch_size,
             rest_sec=req.rest_sec,

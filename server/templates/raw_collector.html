@@ -699,21 +699,27 @@
                 const data = await res.json();
                 if (!res.ok) throw new Error(data.detail || '분석 실패');
 
-                activeNovelUrl = data.clean_url;
+                activeNovelUrl = data.clean_url || data.url || url;
+                const novelTitle = data.title || data.novel_title || '소설';
+                const folderName = data.folder_name || novelTitle;
+                const totalEpisodes = data.total_episodes ?? 0;
+                const existingEpisodes = data.existing_episodes ?? data.existing_count ?? 0;
+                const newEpisodes = data.new_episodes ?? data.new_count ?? 0;
+
                 const titleEl = document.getElementById('novelTitleText');
-                if (titleEl) titleEl.textContent = data.title;
+                if (titleEl) titleEl.textContent = novelTitle;
                 const folderInput = document.getElementById('customFolderInput');
-                if (folderInput) folderInput.value = data.folder_name;
+                if (folderInput) folderInput.value = folderName;
                 const totalEl = document.getElementById('totalEpBadge');
-                if (totalEl) totalEl.textContent = `${data.total_episodes}화`;
+                if (totalEl) totalEl.textContent = `${totalEpisodes}화`;
                 const existEl = document.getElementById('existingEpBadge');
-                if (existEl) existEl.textContent = `${data.existing_episodes}화`;
+                if (existEl) existEl.textContent = `${existingEpisodes}화`;
                 const newEl = document.getElementById('newEpBadge');
-                if (newEl) newEl.textContent = `${data.new_episodes}화`;
+                if (newEl) newEl.textContent = `${newEpisodes}화`;
 
                 const resultPanel = document.getElementById('prepareResultPanel') || document.getElementById('summaryCard');
                 if (resultPanel) resultPanel.style.display = 'block';
-                appendConsole(`[분석 완료] '${data.title}' (신규: ${data.new_episodes}화 / 전체: ${data.total_episodes}화)`, 'success');
+                appendConsole(`[분석 완료] '${novelTitle}' (신규: ${newEpisodes}화 / 전체: ${totalEpisodes}화)`, 'success');
             } catch (err) {
                 alert(`목차 분석 오류: ${err.message}`);
                 appendConsole(`[오류] ${err.message}`, 'error');
@@ -737,6 +743,7 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         url: activeNovelUrl,
+                        custom_folder_name: folder,
                         folder_name: folder
                     })
                 });

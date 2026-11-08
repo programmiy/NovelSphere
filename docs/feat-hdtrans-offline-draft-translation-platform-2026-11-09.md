@@ -81,6 +81,14 @@
   - HTML 배지 내부 `strong` 태그에 `novelTitleText`, `totalEpBadge`, `existingEpBadge`, `newEpBadge` ID를 정확히 부여하고, 상태 배지에 `collectorStatusBadge` 바인딩.
   - `prepareNovel()`, `updateCollectorUI()`, `loadStudioEpisodes()`, `checkHdTransStatus()` 등 모든 DOM 텍스트 갱신 함수에 `if (element)` 방어 가드 전면 적용.
 
+### 2.9 목차 분석 응답 필드명 불일치 및 undefined 출력 버그 해결 (`server/routers/collector.py`, `server/templates/raw_collector.html`)
+- **원인 분석**:
+  - 백엔드 `prepare_collection` API는 `novel_title`, `existing_count`, `new_count` 키를 반환했으나, 프론트엔드 JS는 `data.title`, `data.clean_url`, `data.folder_name`, `data.existing_episodes`, `data.new_episodes`를 읽어 화면 배지에 **`undefined화`**, 소설 제목에 **`undefined`**, 폴더 인풋에 빈칸/`undefined`가 출력되고 `activeNovelUrl`이 `undefined`로 남아 수집 시작이 차단되는 결함 발생.
+- **해결 및 양방향 호환 보장**:
+  - `server/routers/collector.py`: `prepare_collection` 반환 딕셔너리에 `title`/`novel_title`, `clean_url`/`url`, `folder_name`, `existing_episodes`/`existing_count`, `new_episodes`/`new_count`를 모두 제공하도록 양방향 별칭(alias) 필드 전면 추가.
+  - `StartRequest` Pydantic 모델에 `folder_name` 필드를 추가하고 `custom_folder_name`과 자동 병합 fallback 지원.
+  - `server/templates/raw_collector.html`: `prepareNovel()`에서 `data.title || data.novel_title`, `data.clean_url || data.url || url` 등 fallback 체이닝을 적용하여 어떤 경우에도 `undefined`가 출력되지 않도록 원천 차단.
+
 ## 3. 검증 결과
 - `tests/test_hdtrans_service.py` 3종 단위 테스트 전건 통과:
   1. 바이너리 가용성 검증: PASS
