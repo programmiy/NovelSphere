@@ -65,10 +65,19 @@
   - `get_all_folders`에서 `manual_translation_novels` 등록 여부를 검사하여 `is_censored: true` 플래그 제공.
   - 번역 관리 페이지(`admin.html`)의 폴더 목록 트리 헤더에서 검열 소설 폴더명 바로 옆에 **`<span class="folder-censorship-badge">🛡️ 검열</span>`** 마크를 표출하고, 폴더 필터 드롭다운에도 `[🛡️검열]` 태그 표시.
 
+### 2.7 UI 겹침 버그 수정 및 다중 목차 페이저 404 방어 가드 (`server/templates/raw_collector.html`, `server/services/collector_service.py`)
+- **터미널 로그 오버플로우 및 회차 목록 찌그러짐 수정 (`server/templates/raw_collector.html`)**:
+  - 초벌 번역 터미널 박스에 `.console-terminal` 클래스를 적용하고 `height: 180px; overflow-y: auto; overflow-x: hidden;`으로 로그 텍스트가 하단 회차 테이블을 침범하지 않도록 스크롤 영역 격리.
+  - 회차 목록 테이블에 `min-width: 680px` 및 셀 단위 `white-space: nowrap;`을 부여하여 창 폭 축소 시 텍스트(순번, 초벌현황 등)가 세로로 줄바꿈되어 찌그러지는 현상 해결.
+- **다중 목차 페이저 404 방어 가드 (`server/services/collector_service.py`)**:
+  - Syosetu/Nocturne 신버전 목차에서 마지막 페이지 도달 시 페이저 버튼이 비활성화(`span.c-pager__item--next.is-disabled`)됨에도 불구하고 클래스 부분 매칭으로 다음 페이지(`?p=3` 등)를 계속 요청하여 404 에러가 발생하는 결함 수정.
+  - `a.c-pager__item--next[href]` 검증 및 `is-disabled` 클래스 배제 조건 추가.
+  - 2페이지 이상(`current_page > 1`)에서 웹 응답 404(Not Found) 수신 시 목차 끝에 정상 도달한 것으로 판단하고 예외 없이 안전 종료(`break`) 처리 (실제 외부 사이트 접속 0회 목 검증 완료).
+
 ## 3. 검증 결과
 - `tests/test_hdtrans_service.py` 3종 단위 테스트 전건 통과:
   1. 바이너리 가용성 검증: PASS
   2. 실제 다중 문단 및 개행 보존 번역 검증: PASS
   3. 인메모리 격리 DB 에피소드 초벌 번역 및 덮어쓰기 옵션 검증: PASS
-- `tests/test_raw_collector.py` 6종 단위/통합 테스트 전건 통과.
-- 통합 회귀 테스트(`test_data_crud.py`, `test_reviewed_service.py`) 포함 총 26건 전건 통과.
+- `tests/test_raw_collector.py` 8종 단위/통합 테스트 전건 통과 (다중 목차 페이저 404 방어 가드 포함).
+- 통합 회귀 테스트(`test_data_crud.py`, `test_reviewed_service.py`) 포함 총 28건 전건 통과.

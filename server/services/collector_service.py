@@ -98,8 +98,17 @@ def _parse_syosetu_toc(toc_url: str) -> Tuple[str, List[Dict[str, Any]]]:
 
     while True:
         page_url = f"{clean_url}?p={current_page}" if current_page > 1 else clean_url
-        resp = requests.get(page_url, headers=DEFAULT_HEADERS, cookies=cookies, timeout=20)
-        resp.raise_for_status()
+        try:
+            resp = requests.get(page_url, headers=DEFAULT_HEADERS, cookies=cookies, timeout=20)
+            # 2페이지 이상에서 404가 발생하면 목차의 끝(마지막 페이지 초과)에 도달한 것이므로 정상 완료 처리
+            if current_page > 1 and resp.status_code == 404:
+                break
+            resp.raise_for_status()
+        except requests.exceptions.HTTPError as he:
+            if current_page > 1 and getattr(he.response, "status_code", None) == 404:
+                break
+            raise he
+
         resp.encoding = resp.apparent_encoding
 
         soup = BeautifulSoup(resp.text, 'html.parser')
@@ -143,10 +152,14 @@ def _parse_syosetu_toc(toc_url: str) -> Tuple[str, List[Dict[str, Any]]]:
                 })
                 sort_order += 1
 
-        # 다음 목차 페이지 존재 여부 확인
-        pager_next = soup.select_one('.c-pager__item--next, a.novelview_pager-next')
+        # 다음 목차 페이지 존재 여부 확인 (a 태그 및 href 필수, is-disabled 제외)
+        pager_next = soup.select_one('a.c-pager__item--next[href], a.novelview_pager-next[href]')
         if not pager_next:
             break
+        classes = pager_next.get('class', [])
+        if 'is-disabled' in classes or not pager_next.get('href'):
+            break
+
         current_page += 1
 
     return novel_title or "소설", episodes

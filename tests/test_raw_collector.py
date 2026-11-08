@@ -382,3 +382,68 @@ def test_admin_analytics_and_today_excludes_censored_novel(client, db_session):
         assert f_censored["is_censored"] is True
     if f_normal:
         assert f_normal["is_censored"] is False
+
+
+@patch("server.services.collector_service.requests.get")
+def test_syosetu_toc_multipage_with_404_or_disabled_pager(mock_get):
+    """다중 목차 페이지 끝에서 404가 발생하거나 페이저가 비활성일 때 안전 종료 검증"""
+    import requests
+
+    # 1페이지 목차 HTML
+    page1_html = """
+    <html>
+      <head><title>다중 페이지 소설 - 小説家になろう</title></head>
+      <body>
+        <div class="p-novel__title">다중 페이지 소설</div>
+        <div class="p-eplist__sublist">
+          <a href="/n123/1/">1화</a>
+        </div>
+        <a class="c-pager__item--next" href="/n123/?p=2">次へ</a>
+      </body>
+    </html>
+    """
+    mock_resp1 = MagicMock()
+    mock_resp1.status_code = 200
+    mock_resp1.text = page1_html
+    mock_resp1.apparent_encoding = "utf-8"
+    mock_resp1.raise_for_status = MagicMock()
+
+    # 2페이지 목차 HTML (끝에 도달하여 次へ가 비활성화된 상태)
+    page2_html = """
+    <html>
+      <head><title>다중 페이지 소설 - 小説家になろう</title></head>
+      <body>
+        <div class="p-novel__title">다중 페이지 소설</div>
+        <div class="p-eplist__sublist">
+          <a href="/n123/2/">2화</a>
+        </div>
+        <span class="c-pager__item--next is-disabled">次へ</span>
+      </body>
+    </html>
+    """
+    mock_resp2 = MagicMock()
+    mock_resp2.status_code = 200
+    mock_resp2.text = page2_html
+    mock_resp2.apparent_encoding = "utf-8"
+    mock_resp2.raise_for_status = MagicMock()
+
+    mock_get.side_effect = [mock_resp1, mock_resp2]
+
+    title, eps = fetch_toc_and_title("https://novel18.syosetu.com/n123/")
+    assert title == "다중 페이지 소설"
+    assert len(eps) == 2
+    assert eps[0]["title"] == "1화"
+    assert eps[1]["title"] == "2화"
+
+    # 시나리오 B: 2페이지 다음 3페이지를 요청했으나 404가 발생했을 때 안전 종료
+    mock_resp3_404 = MagicMock()
+    mock_resp3_404.status_code = 404
+    mock_resp3_404.raise_for_status.side_effect = requests.exceptions.HTTPError(response=mock_resp3_404)
+
+    # 1페이지에서 a 태그로 2페이지 링크가 있고, 2페이지 요청 시 404 발생
+    mock_get.side_effect = [mock_resp1, mock_resp3_404]
+
+    title_b, eps_b = fetch_toc_and_title("https://novel18.syosetu.com/n123/")
+    assert title_b == "다중 페이지 소설"
+    assert len(eps_b) == 1
+    assert eps_b[0]["title"] == "1화"
