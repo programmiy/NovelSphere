@@ -596,7 +596,7 @@
                 </div>
 
                 <!-- 터미널 로그 -->
-                <div class="console-box" style="height: 140px;" id="hdConsoleTerminal">
+                <div class="console-terminal" style="height: 180px; overflow-y: auto; overflow-x: hidden; word-break: break-all; margin-top: 10px;" id="hdConsoleTerminal">
                     <div class="console-line info">[hdTrans] 오프라인 규칙 기반 초벌 번역 엔진 준비 완료 (Gemini API 호출 0회, 무검열 초고속 처리)</div>
                 </div>
             </div>
@@ -610,15 +610,15 @@
                     <span class="badge-chip" id="studioEpCountBadge">0화</span>
                 </div>
 
-                <div style="overflow-x: auto;">
-                    <table style="width: 100%; border-collapse: collapse; font-size: 13px; text-align: left;">
+                <div style="overflow-x: auto; -webkit-overflow-scrolling: touch;">
+                    <table style="width: 100%; min-width: 680px; border-collapse: collapse; font-size: 13px; text-align: left;">
                         <thead>
-                            <tr style="border-bottom: 1px solid var(--border-color); color: var(--text-muted);">
-                                <th style="padding: 10px 12px; width: 60px;">순번</th>
-                                <th style="padding: 10px 12px;">회차 제목</th>
-                                <th style="padding: 10px 12px; width: 140px; text-align: center;">초벌 현황</th>
-                                <th style="padding: 10px 12px; width: 90px; text-align: center;">검수 상태</th>
-                                <th style="padding: 10px 12px; width: 220px; text-align: right;">작업</th>
+                            <tr style="border-bottom: 1px solid var(--border-color); color: var(--text-muted); white-space: nowrap;">
+                                <th style="padding: 10px 12px; width: 60px; white-space: nowrap;">순번</th>
+                                <th style="padding: 10px 12px; white-space: nowrap;">회차 제목</th>
+                                <th style="padding: 10px 12px; width: 150px; text-align: center; white-space: nowrap;">초벌 현황</th>
+                                <th style="padding: 10px 12px; width: 90px; text-align: center; white-space: nowrap;">검수 상태</th>
+                                <th style="padding: 10px 12px; width: 200px; text-align: right; white-space: nowrap;">작업</th>
                             </tr>
                         </thead>
                         <tbody id="studioEpTableBody">
@@ -918,21 +918,21 @@
                     const percent = ep.total_paragraphs > 0 ? Math.round((ep.translated_paragraphs / ep.total_paragraphs) * 100) : 0;
 
                     tr.innerHTML = `
-                        <td style="padding: 10px 12px; color: var(--text-muted);">${ep.sort_order || idx + 1}</td>
+                        <td style="padding: 10px 12px; color: var(--text-muted); white-space: nowrap;">${ep.sort_order || idx + 1}</td>
                         <td style="padding: 10px 12px; font-weight: 500;">
                             <div style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width: 400px;" title="${escapeHtml(ep.title)}">
                                 ${escapeHtml(ep.title)}
                             </div>
                         </td>
-                        <td style="padding: 10px 12px; text-align: center;">
+                        <td style="padding: 10px 12px; text-align: center; white-space: nowrap;">
                             <span style="color: ${isFullyDone ? '#4ade80' : percent > 0 ? '#3bd6c6' : '#e5b95f'}; font-weight: 600;">
                                 ${ep.translated_paragraphs} / ${ep.total_paragraphs} (${percent}%)
                             </span>
                         </td>
-                        <td style="padding: 10px 12px; text-align: center;">
+                        <td style="padding: 10px 12px; text-align: center; white-space: nowrap;">
                             ${ep.is_reviewed ? '<span class="badge-chip green">✅ 검수</span>' : '<span style="color:var(--text-muted); font-size:11px;">미검수</span>'}
                         </td>
-                        <td style="padding: 10px 12px; text-align: right;">
+                        <td style="padding: 10px 12px; text-align: right; white-space: nowrap;">
                             <div style="display: flex; gap: 6px; justify-content: flex-end;">
                                 <button class="btn-action" style="padding: 4px 10px; font-size: 11px; background: rgba(59,214,198,0.15); border-color: var(--accent-cyan); color: var(--accent-cyan);" onclick="runSingleEpisodeHdTrans('${escapeHtml(ep.url)}', '${escapeHtml(ep.title)}')">
                                     <span class="material-icons" style="font-size: 14px;">bolt</span> 단건 초벌
