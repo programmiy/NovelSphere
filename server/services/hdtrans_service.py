@@ -121,6 +121,7 @@ def translate_episode_in_db(
 
     for r, trans in zip(target_rows, translated_texts):
         r.translated = trans
+        r.timestamp = 0  # 통계 집계(오늘 번역 등)에서 영구 제외되도록 0 처리
 
     db.commit()
     return len(target_rows)

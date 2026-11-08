@@ -56,6 +56,15 @@
   - `init()` 시작 즉시 서버에 대상 소설 여부를 확인하여, 수집 소설 감지 시 사이드바 주입, 퀵점프, 키보드 네비게이션, 자동 번역을 일체 실행하지 않고 조기 `return`하여 확장을 완전히 비활성화.
   - 동일 사이트의 타 소설들은 정상 번역 동작 유지.
 
+### 2.6 모든 통계 및 '오늘 번역'에서 영구 배제 & 폴더 검열(🛡️) 마크 연동
+- **통계 쿼리 영구 원천 배제 (`server/routers/admin.py`, `server/routers/translation.py`, `server/services/hdtrans_service.py`)**:
+  - `hdtrans_service`에서 초벌 번역 문단 DB 저장 시 `timestamp = 0`으로 고정하여 어떠한 오늘 쿼리에도 미포함.
+  - `admin.py`의 `/admin/analytics` 및 `translation.py`의 `total_today_count` 등 모든 종합 통계에서 `folderName NOT IN (SELECT folderName FROM manual_translation_novels)` 조건을 적용하여 **오늘 번역량, 누적 생산량, 랭킹, 규모 티어 등 모든 통계에서 검열 소설을 영구적으로 원천 제외**.
+  - 검열 소설 단독 조회 시에도 오늘 번역량 및 실적 지표를 0으로 고정.
+- **번역 관리 페이지 폴더 검열 마크 표출 (`server/services/book_service.py`, `server/static/admin/admin-tree.js`, `server/static/admin.css`)**:
+  - `get_all_folders`에서 `manual_translation_novels` 등록 여부를 검사하여 `is_censored: true` 플래그 제공.
+  - 번역 관리 페이지(`admin.html`)의 폴더 목록 트리 헤더에서 검열 소설 폴더명 바로 옆에 **`<span class="folder-censorship-badge">🛡️ 검열</span>`** 마크를 표출하고, 폴더 필터 드롭다운에도 `[🛡️검열]` 태그 표시.
+
 ## 3. 검증 결과
 - `tests/test_hdtrans_service.py` 3종 단위 테스트 전건 통과:
   1. 바이너리 가용성 검증: PASS

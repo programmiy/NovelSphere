@@ -320,3 +320,65 @@ def test_syosetu_toc_and_paragraph_scraper(mock_get):
     assert paragraphs[0]["text"] == "かつて世界には魔王がいた。"
     assert paragraphs[1]["pid"] == "L2"
     assert paragraphs[1]["text"] == "勇者は立ち上がった。"
+
+
+def test_admin_analytics_and_today_excludes_censored_novel(client, db_session):
+    """검열/초벌 소설이 admin 통계 및 오늘 번역 통계에서 원천 배제되는지 검증"""
+    now = int(time.time())
+    censored_folder = "테스트_검열_배제_소설"
+    normal_folder = "테스트_일반_소설"
+
+    # 1. 검열 소설 등록
+    db_session.add(ManualTranslationNovel(
+        folderName=censored_folder,
+        source_url="https://novel.test/censored/",
+        created_at=now,
+        is_completed=0
+    ))
+
+    # 2. 검열 소설 문단 (오늘 시점 번역)
+    db_session.add(Translation(
+        url="https://novel.test/censored/1",
+        title="1화",
+        pid=1,
+        original="こんにちは",
+        translated="안녕하세요",
+        folderName=censored_folder,
+        timestamp=now,
+        toc_sort_order=1
+    ))
+
+    # 3. 일반 소설 문단 (오늘 시점 번역)
+    db_session.add(Translation(
+        url="https://novel.test/normal/1",
+        title="1화",
+        pid=1,
+        original="さようなら",
+        translated="안녕히 가세요",
+        folderName=normal_folder,
+        timestamp=now,
+        toc_sort_order=1
+    ))
+    db_session.commit()
+
+    # 4. 전체 admin analytics 조회 시 검열 소설 제외 검증
+    res_analytics = client.get("/admin/analytics")
+    assert res_analytics.status_code == 200
+    data = res_analytics.json()
+    summary = data["summary"]
+
+    # 검열 소설 단독 조회 시 오늘 번역 0건 확인
+    res_censored = client.get(f"/admin/analytics?folder_name={censored_folder}")
+    assert res_censored.status_code == 200
+    assert res_censored.json()["summary"]["today_paragraphs"] == 0
+
+    # 5. /folders 조회 시 is_censored 플래그 확인
+    from server.services.book_service import get_all_folders
+    all_folders = get_all_folders(include_hidden=True)
+    f_censored = next((f for f in all_folders if f["name"] == censored_folder), None)
+    f_normal = next((f for f in all_folders if f["name"] == normal_folder), None)
+
+    if f_censored:
+        assert f_censored["is_censored"] is True
+    if f_normal:
+        assert f_normal["is_censored"] is False

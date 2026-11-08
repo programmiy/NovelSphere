@@ -121,11 +121,20 @@ def get_admin_analytics(folder_name: Optional[str] = None):
         is_all = not folder_name or folder_name == "__all__"
         target_folder = None if is_all else folder_name
 
+        # 검열 회피 / 수동 초벌 번역 소설 목록 조회 (통계 영구 제외 대상)
+        cursor.execute("SELECT folderName FROM manual_translation_novels")
+        manual_folders = {r[0] for r in cursor.fetchall() if r[0]}
+        is_censored_novel = bool(target_folder and target_folder in manual_folders)
+
         where_clause = ""
         params = []
         if target_folder:
             where_clause = "WHERE folderName = ?"
             params = [target_folder]
+        else:
+            # 전체 통계 시 검열 회피/초벌 소설은 영구 원천 제외
+            where_clause = "WHERE (folderName IS NULL OR folderName NOT IN (SELECT folderName FROM manual_translation_novels))"
+
 
         # 1. 종합 요약 (Summary)
         summary_query = f"""
@@ -158,8 +167,12 @@ def get_admin_analytics(folder_name: Optional[str] = None):
         is_dst = is_us_dst()
         reset_hour_str = f"오후 {quota_reset_hour - 12}시" if quota_reset_hour > 12 else f"{quota_reset_hour}시"
         
-        today_where = f"WHERE timestamp >= ? {'AND folderName = ?' if target_folder else ''}"
-        today_params = [quota_window_start_ts] + ([target_folder] if target_folder else [])
+        if target_folder:
+            today_where = "WHERE timestamp >= ? AND folderName = ?"
+            today_params = [quota_window_start_ts, target_folder]
+        else:
+            today_where = "WHERE timestamp >= ? AND (folderName IS NULL OR folderName NOT IN (SELECT folderName FROM manual_translation_novels))"
+            today_params = [quota_window_start_ts]
         today_query = f"""
         SELECT 
             COUNT(DISTINCT url) as today_episodes,
@@ -174,8 +187,23 @@ def get_admin_analytics(folder_name: Optional[str] = None):
         today_paragraphs = today_row[1] or 0
         today_kr_chars = today_row[2] or 0
 
+        # 검열/초벌 소설은 '오늘 번역' 및 생산 실적에 일체 포함되지 않도록 원천 차단
+        if is_censored_novel:
+            today_episodes = 0
+            today_paragraphs = 0
+            today_kr_chars = 0
+            daily_trends = []
+            total_books = 0
+            total_episodes = 0
+            total_paragraphs = 0
+            total_kr_chars = 0
+            total_jp_chars = 0
+
         # 2. 일별 활동 추이 (Daily Trends) - API 쿼터 주기(미국 태평양 기준 일자)
-        daily_where = f"WHERE timestamp > 0 {'AND folderName = ?' if target_folder else ''}"
+        if target_folder:
+            daily_where = "WHERE timestamp > 0 AND folderName = ?"
+        else:
+            daily_where = "WHERE timestamp > 0 AND (folderName IS NULL OR folderName NOT IN (SELECT folderName FROM manual_translation_novels))"
         daily_query = f"""
         SELECT 
             TO_QUOTA_DATE(timestamp) as date_str,
@@ -422,6 +450,7 @@ def get_admin_analytics(folder_name: Optional[str] = None):
             COUNT(*) as para_count,
             COALESCE(SUM(LENGTH(translated)), 0) as char_count
         FROM translations
+        WHERE (folderName IS NULL OR folderName NOT IN (SELECT folderName FROM manual_translation_novels))
         GROUP BY novel_name
         ORDER BY para_count DESC
         """

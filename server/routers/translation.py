@@ -1046,9 +1046,20 @@ def get_translation_session_count(
 
     # 소설 불문 전체 고유 URL 현재 쿼터 주기(16시/17시 기준) 번역 회차 수
     total_today_count = db.execute(
-        text("SELECT COUNT(DISTINCT url) FROM translations WHERE timestamp >= :ts"),
+        text("""
+            SELECT COUNT(DISTINCT url) 
+            FROM translations 
+            WHERE timestamp >= :ts 
+              AND (folderName IS NULL OR folderName NOT IN (SELECT folderName FROM manual_translation_novels))
+        """),
         {"ts": window_start_ts}
     ).scalar() or 0
+
+    # 요청된 소설이 검열/초벌 소설인 경우 오늘 번역량 0으로 강제
+    if folder_name and folder_name != "__all__":
+        from server.models import ManualTranslationNovel
+        if db.query(ManualTranslationNovel).filter_by(folderName=folder_name).first():
+            count = 0
 
     return {
         "count": count,

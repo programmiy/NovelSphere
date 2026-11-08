@@ -41,6 +41,9 @@ def get_all_folders(include_hidden: bool = False) -> List[Dict[str, Any]]:
         cursor.execute("SELECT folderName, COUNT(DISTINCT title) as chapter_count FROM translations WHERE folderName IS NOT NULL AND title IS NOT NULL GROUP BY folderName")
         chapter_counts = {row['folderName']: row['chapter_count'] for row in cursor.fetchall()}
 
+        cursor.execute("SELECT folderName FROM manual_translation_novels")
+        censored_set = {row['folderName'] for row in cursor.fetchall()}
+
         from server.services.reviewed_service import reviewed_service
 
         folder_objects = [
@@ -51,7 +54,8 @@ def get_all_folders(include_hidden: bool = False) -> List[Dict[str, Any]]:
                 'activity': activity_map.get(f),
                 'chapter_count': chapter_counts.get(f, 0),
                 'is_visible': 0 if f in hidden_folders else 1,
-                'is_reviewed': reviewed_service.is_book_reviewed(f)
+                'is_reviewed': reviewed_service.is_book_reviewed(f),
+                'is_censored': f in censored_set
             } for f in all_folders_set
         ]
         return sorted(folder_objects, key=lambda x: (not x['pinned'], x['name']))

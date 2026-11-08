@@ -220,7 +220,8 @@ function populateFolderDropdowns(folders) {
         const currentValue = dom.folderFilterDropdown.value; // Preserve selection
         dom.folderFilterDropdown.innerHTML = '<option value="">모든 폴더</option>';
         folders.forEach(folder => {
-            const option = `<option value="${escapeHtml(folder.name)}">${escapeHtml(folder.name)}</option>`;
+            const censorLabel = folder.is_censored ? ' [🛡️검열]' : '';
+            const option = `<option value="${escapeHtml(folder.name)}">${escapeHtml(folder.name)}${censorLabel}</option>`;
             dom.folderFilterDropdown.insertAdjacentHTML('beforeend', option);
         });
         dom.folderFilterDropdown.value = currentValue; // Restore selection if possible
@@ -363,11 +364,18 @@ function renderGroupedHistory(dataToRender, selectedFolder = '') {
             <span class="folder-stats-badge">${validEpisodeCount}개 회차 / ${totalTranslationsInFolder.toLocaleString()}개 단락</span>
         `;
 
+        const folderMeta = state.allFolders && state.allFolders.find(f => f.name === folderName);
+        const isCensored = Boolean(folderMeta && folderMeta.is_censored);
+        const censoredBadgeHtml = isCensored 
+            ? '<span class="folder-censorship-badge" title="검열 회피 / 수동 초벌 소설 (모든 통계에서 영구 제외)">🛡️ 검열</span>' 
+            : '';
+
         folderContainer.innerHTML = `
             <div class="folder-group-header">
                 <span class="folder-group-toggle material-icons ${isFolderCollapsed ? 'collapsed' : ''}">expand_more</span>
                 <div class="folder-title-wrapper">
                     <h2 class="folder-group-title">${escapeHtml(folderName)}</h2>
+                    ${censoredBadgeHtml}
                     ${matchLampHtml}
                     ${statsBadgeHtml}
                 </div>
