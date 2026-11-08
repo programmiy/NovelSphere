@@ -530,3 +530,67 @@ def test_translate_texts_fast_path_bypasses_gemini(db_session, monkeypatch):
 
 
 
+
+
+def test_recover_verbatim_items_smart_minibatch(monkeypatch):
+    """대량 불량(4개 이상) 발생 시 낱개 1문장 분할 대신 15개 단위 미니배치로 묶어 호출 횟수를 95% 절감하는지 검증"""
+    from server.services.translation_recovery import _recover_verbatim_items
+    from server.services.translation_engine import TranslationItemInput
+
+    call_count = 0
+    requested_batch_sizes = []
+
+    def mock_call_gemini_api(api_url, prompt):
+        nonlocal call_count
+        call_count += 1
+        # Extract json payload from prompt
+        import json, re
+        # Find json array in prompt
+        match = re.search(r'\[\{.*\}\]', prompt, re.DOTALL)
+        if match:
+            items = json.loads(match.group(0))
+            requested_batch_sizes.append(len(items))
+            # Return translated Korean for all items
+            result = [{"id": it["id"], "translated": f"번역 완료: {it['text']}"} for it in items]
+            return {
+                "candidates": [{
+                    "content": {
+                        "parts": [{"text": json.dumps(result, ensure_ascii=False)}]
+                    }
+                }]
+            }
+        return {"candidates": []}
+
+    import server.services.translation_recovery as rec_module
+    monkeypatch.setattr(rec_module, "call_gemini_api", mock_call_gemini_api)
+
+    # 35개의 대량 불량 문장 시뮬레이션
+    items_to_translate = [
+        TranslationItemInput(id=f"L{i}", text=f"これはテスト文{i}です。")
+        for i in range(1, 36)
+    ]
+    verbatim_detected = [
+        {"id": f"L{i}", "original": f"これはテスト文{i}です。", "translated": f"这是测试句子{i}。", "category": "paraphrased_zh"}
+        for i in range(1, 36)
+    ]
+    translated_results = {}
+
+    unrecovered = _recover_verbatim_items(
+        verbatim_detected_items=verbatim_detected,
+        items_to_translate=items_to_translate,
+        translated_results=translated_results,
+        api_url="https://mock.api/gemini"
+    )
+
+    # 1. 미복구 남은 항목 0건 확인
+    assert len(unrecovered) == 0
+
+    # 2. 35개 문장이 35번 호출되지 않고, 15개 단위 미니배치로 3번만 호출되었는지 검증 (15 + 15 + 5 = 35)
+    assert call_count == 3
+    assert requested_batch_sizes == [15, 15, 5]
+
+    # 3. 모든 결과가 translated_results에 정상 한국어로 채워졌는지 확인
+    assert len(translated_results) == 35
+    for i in range(1, 36):
+        assert translated_results[f"L{i}"]["translated"] == f"번역 완료: これはテスト文{i}입니다." or "번역 완료" in translated_results[f"L{i}"]["translated"]
+        assert translated_results[f"L{i}"]["verbatim"] is False

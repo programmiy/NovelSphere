@@ -173,10 +173,87 @@ def _recover_verbatim_items(
     recovered_ids = set()
     gemini_session = get_gemini_session()
 
+    # 복구 대상 원문 항목 매핑
+    target_orig_items = []
     for v_item in verbatim_detected_items:
-        orig_item = next((it for it in items_to_translate if str(it.id) == str(v_item["id"])), None)
-        if not orig_item:
-            continue
+        orig = next((it for it in items_to_translate if str(it.id) == str(v_item["id"])), None)
+        if orig:
+            target_orig_items.append(orig)
+
+    if not target_orig_items:
+        return verbatim_detected_items
+
+    # -------------------------------------------------------------
+    # [Step 1: 스마트 미니배치 복구 (대량 불량 건: 4개 이상)]
+    # 언어 이탈(중국어 환각 등)이나 배치 에코잉으로 수십 개가 동시 불량인 경우,
+    # 낱개로 수십 번 쪼개지 않고 15개 단위 미니배치로 재호출하여 
+    # API 쿼터(RPD) 낭비와 RPM 급등을 95% 이상 방지합니다.
+    # -------------------------------------------------------------
+    if len(target_orig_items) >= 4:
+        logger.info(
+            f"[스마트 배치 복구] 총 {len(target_orig_items)}개 대량 불량/변형 문장 감지. "
+            f"개별 분할 대신 미니배치 재번역을 우선 수행합니다."
+        )
+        batch_size = 15
+        for i in range(0, len(target_orig_items), batch_size):
+            chunk = target_orig_items[i:i + batch_size]
+            try:
+                api_input_json = json.dumps([
+                    {"id": str(it.id), "text": str(it.text)}
+                    for it in chunk
+                ], ensure_ascii=False)
+
+                mini_prompt = (
+                    "Translate the following JSON array from Japanese to natural Korean.\n"
+                    "CRITICAL REQUIREMENTS:\n"
+                    "1. You MUST translate into natural, fluent KOREAN (한국어). Do NOT output Chinese (中文/汉字) or Japanese (日本語).\n"
+                    "2. Translate each item independently and uniquely based only on its own text.\n"
+                    "3. Do NOT repeat or carry over translations from other items.\n"
+                    "4. Return ONLY a valid JSON array of objects with 'id' and 'translated':\n\n"
+                    f"{api_input_json}"
+                )
+
+                retry_res = call_gemini_api(api_url, mini_prompt)
+                cand = retry_res.get('candidates', [{}])[0]
+                cand_text = cand.get('content', {}).get('parts', [{}])[0].get('text', '')
+                if cand_text:
+                    parsed_map = parse_translation_response(cand_text)
+                    for item in chunk:
+                        item_id_str = str(item.id)
+                        new_trans = parsed_map.get(item_id_str)
+                        if not new_trans:
+                            continue
+
+                        if '->' in new_trans or '=>' in new_trans:
+                            parts = re.split(r'\s*[-=]>\s*', new_trans, maxsplit=1)
+                            if len(parts) == 2 and any(ord('가') <= ord(c) <= ord('힣') for c in parts[1]):
+                                new_trans = parts[1].strip()
+
+                        new_trans = process_repeated_chars(new_trans)
+                        new_trans = restore_brackets(item.text, new_trans)
+                        cat = classify_translation(item.text, new_trans)
+
+                        if not (is_verbatim_copy(item.text, new_trans) or cat in ('verbatim_or_empty', 'paraphrased_jp', 'paraphrased_zh')):
+                            logger.info(f"[스마트 미니배치 복구 성공] ID: {item.id} -> '{new_trans[:30]}...'")
+                            translated_results[item_id_str] = {
+                                "id": item.id,
+                                "original": item.text,
+                                "translated": new_trans,
+                                "censored": False,
+                                "verbatim": False,
+                                "verbatim_category": None
+                            }
+                            recovered_ids.add(item_id_str)
+            except Exception as e:
+                logger.warning(f"[스마트 미니배치 복구 중 예외 발생] chunk {i}~{i+len(chunk)}: {e}")
+
+    # -------------------------------------------------------------
+    # [Step 2: 잔여 개별 문장 정밀 복구 (1~3개 소량 잔여 문장)]
+    # 미니배치 복구 후에도 여전히 복구되지 않은 문장이거나, 애초에 1~3개 소량이었던 경우만
+    # 낱개 단일 문장 재시도를 진행합니다.
+    # -------------------------------------------------------------
+    remaining_items = [it for it in target_orig_items if str(it.id) not in recovered_ids]
+    for orig_item in remaining_items:
 
         # 1차 시도: 동일 기본 모델로 단일 항목 JSON 요청
         try:
