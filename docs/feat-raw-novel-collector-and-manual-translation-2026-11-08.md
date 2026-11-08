@@ -66,6 +66,12 @@
 
 ---
 
+
+### 2.6 서비스 워커 206 에러 방어 및 수집기 UI 안정화 (`server/static/service-worker.js`, `server/templates/raw_collector.html`)
+- **서비스 워커 206 Partial Content 에러 방어**: 오디오/폰트 등 Range 헤더 요청 시 206 부분 응답을 `cache.put` 하려다 발생하던 `TypeError: Failed to execute 'put' on 'Cache': Partial response (status code 206) is unsupported` 결함을 원천 방어 (오직 완전한 200 OK 응답만 캐시하도록 가드 적용).
+- **실시간 SSE 스트림 캐싱 완전 우회**: `/api/collector/stream` 및 스트리밍 엔드포인트는 서비스 워커가 fetch를 가로채거나 캐싱하지 않고 브라우저 네이티브 네트워크로 직접 연결되도록 바이패스 처리.
+- **수집기 대기 상태(`idle`) 버튼 토글 수정**: 초기 대기 상태에서 [수집 시작] 버튼이 숨겨지고 [중지] 버튼이 노출되던 UI 분기 오류를 해결하여 정상적으로 [수집 시작]이 동작하도록 수정. URL 인풋 및 폴더명 인풋에 엔터(Enter) 키 즉시 실행 리스너 바인딩.
+
 ## 3. 검증 결과
 - `tests/test_raw_collector.py` 6종 단위/통합 테스트 전건 통과:
   1. `test_models_manual_translation_novel_crud`: PASS

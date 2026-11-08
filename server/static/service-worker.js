@@ -73,6 +73,11 @@ self.addEventListener('fetch', event => {
         return;
     }
 
+    // SSE(text/event-stream) 및 실시간 수집기 스트림은 서비스 워커 캐싱 완전 우회 (직접 네트워크 연결)
+    if (url.pathname.includes('/stream') || url.pathname === '/api/collector/stream') {
+        return;
+    }
+
     // Strategy for dynamic API data (books, folders, tags, activity, config, etc.)
     // Network-First with Cache Fallback:
     // Always fetch from server first to immediately reflect DB updates (completion tag, bookmarks, notes, etc.).
@@ -146,7 +151,10 @@ self.addEventListener('fetch', event => {
         caches.open(CACHE_NAME).then(cache => {
             return cache.match(event.request).then(cachedResponse => {
                 const networkFetch = fetch(event.request).then(networkResponse => {
-                    cache.put(event.request, networkResponse.clone());
+                    // 206 Partial Content(오디오/폰트 등)는 Cache.put 미지원이므로 오직 완전한 200 OK만 캐시
+                    if (networkResponse && networkResponse.status === 200) {
+                        cache.put(event.request, networkResponse.clone());
+                    }
                     return networkResponse;
                 }).catch(err => {
                     console.error('Service Worker: Fetch failed.', err);

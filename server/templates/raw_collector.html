@@ -606,6 +606,8 @@
                 activeNovelUrl = url;
                 document.getElementById('prepareResultPanel').style.display = 'block';
                 document.getElementById('customFolderInput').value = data.novel_title;
+                document.getElementById('startBtn').style.display = 'inline-flex';
+                document.getElementById('stopBtn').style.display = 'none';
 
                 document.getElementById('chipTitle').innerHTML = `작품: <strong>${data.novel_title}</strong>`;
                 document.getElementById('chipTotal').innerHTML = `전체: <strong>${data.total_episodes}화</strong>`;
@@ -728,14 +730,18 @@
                 }
             }
 
-            if (state.status === 'completed' || state.status === 'stopped' || state.status === 'error') {
-                document.getElementById('startBtn').style.display = 'inline-flex';
-                document.getElementById('stopBtn').style.display = 'none';
-            } else {
-                document.getElementById('startBtn').style.display = 'none';
-                document.getElementById('stopBtn').style.display = 'inline-flex';
-            }
+            const isWorking = (state.status === 'running' || state.status === 'resting');
+            document.getElementById('startBtn').style.display = isWorking ? 'none' : 'inline-flex';
+            document.getElementById('stopBtn').style.display = isWorking ? 'inline-flex' : 'none';
         }
+
+        // 엔터키 리스너 바인딩
+        document.getElementById('novelUrlInput').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') prepareNovel();
+        });
+        document.getElementById('customFolderInput').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') startCollection();
+        });
 
         // 페이지 로드 시 초기 상태 확인
         window.addEventListener('DOMContentLoaded', async () => {
