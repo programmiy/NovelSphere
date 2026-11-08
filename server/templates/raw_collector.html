@@ -442,10 +442,10 @@
                     </div>
 
                     <div class="badge-bar">
-                        <span class="badge-chip gold" id="chipTitle">작품: <strong>-</strong></span>
-                        <span class="badge-chip" id="chipTotal">전체: <strong>0화</strong></span>
-                        <span class="badge-chip green" id="chipExisting">기수집(스킵): <strong>0화</strong></span>
-                        <span class="badge-chip cyan" id="chipNew">신규 수집: <strong>0화</strong></span>
+                        <span class="badge-chip gold" id="chipTitle">작품: <strong id="novelTitleText">-</strong></span>
+                        <span class="badge-chip" id="chipTotal">전체: <strong id="totalEpBadge">0화</strong></span>
+                        <span class="badge-chip green" id="chipExisting">기수집(스킵): <strong id="existingEpBadge">0화</strong></span>
+                        <span class="badge-chip cyan" id="chipNew">신규 수집: <strong id="newEpBadge">0화</strong></span>
                         <span class="badge-chip">정책: <strong>2.5초 간격 · 12화마다 120초 쿨다운</strong></span>
                     </div>
                 </div>
@@ -469,7 +469,7 @@
                     <h2 class="card-title">
                         <span class="material-icons">speed</span> 실시간 수집 현황
                     </h2>
-                    <span class="badge-chip cyan" id="statusBadge">대기 중</span>
+                    <span class="badge-chip cyan" id="collectorStatusBadge">대기 중</span>
                 </div>
 
                 <div class="progress-box">
@@ -700,13 +700,19 @@
                 if (!res.ok) throw new Error(data.detail || '분석 실패');
 
                 activeNovelUrl = data.clean_url;
-                document.getElementById('novelTitleText').textContent = data.title;
-                document.getElementById('customFolderInput').value = data.folder_name;
-                document.getElementById('totalEpBadge').textContent = `${data.total_episodes}화`;
-                document.getElementById('existingEpBadge').textContent = `${data.existing_episodes}화`;
-                document.getElementById('newEpBadge').textContent = `${data.new_episodes}화`;
+                const titleEl = document.getElementById('novelTitleText');
+                if (titleEl) titleEl.textContent = data.title;
+                const folderInput = document.getElementById('customFolderInput');
+                if (folderInput) folderInput.value = data.folder_name;
+                const totalEl = document.getElementById('totalEpBadge');
+                if (totalEl) totalEl.textContent = `${data.total_episodes}화`;
+                const existEl = document.getElementById('existingEpBadge');
+                if (existEl) existEl.textContent = `${data.existing_episodes}화`;
+                const newEl = document.getElementById('newEpBadge');
+                if (newEl) newEl.textContent = `${data.new_episodes}화`;
 
-                document.getElementById('summaryCard').style.display = 'block';
+                const resultPanel = document.getElementById('prepareResultPanel') || document.getElementById('summaryCard');
+                if (resultPanel) resultPanel.style.display = 'block';
                 appendConsole(`[분석 완료] '${data.title}' (신규: ${data.new_episodes}화 / 전체: ${data.total_episodes}화)`, 'success');
             } catch (err) {
                 alert(`목차 분석 오류: ${err.message}`);
@@ -787,7 +793,7 @@
         function updateCollectorUI(state) {
             if (!state) return;
 
-            const statusBadge = document.getElementById('collectorStatusBadge');
+            const statusBadge = document.getElementById('collectorStatusBadge') || document.getElementById('statusBadge');
             const progressBar = document.getElementById('progressBar');
             const progressPercentText = document.getElementById('progressPercentText');
             const progressEpisodeText = document.getElementById('progressEpisodeText');
@@ -795,31 +801,35 @@
             const cooldownAlert = document.getElementById('cooldownAlert');
             const cooldownTimerText = document.getElementById('cooldownTimerText');
 
-            statusBadge.textContent =
-                state.status === 'running' ? '수집 진행 중' :
-                state.status === 'resting' ? '쿨다운 휴식 중' :
-                state.status === 'completed' ? '수집 완료' :
-                state.status === 'stopped' ? '중지됨' : '대기 중';
+            if (statusBadge) {
+                statusBadge.textContent =
+                    state.status === 'running' ? '수집 진행 중' :
+                    state.status === 'resting' ? '쿨다운 휴식 중' :
+                    state.status === 'completed' ? '수집 완료' :
+                    state.status === 'stopped' ? '중지됨' : '대기 중';
 
-            statusBadge.className = `badge-chip ${
-                state.status === 'running' ? 'cyan' :
-                state.status === 'resting' ? 'gold' :
-                state.status === 'completed' ? 'green' : 'red'
-            }`;
-
-            progressBar.style.width = `${state.progress_percent || 0}%`;
-            progressPercentText.textContent = `${state.progress_percent || 0}%`;
-
-            if (state.status === 'resting') {
-                cooldownAlert.style.display = 'flex';
-                cooldownTimerText.textContent = `${state.rest_remaining_seconds}s`;
-                progressEpisodeText.textContent = `⏳ 안전 쿨다운 휴식 중 (${state.rest_remaining_seconds}초 남음)`;
-            } else {
-                cooldownAlert.style.display = 'none';
-                progressEpisodeText.textContent = state.current_episode_title ? `제 ${state.completed_episodes + state.skipped_episodes}화: ${state.current_episode_title}` : '진행 대기';
+                statusBadge.className = `badge-chip ${
+                    state.status === 'running' ? 'cyan' :
+                    state.status === 'resting' ? 'gold' :
+                    state.status === 'completed' ? 'green' : 'red'
+                }`;
             }
 
-            progressStatsText.textContent = `저장: ${state.completed_episodes}화 | 스킵: ${state.skipped_episodes}화 / 전체 ${state.total_episodes}화 | 수집 문단: ${state.saved_paragraphs_count.toLocaleString()}개`;
+            if (progressBar) progressBar.style.width = `${state.progress_percent || 0}%`;
+            if (progressPercentText) progressPercentText.textContent = `${state.progress_percent || 0}%`;
+
+            if (state.status === 'resting') {
+                if (cooldownAlert) cooldownAlert.style.display = 'flex';
+                if (cooldownTimerText) cooldownTimerText.textContent = `${state.rest_remaining_seconds}s`;
+                if (progressEpisodeText) progressEpisodeText.textContent = `⏳ 안전 쿨다운 휴식 중 (${state.rest_remaining_seconds}초 남음)`;
+            } else {
+                if (cooldownAlert) cooldownAlert.style.display = 'none';
+                if (progressEpisodeText) progressEpisodeText.textContent = state.current_episode_title ? `제 ${state.completed_episodes + state.skipped_episodes}화: ${state.current_episode_title}` : '진행 대기';
+            }
+
+            if (progressStatsText) {
+                progressStatsText.textContent = `저장: ${state.completed_episodes}화 | 스킵: ${state.skipped_episodes}화 / 전체 ${state.total_episodes}화 | 수집 문단: ${state.saved_paragraphs_count.toLocaleString()}개`;
+            }
 
             if (state.recent_logs && state.recent_logs.length > 0) {
                 const lastLog = state.recent_logs[state.recent_logs.length - 1];
@@ -897,11 +907,16 @@
                 });
 
                 const emptyParas = totalParas - transParas;
-                document.getElementById('statTotalEpisodes').textContent = `${data.episodes.length}화`;
-                document.getElementById('statTotalParagraphs').textContent = `${totalParas.toLocaleString()}개`;
-                document.getElementById('statTranslatedParagraphs').textContent = `${transParas.toLocaleString()}개`;
-                document.getElementById('statEmptyParagraphs').textContent = `${emptyParas.toLocaleString()}개`;
-                document.getElementById('studioEpCountBadge').textContent = `${data.episodes.length}화 (검수 ${reviewedCount}화)`;
+                const statTotalEp = document.getElementById('statTotalEpisodes');
+                if (statTotalEp) statTotalEp.textContent = `${data.episodes.length}화`;
+                const statTotalPara = document.getElementById('statTotalParagraphs');
+                if (statTotalPara) statTotalPara.textContent = `${totalParas.toLocaleString()}개`;
+                const statTransPara = document.getElementById('statTranslatedParagraphs');
+                if (statTransPara) statTransPara.textContent = `${transParas.toLocaleString()}개`;
+                const statEmptyPara = document.getElementById('statEmptyParagraphs');
+                if (statEmptyPara) statEmptyPara.textContent = `${emptyParas.toLocaleString()}개`;
+                const studioEpBadge = document.getElementById('studioEpCountBadge');
+                if (studioEpBadge) studioEpBadge.textContent = `${data.episodes.length}화 (검수 ${reviewedCount}화)`;
 
                 const tbody = document.getElementById('studioEpTableBody');
                 tbody.innerHTML = '';
@@ -1043,30 +1058,32 @@
                 const pText = document.getElementById('hdProgressPercentText');
                 const epText = document.getElementById('hdProgressEpText');
 
-                badge.textContent =
-                    state.status === 'running' ? '번역 진행 중' :
-                    state.status === 'completed' ? '번역 완료' :
-                    state.status === 'stopped' ? '중지됨' :
-                    state.status === 'error' ? '오류' : '대기 중';
+                if (badge) {
+                    badge.textContent =
+                        state.status === 'running' ? '번역 진행 중' :
+                        state.status === 'completed' ? '번역 완료' :
+                        state.status === 'stopped' ? '중지됨' :
+                        state.status === 'error' ? '오류' : '대기 중';
 
-                badge.className = `badge-chip ${
-                    state.status === 'running' ? 'cyan' :
-                    state.status === 'completed' ? 'green' :
-                    state.status === 'error' ? 'red' : 'gold'
-                }`;
+                    badge.className = `badge-chip ${
+                        state.status === 'running' ? 'cyan' :
+                        state.status === 'completed' ? 'green' :
+                        state.status === 'error' ? 'red' : 'gold'
+                    }`;
+                }
 
-                pBar.style.width = `${state.progress_percent}%`;
-                pText.textContent = `${state.progress_percent}%`;
+                if (pBar) pBar.style.width = `${state.progress_percent}%`;
+                if (pText) pText.textContent = `${state.progress_percent}%`;
 
                 if (state.status === 'running') {
-                    startBtn.style.display = 'none';
-                    stopBtn.style.display = 'inline-flex';
-                    epText.textContent = `진행 중: [${state.processed_episodes}/${state.total_episodes}] ${state.current_episode_title || ''} (${state.total_paragraphs_translated}개 문단 완료)`;
+                    if (startBtn) startBtn.style.display = 'none';
+                    if (stopBtn) stopBtn.style.display = 'inline-flex';
+                    if (epText) epText.textContent = `진행 중: [${state.processed_episodes}/${state.total_episodes}] ${state.current_episode_title || ''} (${state.total_paragraphs_translated}개 문단 완료)`;
                 } else {
-                    startBtn.style.display = 'inline-flex';
-                    stopBtn.style.display = 'none';
+                    if (startBtn) startBtn.style.display = 'inline-flex';
+                    if (stopBtn) stopBtn.style.display = 'none';
                     if (state.status === 'completed') {
-                        epText.textContent = `🎉 초벌 번역 완료! (총 ${state.total_paragraphs_translated}개 문단 반영)`;
+                        if (epText) epText.textContent = `🎉 초벌 번역 완료! (총 ${state.total_paragraphs_translated}개 문단 반영)`;
                         if (hdPollTimer) {
                             clearInterval(hdPollTimer);
                             hdPollTimer = null;

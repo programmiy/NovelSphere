@@ -74,6 +74,13 @@
   - `a.c-pager__item--next[href]` 검증 및 `is-disabled` 클래스 배제 조건 추가.
   - 2페이지 이상(`current_page > 1`)에서 웹 응답 404(Not Found) 수신 시 목차 끝에 정상 도달한 것으로 판단하고 예외 없이 안전 종료(`break`) 처리 (실제 외부 사이트 접속 0회 목 검증 완료).
 
+### 2.8 목차 분석 DOM ID 불일치 및 textContent null 예외 해결 (`server/templates/raw_collector.html`)
+- **원인 분석**:
+  - 목차 분석 응답 후 DOM 요소 바인딩 시, HTML 상의 배지 태그 ID와 JS 호출 ID 불일치(`chipTitle`, `chipTotal`, `chipExisting`, `chipNew` vs `novelTitleText`, `totalEpBadge`, `existingEpBadge`, `newEpBadge`, `statusBadge` vs `collectorStatusBadge`)로 인해 `document.getElementById(...)`가 `null`을 반환하고 `setting 'textContent'` TypeError 발생.
+- **해결 및 방어 가드**:
+  - HTML 배지 내부 `strong` 태그에 `novelTitleText`, `totalEpBadge`, `existingEpBadge`, `newEpBadge` ID를 정확히 부여하고, 상태 배지에 `collectorStatusBadge` 바인딩.
+  - `prepareNovel()`, `updateCollectorUI()`, `loadStudioEpisodes()`, `checkHdTransStatus()` 등 모든 DOM 텍스트 갱신 함수에 `if (element)` 방어 가드 전면 적용.
+
 ## 3. 검증 결과
 - `tests/test_hdtrans_service.py` 3종 단위 테스트 전건 통과:
   1. 바이너리 가용성 검증: PASS
