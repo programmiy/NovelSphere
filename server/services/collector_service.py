@@ -493,6 +493,8 @@ class RawCollectorRunner:
     def _broadcast(self, event_type: str, data: Dict[str, Any]):
         state = self.get_state()
         state["event"] = event_type
+        state["type"] = "status"
+        state["data"] = self.get_state()
         state.update(data)
         payload = f"data: {json.dumps(state, ensure_ascii=False)}\n\n"
 

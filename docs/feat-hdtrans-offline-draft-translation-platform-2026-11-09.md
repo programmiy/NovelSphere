@@ -89,6 +89,14 @@
   - `StartRequest` Pydantic 모델에 `folder_name` 필드를 추가하고 `custom_folder_name`과 자동 병합 fallback 지원.
   - `server/templates/raw_collector.html`: `prepareNovel()`에서 `data.title || data.novel_title`, `data.clean_url || data.url || url` 등 fallback 체이닝을 적용하여 어떤 경우에도 `undefined`가 출력되지 않도록 원천 차단.
 
+### 2.10 수집기 1초 실시간 상태 폴링 탑재 및 12화 안전 쿨다운 HUD 가시화 (`server/templates/raw_collector.html`, `server/services/collector_service.py`)
+- **원인 분석**:
+  - 12화 연속 수집 후 사이트 차단 방지를 위한 120초(2분) 안전 쿨다운 휴식에 정상 진입했으나, 프론트엔드 SSE 수신 파서의 `data.type` 조건 누락 및 주기적 폴링 부재로 인해 쿨다운 HUD 카드(`cooldownAlert`)와 타이머 카운트다운(`cooldownTimerText`)이 갱신되지 않아 사용자가 보기에는 작업이 멈춘 것처럼 보이던 현상 발생.
+- **해결 및 가시화 완료**:
+  - `raw_collector.html`에 1초 주기 실시간 폴링(`startCollectorPolling()`, `checkCollectorStatus()`)을 신설하여 수집 시작 즉시 백그라운드 쿨다운 초(120s $\rightarrow$ 119s ...)와 진행률, 에피소드 제목을 실시간 갱신.
+  - `currentSse.onmessage` 파서 강화로 SSE 스트림 이벤트와 폴링이 이중으로 상호 보완하도록 설계.
+  - 쿨다운 휴식 중일 때 황금색 쿨다운 배너와 남은 초가 실시간 카운트다운되며, 쿨다운 종료 시 자동으로 다음 회차 수집이 이어지도록 시각적 피드백 완비.
+
 ## 3. 검증 결과
 - `tests/test_hdtrans_service.py` 3종 단위 테스트 전건 통과:
   1. 바이너리 가용성 검증: PASS

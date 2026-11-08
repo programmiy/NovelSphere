@@ -642,6 +642,7 @@
         let currentFolder = "";
         let currentEpUrl = "";
         let hdPollTimer = null;
+        let collectorPollTimer = null;
 
         // 탭 전환
         function switchTab(tab) {
@@ -753,6 +754,7 @@
                 appendConsole(`🚀 수집 워커 시작: '${folder}'`, 'success');
                 document.getElementById('startBtn').style.display = 'none';
                 document.getElementById('stopBtn').style.display = 'inline-flex';
+                startCollectorPolling();
             } catch (err) {
                 alert(`수집 시작 오류: ${err.message}`);
                 appendConsole(`[수집 실패] ${err.message}`, 'error');
@@ -765,9 +767,31 @@
                 const res = await fetch('/api/collector/stop', { method: 'POST' });
                 const data = await res.json();
                 appendConsole(`🛑 수집 중지 요청됨: ${data.message}`, 'warning');
+                checkCollectorStatus();
             } catch (err) {
                 alert(`수집 중지 오류: ${err.message}`);
             }
+        }
+
+        // 수집기 실시간 상태 폴링 (SSE 끊김 완벽 대비)
+        function startCollectorPolling() {
+            if (collectorPollTimer) clearInterval(collectorPollTimer);
+            collectorPollTimer = setInterval(checkCollectorStatus, 1000);
+            checkCollectorStatus();
+        }
+
+        async function checkCollectorStatus() {
+            try {
+                const res = await fetch('/api/collector/status');
+                const state = await res.json();
+                updateCollectorUI(state);
+                if (state.status === 'completed' || state.status === 'stopped' || state.status === 'error') {
+                    if (collectorPollTimer) {
+                        clearInterval(collectorPollTimer);
+                        collectorPollTimer = null;
+                    }
+                }
+            } catch (_) {}
         }
 
         // 4. SSE 실시간 스트림 연결
@@ -781,10 +805,12 @@
             currentSse.onmessage = (event) => {
                 try {
                     const data = JSON.parse(event.data);
-                    if (data.type === 'status') {
-                        updateCollectorUI(data.data);
-                    } else if (data.type === 'log') {
-                        appendConsole(data.data.message);
+                    const state = data.data || data;
+                    if (state && (state.status || state.progress_percent !== undefined)) {
+                        updateCollectorUI(state);
+                    }
+                    if (data.message) {
+                        appendConsole(data.message);
                     }
                 } catch (e) {
                     console.error('SSE 파싱 오류:', e);
@@ -839,10 +865,18 @@
             }
 
             if (state.recent_logs && state.recent_logs.length > 0) {
-                const lastLog = state.recent_logs[state.recent_logs.length - 1];
                 const term = document.getElementById('consoleTerminal');
-                if (term && term.lastChild && term.lastChild.textContent !== lastLog) {
-                    appendConsole(lastLog);
+                if (term) {
+                    if (!window._renderedCollectorLogs) window._renderedCollectorLogs = new Set();
+                    for (const log of state.recent_logs) {
+                        if (!window._renderedCollectorLogs.has(log)) {
+                            window._renderedCollectorLogs.add(log);
+                            appendConsole(log);
+                        }
+                    }
+                    if (window._renderedCollectorLogs.size > 500) {
+                        window._renderedCollectorLogs.clear();
+                    }
                 }
             }
 
@@ -1100,10 +1134,18 @@
                 }
 
                 if (state.logs && state.logs.length > 0) {
-                    const lastLog = state.logs[state.logs.length - 1];
                     const term = document.getElementById('hdConsoleTerminal');
-                    if (term && term.lastChild && term.lastChild.textContent !== lastLog) {
-                        appendHdConsole(lastLog);
+                    if (term) {
+                        if (!window._renderedHdLogs) window._renderedHdLogs = new Set();
+                        for (const log of state.logs.slice(-20)) {
+                            if (!window._renderedHdLogs.has(log)) {
+                                window._renderedHdLogs.add(log);
+                                appendHdConsole(log);
+                            }
+                        }
+                        if (window._renderedHdLogs.size > 500) {
+                            window._renderedHdLogs.clear();
+                        }
                     }
                 }
             } catch (_) {}
@@ -1125,6 +1167,9 @@
                 const res = await fetch('/api/collector/status');
                 const state = await res.json();
                 updateCollectorUI(state);
+                if (state.status === 'running' || state.status === 'resting') {
+                    startCollectorPolling();
+                }
             } catch (_) {}
         });
     </script>
