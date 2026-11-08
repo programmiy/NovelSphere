@@ -33,6 +33,7 @@ venv/
 scratch_*
 *.apk
 cloudflared.exe
+tools/
 .git_backup*
 
 # 임시 벤치마킹/테스트 DB 파일 (명시적 제외)

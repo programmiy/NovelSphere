@@ -225,6 +225,16 @@ def test_collector_api_endpoints(client):
     assert res_eps.status_code == 200
     assert "episodes" in res_eps.json()
 
+    # 5. hdTrans 초벌 번역 상태 및 단건/전체 엔드포인트 검증
+    res_hd_status = client.get("/api/collector/hdtrans/status")
+    assert res_hd_status.status_code == 200
+    assert "status" in res_hd_status.json()
+
+    res_hd_stop = client.post("/api/collector/hdtrans/stop")
+    assert res_hd_stop.status_code == 200
+    assert res_hd_stop.json()["status"] == "stopped"
+
+
 
 @patch("server.services.collector_service.requests.get")
 def test_syosetu_toc_and_paragraph_scraper(mock_get):

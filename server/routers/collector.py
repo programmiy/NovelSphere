@@ -373,3 +373,91 @@ def save_manual_translations(req: SaveManualTranslationRequest, db: Session = De
             + (" (소설 전체 검수완료 승격!)" if book_promoted else "")
         )
     }
+
+
+# ============================================================================
+# hdTrans 오프라인 초벌 번역기 연동 엔드포인트
+# ============================================================================
+
+from server.services import hdtrans_service
+
+
+class HdTransEpisodeRequest(BaseModel):
+    folder_name: str
+    url: str
+    overwrite: bool = False
+
+
+class HdTransNovelRequest(BaseModel):
+    folder_name: str
+    overwrite: bool = False
+
+
+@router.post("/api/collector/hdtrans/episode")
+def hdtrans_translate_episode(req: HdTransEpisodeRequest, db: Session = Depends(sdb.get_db)):
+    """특정 회차 단건 hdTrans 초벌 번역 실행"""
+    folder = req.folder_name.strip()
+    url = req.url.strip()
+    if not folder or not url:
+        raise HTTPException(status_code=400, detail="소설 폴더명과 회차 URL이 필요합니다.")
+
+    if not hdtrans_service.is_hdtrans_available():
+        raise HTTPException(status_code=500, detail="hdTrans 실행 파일(hdtrans.exe)을 찾을 수 없습니다.")
+
+    try:
+        count = hdtrans_service.translate_episode_in_db(
+            db=db,
+            folder_name=folder,
+            url=url,
+            overwrite=req.overwrite,
+        )
+        return {
+            "status": "success",
+            "translated_count": count,
+            "folder_name": folder,
+            "url": url,
+            "message": f"⚡ {count}개 문단 초벌 번역 완료"
+        }
+    except Exception as e:
+        logger.error(f"[hdTrans] 단건 회차 번역 오류: {e}")
+        raise HTTPException(status_code=500, detail=f"초벌 번역 실패: {str(e)}")
+
+
+@router.post("/api/collector/hdtrans/start")
+def hdtrans_start_novel(req: HdTransNovelRequest):
+    """소설 전체 백그라운드 초벌 번역 작업 가동"""
+    folder = req.folder_name.strip()
+    if not folder:
+        raise HTTPException(status_code=400, detail="소설 폴더명이 필요합니다.")
+
+    if not hdtrans_service.is_hdtrans_available():
+        raise HTTPException(status_code=500, detail="hdTrans 실행 파일(hdtrans.exe)을 찾을 수 없습니다.")
+
+    try:
+        hdtrans_service.hdtrans_runner.start_novel_translation(
+            folder_name=folder,
+            overwrite=req.overwrite,
+        )
+        return {
+            "status": "started",
+            "message": f"⚡ '{folder}' 소설의 초벌 번역 작업이 백그라운드에서 가동되었습니다."
+        }
+    except RuntimeError as re:
+        raise HTTPException(status_code=409, detail=str(re))
+    except Exception as e:
+        logger.error(f"[hdTrans] 소설 일괄 번역 시작 오류: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/api/collector/hdtrans/stop")
+def hdtrans_stop():
+    """진행 중인 초벌 번역 작업 안전 중지"""
+    hdtrans_service.hdtrans_runner.stop()
+    return {"status": "stopped", "message": "초벌 번역 작업 중지가 요청되었습니다."}
+
+
+@router.get("/api/collector/hdtrans/status")
+def hdtrans_status():
+    """초벌 번역 러너의 현재 상태 및 실시간 로그/통계 조회"""
+    return hdtrans_service.hdtrans_runner.get_status()
+

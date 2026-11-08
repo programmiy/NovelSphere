@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>원문 수집기 & 수동 번역 스튜디오 | LANOVEL</title>
+    <title>원문 수집기 & hdTrans 초벌 번역기 | LANOVEL</title>
     <!-- Fonts & Icons -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -400,7 +400,7 @@
                 <span class="material-icons">cloud_download</span> 원문 일괄 수집
             </button>
             <button class="tab-btn" id="tabBtnStudio" onclick="switchTab('studio')">
-                <span class="material-icons">translate</span> 수동 번역 스튜디오
+                <span class="material-icons">bolt</span> ⚡ hdTrans 초벌 번역기
             </button>
             <a href="/" class="tab-btn" style="text-decoration:none;">
                 <span class="material-icons">local_library</span> 서재로 이동
@@ -494,57 +494,141 @@
         </div>
 
         <!-- =================================================================== -->
-        <!-- 2. 수동 번역 스튜디오 탭 -->
+        
+        <!-- =================================================================== -->
+        <!-- 2. hdTrans 초벌 번역 플랫폼 탭 -->
         <!-- =================================================================== -->
         <div class="tab-pane" id="paneStudio">
-            <div class="card" style="padding: 14px 20px; margin-bottom: 14px;">
+            <!-- 상단 바: 소설 선택 및 바로가기 -->
+            <div class="card" style="padding: 14px 20px; margin-bottom: 16px;">
                 <div style="display: flex; gap: 14px; align-items: center; justify-content: space-between; flex-wrap: wrap;">
-                    <div style="display: flex; gap: 10px; align-items: center;">
-                        <span class="material-icons" style="color: var(--accent-gold);">book</span>
-                        <select id="studioNovelSelect" class="text-input" style="min-width: 280px;" onchange="loadStudioEpisodes()">
-                            <option value="">수동 번역 소설을 선택하세요...</option>
+                    <div style="display: flex; gap: 10px; align-items: center; flex: 1; min-width: 300px;">
+                        <span class="material-icons" style="color: var(--accent-gold); font-size: 26px;">bolt</span>
+                        <select id="studioNovelSelect" class="text-input" style="flex: 1;" onchange="loadStudioEpisodes()">
+                            <option value="">소설을 선택하세요...</option>
                         </select>
                         <button class="btn-action" style="padding: 8px 14px;" onclick="loadStudioNovels()">
                             <span class="material-icons">refresh</span> 새로고침
                         </button>
                     </div>
 
-                    <div style="display: flex; gap: 10px; align-items: center;" id="studioActionBar" style="display: none;">
-                        <button class="btn-action" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); color:#fff;" onclick="saveCurrentEpisodeTranslations()">
-                            <span class="material-icons">verified</span> 번역 저장 & ✅ 검수완료 적용
-                        </button>
+                    <div style="display: flex; gap: 10px; align-items: center;">
+                        <a id="openAdminBtn" href="/admin" target="_blank" class="btn-action" style="background: rgba(229,185,95,0.15); border: 1px solid var(--accent-gold); color: var(--accent-gold); text-decoration: none; padding: 8px 16px; border-radius: 6px; font-weight: 600; display: flex; align-items: center; gap: 6px;">
+                            <span class="material-icons" style="font-size: 18px;">auto_stories</span> 번역관리(/admin)에서 편집
+                        </a>
                     </div>
                 </div>
             </div>
 
-            <div class="studio-layout">
-                <!-- 회차 목록 -->
-                <div class="card" style="padding: 14px;">
-                    <div class="card-header" style="margin-bottom: 10px; padding-bottom: 8px;">
-                        <h3 class="card-title" style="font-size: 14px;">회차 목록</h3>
-                        <span class="badge-chip" id="studioEpCountBadge">0화</span>
+            <!-- 소설 통계 HUD 카드 4종 -->
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; margin-bottom: 16px;">
+                <div class="card" style="padding: 14px 18px; margin: 0; display: flex; align-items: center; gap: 14px; background: linear-gradient(135deg, rgba(34,39,54,0.8) 0%, rgba(26,30,40,0.8) 100%);">
+                    <span class="material-icons" style="font-size: 32px; color: #60a5fa;">menu_book</span>
+                    <div>
+                        <div style="font-size: 12px; color: var(--text-muted);">총 회차 수</div>
+                        <div id="statTotalEpisodes" style="font-size: 20px; font-weight: 700; color: #fff;">0화</div>
                     </div>
-                    <div class="ep-list" id="studioEpList">
-                        <div style="padding: 20px; text-align: center; color: var(--text-muted); font-size: 12px;">
-                            소설을 선택하면 회차 목록이 표시됩니다.
-                        </div>
+                </div>
+                <div class="card" style="padding: 14px 18px; margin: 0; display: flex; align-items: center; gap: 14px; background: linear-gradient(135deg, rgba(34,39,54,0.8) 0%, rgba(26,30,40,0.8) 100%);">
+                    <span class="material-icons" style="font-size: 32px; color: #c084fc;">segment</span>
+                    <div>
+                        <div style="font-size: 12px; color: var(--text-muted);">총 문단 수</div>
+                        <div id="statTotalParagraphs" style="font-size: 20px; font-weight: 700; color: #fff;">0개</div>
+                    </div>
+                </div>
+                <div class="card" style="padding: 14px 18px; margin: 0; display: flex; align-items: center; gap: 14px; background: linear-gradient(135deg, rgba(34,39,54,0.8) 0%, rgba(26,30,40,0.8) 100%);">
+                    <span class="material-icons" style="font-size: 32px; color: #4ade80;">check_circle</span>
+                    <div>
+                        <div style="font-size: 12px; color: var(--text-muted);">초벌 완료 문단</div>
+                        <div id="statTranslatedParagraphs" style="font-size: 20px; font-weight: 700; color: #4ade80;">0개</div>
+                    </div>
+                </div>
+                <div class="card" style="padding: 14px 18px; margin: 0; display: flex; align-items: center; gap: 14px; background: linear-gradient(135deg, rgba(34,39,54,0.8) 0%, rgba(26,30,40,0.8) 100%);">
+                    <span class="material-icons" style="font-size: 32px; color: var(--accent-gold);">hourglass_bottom</span>
+                    <div>
+                        <div style="font-size: 12px; color: var(--text-muted);">미번역(초벌 필요) 문단</div>
+                        <div id="statEmptyParagraphs" style="font-size: 20px; font-weight: 700; color: var(--accent-gold);">0개</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 초벌 번역 실행 대시보드 카드 -->
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">
+                        <span class="material-icons">bolt</span> hdTrans 오프라인 초벌 번역 엔진
+                    </h2>
+                    <div style="display: flex; gap: 10px; align-items: center;">
+                        <span class="badge-chip" id="hdStatusBadge">대기 중</span>
                     </div>
                 </div>
 
-                <!-- 문단별 번역 에디터 -->
-                <div class="card" style="padding: 14px;">
-                    <div class="card-header" style="margin-bottom: 10px; padding-bottom: 8px;">
-                        <h3 class="card-title" id="studioCurrentEpTitle" style="font-size: 14px;">
-                            회차를 선택하여 수동 번역을 시작하세요
-                        </h3>
-                        <span class="badge-chip green" id="studioReviewedBadge" style="display:none;">✅ 검수완료</span>
-                    </div>
+                <div style="display: flex; gap: 20px; align-items: center; flex-wrap: wrap; margin-bottom: 16px;">
+                    <label style="display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; color: var(--text-main);">
+                        <input type="checkbox" id="hdOnlyEmptyCheck" checked style="accent-color: var(--accent-gold);">
+                        <span>빈칸인 문단만 초벌 번역 (기존 번역 유지)</span>
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; color: var(--text-muted);">
+                        <input type="checkbox" id="hdOverwriteCheck" style="accent-color: var(--accent-red);" onchange="document.getElementById('hdOnlyEmptyCheck').checked = !this.checked">
+                        <span>강제 덮어쓰기 (기존 번역문 재번역)</span>
+                    </label>
+                </div>
 
-                    <div class="trans-editor-box" id="studioSentenceBox">
-                        <div style="padding: 40px; text-align: center; color: var(--text-muted); font-size: 13px;">
-                            좌측 회차 목록에서 번역할 회차를 선택해주세요.
-                        </div>
+                <div style="display: flex; gap: 12px; align-items: center; margin-bottom: 16px;">
+                    <button id="hdStartBtn" class="btn-action" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: #fff; padding: 10px 24px; font-size: 14px; font-weight: 700;" onclick="startNovelHdTrans()">
+                        <span class="material-icons">bolt</span> 소설 전체 초벌 번역 일괄 시작
+                    </button>
+                    <button id="hdStopBtn" class="btn-action btn-danger" style="display: none; padding: 10px 20px; font-size: 14px;" onclick="stopHdTrans()">
+                        <span class="material-icons">stop</span> 번역 중지
+                    </button>
+                    <span id="hdRuntimeInfo" style="font-size: 13px; color: var(--text-muted);"></span>
+                </div>
+
+                <!-- 진행률 바 -->
+                <div class="progress-box" style="margin-bottom: 14px;">
+                    <div style="display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 6px;">
+                        <span id="hdProgressEpText" style="color: var(--text-main); font-weight: 600;">진행 대기 중</span>
+                        <span id="hdProgressPercentText" style="color: var(--accent-cyan); font-weight: 700;">0.0%</span>
                     </div>
+                    <div class="progress-bar-bg" style="height: 10px;">
+                        <div id="hdProgressBar" class="progress-bar-fill" style="width: 0%;"></div>
+                    </div>
+                </div>
+
+                <!-- 터미널 로그 -->
+                <div class="console-box" style="height: 140px;" id="hdConsoleTerminal">
+                    <div class="console-line info">[hdTrans] 오프라인 규칙 기반 초벌 번역 엔진 준비 완료 (Gemini API 호출 0회, 무검열 초고속 처리)</div>
+                </div>
+            </div>
+
+            <!-- 회차 목록 및 회차별 초벌/관리 테이블 -->
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title" style="font-size: 15px;">
+                        <span class="material-icons">format_list_bulleted</span> 회차 목록 및 단건 초벌 / 검수 관리
+                    </h3>
+                    <span class="badge-chip" id="studioEpCountBadge">0화</span>
+                </div>
+
+                <div style="overflow-x: auto;">
+                    <table style="width: 100%; border-collapse: collapse; font-size: 13px; text-align: left;">
+                        <thead>
+                            <tr style="border-bottom: 1px solid var(--border-color); color: var(--text-muted);">
+                                <th style="padding: 10px 12px; width: 60px;">순번</th>
+                                <th style="padding: 10px 12px;">회차 제목</th>
+                                <th style="padding: 10px 12px; width: 140px; text-align: center;">초벌 현황</th>
+                                <th style="padding: 10px 12px; width: 90px; text-align: center;">검수 상태</th>
+                                <th style="padding: 10px 12px; width: 220px; text-align: right;">작업</th>
+                            </tr>
+                        </thead>
+                        <tbody id="studioEpTableBody">
+                            <tr>
+                                <td colspan="5" style="padding: 40px; text-align: center; color: var(--text-muted);">
+                                    소설을 선택하면 회차별 목록과 초벌 번역 현황이 표시됩니다.
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
                 </div>
             </div>
         </div>
@@ -557,7 +641,7 @@
         let activeNovelUrl = "";
         let currentFolder = "";
         let currentEpUrl = "";
-        let currentSentenceItems = [];
+        let hdPollTimer = null;
 
         // 탭 전환
         function switchTab(tab) {
@@ -568,12 +652,24 @@
 
             if (tab === 'studio') {
                 loadStudioNovels();
+                checkHdTransStatus();
             }
         }
 
         // 콘솔 로그 추가
         function appendConsole(msg, type = '') {
             const term = document.getElementById('consoleTerminal');
+            if (!term) return;
+            const line = document.createElement('div');
+            line.className = `console-line ${type}`;
+            line.textContent = msg;
+            term.appendChild(line);
+            term.scrollTop = term.scrollHeight;
+        }
+
+        function appendHdConsole(msg, type = '') {
+            const term = document.getElementById('hdConsoleTerminal');
+            if (!term) return;
             const line = document.createElement('div');
             line.className = `console-line ${type}`;
             line.textContent = msg;
@@ -598,26 +694,23 @@
                 const res = await fetch('/api/collector/prepare', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ url })
+                    body: JSON.stringify({ url: url })
                 });
                 const data = await res.json();
-                if (!res.ok) throw new Error(data.detail || '목차 분석 실패');
+                if (!res.ok) throw new Error(data.detail || '분석 실패');
 
-                activeNovelUrl = url;
-                document.getElementById('prepareResultPanel').style.display = 'block';
-                document.getElementById('customFolderInput').value = data.novel_title;
-                document.getElementById('startBtn').style.display = 'inline-flex';
-                document.getElementById('stopBtn').style.display = 'none';
+                activeNovelUrl = data.clean_url;
+                document.getElementById('novelTitleText').textContent = data.title;
+                document.getElementById('customFolderInput').value = data.folder_name;
+                document.getElementById('totalEpBadge').textContent = `${data.total_episodes}화`;
+                document.getElementById('existingEpBadge').textContent = `${data.existing_episodes}화`;
+                document.getElementById('newEpBadge').textContent = `${data.new_episodes}화`;
 
-                document.getElementById('chipTitle').innerHTML = `작품: <strong>${data.novel_title}</strong>`;
-                document.getElementById('chipTotal').innerHTML = `전체: <strong>${data.total_episodes}화</strong>`;
-                document.getElementById('chipExisting').innerHTML = `기수집(스킵): <strong>${data.existing_count}화</strong>`;
-                document.getElementById('chipNew').innerHTML = `신규 수집: <strong>${data.new_count}화</strong>`;
-
-                appendConsole(`✅ 목차 분석 완료: '${data.novel_title}' (전체 ${data.total_episodes}화 중 ${data.new_count}화 수집 대상)`, 'success');
+                document.getElementById('summaryCard').style.display = 'block';
+                appendConsole(`[분석 완료] '${data.title}' (신규: ${data.new_episodes}화 / 전체: ${data.total_episodes}화)`, 'success');
             } catch (err) {
-                alert(`오류: ${err.message}`);
-                appendConsole(`❌ 목차 분석 실패: ${err.message}`, 'error');
+                alert(`목차 분석 오류: ${err.message}`);
+                appendConsole(`[오류] ${err.message}`, 'error');
             } finally {
                 btn.disabled = false;
                 btn.innerHTML = '<span class="material-icons">search</span> 목차 분석';
@@ -626,14 +719,11 @@
 
         // 2. 수집 시작
         async function startCollection() {
-            if (!activeNovelUrl) {
-                alert('먼저 목차를 분석해주세요.');
+            const folder = document.getElementById('customFolderInput').value.trim();
+            if (!activeNovelUrl || !folder) {
+                alert('목차를 먼저 분석하고 소설 폴더명을 지정해주세요.');
                 return;
             }
-            const folderName = document.getElementById('customFolderInput').value.trim();
-
-            document.getElementById('startBtn').style.display = 'none';
-            document.getElementById('stopBtn').style.display = 'inline-flex';
 
             try {
                 const res = await fetch('/api/collector/start', {
@@ -641,45 +731,51 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         url: activeNovelUrl,
-                        custom_folder_name: folderName,
-                        delay_sec: 2.5,
-                        batch_size: 12,
-                        rest_sec: 120,
-                        skip_existing: true
+                        folder_name: folder
                     })
                 });
                 const data = await res.json();
                 if (!res.ok) throw new Error(data.detail || '수집 시작 실패');
 
-                appendConsole(`🚀 원문 수집 작업이 백그라운드에서 시작되었습니다.`, 'success');
-                initSse();
+                appendConsole(`🚀 수집 워커 시작: '${folder}'`, 'success');
+                document.getElementById('startBtn').style.display = 'none';
+                document.getElementById('stopBtn').style.display = 'inline-flex';
             } catch (err) {
-                alert(`오류: ${err.message}`);
-                document.getElementById('startBtn').style.display = 'inline-flex';
-                document.getElementById('stopBtn').style.display = 'none';
+                alert(`수집 시작 오류: ${err.message}`);
+                appendConsole(`[수집 실패] ${err.message}`, 'error');
             }
         }
 
         // 3. 수집 중지
         async function stopCollection() {
             try {
-                await fetch('/api/collector/stop', { method: 'POST' });
-                appendConsole(`⏹️ 수집 중지 요청을 전송했습니다.`, 'warn');
+                const res = await fetch('/api/collector/stop', { method: 'POST' });
+                const data = await res.json();
+                appendConsole(`🛑 수집 중지 요청됨: ${data.message}`, 'warning');
             } catch (err) {
-                alert(`오류: ${err.message}`);
+                alert(`수집 중지 오류: ${err.message}`);
             }
         }
 
-        // SSE 실시간 상태 연동
+        // 4. SSE 실시간 스트림 연결
         function initSse() {
             if (currentSse) {
                 currentSse.close();
             }
 
             currentSse = new EventSource('/api/collector/stream');
+
             currentSse.onmessage = (event) => {
-                const state = JSON.parse(event.data);
-                updateCollectorUI(state);
+                try {
+                    const data = JSON.parse(event.data);
+                    if (data.type === 'status') {
+                        updateCollectorUI(data.data);
+                    } else if (data.type === 'log') {
+                        appendConsole(data.data.message);
+                    }
+                } catch (e) {
+                    console.error('SSE 파싱 오류:', e);
+                }
             };
 
             currentSse.onerror = () => {
@@ -687,8 +783,11 @@
             };
         }
 
+        // 수집기 UI 업데이트
         function updateCollectorUI(state) {
-            const statusBadge = document.getElementById('statusBadge');
+            if (!state) return;
+
+            const statusBadge = document.getElementById('collectorStatusBadge');
             const progressBar = document.getElementById('progressBar');
             const progressPercentText = document.getElementById('progressPercentText');
             const progressEpisodeText = document.getElementById('progressEpisodeText');
@@ -725,7 +824,7 @@
             if (state.recent_logs && state.recent_logs.length > 0) {
                 const lastLog = state.recent_logs[state.recent_logs.length - 1];
                 const term = document.getElementById('consoleTerminal');
-                if (term.lastChild && term.lastChild.textContent !== lastLog) {
+                if (term && term.lastChild && term.lastChild.textContent !== lastLog) {
                     appendConsole(lastLog);
                 }
             }
@@ -743,18 +842,8 @@
             if (e.key === 'Enter') startCollection();
         });
 
-        // 페이지 로드 시 초기 상태 확인
-        window.addEventListener('DOMContentLoaded', async () => {
-            initSse();
-            try {
-                const res = await fetch('/api/collector/status');
-                const state = await res.json();
-                updateCollectorUI(state);
-            } catch (_) {}
-        });
-
         // ===================================================================
-        // 2. 수동 번역 스튜디오 JS 로직
+        // 2. hdTrans 초벌 번역기 JS 로직
         // ===================================================================
 
         async function loadStudioNovels() {
@@ -762,7 +851,8 @@
                 const res = await fetch('/api/collector/manual_novels');
                 const data = await res.json();
                 const sel = document.getElementById('studioNovelSelect');
-                sel.innerHTML = '<option value="">수동 번역 소설을 선택하세요...</option>';
+                const currentVal = sel.value;
+                sel.innerHTML = '<option value="">소설을 선택하세요...</option>';
 
                 for (const n of data.novels) {
                     const opt = document.createElement('option');
@@ -770,6 +860,13 @@
                     opt.textContent = `${n.folderName} (${n.translation_percent}% 완료, ${n.total_episodes}화${n.is_book_reviewed ? ' ✅' : ''})`;
                     sel.appendChild(opt);
                 }
+
+                if (currentVal && Array.from(sel.options).some(o => o.value === currentVal)) {
+                    sel.value = currentVal;
+                } else if (data.novels.length > 0) {
+                    sel.value = data.novels[0].folderName;
+                }
+                loadStudioEpisodes();
             } catch (err) {
                 console.error('소설 목록 로드 실패:', err);
             }
@@ -777,109 +874,215 @@
 
         async function loadStudioEpisodes() {
             const folder = document.getElementById('studioNovelSelect').value;
-            if (!folder) return;
+            const adminLink = document.getElementById('openAdminBtn');
+            if (!folder) {
+                adminLink.href = '/admin';
+                return;
+            }
             currentFolder = folder;
+            adminLink.href = `/admin?folder=${encodeURIComponent(folder)}`;
 
             try {
                 const res = await fetch(`/api/collector/episodes?folder_name=${encodeURIComponent(folder)}`);
                 const data = await res.json();
 
-                const listEl = document.getElementById('studioEpList');
-                document.getElementById('studioEpCountBadge').textContent = `${data.episodes.length}화`;
-                listEl.innerHTML = '';
+                let totalParas = 0;
+                let transParas = 0;
+                let reviewedCount = 0;
+
+                data.episodes.forEach(ep => {
+                    totalParas += ep.total_paragraphs;
+                    transParas += ep.translated_paragraphs;
+                    if (ep.is_reviewed) reviewedCount++;
+                });
+
+                const emptyParas = totalParas - transParas;
+                document.getElementById('statTotalEpisodes').textContent = `${data.episodes.length}화`;
+                document.getElementById('statTotalParagraphs').textContent = `${totalParas.toLocaleString()}개`;
+                document.getElementById('statTranslatedParagraphs').textContent = `${transParas.toLocaleString()}개`;
+                document.getElementById('statEmptyParagraphs').textContent = `${emptyParas.toLocaleString()}개`;
+                document.getElementById('studioEpCountBadge').textContent = `${data.episodes.length}화 (검수 ${reviewedCount}화)`;
+
+                const tbody = document.getElementById('studioEpTableBody');
+                tbody.innerHTML = '';
+
+                if (data.episodes.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="5" style="padding: 40px; text-align: center; color: var(--text-muted);">회차 데이터가 없습니다.</td></tr>';
+                    return;
+                }
 
                 data.episodes.forEach((ep, idx) => {
-                    const item = document.createElement('div');
-                    item.className = 'ep-item';
-                    item.innerHTML = `
-                        <div style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:210px;">
-                            ${idx + 1}. ${escapeHtml(ep.title)}
-                        </div>
-                        <div style="font-size:11px; display:flex; gap:4px; align-items:center;">
-                            <span style="color:${ep.is_completed ? '#4ade80' : '#8c97b2'}">${ep.translated_paragraphs}/${ep.total_paragraphs}</span>
-                            ${ep.is_reviewed ? '<span style="color:#4ade80;">✅</span>' : ''}
-                        </div>
+                    const tr = document.createElement('tr');
+                    tr.style.borderBottom = '1px solid rgba(255,255,255,0.05)';
+                    const isFullyDone = (ep.translated_paragraphs >= ep.total_paragraphs && ep.total_paragraphs > 0);
+                    const percent = ep.total_paragraphs > 0 ? Math.round((ep.translated_paragraphs / ep.total_paragraphs) * 100) : 0;
+
+                    tr.innerHTML = `
+                        <td style="padding: 10px 12px; color: var(--text-muted);">${ep.sort_order || idx + 1}</td>
+                        <td style="padding: 10px 12px; font-weight: 500;">
+                            <div style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width: 400px;" title="${escapeHtml(ep.title)}">
+                                ${escapeHtml(ep.title)}
+                            </div>
+                        </td>
+                        <td style="padding: 10px 12px; text-align: center;">
+                            <span style="color: ${isFullyDone ? '#4ade80' : percent > 0 ? '#3bd6c6' : '#e5b95f'}; font-weight: 600;">
+                                ${ep.translated_paragraphs} / ${ep.total_paragraphs} (${percent}%)
+                            </span>
+                        </td>
+                        <td style="padding: 10px 12px; text-align: center;">
+                            ${ep.is_reviewed ? '<span class="badge-chip green">✅ 검수</span>' : '<span style="color:var(--text-muted); font-size:11px;">미검수</span>'}
+                        </td>
+                        <td style="padding: 10px 12px; text-align: right;">
+                            <div style="display: flex; gap: 6px; justify-content: flex-end;">
+                                <button class="btn-action" style="padding: 4px 10px; font-size: 11px; background: rgba(59,214,198,0.15); border-color: var(--accent-cyan); color: var(--accent-cyan);" onclick="runSingleEpisodeHdTrans('${escapeHtml(ep.url)}', '${escapeHtml(ep.title)}')">
+                                    <span class="material-icons" style="font-size: 14px;">bolt</span> 단건 초벌
+                                </button>
+                                <a href="/admin?folder=${encodeURIComponent(folder)}&url=${encodeURIComponent(ep.url)}" target="_blank" class="btn-action" style="padding: 4px 10px; font-size: 11px; text-decoration: none;">
+                                    <span class="material-icons" style="font-size: 14px;">edit</span> 편집
+                                </a>
+                            </div>
+                        </td>
                     `;
-                    item.onclick = () => loadStudioEpisodeContent(ep.url, ep.title, item);
-                    listEl.appendChild(item);
+                    tbody.appendChild(tr);
                 });
             } catch (err) {
                 alert(`회차 목록 로드 실패: ${err.message}`);
             }
         }
 
-        async function loadStudioEpisodeContent(url, title, el) {
-            currentEpUrl = url;
-            document.querySelectorAll('.ep-item').forEach(i => i.classList.remove('active'));
-            if (el) el.classList.add('active');
-
-            const titleEl = document.getElementById('studioCurrentEpTitle');
-            const revBadge = document.getElementById('studioReviewedBadge');
-            const box = document.getElementById('studioSentenceBox');
-            titleEl.textContent = title;
-            box.innerHTML = '<div style="padding:40px; text-align:center; color:var(--text-muted);">문단을 불러오는 중...</div>';
-
-            try {
-                const res = await fetch(`/api/collector/episode_content?url=${encodeURIComponent(url)}`);
-                const data = await res.json();
-                currentSentenceItems = data.items;
-
-                revBadge.style.display = data.is_reviewed ? 'inline-flex' : 'none';
-                box.innerHTML = '';
-
-                data.items.forEach((item, idx) => {
-                    const card = document.createElement('div');
-                    card.className = 'sentence-card';
-                    card.innerHTML = `
-                        <div class="sentence-header">
-                            <span>#${idx + 1} (${escapeHtml(item.pid || '')})</span>
-                        </div>
-                        <div class="sentence-original">${escapeHtml(item.original)}</div>
-                        <textarea class="sentence-textarea" data-id="${item.id}" placeholder="직접 번역문을 입력하세요...">${escapeHtml(item.translated || '')}</textarea>
-                    `;
-                    box.appendChild(card);
-                });
-            } catch (err) {
-                alert(`문단 불러오기 실패: ${err.message}`);
-            }
-        }
-
-        async function saveCurrentEpisodeTranslations() {
-            if (!currentEpUrl || !currentFolder) {
-                alert('먼저 회차를 선택해주세요.');
+        // 소설 전체 초벌 번역 시작
+        async function startNovelHdTrans() {
+            const folder = document.getElementById('studioNovelSelect').value;
+            if (!folder) {
+                alert('초벌 번역을 진행할 소설을 선택해주세요.');
                 return;
             }
 
-            const textareas = document.querySelectorAll('.sentence-textarea');
-            const payloadItems = [];
-            textareas.forEach(ta => {
-                const id = parseInt(ta.getAttribute('data-id'), 10);
-                payloadItems.push({
-                    id: id,
-                    translated: ta.value
-                });
-            });
+            const overwrite = document.getElementById('hdOverwriteCheck').checked;
+
+            if (!confirm(`'${folder}' 소설의 전체 초벌 번역을 시작하시겠습니까?\n(오프라인 hdTrans 엔진으로 초고속 실행됩니다)`)) {
+                return;
+            }
 
             try {
-                const res = await fetch('/api/collector/save_manual_translations', {
+                const res = await fetch('/api/collector/hdtrans/start', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        url: currentEpUrl,
-                        folder_name: currentFolder,
-                        items: payloadItems,
-                        mark_as_reviewed: true
+                        folder_name: folder,
+                        overwrite: overwrite
                     })
                 });
                 const data = await res.json();
-                if (!res.ok) throw new Error(data.detail || '저장 실패');
+                if (!res.ok) throw new Error(data.detail || '초벌 번역 시작 실패');
 
-                alert(data.message);
-                document.getElementById('studioReviewedBadge').style.display = 'inline-flex';
-                loadStudioEpisodes(); // 회차 목록 갱신
+                appendHdConsole(`⚡ [시작] ${data.message}`, 'success');
+                startHdStatusPolling();
             } catch (err) {
-                alert(`저장 실패: ${err.message}`);
+                alert(`초벌 번역 가동 오류: ${err.message}`);
+                appendHdConsole(`[오류] ${err.message}`, 'error');
             }
+        }
+
+        // 초벌 번역 중지
+        async function stopHdTrans() {
+            try {
+                const res = await fetch('/api/collector/hdtrans/stop', { method: 'POST' });
+                const data = await res.json();
+                appendHdConsole(`🛑 [중지] ${data.message}`, 'warning');
+            } catch (err) {
+                alert(`중지 오류: ${err.message}`);
+            }
+        }
+
+        // 단건 회차 초벌 번역
+        async function runSingleEpisodeHdTrans(url, title) {
+            const folder = currentFolder || document.getElementById('studioNovelSelect').value;
+            if (!folder) return;
+
+            const overwrite = document.getElementById('hdOverwriteCheck').checked;
+            appendHdConsole(`⚡ [단건 번역] '${title}' 번역 실행 중...`);
+
+            try {
+                const res = await fetch('/api/collector/hdtrans/episode', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        folder_name: folder,
+                        url: url,
+                        overwrite: overwrite
+                    })
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.detail || '번역 실패');
+
+                appendHdConsole(`🎉 [완료] ${data.message}`, 'success');
+                loadStudioEpisodes(); // 테이블 갱신
+            } catch (err) {
+                alert(`단건 번역 실패: ${err.message}`);
+                appendHdConsole(`[오류] ${err.message}`, 'error');
+            }
+        }
+
+        // 초벌 번역 상태 폴링
+        function startHdStatusPolling() {
+            if (hdPollTimer) clearInterval(hdPollTimer);
+            hdPollTimer = setInterval(checkHdTransStatus, 1000);
+            checkHdTransStatus();
+        }
+
+        async function checkHdTransStatus() {
+            try {
+                const res = await fetch('/api/collector/hdtrans/status');
+                const state = await res.json();
+
+                const badge = document.getElementById('hdStatusBadge');
+                const startBtn = document.getElementById('hdStartBtn');
+                const stopBtn = document.getElementById('hdStopBtn');
+                const pBar = document.getElementById('hdProgressBar');
+                const pText = document.getElementById('hdProgressPercentText');
+                const epText = document.getElementById('hdProgressEpText');
+
+                badge.textContent =
+                    state.status === 'running' ? '번역 진행 중' :
+                    state.status === 'completed' ? '번역 완료' :
+                    state.status === 'stopped' ? '중지됨' :
+                    state.status === 'error' ? '오류' : '대기 중';
+
+                badge.className = `badge-chip ${
+                    state.status === 'running' ? 'cyan' :
+                    state.status === 'completed' ? 'green' :
+                    state.status === 'error' ? 'red' : 'gold'
+                }`;
+
+                pBar.style.width = `${state.progress_percent}%`;
+                pText.textContent = `${state.progress_percent}%`;
+
+                if (state.status === 'running') {
+                    startBtn.style.display = 'none';
+                    stopBtn.style.display = 'inline-flex';
+                    epText.textContent = `진행 중: [${state.processed_episodes}/${state.total_episodes}] ${state.current_episode_title || ''} (${state.total_paragraphs_translated}개 문단 완료)`;
+                } else {
+                    startBtn.style.display = 'inline-flex';
+                    stopBtn.style.display = 'none';
+                    if (state.status === 'completed') {
+                        epText.textContent = `🎉 초벌 번역 완료! (총 ${state.total_paragraphs_translated}개 문단 반영)`;
+                        if (hdPollTimer) {
+                            clearInterval(hdPollTimer);
+                            hdPollTimer = null;
+                            loadStudioEpisodes(); // 최종 반영
+                        }
+                    }
+                }
+
+                if (state.logs && state.logs.length > 0) {
+                    const lastLog = state.logs[state.logs.length - 1];
+                    const term = document.getElementById('hdConsoleTerminal');
+                    if (term && term.lastChild && term.lastChild.textContent !== lastLog) {
+                        appendHdConsole(lastLog);
+                    }
+                }
+            } catch (_) {}
         }
 
         function escapeHtml(text) {
@@ -890,6 +1093,16 @@
                 .replace(/"/g, '&quot;')
                 .replace(/'/g, '&#039;');
         }
+
+        // 페이지 로드 시 초기화
+        window.addEventListener('DOMContentLoaded', async () => {
+            initSse();
+            try {
+                const res = await fetch('/api/collector/status');
+                const state = await res.json();
+                updateCollectorUI(state);
+            } catch (_) {}
+        });
     </script>
 </body>
 </html>
