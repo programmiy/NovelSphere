@@ -22,10 +22,10 @@ def db_session():
         session.close()
 
 
-def test_upsert_inherits_folder_name_when_client_sends_null(db_session: Session):
+def test_upsert_normal_novel_never_inherits_folder_name(db_session: Session):
     """
-    복원센터 검수 등으로 인해 클라이언트가 folderName=None으로 단락을 저장하더라도,
-    동일 URL의 기존 번역 레코드로부터 유효한 소설 폴더명을 자동 상속받는지 검증
+    일반 소설 번역 시, 클라이언트가 folderName=None으로 전송하거나 동일 URL에 기존 폴더가 있더라도
+    새로운 번역 문단은 무조건 미분류(folderName=None)로 보관함에 적재되는지 검증 (검열 소설 제외 전원 미분류 규칙)
     """
     clean_url = "https://kakuyomu.jp/works/111/episodes/222"
     novel_folder = "내 최애는 악역영애"
@@ -43,7 +43,7 @@ def test_upsert_inherits_folder_name_when_client_sends_null(db_session: Session)
     db_session.add(existing_t)
     db_session.commit()
 
-    # 2. 클라이언트(확장 프로그램/복원센터)가 folderName=None으로 새 단락 저장 요청
+    # 2. 클라이언트(확장 프로그램)가 신규 번역 단락 저장 요청
     items = [
         TranslationItem(
             url=clean_url,
@@ -51,17 +51,17 @@ def test_upsert_inherits_folder_name_when_client_sends_null(db_session: Session)
             original="ありがとう",
             translated="고마워요",
             timestamp=1700000100,
-            folderName=None,  # 클라이언트가 null로 전송
+            folderName=None,
             title="1화"
         )
     ]
     res = upsert_translations(items, db=db_session)
     assert res["inserted"] == 1
 
-    # 3. DB 확인: p2 단락이 미분류(None)가 아니라 기존 회차의 novel_folder로 자동 상속되었는지 검증
+    # 3. DB 확인: p2 단락은 기존 폴더를 상속받지 않고 무조건 None(미분류 보관함)으로 적재되어야 함
     p2_record = db_session.query(Translation).filter(Translation.url == clean_url, Translation.pid == "p2").first()
     assert p2_record is not None
-    assert p2_record.folderName == novel_folder
+    assert p2_record.folderName is None
 
 
 def test_upsert_preserves_timestamp_on_text_update(db_session: Session):

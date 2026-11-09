@@ -340,11 +340,12 @@ def upsert_translations(items: List[TranslationItem], db: Session = Depends(get_
             if not existing_translation.timestamp:
                 existing_translation.timestamp = item.timestamp
 
-            # 폴더명 보정: 명시적 폴더명이 있거나 기존 폴더가 비어있던 경우 상속 폴더로 자동 귀속
-            if explicit_folder:
-                existing_translation.folderName = explicit_folder
-            elif (not existing_translation.folderName or existing_translation.folderName.strip() in ('Unknown', '미분류')) and target_folder:
-                existing_translation.folderName = target_folder
+            # 폴더명 보정: 검열 회피/수동 소설만 폴더명 강제 귀속 허용. 일반 소설은 기존 폴더(미분류는 계속 미분류) 보존
+            if is_manual_novel:
+                if explicit_folder:
+                    existing_translation.folderName = explicit_folder
+                elif (not existing_translation.folderName or existing_translation.folderName.strip() in ('Unknown', '미분류')) and target_folder:
+                    existing_translation.folderName = target_folder
 
             if target_title:
                 existing_translation.title = target_title
@@ -352,7 +353,11 @@ def upsert_translations(items: List[TranslationItem], db: Session = Depends(get_
                 existing_translation.toc_sort_order = target_toc_order
             updated_count += 1
         else:
-            new_folder = target_folder if target_folder else None
+            # 검열 소설 일괄 저장을 제외한 모든 정상 번역은 무조건 100% 미분류 보관함(folderName=None)으로 적재
+            if is_manual_novel:
+                new_folder = target_folder if target_folder else None
+            else:
+                new_folder = None
             # timestamp 상속: 1순위 휴지통 원본 시각, 2순위 동일 URL 기존 회차 시각, 3순위 신규 회차 시각(item.timestamp)
             inherited_ts = trash_ts_map.get(key) or url_to_base_timestamp.get(item.url)
             final_ts = inherited_ts if inherited_ts else item.timestamp
@@ -379,8 +384,8 @@ def upsert_translations(items: List[TranslationItem], db: Session = Depends(get_
             update_data[Translation.title] = url_to_title[u]
         if u in url_to_toc_order and url_to_toc_order[u] is not None:
             update_data[Translation.toc_sort_order] = url_to_toc_order[u]
-        if u in url_to_folder and url_to_folder[u]:
-            # 동일 URL 내에 아직 폴더명이 비어있거나 '미분류'인 레코드가 있다면 이번에 결정된 유효 소설 폴더명으로 일괄 동기화
+        if u in url_to_folder and url_to_folder[u] and (url_to_folder[u] in manual_folders):
+            # 오직 검열 소설일 때만 동일 URL 미분류 레코드를 유효 소설 폴더명으로 일괄 동기화 (일반 소설은 미분류 100% 보존)
             db.query(Translation).filter(
                 Translation.url == u,
                 (Translation.folderName.is_(None) | (Translation.folderName == '') | (Translation.folderName == 'Unknown') | (Translation.folderName == '미분류'))
