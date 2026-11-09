@@ -290,6 +290,8 @@ def get_unclassified_novels():
         """, (data["url_pattern"],))
         matched_row = cursor.fetchone()
         matched_folder = matched_row["folderName"] if matched_row else None
+        if title in ("ログイン", "エラー", "Error", "제목 미상 소설") and matched_folder:
+            title = matched_folder
 
         # Fetch custom_folder_name if preset
         cursor.execute("SELECT custom_folder_name FROM novel_works WHERE work_id = ?", (wid,))

@@ -640,6 +640,8 @@ function renderUnclassifiedNovelList() {
     const novels = (unclassifiedData?.novels || []).filter(n => {
         if (!searchVal) return true;
         return (n.novel_title && n.novel_title.toLowerCase().includes(searchVal)) ||
+               (n.matched_existing_folder && n.matched_existing_folder.toLowerCase().includes(searchVal)) ||
+               (n.custom_folder_name && n.custom_folder_name.toLowerCase().includes(searchVal)) ||
                (n.platform && n.platform.toLowerCase().includes(searchVal)) ||
                (n.work_url && n.work_url.toLowerCase().includes(searchVal));
     });
@@ -683,7 +685,8 @@ function renderUnclassifiedNovelList() {
         ` : '';
 
         const hasPreset = Boolean(novel.custom_folder_name);
-        const displayTitle = hasPreset ? novel.custom_folder_name : novel.novel_title;
+        const rawTitle = (novel.novel_title && novel.novel_title !== 'ログイン') ? novel.novel_title : (novel.matched_existing_folder || novel.novel_title || '제목 미상 소설');
+        const displayTitle = hasPreset ? novel.custom_folder_name : rawTitle;
         const subTitleHtml = hasPreset ? `
             <div class="card-sub-title" title="원제: ${escapeHtml(novel.novel_title)}">
                 원제: ${escapeHtml(novel.novel_title)}

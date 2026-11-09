@@ -2816,14 +2816,13 @@
     const url = getCleanUrl();
     const scraper = getScraper();
     const title = scraper.extractEpisodeTitle() || document.title;
-    const novelFolder = state.currentNovelTitle && state.currentNovelTitle !== "\uAE30\uBCF8 \uC18C\uC124" ? state.currentNovelTitle : null;
     const record = {
       url,
       pid,
       original: originalText,
       translated: newTranslatedText,
       timestamp: Math.floor(Date.now() / 1e3),
-      folderName: novelFolder,
+      folderName: null,
       title
     };
     if (!newTranslatedText || !newTranslatedText.trim()) {
@@ -5208,14 +5207,13 @@
     const url = getCleanUrl();
     const scraper = getScraper();
     const title = scraper.extractEpisodeTitle() || document.title;
-    const novelFolder = state.currentNovelTitle && state.currentNovelTitle !== "\uAE30\uBCF8 \uC18C\uC124" ? state.currentNovelTitle : null;
     const records = validItems.map((item) => ({
       url,
       pid: item.id || item.pid,
       original: item.original,
       translated: item.translated,
       timestamp: Math.floor(Date.now() / 1e3),
-      folderName: novelFolder,
+      folderName: null,
       title
     }));
     try {
