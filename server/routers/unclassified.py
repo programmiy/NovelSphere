@@ -145,9 +145,10 @@ def fetch_novel_title_from_web(platform: str, work_url: str) -> Optional[str]:
 
         elif platform == "Syosetu":
             title_el = (
+                parser.css_first('.p-novel__title') or
+                parser.css_first('h1.p-novel__title') or
                 parser.css_first('.novel_title') or
                 parser.css_first('p.novel_title') or
-                parser.css_first('.c-announce a') or
                 parser.css_first('a.margin_r20')
             )
             if title_el and title_el.text().strip():

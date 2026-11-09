@@ -10,6 +10,8 @@ import '../models/book.dart';
 import '../models/chapter.dart';
 import '../models/sentence.dart';
 import '../models/glossary_rule.dart';
+import '../models/find_replace_item.dart';
+import 'text_diff_helper.dart';
 import 'preferences_service.dart';
 
 class LocalDbService {
@@ -200,6 +202,17 @@ class LocalDbService {
             created_at INTEGER NOT NULL
           );
         ''');
+      },
+      onOpen: (db) async {
+        try {
+          await db.execute('ALTER TABLE local_glossary ADD COLUMN condition_text TEXT;');
+        } catch (_) {}
+        try {
+          await db.execute('ALTER TABLE local_glossary ADD COLUMN replaced_count INTEGER DEFAULT 0;');
+        } catch (_) {}
+        try {
+          await db.execute('ALTER TABLE local_glossary ADD COLUMN is_favorite INTEGER DEFAULT 0;');
+        } catch (_) {}
       },
     );
   }
@@ -777,7 +790,12 @@ class LocalDbService {
         debugPrint('[LocalDbService] Invalid regex pattern: ${rule.findText} - $e');
         rethrow;
       }
+    } else {
+      regExp = RegExp(RegExp.escape(rule.findText), caseSensitive: rule.caseSensitive);
     }
+
+    final cond = rule.conditionText?.trim();
+    final hasCondition = cond != null && cond.isNotEmpty;
 
     final batch = db.batch();
     bool hasBatchUpdates = false;
@@ -795,17 +813,19 @@ class LocalDbService {
         bool chapterModified = false;
         for (var item in list) {
           final translated = item['translated'] as String? ?? '';
-          String replaced;
-          if (rule.useRegex) {
-            replaced = translated.replaceAll(regExp!, rule.replaceText);
-          } else {
+          if (translated.isEmpty) continue;
+
+          // 원문 조건 필터 검증
+          if (hasCondition) {
+            final original = item['original'] as String? ?? '';
             if (rule.caseSensitive) {
-              replaced = translated.replaceAll(rule.findText, rule.replaceText);
+              if (!original.contains(cond)) continue;
             } else {
-              replaced = translated.replaceAll(RegExp(RegExp.escape(rule.findText), caseSensitive: false), rule.replaceText);
+              if (!original.toLowerCase().contains(cond.toLowerCase())) continue;
             }
           }
 
+          final replaced = translated.replaceAll(regExp, rule.replaceText);
           if (replaced != translated) {
             item['translated'] = replaced;
             chapterModified = true;
@@ -835,10 +855,237 @@ class LocalDbService {
     }
 
     // 룰 저장 & 동기화 큐 등록
-    await db.insert('local_glossary', rule.toMap());
-    await _enqueueChange('glossary_rule', '${rule.findText}->${rule.replaceText}', rule.toMap());
+    final savedRule = GlossaryRule(
+      folderScope: rule.folderScope,
+      findText: rule.findText,
+      replaceText: rule.replaceText,
+      conditionText: rule.conditionText,
+      useRegex: rule.useRegex,
+      caseSensitive: rule.caseSensitive,
+      appliedAt: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+      replacedCount: totalReplacedCount,
+    );
+    await db.insert('local_glossary', savedRule.toMap());
+    await _enqueueChange('glossary_rule', '${rule.findText}->${rule.replaceText}', savedRule.toMap());
 
     return totalReplacedCount;
+  }
+
+  // --- 찾아바꾸기 실시간 미리보기 (Live Preview & Diff Inspector) ---
+  /// DB를 수정하지 않고, 검색 조건에 매칭되는 문단들과 치환 후 Diff 결과를 고속 추출
+  static Future<List<FindReplaceItem>> previewFindReplace({
+    required String findText,
+    required String replaceText,
+    String folderScope = '__all__',
+    String? conditionText,
+    bool useRegex = false,
+    bool caseSensitive = false,
+    int limit = 200,
+  }) async {
+    final find = findText;
+    if (find.isEmpty) return [];
+
+    final db = await database;
+    RegExp regExp;
+    if (useRegex) {
+      try {
+        regExp = RegExp(find, caseSensitive: caseSensitive);
+      } catch (e) {
+        debugPrint('[previewFindReplace] Invalid regex pattern: $find - $e');
+        rethrow;
+      }
+    } else {
+      regExp = RegExp(RegExp.escape(find), caseSensitive: caseSensitive);
+    }
+
+    List<Map<String, dynamic>> targetChapters;
+    if (folderScope == '__all__') {
+      targetChapters = await db.query(
+        'chapters',
+        columns: ['id', 'book_name', 'title', 'compressed_content'],
+        orderBy: 'id DESC',
+      );
+    } else {
+      targetChapters = await db.query(
+        'chapters',
+        columns: ['id', 'book_name', 'title', 'compressed_content'],
+        where: 'book_name = ?',
+        whereArgs: [folderScope],
+        orderBy: 'sort_order ASC, id ASC',
+      );
+    }
+
+    final cond = conditionText?.trim();
+    final hasCondition = cond != null && cond.isNotEmpty;
+    final results = <FindReplaceItem>[];
+
+    for (final chap in targetChapters) {
+      if (results.length >= limit) break;
+
+      final chapId = chap['id'] as int;
+      final bookName = chap['book_name'] as String? ?? '';
+      final chapTitle = chap['title'] as String? ?? '';
+      final compressedBytes = chap['compressed_content'] as Uint8List?;
+      if (compressedBytes == null) continue;
+
+      try {
+        final decompressed = const ZLibDecoder().decodeBytes(compressedBytes);
+        final jsonStr = utf8.decode(decompressed);
+        final List<dynamic> list = jsonDecode(jsonStr);
+
+        for (final item in list) {
+          if (results.length >= limit) break;
+
+          final translated = item['translated'] as String? ?? '';
+          if (translated.isEmpty) continue;
+
+          // 원문 조건 필터링
+          final original = item['original'] as String? ?? '';
+          if (hasCondition) {
+            if (caseSensitive) {
+              if (!original.contains(cond)) continue;
+            } else {
+              if (!original.toLowerCase().contains(cond.toLowerCase())) continue;
+            }
+          }
+
+          // 번역문 매칭 검사
+          if (!regExp.hasMatch(translated)) continue;
+
+          final after = translated.replaceAll(regExp, replaceText);
+          if (after == translated) continue;
+
+          final diff = TextDiffHelper.computeDiff(translated, after);
+          results.add(FindReplaceItem(
+            chapterId: chapId,
+            bookName: bookName,
+            chapterTitle: chapTitle,
+            sentenceId: item['id'] as int? ?? 0,
+            pid: item['pid'] as String? ?? '',
+            original: original,
+            beforeText: translated,
+            afterText: after,
+            diff: diff,
+          ));
+        }
+      } catch (_) {}
+    }
+
+    return results;
+  }
+
+  // --- 선택된 특정 문단들만 정밀 치환 (Selective Replacement) ---
+  static Future<int> applyFindReplaceItems({
+    required List<FindReplaceItem> targetItems,
+    required GlossaryRule rule,
+  }) async {
+    if (targetItems.isEmpty) return 0;
+
+    final db = await database;
+    int totalReplacedCount = 0;
+
+    // chapterId별로 그룹핑
+    final grouped = <int, List<FindReplaceItem>>{};
+    for (final item in targetItems) {
+      grouped.putIfAbsent(item.chapterId, () => []).add(item);
+    }
+
+    final batch = db.batch();
+    bool hasBatchUpdates = false;
+
+    for (final entry in grouped.entries) {
+      final chapId = entry.key;
+      final itemsToReplace = entry.value;
+      final targetPidMap = {for (var it in itemsToReplace) it.pid: it.afterText};
+
+      final chapRows = await db.query(
+        'chapters',
+        columns: ['compressed_content'],
+        where: 'id = ?',
+        whereArgs: [chapId],
+        limit: 1,
+      );
+      if (chapRows.isEmpty) continue;
+
+      final compressedBytes = chapRows.first['compressed_content'] as Uint8List?;
+      if (compressedBytes == null) continue;
+
+      try {
+        final decompressed = const ZLibDecoder().decodeBytes(compressedBytes);
+        final jsonStr = utf8.decode(decompressed);
+        final List<dynamic> list = jsonDecode(jsonStr);
+
+        bool modified = false;
+        for (final item in list) {
+          final pid = item['pid'] as String? ?? '';
+          if (targetPidMap.containsKey(pid)) {
+            item['translated'] = targetPidMap[pid];
+            modified = true;
+            totalReplacedCount++;
+          }
+        }
+
+        if (modified) {
+          final reEncoded = const ZLibEncoder().encode(utf8.encode(jsonEncode(list)));
+          batch.update(
+            'chapters',
+            {'compressed_content': reEncoded},
+            where: 'id = ?',
+            whereArgs: [chapId],
+          );
+          hasBatchUpdates = true;
+        }
+      } catch (_) {}
+    }
+
+    if (hasBatchUpdates) {
+      await batch.commit(noResult: true);
+    }
+
+    // 룰 저장 & 동기화 큐 등록
+    final savedRule = GlossaryRule(
+      folderScope: rule.folderScope,
+      findText: rule.findText,
+      replaceText: rule.replaceText,
+      conditionText: rule.conditionText,
+      useRegex: rule.useRegex,
+      caseSensitive: rule.caseSensitive,
+      appliedAt: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+      replacedCount: totalReplacedCount,
+    );
+    await db.insert('local_glossary', savedRule.toMap());
+    await _enqueueChange('glossary_rule', '${rule.findText}->${rule.replaceText}', savedRule.toMap());
+
+    return totalReplacedCount;
+  }
+
+  // --- 규칙 되돌리기 (Undo / Rollback Engine) ---
+  /// 적용된 규칙의 바꿀 단어 -> 원래 단어로 역치환을 실행하여 롤백
+  static Future<int> rollbackGlossaryRule(GlossaryRule rule) async {
+    final reverseRule = GlossaryRule(
+      folderScope: rule.folderScope,
+      findText: rule.replaceText,
+      replaceText: rule.findText,
+      conditionText: rule.conditionText,
+      useRegex: false,
+      caseSensitive: rule.caseSensitive,
+      appliedAt: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+    );
+
+    final count = await applyGlossaryRule(reverseRule);
+
+    if (rule.id != null) {
+      final db = await database;
+      await db.delete('local_glossary', where: 'id = ?', whereArgs: [rule.id]);
+    }
+
+    return count;
+  }
+
+  // --- 규칙 삭제 (Delete Glossary Rule) ---
+  static Future<void> deleteGlossaryRule(int id) async {
+    final db = await database;
+    await db.delete('local_glossary', where: 'id = ?', whereArgs: [id]);
   }
 
   // --- 동기화 큐 관리 ---
