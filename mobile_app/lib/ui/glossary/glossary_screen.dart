@@ -9,8 +9,6 @@ import '../../services/preferences_service.dart';
 import '../../services/text_diff_helper.dart';
 import '../themes/reader_themes.dart';
 import '../themes/hyper_aesthetic_theme.dart';
-import 'character_fixer_screen.dart';
-import '../ai_review/ai_review_screen.dart';
 
 /// 하이퍼 에스테틱 찾아바꾸기 & 용어 스튜디오 (Hyper-Aesthetic Find & Replace Studio)
 class GlossaryScreen extends StatefulWidget {
@@ -708,11 +706,7 @@ class _GlossaryScreenState extends State<GlossaryScreen> with SingleTickerProvid
           // 하단 플로팅 독 및 실행 바와의 간섭을 완벽 차단하기 위해 140px 여백 확보
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 140),
           children: [
-            // 1. 최상단 전문 스튜디오 퀵 액세스 툴바 (슬림 듀얼 칩)
-            _buildStudioQuickBar(theme),
-            const SizedBox(height: 12),
-
-            // 2. 검색 & 치환 커맨드 패널
+            // 1. 검색 & 치환 커맨드 패널
             _buildCommandCard(theme, primary),
             const SizedBox(height: 14),
 
@@ -729,139 +723,6 @@ class _GlossaryScreenState extends State<GlossaryScreen> with SingleTickerProvid
 
         // 5. 하단 고정 실행 액션 독
         if (_previewResults.isNotEmpty) _buildExecutionBottomBar(theme, primary),
-      ],
-    );
-  }
-
-  /// 상단 슬림 듀얼 퀵 액세스 바 (인명 교정기 & AI 검수 스튜디오)
-  Widget _buildStudioQuickBar(ReaderThemeData theme) {
-    return Row(
-      children: [
-        Expanded(
-          child: InkWell(
-            onTap: () {
-              HapticFeedback.lightImpact();
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const CharacterFixerScreen()),
-              );
-            },
-            borderRadius: BorderRadius.circular(12),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              decoration: BoxDecoration(
-                color: theme.surfaceColor,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: theme.accentColor.withOpacity(0.35)),
-                boxShadow: [
-                  BoxShadow(
-                    color: theme.accentColor.withOpacity(0.05),
-                    blurRadius: 6,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(6),
-                    decoration: BoxDecoration(
-                      color: theme.accentColor.withOpacity(0.15),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Icon(Icons.auto_fix_high_rounded, color: theme.accentColor, size: 16),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          '인명·고유명사 교정기',
-                          style: TextStyle(
-                            color: theme.textColor,
-                            fontSize: 12.5,
-                            fontWeight: FontWeight.bold,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        Text(
-                          '틴더식 스와이프 검수',
-                          style: TextStyle(color: theme.subTextColor, fontSize: 10.5),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Icon(Icons.chevron_right_rounded, color: theme.subTextColor, size: 16),
-                ],
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: InkWell(
-            onTap: () {
-              HapticFeedback.lightImpact();
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const AiReviewScreen()),
-              );
-            },
-            borderRadius: BorderRadius.circular(12),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              decoration: BoxDecoration(
-                color: theme.surfaceColor,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.amber.withOpacity(0.4)),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.amber.withOpacity(0.05),
-                    blurRadius: 6,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(6),
-                    decoration: BoxDecoration(
-                      color: Colors.amber.withOpacity(0.18),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Icon(Icons.swipe_rounded, color: Colors.amber, size: 16),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'AI 번역 검수 스튜디오',
-                          style: TextStyle(
-                            color: theme.textColor,
-                            fontSize: 12.5,
-                            fontWeight: FontWeight.bold,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        Text(
-                          '슬라이드 검수 & Reroll',
-                          style: TextStyle(color: theme.subTextColor, fontSize: 10.5),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Icon(Icons.chevron_right_rounded, color: theme.subTextColor, size: 16),
-                ],
-              ),
-            ),
-          ),
-        ),
       ],
     );
   }

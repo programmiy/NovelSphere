@@ -13,6 +13,7 @@ import '../glossary/glossary_screen.dart';
 import '../glossary/character_fixer_screen.dart';
 import '../ai_review/ai_review_screen.dart';
 import '../settings/settings_screen.dart';
+import '../review/review_center_screen.dart';
 import '../../services/app_update_service.dart';
 import '../../services/notification_service.dart';
 import '../../services/status_dashboard_service.dart';
@@ -369,6 +370,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
     final pages = [
       _buildLibraryView(theme),
       const GlossaryScreen(),
+      const ReviewCenterScreen(),
       SettingsScreen(onThemeChanged: () => setState(() {})),
     ];
 
@@ -390,6 +392,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
     final items = [
       {'icon': Icons.menu_book_rounded, 'label': '서재'},
       {'icon': Icons.find_replace_rounded, 'label': '찾아바꾸기'},
+      {'icon': Icons.fact_check_rounded, 'label': '검수 센터'},
       {'icon': Icons.settings_rounded, 'label': '설정'},
     ];
 
