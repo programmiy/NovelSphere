@@ -638,7 +638,7 @@ class RawCollectorRunner:
                             pid=p_item["pid"],
                             original=p_item["text"],
                             translated="",  # 사용자 지정 빈칸 유지!
-                            timestamp=now,
+                            timestamp=0,  # 검열 소설 원문은 통계(오늘 번역 등)에서 영구 제외
                             folderName=folder_name,
                             title=save_title,
                             toc_sort_order=ep["sort_order"]

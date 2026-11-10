@@ -13,7 +13,7 @@ import zoneinfo
 from typing import Optional, Dict, Any
 from sqlalchemy import text
 from server.database import SessionLocal, engine
-from server.models import ApiCallLog, Base, Translation
+from server.models import ApiCallLog, Base, Translation, ManualTranslationNovel
 
 logger = logging.getLogger(__name__)
 _QUOTA_LOCK = threading.Lock()
@@ -186,16 +186,22 @@ def get_today_api_call_count() -> int:
 
 
 def get_today_translations_count() -> int:
-    """오늘(Gemini API 쿼터 초기화 16시/17시 KST 기준) 새로 번역된 총 문단 수를 반환합니다 (과거 회차의 단순 수정/재검수/복원 문단 제외)."""
+    """오늘(Gemini API 쿼터 초기화 16시/17시 KST 기준) 새로 번역된 총 문단 수를 반환합니다 (과거 회차의 단순 수정/재검수/복원 문단 및 검열 소설 영구 제외)."""
     window_ts = get_current_quota_window_start_ts()
     try:
         with SessionLocal() as db:
-            # 1. 오늘 timestamp를 가진 고유 회차 URL 목록 수집
-            today_urls = db.query(Translation.url).filter(
+            manual_folders = {r[0] for r in db.query(ManualTranslationNovel.folderName).all() if r[0]}
+
+            # 1. 오늘 timestamp를 가진 고유 회차 URL 목록 수집 (검열 소설 및 빈칸 레코드 제외)
+            q = db.query(Translation.url).filter(
                 Translation.timestamp >= window_ts,
-                Translation.url.isnot(None)
-            ).distinct().all()
-            today_urls = [u[0] for u in today_urls if u[0]]
+                Translation.url.isnot(None),
+                Translation.translated.isnot(None),
+                Translation.translated != ""
+            )
+            if manual_folders:
+                q = q.filter((Translation.folderName.is_(None)) | (Translation.folderName.notin_(manual_folders)))
+            today_urls = [u[0] for u in q.distinct().all() if u[0]]
             if not today_urls:
                 return 0
 
@@ -210,10 +216,15 @@ def get_today_translations_count() -> int:
             if not pure_today_urls:
                 return 0
 
-            count = db.query(Translation).filter(
+            count_q = db.query(Translation).filter(
                 Translation.timestamp >= window_ts,
-                Translation.url.in_(pure_today_urls)
-            ).count()
+                Translation.url.in_(pure_today_urls),
+                Translation.translated.isnot(None),
+                Translation.translated != ""
+            )
+            if manual_folders:
+                count_q = count_q.filter((Translation.folderName.is_(None)) | (Translation.folderName.notin_(manual_folders)))
+            count = count_q.count()
             return count or 0
     except Exception as e:
         logger.warning(f"[QuotaTracker] 오늘 번역 문단 수 조회 실패: {e}")
@@ -221,15 +232,21 @@ def get_today_translations_count() -> int:
 
 
 def get_today_episodes_count() -> int:
-    """오늘(Gemini API 쿼터 초기화 16시/17시 KST 기준) 번역된 총 신규 회차(distinct URL) 수를 반환합니다 (과거 회차의 단순 수정/재검수/복원 회차 제외)."""
+    """오늘(Gemini API 쿼터 초기화 16시/17시 KST 기준) 번역된 총 신규 회차(distinct URL) 수를 반환합니다 (과거 회차의 단순 수정/재검수/복원 회차 및 검열 소설 영구 제외)."""
     window_ts = get_current_quota_window_start_ts()
     try:
         with SessionLocal() as db:
-            today_urls = db.query(Translation.url).filter(
+            manual_folders = {r[0] for r in db.query(ManualTranslationNovel.folderName).all() if r[0]}
+
+            q = db.query(Translation.url).filter(
                 Translation.timestamp >= window_ts,
-                Translation.url.isnot(None)
-            ).distinct().all()
-            today_urls = [u[0] for u in today_urls if u[0]]
+                Translation.url.isnot(None),
+                Translation.translated.isnot(None),
+                Translation.translated != ""
+            )
+            if manual_folders:
+                q = q.filter((Translation.folderName.is_(None)) | (Translation.folderName.notin_(manual_folders)))
+            today_urls = [u[0] for u in q.distinct().all() if u[0]]
             if not today_urls:
                 return 0
 
