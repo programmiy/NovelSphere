@@ -1066,7 +1066,7 @@
                     <select id="novelSelect" class="form-select novel-dropdown">
                         {% for f in folders %}
                         <option value="{{ f.folderName }}" {% if f.folderName == current_folder %}selected{% endif %}>
-                            {{ f.folderName }} ({{ f.count }}문단)
+                            {{ f.folderName }} ({% if f.has_rules %}잔여 {{ f.pending_count }}건 · 규칙 {{ f.rules_count }}개 · {% endif %}{{ f.count }}문단)
                         </option>
                         {% endfor %}
                     </select>

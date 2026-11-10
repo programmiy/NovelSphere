@@ -105,5 +105,40 @@ void main() {
       expect(cand.count, 12);
       expect(cand.ratio, 0.85);
     });
+
+    test('Folders response with recommendation parsing test', () {
+      final mockResponse = {
+        'status': 'success',
+        'recommended_folder': '감금왕',
+        'folders': [
+          {
+            'folderName': '감금왕',
+            'count': 53824,
+            'has_rules': true,
+            'rules_count': 5,
+            'pending_count': 264,
+          },
+          {
+            'folderName': '누나가 마 니 선생이라고 느그 좋아하면 안되나?',
+            'count': 10217,
+            'has_rules': true,
+            'rules_count': 4,
+            'pending_count': 1172,
+          }
+        ],
+        'count': 2
+      };
+
+      final recommended = mockResponse['recommended_folder'] as String?;
+      expect(recommended, '감금왕');
+
+      final folders = (mockResponse['folders'] as List<dynamic>)
+          .map((e) => Map<String, dynamic>.from(e as Map))
+          .toList();
+      expect(folders.length, 2);
+      expect(folders.first['folderName'], '감금왕');
+      expect(folders.first['pending_count'], 264);
+      expect(folders[1]['pending_count'], 1172);
+    });
   });
 }

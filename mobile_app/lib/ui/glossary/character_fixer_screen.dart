@@ -100,9 +100,10 @@ class _CharacterFixerScreenState extends State<CharacterFixerScreen> with Single
       _errorMessage = null;
     });
 
-    final folders = await CharacterFixerService.fetchFolders();
+    final res = await CharacterFixerService.fetchFoldersWithRecommendation();
     if (!mounted) return;
 
+    final folders = res.folders;
     if (folders.isEmpty) {
       setState(() {
         _isLoading = false;
@@ -111,7 +112,7 @@ class _CharacterFixerScreenState extends State<CharacterFixerScreen> with Single
       return;
     }
 
-    String initial = widget.initialFolderName ?? folders.first['folderName'] as String;
+    String initial = widget.initialFolderName ?? res.recommendedFolder ?? folders.first['folderName'] as String;
     if (!folders.any((f) => f['folderName'] == initial)) {
       initial = folders.first['folderName'] as String;
     }
@@ -449,10 +450,15 @@ class _CharacterFixerScreenState extends State<CharacterFixerScreen> with Single
                 items: _folders.map((f) {
                   final name = f['folderName'] as String;
                   final count = f['count'] as int? ?? 0;
+                  final pending = f['pending_count'] as int?;
+                  final hasRules = f['has_rules'] as bool? ?? false;
+                  final label = hasRules && pending != null
+                      ? '$name (잔여 $pending건 · $count)'
+                      : '$name ($count)';
                   return DropdownMenuItem<String>(
                     value: name,
                     child: Text(
-                      '$name ($count)',
+                      label,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(color: theme.textColor, fontSize: 13, fontWeight: FontWeight.w600),

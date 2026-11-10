@@ -13,7 +13,13 @@ class CharacterFixerService {
 
   /// 서버의 소설 폴더 목록 및 문단 수 조회
   static Future<List<Map<String, dynamic>>> fetchFolders() async {
-    if (_serverUrl.isEmpty) return [];
+    final res = await fetchFoldersWithRecommendation();
+    return res.folders;
+  }
+
+  /// 서버의 소설 폴더 목록 및 잔여 건수 기준 추천 폴더 조회
+  static Future<({List<Map<String, dynamic>> folders, String? recommendedFolder})> fetchFoldersWithRecommendation() async {
+    if (_serverUrl.isEmpty) return (folders: <Map<String, dynamic>>[], recommendedFolder: null);
     try {
       var uri = Uri.parse('$_serverUrl/api/db_editor/folders');
       var res = await http.get(uri, headers: _headers()).timeout(const Duration(seconds: 8));
@@ -23,17 +29,21 @@ class CharacterFixerService {
       }
       if (res.statusCode == 200) {
         final decoded = json.decode(utf8.decode(res.bodyBytes));
+        String? recommended;
+        List<Map<String, dynamic>> list = [];
         if (decoded is List) {
-          return decoded.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+          list = decoded.map((e) => Map<String, dynamic>.from(e as Map)).toList();
         } else if (decoded is Map) {
+          recommended = decoded['recommended_folder'] as String?;
           final folders = (decoded['folders'] ?? decoded['novels'] ?? []) as List<dynamic>;
-          return folders.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+          list = folders.map((e) => Map<String, dynamic>.from(e as Map)).toList();
         }
+        return (folders: list, recommendedFolder: recommended);
       }
-      return [];
+      return (folders: <Map<String, dynamic>>[], recommendedFolder: null);
     } catch (e) {
       if (kDebugMode) print('[CharacterFixerService] fetchFolders error: $e');
-      return [];
+      return (folders: <Map<String, dynamic>>[], recommendedFolder: null);
     }
   }
 

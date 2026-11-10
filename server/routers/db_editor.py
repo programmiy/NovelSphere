@@ -4,7 +4,7 @@ import re
 import logging
 import ahocorasick
 from datetime import datetime
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Tuple
 from collections import Counter
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -25,6 +25,7 @@ router = APIRouter()
 templates = Jinja2Templates(directory=settings.templates_dir)
 
 RULES_FILE_PATH = os.path.join(settings.data_dir, "character_rules.json")
+RULES_META_FILE_PATH = os.path.join(settings.data_dir, "character_rules_meta.json")
 
 DEFAULT_RULES = {
     "누나가 마 니 선생이라고 느그 좋아하면 안되나?": [
@@ -112,6 +113,34 @@ def save_character_rules(data: Dict[str, List[Dict[str, Any]]]) -> bool:
     except Exception as e:
         logger.error(f"Error saving character rules: {e}")
         return False
+
+
+def load_character_rules_meta() -> Dict[str, Any]:
+    """Load metadata (e.g., last_saved_folder) from character_rules_meta.json."""
+    try:
+        if os.path.exists(RULES_META_FILE_PATH):
+            with open(RULES_META_FILE_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                if isinstance(data, dict):
+                    return data
+    except Exception as e:
+        logger.error(f"Error loading character rules meta: {e}")
+    return {}
+
+
+def set_last_saved_folder(folder_name: str) -> None:
+    """Record last saved novel folder for prioritization."""
+    if not folder_name:
+        return
+    try:
+        meta = load_character_rules_meta()
+        meta["last_saved_folder"] = folder_name
+        meta["updated_at"] = datetime.now().isoformat()
+        os.makedirs(settings.data_dir, exist_ok=True)
+        with open(RULES_META_FILE_PATH, "w", encoding="utf-8") as f:
+            json.dump(meta, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        logger.error(f"Error saving character rules meta: {e}")
 
 
 def create_name_fix_backup(force: bool = False, cooldown_days: float = 3.0, max_backups: int = 3) -> Dict[str, Any]:
@@ -498,6 +527,103 @@ class DiscoverMisreadingsRequest(BaseModel):
     target: Optional[str] = ""
 
 
+def count_novel_pending_issues(db: Session, folder: str, active_rules: List[Dict[str, Any]]) -> int:
+    """Quickly counts genuine missing issues for a novel without generating suggestions."""
+    if not active_rules:
+        return 0
+    conditions = []
+    params: Dict[str, Any] = {"folder": folder}
+    for idx, rule in enumerate(active_rules):
+        src_param = f"src_{idx}"
+        tgt_param = f"tgt_{idx}"
+        s_val = rule.get("source", "")
+        t_val = rule.get("target", "")
+        params[src_param] = f"%{s_val}%"
+        params[tgt_param] = f"%{t_val}%"
+        conditions.append(f"(original LIKE :{src_param} AND (translated IS NULL OR translated NOT LIKE :{tgt_param}))")
+
+    sql = f"""
+        SELECT original, translated
+        FROM translations
+        WHERE folderName = :folder AND ({' OR '.join(conditions)})
+    """
+    rows = db.execute(text(sql), params).fetchall()
+    cnt = 0
+    for orig, trans in rows:
+        orig_str = orig or ""
+        trans_str = trans or ""
+        for rule in active_rules:
+            is_missing, *_ = check_rule_missing_status(orig_str, trans_str, rule)
+            if is_missing:
+                cnt += 1
+                break
+    return cnt
+
+
+def get_novels_with_fix_status(db: Session) -> Tuple[List[Dict[str, Any]], str]:
+    """
+    Retrieves all novel folders and computes character fix rules & pending issue statistics.
+    Sort priority:
+      1. Novels with saved rules and pending issues > 0 (sorted by pending_count ASC: fewer remaining issues first)
+      2. Novels with saved rules and pending issues == 0 (resolved, sorted by rules_count DESC)
+      3. Novels without rules (sorted alphabetically)
+    Returns: (sorted_folders, recommended_folder)
+    """
+    query = text("""
+        SELECT DISTINCT folderName, COUNT(*) as cnt
+        FROM translations
+        WHERE folderName IS NOT NULL AND folderName != ''
+        GROUP BY folderName
+        ORDER BY folderName ASC
+    """)
+    rows = db.execute(query).fetchall()
+    all_rules = load_character_rules()
+    meta = load_character_rules_meta()
+    last_saved = meta.get("last_saved_folder")
+
+    folder_stats = []
+    for r in rows:
+        fname = r[0]
+        cnt = r[1]
+        rules = all_rules.get(fname, [])
+        active_rules = [rl for rl in rules if rl.get("enabled", True)]
+        has_rules = len(rules) > 0
+        rules_count = len(rules)
+
+        pending_cnt = 0
+        if has_rules and active_rules:
+            pending_cnt = count_novel_pending_issues(db, fname, active_rules)
+
+        folder_stats.append({
+            "folderName": fname,
+            "count": cnt,
+            "has_rules": has_rules,
+            "rules_count": rules_count,
+            "pending_count": pending_cnt,
+            "total_sentences": pending_cnt,  # 모바일 통계 호환
+            "is_last_saved": (fname == last_saved)
+        })
+
+    tier1 = [f for f in folder_stats if f["has_rules"] and f["pending_count"] > 0]
+    tier2 = [f for f in folder_stats if f["has_rules"] and f["pending_count"] == 0]
+    tier3 = [f for f in folder_stats if not f["has_rules"]]
+
+    # Tier 1: 잔여 수정 건수가 적게 남아있는 소설 최우선 (pending_count ASC)
+    tier1.sort(key=lambda x: (x["pending_count"], not x["is_last_saved"], x["folderName"]))
+    # Tier 2: 규칙이 등록되었으나 모두 교정 완료된 소설 (규칙 수 많은 순, 최근 저장 순)
+    tier2.sort(key=lambda x: (not x["is_last_saved"], -x["rules_count"], x["folderName"]))
+    # Tier 3: 규칙이 없는 소설 (가나다순)
+    tier3.sort(key=lambda x: x["folderName"])
+
+    sorted_folders = tier1 + tier2 + tier3
+
+    recommended_folder = ""
+    if sorted_folders:
+        recommended_folder = sorted_folders[0]["folderName"]
+
+    return sorted_folders, recommended_folder
+
+
 # --- Endpoints ---
 
 @router.get(
@@ -509,35 +635,22 @@ class DiscoverMisreadingsRequest(BaseModel):
 async def db_editor_page(request: Request, db: Session = Depends(get_db), folderName: Optional[str] = None):
     """
     Renders the Character Fixer & Tinder-Style Review System interface.
+    Prioritizes novels with saved rules and fewer remaining pending issues as default.
     """
-    query = text("""
-        SELECT DISTINCT folderName, COUNT(*) as cnt
-        FROM translations
-        WHERE folderName IS NOT NULL AND folderName != ''
-        GROUP BY folderName
-        ORDER BY folderName ASC
-    """)
-    rows = db.execute(query).fetchall()
-    folders = [{"folderName": r[0], "count": r[1]} for r in rows]
+    folders, recommended_folder = get_novels_with_fix_status(db)
 
-    # Select active novel folder
-    default_target = "누나가 마 니 선생이라고 느그 좋아하면 안되나?"
+    # Select active novel folder (URL parameter > recommended novel > first folder)
     active_folder = folderName
     if not active_folder:
-        folder_names = [f["folderName"] for f in folders]
-        if default_target in folder_names:
-            active_folder = default_target
-        elif folders:
-            active_folder = folders[0]["folderName"]
-        else:
-            active_folder = ""
+        active_folder = recommended_folder
 
     return templates.TemplateResponse(
         request=request,
         name="db_editor.html",
         context={
             "folders": folders,
-            "current_folder": active_folder
+            "current_folder": active_folder,
+            "recommended_folder": recommended_folder
         }
     )
 
@@ -548,16 +661,9 @@ async def db_editor_page(request: Request, db: Session = Depends(get_db), folder
     summary="소설 목록 조회"
 )
 async def get_novels(db: Session = Depends(get_db)):
-    """Returns list of all available novel folders and paragraph counts."""
-    query = text("""
-        SELECT DISTINCT folderName, COUNT(*) as cnt
-        FROM translations
-        WHERE folderName IS NOT NULL AND folderName != ''
-        GROUP BY folderName
-        ORDER BY folderName ASC
-    """)
-    rows = db.execute(query).fetchall()
-    return [{"folderName": r[0], "count": r[1]} for r in rows]
+    """Returns list of all available novel folders and paragraph counts prioritized by fix status."""
+    folders, _ = get_novels_with_fix_status(db)
+    return folders
 
 
 @router.get(
@@ -566,18 +672,11 @@ async def get_novels(db: Session = Depends(get_db)):
     summary="소설 목록 조회 (모바일/웹 공용 폴더 형식)"
 )
 async def get_folders(db: Session = Depends(get_db)):
-    """Returns list of all available novel folders in dictionary format with 'folders' key."""
-    query = text("""
-        SELECT DISTINCT folderName, COUNT(*) as cnt
-        FROM translations
-        WHERE folderName IS NOT NULL AND folderName != ''
-        GROUP BY folderName
-        ORDER BY folderName ASC
-    """)
-    rows = db.execute(query).fetchall()
-    folders = [{"folderName": r[0], "count": r[1]} for r in rows]
+    """Returns list of all available novel folders in dictionary format with 'folders' key and recommendation."""
+    folders, recommended_folder = get_novels_with_fix_status(db)
     return {
         "status": "success",
+        "recommended_folder": recommended_folder,
         "folders": folders,
         "count": len(folders)
     }
@@ -608,6 +707,7 @@ async def save_rules(req: SaveRulesRequest):
     rules_list = [r.model_dump() for r in req.rules]
     all_rules[req.folderName] = rules_list
     if save_character_rules(all_rules):
+        set_last_saved_folder(req.folderName)
         return {"status": "success", "folderName": req.folderName, "rules": rules_list}
     raise HTTPException(status_code=500, detail="규칙 파일 저장에 실패했습니다.")
 

@@ -99,8 +99,29 @@ def test_get_folders():
     assert res.status_code == 200
     data = res.json()
     assert "folders" in data
+    assert "recommended_folder" in data
     assert len(data["folders"]) >= 1
     assert any(n["folderName"] == "누나가 마 니 선생이라고 느그 좋아하면 안되나?" for n in data["folders"])
+
+
+def test_novel_recommendation_least_pending_priority():
+    """규칙이 저장되어 있고 수정할 게 적게 남아있는 소설이 최우선 추천되는지 검증."""
+    res = client.get("/api/db_editor/folders")
+    assert res.status_code == 200
+    data = res.json()
+    recommended = data.get("recommended_folder")
+    assert recommended is not None and recommended != ""
+
+    folders = data.get("folders", [])
+    assert len(folders) >= 1
+    # 추천 소설은 정렬된 폴더 목록의 첫 번째 항목
+    assert folders[0]["folderName"] == recommended
+
+    # 규칙이 있고 pending_count > 0 인 소설들이 pending_count 오름차순으로 상위 정렬되었는지 검증
+    pending_rules_folders = [f for f in folders if f.get("has_rules") and f.get("pending_count", 0) > 0]
+    if len(pending_rules_folders) >= 2:
+        for i in range(len(pending_rules_folders) - 1):
+            assert pending_rules_folders[i]["pending_count"] <= pending_rules_folders[i + 1]["pending_count"]
 
 
 def test_get_and_save_rules():
