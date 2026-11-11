@@ -63,6 +63,7 @@ from server.services.translation_recovery import (
     _translate_sub_batch_with_safety_split,
     handle_verbatim_cleanup_items,
 )
+from server.services.hdtrans_service import is_hdtrans_available, translate_paragraphs
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -372,11 +373,23 @@ def translate_texts(req: TranslateRequest, db: Session = Depends(get_db)):
                 # Fast-Fail on single item
                 single_item = items_to_translate[0]
                 logger.warning(
-                    f"[검열 Fast-Fail] 단일 문장(ID: {single_item.id})에서 검열 발생 ({block_reason}). "
-                    f"해당 문장을 '[검열로 인해 번역 생략]' 처리합니다."
+                    f"[검열 Fast-Fail] 단일 문장(ID: {single_item.id})에서 검열 발생 ({block_reason})."
                 )
-                translated_map = {str(single_item.id): "[검열로 인해 번역 생략]"}
-                censored_ids = {str(single_item.id)}
+                if is_hdtrans_available():
+                    logger.warning(
+                        f"[hdTrans 대체 번역] 검열 발생한 단일 문장(ID: {single_item.id})을 hdTrans 엔진으로 대체 번역합니다."
+                    )
+                    try:
+                        hd_texts = translate_paragraphs([single_item.text])
+                        translated_map = {str(single_item.id): hd_texts[0]}
+                        censored_ids = set()
+                    except Exception as e:
+                        logger.error(f"[hdTrans 대체 번역 실패] {e}. 기존 생략 처리로 폴백합니다.")
+                        translated_map = {str(single_item.id): "[검열로 인해 번역 생략]"}
+                        censored_ids = {str(single_item.id)}
+                else:
+                    translated_map = {str(single_item.id): "[검열로 인해 번역 생략]"}
+                    censored_ids = {str(single_item.id)}
 
             # Prepare the results
             translated_results = {}

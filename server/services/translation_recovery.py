@@ -31,6 +31,7 @@ from server.services.translation_engine import (
     is_safety_blocked,
     TranslationItemInput,
 )
+from server.services.hdtrans_service import is_hdtrans_available, translate_paragraphs
 
 logger = logging.getLogger(__name__)
 
@@ -347,6 +348,57 @@ def _recover_verbatim_items(
     return [v for v in verbatim_detected_items if str(v["id"]) not in recovered_ids]
 
 
+def _fallback_hdtrans_or_split(
+    items: List[TranslationItemInput],
+    reason: str,
+    depth: int,
+    api_url: str,
+    wait_time_on_block: int
+) -> Tuple[Dict[str, str], Set[str]]:
+    """
+    검열 발생 시 hdTrans(오프라인 번역 엔진)를 우선 사용하여 대체 번역을 수행하고,
+    사용 불가능할 경우 기존 재귀 2분할 또는 Fast-Fail 로직으로 폴백합니다.
+    """
+    if is_hdtrans_available():
+        logger.warning(
+            f"[검열 대체 번역 - hdTrans] 분할 {depth}단계에서 검열 감지 ({reason}). "
+            f"{len(items)}개 문장을 hdTrans 오프라인 엔진으로 즉시 번역합니다."
+        )
+        try:
+            texts = [it.text for it in items]
+            hd_results = translate_paragraphs(texts)
+            translated_map = {str(it.id): trans for it, trans in zip(items, hd_results)}
+            return translated_map, set()
+        except Exception as e:
+            logger.error(f"[hdTrans 대체 번역 실패] {e}. 기존 분할/폴백 로직으로 진행합니다.")
+
+    if len(items) > 1:
+        logger.warning(
+            f"[검열 분할 {depth}단계] {len(items)}개 문장 그룹에서 검열 발생 ({reason}). "
+            f"{wait_time_on_block}초 대기 후 추가 2분할을 시도합니다."
+        )
+        time.sleep(wait_time_on_block)
+        mid = len(items) // 2
+        first_half = items[:mid]
+        second_half = items[mid:]
+
+        res1, cens1 = _translate_sub_batch_with_safety_split(first_half, api_url, wait_time_on_block, depth + 1)
+        time.sleep(1.0)
+        res2, cens2 = _translate_sub_batch_with_safety_split(second_half, api_url, wait_time_on_block, depth + 1)
+
+        combined_map = {**res1, **res2}
+        combined_cens = cens1.union(cens2)
+        return combined_map, combined_cens
+    else:
+        # Single item blocked -> Fast-Fail
+        single_item = items[0]
+        logger.warning(
+            f"[검열 Fast-Fail] 단일 문장(ID: {single_item.id})에서 검열 발생 ({reason}). "
+            f"해당 문장을 '[검열로 인해 번역 생략]' 처리하고 다음 문장으로 진행합니다."
+        )
+        return {str(single_item.id): "[검열로 인해 번역 생략]"}, {str(single_item.id)}
+
+
 def _translate_sub_batch_with_safety_split(
     items: List[TranslationItemInput],
     api_url: str,
@@ -355,8 +407,8 @@ def _translate_sub_batch_with_safety_split(
 ) -> Tuple[Dict[str, str], Set[str]]:
     """
     검열 발생 또는 파싱 실패 시 재귀적 2분할 번역을 수행합니다.
-    - len(items) > 1: 분할하여 안전한 문장들 번역 계속 진행
-    - len(items) == 1: Fast-Fail 적용 (해당 문장 '[검열로 인해 번역 생략]' 처리 후 다음으로 진행)
+    - len(items) > 1: 분할하여 안전한 문장들 번역 계속 진행 (검열 감지 시 hdTrans 우선 대체 번역)
+    - len(items) == 1: Fast-Fail 적용 (hdTrans 우선 대체 번역, 실패 시 '[검열로 인해 번역 생략]' 처리 후 다음으로 진행)
     반환값: (translated_map: dict, censored_ids: set)
     """
     if not items:
@@ -388,31 +440,7 @@ def _translate_sub_batch_with_safety_split(
 
     blocked, reason = is_safety_blocked(sub_data)
     if blocked:
-        if len(items) > 1:
-            logger.warning(
-                f"[검열 분할 {depth}단계] {len(items)}개 문장 그룹에서 검열 발생 ({reason}). "
-                f"{wait_time_on_block}초 대기 후 추가 2분할을 시도합니다."
-            )
-            time.sleep(wait_time_on_block)
-            mid = len(items) // 2
-            first_half = items[:mid]
-            second_half = items[mid:]
-
-            res1, cens1 = _translate_sub_batch_with_safety_split(first_half, api_url, wait_time_on_block, depth + 1)
-            time.sleep(1.0)
-            res2, cens2 = _translate_sub_batch_with_safety_split(second_half, api_url, wait_time_on_block, depth + 1)
-
-            combined_map = {**res1, **res2}
-            combined_cens = cens1.union(cens2)
-            return combined_map, combined_cens
-        else:
-            # Single item blocked -> Fast-Fail
-            single_item = items[0]
-            logger.warning(
-                f"[검열 Fast-Fail] 단일 문장(ID: {single_item.id})에서 검열 발생 ({reason}). "
-                f"해당 문장을 '[검열로 인해 번역 생략]' 처리하고 다음 문장으로 진행합니다."
-            )
-            return {str(single_item.id): "[검열로 인해 번역 생략]"}, {str(single_item.id)}
+        return _fallback_hdtrans_or_split(items, reason, depth, api_url, wait_time_on_block)
 
     # Parse response
     if not sub_data.get('candidates') or not sub_data['candidates']:
@@ -430,24 +458,7 @@ def _translate_sub_batch_with_safety_split(
     finish_reason = candidate.get('finishReason')
     if finish_reason and finish_reason != 'STOP':
         if finish_reason in ('SAFETY', 'BLOCKLIST', 'PROHIBITED_CONTENT'):
-            if len(items) > 1:
-                logger.warning(
-                    f"[검열 분할 {depth}단계] 응답 후보에서 검열 발생 ({finish_reason}). "
-                    f"{wait_time_on_block}초 대기 후 추가 2분할을 시도합니다."
-                )
-                time.sleep(wait_time_on_block)
-                mid = len(items) // 2
-                res1, cens1 = _translate_sub_batch_with_safety_split(items[:mid], api_url, wait_time_on_block, depth + 1)
-                time.sleep(1.0)
-                res2, cens2 = _translate_sub_batch_with_safety_split(items[mid:], api_url, wait_time_on_block, depth + 1)
-                return {**res1, **res2}, cens1.union(cens2)
-            else:
-                single_item = items[0]
-                logger.warning(
-                    f"[검열 Fast-Fail] 단일 문장(ID: {single_item.id})에서 응답 검열 발생 ({finish_reason}). "
-                    f"해당 문장을 '[검열로 인해 번역 생략]' 처리합니다."
-                )
-                return {str(single_item.id): "[검열로 인해 번역 생략]"}, {str(single_item.id)}
+            return _fallback_hdtrans_or_split(items, finish_reason, depth, api_url, wait_time_on_block)
         if len(items) > 1:
             mid = len(items) // 2
             res1, cens1 = _translate_sub_batch_with_safety_split(items[:mid], api_url, wait_time_on_block, depth + 1)
