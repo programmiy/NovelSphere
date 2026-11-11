@@ -428,18 +428,20 @@ def pull_changes_from_pc(since: int = 0, last_id: int = 0, limit: int = 10000):
     conn = get_sqlite_conn(as_dict=True)
     cursor = conn.cursor()
 
-    # 1. since/last_id 이후 신규/수정된 번역문 (Keyset Pagination)
+    # 1. since/last_id 이후 신규/수정된 번역문 (updated_at 기반 Keyset Pagination)
+    # 오늘 번역 통계(timestamp)를 훼손하지 않으면서도 폴더 저장, 오타 수정, 목차 순서 변경이 100% 감지됩니다.
     cursor.execute("""
-        SELECT id, url, pid, original, translated, timestamp, folderName, title, toc_sort_order
+        SELECT id, url, pid, original, translated, timestamp, updated_at, folderName, title, toc_sort_order,
+               COALESCE(updated_at, timestamp) as sync_ts
         FROM translations
-        WHERE (timestamp > ?) OR (timestamp = ? AND id > ?)
-        ORDER BY timestamp ASC, id ASC
+        WHERE (COALESCE(updated_at, timestamp) > ?) OR (COALESCE(updated_at, timestamp) = ? AND id > ?)
+        ORDER BY sync_ts ASC, id ASC
         LIMIT ?
     """, (since, since, last_id, limit))
     new_translations = cursor.fetchall()
 
     has_more = len(new_translations) >= limit
-    next_since = new_translations[-1]['timestamp'] if new_translations else since
+    next_since = new_translations[-1]['sync_ts'] if new_translations else since
     next_last_id = new_translations[-1]['id'] if new_translations else last_id
 
     # 총 대기 중인 번역문 수 추정 (최초 배치 시 진행률 안내용)
@@ -449,7 +451,7 @@ def pull_changes_from_pc(since: int = 0, last_id: int = 0, limit: int = 10000):
             cursor.execute("""
                 SELECT COUNT(*) as cnt
                 FROM translations
-                WHERE (timestamp > ?) OR (timestamp = ? AND id > ?)
+                WHERE (COALESCE(updated_at, timestamp) > ?) OR (COALESCE(updated_at, timestamp) = ? AND id > ?)
             """, (since, since, last_id))
             row = cursor.fetchone()
             if row:
@@ -521,6 +523,29 @@ def pull_changes_from_pc(since: int = 0, last_id: int = 0, limit: int = 10000):
         for row in cursor.fetchall():
             book_tags[row['book_folderName']].append(row['name'])
 
+    # 4. 삭제 장부 (Tombstone) 조회: PC에서 삭제된 소설/회차를 모바일에 전달하여 로컬에서도 제거
+    deletions = []
+    if last_id == 0:
+        try:
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS deleted_records (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    entity_type TEXT NOT NULL,
+                    entity_id TEXT NOT NULL,
+                    parent_scope TEXT,
+                    deleted_at INTEGER NOT NULL
+                )
+            """)
+            cursor.execute("""
+                SELECT entity_type, entity_id, parent_scope, deleted_at
+                FROM deleted_records
+                WHERE deleted_at > ?
+                ORDER BY deleted_at ASC
+            """, (since,))
+            deletions = cursor.fetchall()
+        except Exception as de:
+            logger.warning(f"Error fetching deleted_records for sync: {de}")
+
     conn.close()
 
     payload = {
@@ -533,6 +558,7 @@ def pull_changes_from_pc(since: int = 0, last_id: int = 0, limit: int = 10000):
         "translations_count": len(new_translations),
         "translations": new_translations,
         "updated_chapters": updated_chapters,
+        "deletions": deletions,
         "activities": activities,
         "pinned_books": pinned,
         "book_tags": dict(book_tags)

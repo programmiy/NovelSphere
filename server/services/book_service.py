@@ -74,18 +74,19 @@ def update_book_toc_order(folder_name: str, urls: List[Dict[str, str]]) -> int:
         else:
             cursor.execute("UPDATE translations SET toc_sort_order = NULL WHERE folderName = ?", (folder_name,))
 
+        now_ts = int(time.time())
         for i, item in enumerate(urls):
             normalized_url = item["url"].rstrip('/')
             
             if folder_name == "미분류":
                 cursor.execute(
-                    "UPDATE translations SET toc_sort_order = ?, title = ? WHERE folderName IS NULL AND (RTRIM(url, '/') = ? OR url = ?)",
-                    (i, item["title"], normalized_url, item["url"])
+                    "UPDATE translations SET toc_sort_order = ?, title = ?, updated_at = ? WHERE folderName IS NULL AND (RTRIM(url, '/') = ? OR url = ?)",
+                    (i, item["title"], now_ts, normalized_url, item["url"])
                 )
             else:
                 cursor.execute(
-                    "UPDATE translations SET toc_sort_order = ?, title = ? WHERE folderName = ? AND (RTRIM(url, '/') = ? OR url = ?)",
-                    (i, item["title"], folder_name, normalized_url, item["url"])
+                    "UPDATE translations SET toc_sort_order = ?, title = ?, updated_at = ? WHERE folderName = ? AND (RTRIM(url, '/') = ? OR url = ?)",
+                    (i, item["title"], now_ts, folder_name, normalized_url, item["url"])
                 )
             if cursor.rowcount > 0:
                 updated_count += 1

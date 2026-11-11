@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:archive/archive.dart';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:network_info_plus/network_info_plus.dart';
 
@@ -34,12 +35,31 @@ class SyncResult {
 class SyncService {
   static final NetworkInfo _networkInfo = NetworkInfo();
 
+  /// 모바일에서 수정된 미전송 변경사항(독서 잔디, 찾아바꾸기, 오프라인 번역) 대기 건수
+  static final ValueNotifier<int> unpushedCountNotifier = ValueNotifier<int>(0);
+
+  /// 백그라운드 무음 다운로드 완료 시 서재 화면 실시간 자동 갱신용 노티파이어
+  static final ValueNotifier<int> libraryRefreshNotifier = ValueNotifier<int>(0);
+
+  /// 현재 동기화 진행 중 플래그 (중복 실행 방지)
+  static final ValueNotifier<bool> isSyncingNotifier = ValueNotifier<bool>(false);
+
+  /// [Active Reading Guard] 현재 뷰어에서 열람 중인 챕터 URL (독서 중 화면 튐 방어)
+  static String? activeReadingUrl;
+
+  /// 미업로드 큐 건수 갱신
+  static Future<void> refreshUnpushedCount() async {
+    try {
+      final cnt = await LocalDbService.getPendingChangeCount();
+      unpushedCountNotifier.value = cnt;
+    } catch (_) {}
+  }
+
   /// 현재 연결된 Wi-Fi가 사용자가 지정한 2개의 신뢰 Wi-Fi 중 하나인지 확인
   static Future<bool> isConnectedToTrustedWifi() async {
     final wifi1 = PreferencesService.trustedWifi1.trim();
     final wifi2 = PreferencesService.trustedWifi2.trim();
 
-    // 사용자가 등록한 신뢰 Wi-Fi가 없는 경우(미설정 시 기본 허용 또는 경고)
     if (wifi1.isEmpty && wifi2.isEmpty) {
       return true;
     }
@@ -47,7 +67,6 @@ class SyncService {
     try {
       String? currentSsid = await _networkInfo.getWifiName();
       if (currentSsid != null && currentSsid.isNotEmpty && !currentSsid.contains('unknown')) {
-        // 따옴표 제거 (Android/iOS에서 "SSID" 형태로 오는 경우 처리)
         currentSsid = currentSsid.replaceAll('"', '').trim();
 
         if (wifi1.isNotEmpty && currentSsid.toLowerCase() == wifi1.toLowerCase()) {
@@ -57,14 +76,12 @@ class SyncService {
           return true;
         }
       }
-      // Android 위치 권한 미허용 등으로 SSID가 unknown인 경우, PC 서버와 직접 핑 가능 여부로 로컬 Wi-Fi 판별
       return await pingServer();
     } catch (e) {
       return await pingServer();
     }
   }
 
-  /// PC 서버와의 연결 상태 확인 (Ping)
   /// PC 서버와의 연결 상태 확인 및 서버 정보(총 번역 문단 수 등) 반환
   static Future<Map<String, dynamic>?> checkServerStatus([String? customUrl]) async {
     final raw = customUrl ?? PreferencesService.serverUrl;
@@ -91,7 +108,7 @@ class SyncService {
   }
 
   /// [최초 1회 전체 동기화] PC 서버에서 최적화 모바일 DB 시드를 다운받아 로컬 DB로 구축하고,
-  /// 다운로드 확인 즉시 PC 서버의 임시 파일을 삭제 요청합니다. (사용자 코멘트 반영)
+  /// 다운로드 확인 즉시 PC 서버의 임시 파일을 삭제 요청합니다.
   static Future<SyncResult> downloadFullSeed({Function(double)? onProgress, bool ignoreWifiCheck = true}) async {
     if (!ignoreWifiCheck) {
       final isWifiAllowed = await isConnectedToTrustedWifi();
@@ -114,11 +131,11 @@ class SyncService {
     final serverTransCount = (serverStatus['total_translations'] as num?)?.toInt() ?? 0;
     final mobileTransCount = await LocalDbService.getTotalSentenceCount();
 
-    // 🚨 [데이터 무결성 방어] 서버의 DB가 폰의 DB보다 문단수가 적을 경우 전체 시드 다운로드 차단
-    if (mobileTransCount > 0 && serverTransCount < mobileTransCount) {
+    // 🚨 [데이터 무결성 방어] 서버의 DB가 폰의 DB보다 비정상적으로 급감한 경우에만 차단
+    if (mobileTransCount > 1000 && serverTransCount < (mobileTransCount * 0.5)) {
       return SyncResult(
         success: false,
-        message: '동기화 차단: PC 서버 문단 수($serverTransCount)가 모바일($mobileTransCount)보다 적습니다. 데이터 유실 방지를 위해 동기화가 중단되었습니다.',
+        message: '동기화 차단: PC 서버 문단 수($serverTransCount)가 모바일($mobileTransCount)의 절반 이하로 급감하여 데이터 유실 방지를 위해 중단되었습니다.',
       );
     }
 
@@ -127,7 +144,7 @@ class SyncService {
 
     try {
       final request = http.Request('GET', uri)..headers.addAll(PreferencesService.authHeaders);
-      final response = await http.Client().send(request).timeout(const Duration(seconds: 60));
+      final response = await http.Client().send(request).timeout(const Duration(seconds: 90));
 
       if (response.statusCode != 200) {
         return SyncResult(success: false, message: '서버 시드 다운로드 실패 (HTTP ${response.statusCode})');
@@ -146,45 +163,61 @@ class SyncService {
         }
       }
 
-      // Gzip 압축 해제
       final decompressed = GZipDecoder().decodeBytes(bytes);
 
-      // 로컬 DB 파일 덮어쓰기 (P0 안전 원자적 시드 교체 엔진 활용)
       final localDbPath = await LocalDbService.getDbPath();
       final tempFile = File('$localDbPath.download.tmp');
       await tempFile.writeAsBytes(decompressed, flush: true);
 
-      // 기존 데이터 백업, 핸들 초기화, WAL 정리 및 무결성 복원
       await LocalDbService.replaceSeedDatabase(tempFile);
 
-      // 동기화 시간 저장
       final nowTs = DateTime.now().millisecondsSinceEpoch ~/ 1000;
       await PreferencesService.setLastSyncedTimestamp(nowTs);
 
-      // [핵심] 전송 확인 후 PC 서버 임시 파일 즉시 삭제 요청 (사용자 코멘트 반영)
       if (packId.isNotEmpty) {
         try {
           await http.delete(Uri.parse('$serverUrl/api/sync/full-pack/$packId'), headers: PreferencesService.authHeaders);
         } catch (_) {}
       }
 
+      libraryRefreshNotifier.value++;
+      await refreshUnpushedCount();
+
       return SyncResult(
         success: true,
-        message: '전체 소설 서재 동기화 완료! (23만 문장 로컬 저장소 구축)',
+        message: '전체 소설 서재 동기화 완료! (로컬 저장소 재구축 완료)',
       );
     } catch (e) {
       return SyncResult(success: false, message: '동기화 중 오류 발생: $e');
     }
   }
 
-  /// [양방향 증분 동기화]
-  /// 1. 앱에서 편집한 번역문, 독서 진도, 찾아바꾸기 룰을 압축하여 PC로 업로드 (Push)
-  /// 2. PC에서 추가/수정된 데이터를 10,000건 단위 청크로 분할 다운로드하여 로컬에 반영 (Pull)
-  /// 3. 대량 데이터도 타임아웃과 OOM 없이 안전하게 수신하고 최종 누적 문장 수를 산출합니다.
-  static Future<SyncResult> performIncrementalSync({
+  /// [스냅샷 기반 무음 자동 다운로드 트리거]
+  /// PC 서버에서 스마트 백업 완료(SSE 'backup_sync_ready') 신호를 보냈을 때 무음 다운로드 수행
+  static Future<void> triggerSilentDownloadIfAllowed() async {
+    if (isSyncingNotifier.value) return;
+
+    final isWifi = await isConnectedToTrustedWifi();
+    if (!isWifi) return;
+
+    debugPrint('[SyncService] 안전 백업 신호 수신 -> 무음 백그라운드 다운로드 가동');
+    await performIncrementalDownload(silent: true, ignoreWifiCheck: true);
+  }
+
+  /// [PC -> 모바일 다운로드(Pull) 전용 파이프라인]
+  /// 1. updated_at 기반 증분 번역 및 회차 패키지 수신
+  /// 2. URL 기준 구 챕터 삭제로 폴더 이동/귀속 시 중복 원천 차단
+  /// 3. PC 삭제 장부(Tombstone) 반영으로 소설/회차 자동 정리
+  /// 4. 뷰어 열람 중인 챕터 튕김 방어(Active Reading Guard)
+  static Future<SyncResult> performIncrementalDownload({
     bool ignoreWifiCheck = false,
+    bool silent = false,
     Function(String statusMessage, int currentCount, int? totalEstimate)? onProgress,
   }) async {
+    if (isSyncingNotifier.value) {
+      return SyncResult(success: false, message: '이미 다른 동기화 작업이 진행 중입니다.');
+    }
+
     if (!ignoreWifiCheck) {
       final isWifiAllowed = await isConnectedToTrustedWifi();
       if (!isWifiAllowed) {
@@ -195,116 +228,29 @@ class SyncService {
       }
     }
 
-    final serverStatus = await checkServerStatus();
-    if (serverStatus == null) {
-      return SyncResult(
-        success: false,
-        message: 'PC 서버에 연결할 수 없습니다. PC 서버가 켜져 있는지 확인하세요.',
-      );
-    }
-
-    final serverTransCount = (serverStatus['total_translations'] as num?)?.toInt() ?? 0;
-    final mobileTransCount = await LocalDbService.getTotalSentenceCount();
-
-    // 🚨 [데이터 무결성 방어] 서버의 DB가 폰의 DB보다 문단수가 적을 경우 증분 동기화 차단
-    if (mobileTransCount > 0 && serverTransCount < mobileTransCount) {
-      return SyncResult(
-        success: false,
-        message: '동기화 차단: PC 서버 문단 수($serverTransCount)가 모바일($mobileTransCount)보다 적습니다. 데이터 유실 방지를 위해 동기화가 중단되었습니다.',
-      );
-    }
-
-    final serverUrl = PreferencesService.normalizeServerUrl(PreferencesService.serverUrl);
+    isSyncingNotifier.value = true;
 
     try {
-      // --- Step 1: Push (모바일 -> PC) ---
-      final pendingChanges = await LocalDbService.getPendingChanges();
-      int pushedTransCount = 0;
-      int pushedActCount = 0;
-
-      if (pendingChanges.isNotEmpty) {
-        if (onProgress != null) {
-          onProgress('모바일 변경사항 PC 서버로 업로드 중...', 0, null);
-        }
-        List<Map<String, dynamic>> modifiedTrans = [];
-        List<Map<String, dynamic>> activities = [];
-        List<Map<String, dynamic>> glossaryRules = [];
-        List<int> processedQueueIds = [];
-
-        bool hasPinChange = false;
-        for (var change in pendingChanges) {
-          final qId = change['id'] as int;
-          final type = change['change_type'] as String;
-          final payload = jsonDecode(change['payload_json'] as String);
-
-          if (type == 'translation_edit') {
-            modifiedTrans.add(payload);
-          } else if (type == 'activity') {
-            activities.add(payload);
-          } else if (type == 'glossary_rule') {
-            glossaryRules.add(payload);
-          } else if (type == 'pin') {
-            hasPinChange = true;
-          }
-          processedQueueIds.add(qId);
-        }
-
-        // 고정핀 목록 및 최근 독서 잔디 수집
-        final db = await LocalDbService.database;
-        List<String>? pinnedPayload;
-        if (hasPinChange) {
-          final pRows = await db.query('books', columns: ['folder_name'], where: 'is_pinned = 1');
-          pinnedPayload = pRows.map((r) => r['folder_name'] as String).toList();
-        }
-
-        // 최근 3일간 독서 기록 동기화
-        List<Map<String, dynamic>> readingLogsPayload = [];
-        try {
-          final rLogs = await db.query('reading_logs', orderBy: 'id DESC', limit: 50);
-          for (var r in rLogs) {
-            readingLogsPayload.add({
-              'date': r['date'],
-              'read_seconds': r['read_seconds'],
-              'pages_count': r['pages_count'],
-              'book_title': r['book_title'],
-              'chapter_title': r['chapter_title'],
-            });
-          }
-        } catch (_) {}
-
-        final pushPayload = {
-          'push_timestamp': DateTime.now().millisecondsSinceEpoch ~/ 1000,
-          'modified_translations': modifiedTrans,
-          'activities': activities,
-          'reading_logs': readingLogsPayload,
-          'pinned_books': pinnedPayload,
-          'glossary_rules': glossaryRules,
-        };
-
-        // Gzip 압축 후 전송
-        final rawBytes = utf8.encode(jsonEncode(pushPayload));
-        final compressedBytes = GZipEncoder().encode(rawBytes);
-
-        final pushRes = await http.post(
-          Uri.parse('$serverUrl/api/sync/push'),
-          headers: {
-            'Content-Type': 'application/json',
-            'Content-Encoding': 'gzip',
-            ...PreferencesService.authHeaders,
-          },
-          body: compressedBytes,
-        ).timeout(const Duration(seconds: 15));
-
-        if (pushRes.statusCode == 200) {
-          final pushData = jsonDecode(pushRes.body);
-          pushedTransCount = pushData['updated_translations'] ?? 0;
-          pushedActCount = pushData['updated_activities'] ?? 0;
-          // 성공한 큐 항목 비우기
-          await LocalDbService.clearPendingChanges(processedQueueIds);
-        }
+      final serverStatus = await checkServerStatus();
+      if (serverStatus == null) {
+        return SyncResult(
+          success: false,
+          message: 'PC 서버에 연결할 수 없습니다. PC 서버가 켜져 있는지 확인하세요.',
+        );
       }
 
-      // --- Step 2: Pull (PC -> 모바일 분할 청크 루프) ---
+      final serverTransCount = (serverStatus['total_translations'] as num?)?.toInt() ?? 0;
+      final mobileTransCount = await LocalDbService.getTotalSentenceCount();
+
+      // 🚨 [데이터 무결성 방어] 정상 삭제는 허용하고, 50% 이상 급감한 서버 재난만 차단
+      if (mobileTransCount > 1000 && serverTransCount < (mobileTransCount * 0.5)) {
+        return SyncResult(
+          success: false,
+          message: '동기화 차단: PC 서버 문단 수($serverTransCount)가 모바일($mobileTransCount)의 절반 이하로 급감하여 데이터 유실 방지를 위해 중단되었습니다.',
+        );
+      }
+
+      final serverUrl = PreferencesService.normalizeServerUrl(PreferencesService.serverUrl);
       int totalPulledTransCount = 0;
       int currentSince = PreferencesService.lastSyncedTimestamp;
       int currentLastId = 0;
@@ -321,19 +267,45 @@ class SyncService {
           throw Exception('서버 응답 오류 (HTTP ${pullRes.statusCode})');
         }
 
-        // Gzip 압축 해제
         final decompressed = GZipDecoder().decodeBytes(pullRes.bodyBytes);
         final pullData = jsonDecode(utf8.decode(decompressed));
 
         final newTranslations = pullData['translations'] as List? ?? [];
-        final batchPulledCount = newTranslations.length;
-        totalPulledTransCount += batchPulledCount;
-
+        totalPulledTransCount += newTranslations.length;
         totalEstimate ??= pullData['total_remaining'] as int?;
 
-        final activities = pullData['activities'] as List? ?? [];
-        final updatedChapters = pullData['updated_chapters'] as List? ?? [];
+        // 1. PC 삭제 장부 (Tombstone) 반영: PC에서 삭제된 소설/회차 로컬 DB 일괄 제거
+        final deletions = pullData['deletions'] as List? ?? [];
+        if (deletions.isNotEmpty) {
+          final delBatch = db.batch();
+          final affectedBooks = <String>{};
+          for (var item in deletions) {
+            final eType = item['entity_type'] as String?;
+            final eId = item['entity_id'] as String?;
+            final pScope = item['parent_scope'] as String?;
+            if (eType == 'chapter' && eId != null) {
+              delBatch.delete('chapters', where: 'url = ?', whereArgs: [eId]);
+              if (pScope != null) affectedBooks.add(pScope);
+            } else if (eType == 'novel' && eId != null) {
+              delBatch.delete('chapters', where: 'book_name = ?', whereArgs: [eId]);
+              delBatch.delete('books', where: 'folder_name = ?', whereArgs: [eId]);
+            }
+          }
+          await delBatch.commit(noResult: true);
 
+          for (var bName in affectedBooks) {
+            final countRow = await db.rawQuery('SELECT COUNT(*) as cnt FROM chapters WHERE book_name = ?', [bName]);
+            final totalChaps = (countRow.first['cnt'] as num?)?.toInt() ?? 0;
+            if (totalChaps == 0) {
+              await db.delete('books', where: 'folder_name = ?', whereArgs: [bName]);
+            } else {
+              await db.update('books', {'total_chapters': totalChaps}, where: 'folder_name = ?', whereArgs: [bName]);
+            }
+          }
+        }
+
+        // 2. 챕터 신규/수정 적재: [핵심 디테일] URL 기준 구 챕터 삭제 후 적재하여 폴더 이동/미분류 귀속 중복 100% 차단
+        final updatedChapters = pullData['updated_chapters'] as List? ?? [];
         if (updatedChapters.isNotEmpty) {
           final touchedBooks = <String>{};
           final batch = db.batch();
@@ -349,11 +321,11 @@ class SyncService {
 
             touchedBooks.add(bName);
 
-            // 해당 URL의 기존 챕터 모두 제거 후 최신 통합 챕터로 일괄 저장
+            // ⚠️ [필수 디테일] book_name에 상관없이 동일 URL의 구 챕터를 먼저 깨끗이 삭제
             batch.delete(
               'chapters',
-              where: 'book_name = ? AND url = ?',
-              whereArgs: [bName, cUrl],
+              where: 'url = ?',
+              whereArgs: [cUrl],
             );
             batch.insert('chapters', {
               'book_name': bName,
@@ -367,19 +339,19 @@ class SyncService {
 
           await batch.commit(noResult: true);
 
-          // 갱신된 책들의 total_chapters를 1회씩만 집계 갱신 및 신규 책 books 등록 보장
           for (var bName in touchedBooks) {
             final countRow = await db.rawQuery('SELECT COUNT(*) as cnt FROM chapters WHERE book_name = ?', [bName]);
             final totalChaps = (countRow.first['cnt'] as num?)?.toInt() ?? 0;
-            await db.rawInsert('''
-              INSERT OR IGNORE INTO books (folder_name, total_chapters, is_visible)
-              VALUES (?, ?, 1)
-            ''', [bName, totalChaps]);
+            await db.rawInsert(
+              'INSERT OR IGNORE INTO books (folder_name, total_chapters, is_visible) VALUES (?, ?, 1)',
+              [bName, totalChaps],
+            );
             await db.update('books', {'total_chapters': totalChaps}, where: 'folder_name = ?', whereArgs: [bName]);
           }
         }
 
-        // PC의 활동 정보를 로컬 DB에 일괄 반영 (첫 배치에만 수신)
+        // 3. 활동 및 북마크 반영
+        final activities = pullData['activities'] as List? ?? [];
         if (activities.isNotEmpty) {
           final actBatch = db.batch();
           for (var act in activities) {
@@ -414,7 +386,6 @@ class SyncService {
           await actBatch.commit(noResult: true);
         }
 
-        // 상단 고정(pinned_books) 서버 동기화 반영
         if (pullData['pinned_books'] != null) {
           final serverPinned = (pullData['pinned_books'] as List<dynamic>).map((e) => e.toString()).toList();
           final pinBatch = db.batch();
@@ -429,7 +400,6 @@ class SyncService {
         currentSince = pullData['next_since'] as int? ?? currentSince;
         currentLastId = pullData['next_last_id'] as int? ?? 0;
 
-        // 실시간 진행 상태 통보
         if (onProgress != null) {
           final formattedCount = _formatNumber(totalPulledTransCount);
           final estMsg = (totalEstimate != null && totalEstimate > 0)
@@ -439,31 +409,188 @@ class SyncService {
         }
 
         if (hasMore) {
-          // 기기 발열 방지 및 부하 분산을 위한 짧은 지연 (120ms)
           await Future.delayed(const Duration(milliseconds: 120));
         } else {
-          // 최종 완료 시 동기화 기준 시간 저장
           final syncTime = pullData['sync_time'] as int? ?? (DateTime.now().millisecondsSinceEpoch ~/ 1000);
           await PreferencesService.setLastSyncedTimestamp(syncTime);
         }
       }
 
-      // 과거 분리된 중복 회차 자가 치유 실행 및 서재 무결성 동기화
       await LocalDbService.healDuplicateChapters();
       await LocalDbService.ensureBooksIntegrity();
 
-      final fPushed = _formatNumber(pushedTransCount);
+      libraryRefreshNotifier.value++;
+
       final fPulled = _formatNumber(totalPulledTransCount);
+      return SyncResult(
+        success: true,
+        message: '다운로드 동기화 완료! ($fPulled문장 반영)',
+        updatedTranslations: totalPulledTransCount,
+      );
+    } catch (e) {
+      return SyncResult(success: false, message: '다운로드 동기화 실패: $e');
+    } finally {
+      isSyncingNotifier.value = false;
+    }
+  }
+
+  /// [모바일 -> PC 업로드(Push) 전용 파이프라인]
+  /// 사용자가 명시적으로 [서버로 업로드] 버튼을 눌렀을 때만 동작하여 자동 덮어쓰기/충돌을 원천 차단
+  static Future<SyncResult> performManualUpload({
+    bool ignoreWifiCheck = false,
+    Function(String statusMessage, int currentCount, int? totalEstimate)? onProgress,
+  }) async {
+    if (isSyncingNotifier.value) {
+      return SyncResult(success: false, message: '이미 다른 동기화 작업이 진행 중입니다.');
+    }
+
+    if (!ignoreWifiCheck) {
+      final isWifiAllowed = await isConnectedToTrustedWifi();
+      if (!isWifiAllowed) {
+        return SyncResult(
+          success: false,
+          message: '지정된 신뢰 Wi-Fi에 연결되어 있지 않아 업로드를 진행하지 않습니다.',
+        );
+      }
+    }
+
+    isSyncingNotifier.value = true;
+
+    try {
+      final serverStatus = await checkServerStatus();
+      if (serverStatus == null) {
+        return SyncResult(
+          success: false,
+          message: 'PC 서버에 연결할 수 없습니다. PC 서버가 켜져 있는지 확인하세요.',
+        );
+      }
+
+      final pendingChanges = await LocalDbService.getPendingChanges();
+      if (pendingChanges.isEmpty) {
+        await refreshUnpushedCount();
+        return SyncResult(success: true, message: '서버로 업로드할 모바일 변경사항이 없습니다.');
+      }
+
+      if (onProgress != null) {
+        onProgress('모바일 변경사항 (${pendingChanges.length}건) 업로드 준비 중...', 0, pendingChanges.length);
+      }
+
+      List<Map<String, dynamic>> modifiedTrans = [];
+      List<Map<String, dynamic>> activities = [];
+      List<Map<String, dynamic>> glossaryRules = [];
+      List<int> processedQueueIds = [];
+
+      bool hasPinChange = false;
+      for (var change in pendingChanges) {
+        final qId = change['id'] as int;
+        final type = change['change_type'] as String;
+        final payload = jsonDecode(change['payload_json'] as String);
+
+        if (type == 'translation_edit') {
+          modifiedTrans.add(payload);
+        } else if (type == 'activity') {
+          activities.add(payload);
+        } else if (type == 'glossary_rule') {
+          glossaryRules.add(payload);
+        } else if (type == 'pin') {
+          hasPinChange = true;
+        }
+        processedQueueIds.add(qId);
+      }
+
+      final db = await LocalDbService.database;
+      List<String>? pinnedPayload;
+      if (hasPinChange) {
+        final pRows = await db.query('books', columns: ['folder_name'], where: 'is_pinned = 1');
+        pinnedPayload = pRows.map((r) => r['folder_name'] as String).toList();
+      }
+
+      List<Map<String, dynamic>> readingLogsPayload = [];
+      try {
+        final rLogs = await db.query('reading_logs', orderBy: 'id DESC', limit: 50);
+        for (var r in rLogs) {
+          readingLogsPayload.add({
+            'date': r['date'],
+            'read_seconds': r['read_seconds'],
+            'pages_count': r['pages_count'],
+            'book_title': r['book_title'],
+            'chapter_title': r['chapter_title'],
+          });
+        }
+      } catch (_) {}
+
+      final pushPayload = {
+        'push_timestamp': DateTime.now().millisecondsSinceEpoch ~/ 1000,
+        'modified_translations': modifiedTrans,
+        'activities': activities,
+        'reading_logs': readingLogsPayload,
+        'pinned_books': pinnedPayload,
+        'glossary_rules': glossaryRules,
+      };
+
+      final rawBytes = utf8.encode(jsonEncode(pushPayload));
+      final compressedBytes = GZipEncoder().encode(rawBytes);
+
+      final serverUrl = PreferencesService.normalizeServerUrl(PreferencesService.serverUrl);
+      final pushRes = await http.post(
+        Uri.parse('$serverUrl/api/sync/push'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Encoding': 'gzip',
+          ...PreferencesService.authHeaders,
+        },
+        body: compressedBytes,
+      ).timeout(const Duration(seconds: 20));
+
+      if (pushRes.statusCode != 200) {
+        throw Exception('서버 업로드 거절 (HTTP ${pushRes.statusCode})');
+      }
+
+      final pushData = jsonDecode(pushRes.body);
+      final pushedTransCount = pushData['updated_translations'] ?? 0;
+      final pushedActCount = pushData['updated_activities'] ?? 0;
+
+      await LocalDbService.clearPendingChanges(processedQueueIds);
+      await refreshUnpushedCount();
 
       return SyncResult(
         success: true,
-        message: '동기화 완료! (다운로드: $fPulled문장 / 업로드: $fPushed문장)',
-        updatedTranslations: pushedTransCount + totalPulledTransCount,
+        message: '모바일 변경사항 업로드 완료! (번역: $pushedTransCount건 / 활동: $pushedActCount건)',
+        updatedTranslations: pushedTransCount,
         updatedActivities: pushedActCount,
       );
     } catch (e) {
-      return SyncResult(success: false, message: '증분 동기화 실패: $e');
+      return SyncResult(success: false, message: '업로드 동기화 실패: $e');
+    } finally {
+      isSyncingNotifier.value = false;
     }
+  }
+
+  /// [양방향 동기화: 하위 호환성 유지]
+  /// 수동 업로드 후 최신 다운로드를 차례대로 실행
+  static Future<SyncResult> performIncrementalSync({
+    bool ignoreWifiCheck = false,
+    Function(String statusMessage, int currentCount, int? totalEstimate)? onProgress,
+  }) async {
+    final upResult = await performManualUpload(
+      ignoreWifiCheck: ignoreWifiCheck,
+      onProgress: onProgress,
+    );
+    if (!upResult.success && upResult.message.contains('서버에 연결할 수 없습니다')) {
+      return upResult;
+    }
+
+    final downResult = await performIncrementalDownload(
+      ignoreWifiCheck: ignoreWifiCheck,
+      onProgress: onProgress,
+    );
+
+    return SyncResult(
+      success: downResult.success,
+      message: '${upResult.message} | ${downResult.message}',
+      updatedTranslations: upResult.updatedTranslations + downResult.updatedTranslations,
+      updatedActivities: upResult.updatedActivities + downResult.updatedActivities,
+    );
   }
 
   static String _formatNumber(int number) {
@@ -474,8 +601,6 @@ class SyncService {
   }
 
   /// [모바일 -> PC 긴급 역복구]
-  /// 모바일 앱 로컬 SQLite의 모든 챕터 데이터를 PC 서버로 전송하여,
-  /// PC DB에 이미 있는 데이터는 100% 보존하고, PC에 없는 유실분만 안전하게 INSERT 추가합니다.
   static Future<Map<String, dynamic>> rescueUploadToPc({
     Function(String statusMessage, double progress)? onProgress,
   }) async {

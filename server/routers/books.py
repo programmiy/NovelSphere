@@ -157,7 +157,8 @@ def update_folder_name(folder_name: str, req: FolderUpdate):
         if cursor.fetchone():
             raise HTTPException(status_code=409, detail=f"폴더 '{new_name}'이(가) 이미 존재합니다.")
 
-        cursor.execute("UPDATE translations SET folderName = ? WHERE folderName = ?", (new_name, old_name))
+        now_ts = int(time.time())
+        cursor.execute("UPDATE translations SET folderName = ?, updated_at = ? WHERE folderName = ?", (new_name, now_ts, old_name))
         cursor.execute("UPDATE book_activity SET folderName = ? WHERE folderName = ?", (new_name, old_name))
         cursor.execute("UPDATE pinned_books SET folderName = ? WHERE folderName = ?", (new_name, old_name))
         cursor.execute("UPDATE book_tags SET book_folderName = ? WHERE book_folderName = ?", (new_name, old_name))

@@ -7,6 +7,7 @@ import 'app_update_service.dart';
 import 'local_notification_service.dart';
 import 'preferences_service.dart';
 import 'status_dashboard_service.dart';
+import 'sync_service.dart';
 
 class NotificationService {
   static final ValueNotifier<int> unreadCount = ValueNotifier<int>(0);
@@ -103,6 +104,9 @@ class NotificationService {
                   if (data['type'] == 'app_update') {
                     // 서버로부터 새 버전 빌드 완료 SSE 신호 수신 시 즉시 무설치 자동 업데이트 가동
                     AppUpdateService.checkForUpdate(silent: true);
+                  } else if (data['type'] == 'backup_sync_ready') {
+                    // PC 서버 안전 백업 확정 신호 수신 시 무음 자동 다운로드 가동
+                    SyncService.triggerSilentDownloadIfAllowed();
                   } else {
                     final itemType = data['type'] as String? ?? 'server';
                     final itemTitle = data['title'] as String? ?? 'LANOVEL 작업 알림';

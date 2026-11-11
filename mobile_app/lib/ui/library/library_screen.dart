@@ -53,10 +53,21 @@ class _LibraryScreenState extends State<LibraryScreen> {
     _checkNetworkAndServer();
     NotificationService.fetchRecentNotifications();
     StatusDashboardService.enterForeground();
+
+    // 백그라운드 안전 백업 완료 다운로드 시 서재 실시간 무새로고침 갱신 리스너
+    SyncService.libraryRefreshNotifier.addListener(_onLibraryAutoRefreshed);
+    SyncService.refreshUnpushedCount();
+  }
+
+  void _onLibraryAutoRefreshed() {
+    if (mounted) {
+      _loadLibrary();
+    }
   }
 
   @override
   void dispose() {
+    SyncService.libraryRefreshNotifier.removeListener(_onLibraryAutoRefreshed);
     _searchDebounce?.cancel();
     StatusDashboardService.enterBackground();
     _searchController.dispose();
@@ -107,12 +118,171 @@ class _LibraryScreenState extends State<LibraryScreen> {
   }
 
   Future<void> _triggerQuickSync() async {
+    _showSyncActionSheet(ReaderThemes.getTheme(PreferencesService.theme));
+  }
+
+  void _showSyncActionSheet(ReaderThemeData theme) {
+    HapticFeedback.lightImpact();
+    final primary = HyperAestheticTheme.getAmbientPrimary(theme);
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+        decoration: BoxDecoration(
+          color: theme.surfaceColor,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          border: Border.all(color: theme.borderColor),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: theme.subTextColor.withOpacity(0.3),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Icon(Icons.sync_rounded, color: primary, size: 22),
+                const SizedBox(width: 8),
+                Text(
+                  '동기화 스튜디오',
+                  style: TextStyle(
+                    color: theme.textColor,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const Spacer(),
+                ValueListenableBuilder<int>(
+                  valueListenable: SyncService.unpushedCountNotifier,
+                  builder: (_, count, __) {
+                    if (count <= 0) return const SizedBox.shrink();
+                    return Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: Colors.amber.withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.amber.withOpacity(0.5)),
+                      ),
+                      child: Text(
+                        '미업로드 $count건',
+                        style: const TextStyle(color: Colors.amber, fontSize: 11, fontWeight: FontWeight.bold),
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '안전 백업 스냅샷 기반 무음 자동 다운로드 & 명시적 수동 업로드 파이프라인',
+              style: TextStyle(color: theme.subTextColor, fontSize: 12),
+            ),
+            const SizedBox(height: 16),
+
+            // 1. 최신 번역 다운로드
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF10B981).withOpacity(0.15),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.download_rounded, color: Color(0xFF10B981), size: 20),
+              ),
+              title: Text('최신 번역 다운로드 (PC ➔ 폰)', style: TextStyle(color: theme.textColor, fontWeight: FontWeight.bold)),
+              subtitle: Text('PC에서 확정된 새 회차 및 폴더 저장을 즉시 가져옵니다.', style: TextStyle(color: theme.subTextColor, fontSize: 12)),
+              onTap: () async {
+                Navigator.pop(ctx);
+                _runSyncTask(() => SyncService.performIncrementalDownload(ignoreWifiCheck: true));
+              },
+            ),
+
+            // 2. 모바일 변경사항 업로드
+            ValueListenableBuilder<int>(
+              valueListenable: SyncService.unpushedCountNotifier,
+              builder: (_, unpushed, __) => ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: (unpushed > 0 ? Colors.amber : theme.subTextColor).withOpacity(0.15),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(Icons.cloud_upload_rounded, color: unpushed > 0 ? Colors.amber : theme.subTextColor, size: 20),
+                ),
+                title: Text('모바일 변경사항 업로드 (폰 ➔ PC)', style: TextStyle(color: theme.textColor, fontWeight: FontWeight.bold)),
+                subtitle: Text('폰에서 수정한 단어, 독서 진도, 찾아바꾸기를 PC로 올립니다. ($unpushed건 대기)', style: TextStyle(color: theme.subTextColor, fontSize: 12)),
+                onTap: () async {
+                  Navigator.pop(ctx);
+                  _runSyncTask(() => SyncService.performManualUpload(ignoreWifiCheck: true));
+                },
+              ),
+            ),
+
+            // 3. 양방향 일괄 동기화
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: primary.withOpacity(0.15),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(Icons.sync_rounded, color: primary, size: 20),
+              ),
+              title: Text('양방향 일괄 동기화', style: TextStyle(color: theme.textColor, fontWeight: FontWeight.bold)),
+              subtitle: Text('업로드와 다운로드를 차례대로 순차 실행합니다.', style: TextStyle(color: theme.subTextColor, fontSize: 12)),
+              onTap: () async {
+                Navigator.pop(ctx);
+                _runSyncTask(() => SyncService.performIncrementalSync(ignoreWifiCheck: true));
+              },
+            ),
+
+            const Divider(height: 16),
+
+            // 4. 비상용 전체 시드 재구축
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.redAccent.withOpacity(0.15),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.restore_rounded, color: Colors.redAccent, size: 20),
+              ),
+              title: const Text('비상용: 30초 전체 서재 재구축 (시드팩)', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
+              subtitle: Text('DB를 완전 초기화하고 PC의 전체 압축 DB를 1방에 새로 받습니다.', style: TextStyle(color: theme.subTextColor, fontSize: 12)),
+              onTap: () async {
+                Navigator.pop(ctx);
+                _runSyncTask(() => SyncService.downloadFullSeed(ignoreWifiCheck: true));
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _runSyncTask(Future<SyncResult> Function() task) async {
     if (_isSyncing) return;
     HapticFeedback.mediumImpact();
     setState(() => _isSyncing = true);
 
     try {
-      final res = await SyncService.performIncrementalSync(ignoreWifiCheck: true);
+      final res = await task();
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1655,27 +1825,43 @@ class _LibraryScreenState extends State<LibraryScreen> {
     }
 
     if (_isTrustedWifi && _isServerOnline) {
-      return GestureDetector(
-        onTap: _triggerQuickSync,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-          decoration: BoxDecoration(
-            color: const Color(0xFF10B981).withOpacity(0.14),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: const Color(0xFF10B981).withOpacity(0.4)),
-          ),
-          child: const Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.sync_rounded, color: Color(0xFF10B981), size: 14),
-              SizedBox(width: 4),
-              Text(
-                '동기화 가능',
-                style: TextStyle(color: Color(0xFF10B981), fontSize: 11, fontWeight: FontWeight.bold),
+      return ValueListenableBuilder<int>(
+        valueListenable: SyncService.unpushedCountNotifier,
+        builder: (_, unpushed, __) {
+          final hasUnpushed = unpushed > 0;
+          return GestureDetector(
+            onTap: _triggerQuickSync,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              decoration: BoxDecoration(
+                color: (hasUnpushed ? Colors.amber : const Color(0xFF10B981)).withOpacity(0.14),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: (hasUnpushed ? Colors.amber : const Color(0xFF10B981)).withOpacity(0.4),
+                ),
               ),
-            ],
-          ),
-        ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    hasUnpushed ? Icons.cloud_upload_rounded : Icons.sync_rounded,
+                    color: hasUnpushed ? Colors.amber : const Color(0xFF10B981),
+                    size: 14,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    hasUnpushed ? '업로드 $unpushed건' : '동기화',
+                    style: TextStyle(
+                      color: hasUnpushed ? Colors.amber : const Color(0xFF10B981),
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
       );
     }
 

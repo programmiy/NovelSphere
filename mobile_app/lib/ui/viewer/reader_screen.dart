@@ -9,6 +9,7 @@ import '../../models/chapter.dart';
 import '../../models/sentence.dart';
 import '../../services/local_db_service.dart';
 import '../../services/preferences_service.dart';
+import '../../services/sync_service.dart';
 import '../themes/reader_themes.dart';
 import '../themes/hyper_aesthetic_theme.dart';
 import 'novel_ruby_text.dart';
@@ -149,6 +150,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
 
   @override
   void dispose() {
+    SyncService.activeReadingUrl = null;
     _volumeChannel.invokeMethod('enableVolumeKeyPaging', {'enable': false});
     _volumeChannel.setMethodCallHandler(null);
     _readingTimer?.cancel();
@@ -343,6 +345,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
     });
 
     final targetChapter = _chapters[index];
+    SyncService.activeReadingUrl = targetChapter.url;
     final sentences = await LocalDbService.loadChapterSentences(targetChapter.id!);
 
     final perPage = _sentencesPerPage;

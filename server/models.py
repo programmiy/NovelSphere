@@ -14,6 +14,7 @@ class Translation(Base):
     original = Column(Text, nullable=False)
     translated = Column(Text)
     timestamp = Column(Integer, nullable=False)
+    updated_at = Column(Integer, nullable=True)
     folderName = Column(Text)
     title = Column(Text)
     toc_sort_order = Column(Integer, nullable=True)
@@ -25,7 +26,20 @@ class Translation(Base):
         Index('ix_title', 'title'),
         Index('ix_folder_title', 'folderName', 'title'),
         Index('ix_folder_url', 'folderName', 'url'),
+        Index('ix_translations_updated_at', 'updated_at'),
     )
+
+class DeletedRecord(Base):
+    """
+    모바일/외부 클라이언트 증분 동기화용 삭제 장부 (Tombstone).
+    PC에서 소설, 회차, 또는 번역이 삭제될 때 기록되어 클라이언트에 삭제를 전파합니다.
+    """
+    __tablename__ = 'deleted_records'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    entity_type = Column(String(32), nullable=False, index=True)  # 'chapter', 'novel', 'translation'
+    entity_id = Column(String(512), nullable=False)               # URL, folderName, or ID
+    parent_scope = Column(String(256), nullable=True)            # folderName (for chapters)
+    deleted_at = Column(Integer, nullable=False, index=True)
 
 class ExcludedSentence(Base):
     __tablename__ = 'excluded_sentences'

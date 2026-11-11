@@ -31,6 +31,37 @@ def get_legitimate_deletions_since(timestamp: float) -> int:
     with _DELETION_LOCK:
         return sum(cnt for ts, cnt, _ in _LEGITIMATE_DELETIONS if ts >= timestamp)
 
+def record_tombstone(entity_type: str, entity_id: str, parent_scope: Optional[str] = None):
+    """
+    모바일/외부 클라이언트 증분 동기화를 위해 삭제된 엔티티(소설, 챕터, 단락 등)를 deleted_records에 영구 기록합니다.
+    """
+    if not entity_id:
+        return
+    try:
+        from server.database import get_sqlite_conn
+        conn = get_sqlite_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS deleted_records (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    entity_type TEXT NOT NULL,
+                    entity_id TEXT NOT NULL,
+                    parent_scope TEXT,
+                    deleted_at INTEGER NOT NULL
+                )
+            """)
+            cur.execute("""
+                INSERT INTO deleted_records (entity_type, entity_id, parent_scope, deleted_at)
+                VALUES (?, ?, ?, ?)
+            """, (entity_type, str(entity_id), parent_scope, int(time.time())))
+            conn.commit()
+            logger.info(f"[Tombstone] 삭제 장부 기록 성공: {entity_type} -> {entity_id} (부모: {parent_scope})")
+        finally:
+            conn.close()
+    except Exception as e:
+        logger.error(f"[Tombstone] 삭제 장부 기록 실패: {e}")
+
 def get_db_metrics(db_path: str) -> Optional[Tuple[int, int, int]]:
     """
     지정된 SQLite DB 파일의 translations 테이블 통계 (행 수, max_id, max_timestamp)를 반환합니다.

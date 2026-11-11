@@ -339,6 +339,7 @@ def upsert_translations(items: List[TranslationItem], db: Session = Depends(get_
             # 기존 번역 텍스트 수정 시 원래 번역 일시(timestamp) 보존 (신규 번역이 아니므로 오늘 번역 실적 왜곡 방지)
             if not existing_translation.timestamp:
                 existing_translation.timestamp = item.timestamp
+            existing_translation.updated_at = int(time.time())
 
             # 폴더명 보정: 검열 회피/수동 소설만 폴더명 강제 귀속 허용. 일반 소설은 기존 폴더(미분류는 계속 미분류) 보존
             if is_manual_novel:
@@ -368,6 +369,7 @@ def upsert_translations(items: List[TranslationItem], db: Session = Depends(get_
                 original=item.original,
                 translated=target_trans,
                 timestamp=final_ts,
+                updated_at=final_ts,
                 folderName=new_folder,
                 title=target_title or item.title,
                 toc_sort_order=target_toc_order
@@ -462,8 +464,9 @@ def move_translations(req: MoveRequest):
         for i in range(0, len(req.ids), CHUNK_SIZE):
             chunk = req.ids[i:i + CHUNK_SIZE]
             placeholders = ', '.join('?' * len(chunk))
-            query = f"UPDATE translations SET folderName = ? WHERE id IN ({placeholders})"
-            params = [req.folder_name] + chunk
+            now_ts = int(time.time())
+            query = f"UPDATE translations SET folderName = ?, updated_at = ? WHERE id IN ({placeholders})"
+            params = [req.folder_name, now_ts] + chunk
             cursor.execute(query, params)
             updated_count += cursor.rowcount
         conn.commit()
@@ -500,6 +503,15 @@ def delete_translations(req: DeleteRequest):
                         detail=f"검수 완료된 회차({row[0]})의 번역문은 삭제할 수 없습니다. 삭제를 원하시면 먼저 검수완료를 해제해주세요."
                     )
 
+        deleted_urls = set()
+        for i in range(0, len(req.ids), CHUNK_SIZE):
+            chunk = req.ids[i:i + CHUNK_SIZE]
+            placeholders = ', '.join('?' * len(chunk))
+            cursor.execute(f"SELECT DISTINCT url, folderName FROM translations WHERE id IN ({placeholders})", chunk)
+            for r in cursor.fetchall():
+                if r[0]:
+                    deleted_urls.add((r[0], r[1]))
+
         for i in range(0, len(req.ids), CHUNK_SIZE):
             chunk = req.ids[i:i + CHUNK_SIZE]
             placeholders = ', '.join('?' * len(chunk))
@@ -508,8 +520,10 @@ def delete_translations(req: DeleteRequest):
             deleted_count += cursor.rowcount
             cursor.execute(f"DELETE FROM cleanup_queued_items WHERE translation_id IN ({placeholders})", chunk)
         conn.commit()
-        from server.backup_utils import record_legitimate_deletion
+        from server.backup_utils import record_legitimate_deletion, record_tombstone
         record_legitimate_deletion(deleted_count, reason="data_crud_delete_translations")
+        for d_url, d_folder in deleted_urls:
+            record_tombstone("chapter", d_url, parent_scope=d_folder)
     finally:
         conn.close()
 

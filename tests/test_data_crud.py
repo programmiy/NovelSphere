@@ -36,6 +36,7 @@ def override_settings(tmp_path_factory):
             original TEXT NOT NULL,
             translated TEXT NOT NULL,
             timestamp INTEGER NOT NULL,
+            updated_at INTEGER,
             folderName TEXT,
             title TEXT,
             toc_sort_order INTEGER,

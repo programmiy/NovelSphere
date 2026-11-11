@@ -178,6 +178,18 @@ async def backup_check_task():
                 if APP_START_TIME:
                     SERVER_METADATA["cumulative_runtime_seconds"] = 0
                     _update_runtime_metadata()
+                
+                # 모바일 안전 스냅샷 다운로드 SSE 알림 브로드캐스트
+                try:
+                    from server.notifications import record_notification
+                    record_notification(
+                        title="안전 백업 완료",
+                        message=f"새 백업 {result['backup_file']} 생성 완료",
+                        event_type="backup_sync_ready",
+                        priority="normal"
+                    )
+                except Exception as ne:
+                    logger.error(f"[Backup SSE] 알림 발송 실패: {ne}")
         except Exception as e:
             logger.error(f"[Periodic Backup] Error during automatic backup check: {e}")
 
@@ -259,6 +271,16 @@ async def lifespan(app: FastAPI):
             connection.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_folder_title ON translations (folderName, title)")
             connection.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_translations_folder_url ON translations (folderName, url)")
             connection.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_translations_url ON translations (url)")
+
+            # translations.updated_at 및 deleted_records 스키마 마이그레이션
+            cols = [r[1] for r in connection.exec_driver_sql("PRAGMA table_info(translations)").fetchall()]
+            if "updated_at" not in cols:
+                logger.info("Migrating translations table: Adding updated_at column...")
+                connection.exec_driver_sql("ALTER TABLE translations ADD COLUMN updated_at INTEGER;")
+                connection.exec_driver_sql("UPDATE translations SET updated_at = timestamp WHERE updated_at IS NULL;")
+            connection.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_translations_updated_at ON translations (updated_at)")
+            connection.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_deleted_records_deleted_at ON deleted_records (deleted_at)")
+            connection.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_deleted_records_type_id ON deleted_records (entity_type, entity_id)")
 
             row = connection.exec_driver_sql("SELECT sql FROM sqlite_master WHERE type='table' AND name='translations_fts'").fetchone()
             need_recreate = True

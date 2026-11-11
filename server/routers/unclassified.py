@@ -359,13 +359,14 @@ def assign_unclassified_novel_folder(req: AssignFolderRequest):
         if not url_pattern:
             raise HTTPException(status_code=400, detail="소설 식별 패턴을 찾을 수 없습니다.")
 
-        # Update translations
+        # Update translations (updated_at을 현재 시각으로 갱신하여 모바일 증분 동기화에 즉시 감지되도록 보장)
+        now_ts = int(time.time())
         cursor.execute("""
             UPDATE translations
-            SET folderName = ?
+            SET folderName = ?, updated_at = ?
             WHERE (folderName IS NULL OR TRIM(folderName) = '')
               AND url LIKE ?
-        """, (target_folder, url_pattern))
+        """, (target_folder, now_ts, url_pattern))
         updated_count = cursor.rowcount
 
         # Automatically assign sequential toc_sort_order to unindexed episodes in target_folder
@@ -390,9 +391,9 @@ def assign_unclassified_novel_folder(req: AssignFolderRequest):
         for idx, u_row in enumerate(unindexed_urls, start=base_order):
             cursor.execute("""
                 UPDATE translations
-                SET toc_sort_order = ?
+                SET toc_sort_order = ?, updated_at = ?
                 WHERE folderName = ? AND url = ?
-            """, (idx, target_folder, u_row["url"]))
+            """, (idx, now_ts, target_folder, u_row["url"]))
 
         # Ensure target folder is in book_activity
         now_ts = int(time.time())
@@ -493,6 +494,14 @@ def delete_unclassified_novel(req: DeleteNovelRequest):
         if not url_pattern:
             raise HTTPException(status_code=400, detail="소설 식별 패턴을 찾을 수 없습니다.")
 
+        # 삭제될 URL 목록 사전 수집 (모바일 Tombstone 장부용)
+        cursor.execute("""
+            SELECT DISTINCT url FROM translations
+            WHERE (folderName IS NULL OR TRIM(folderName) = '')
+              AND url LIKE ?
+        """, (url_pattern,))
+        del_urls = [r["url"] for r in cursor.fetchall() if r.get("url")]
+
         cursor.execute("""
             DELETE FROM translations
             WHERE (folderName IS NULL OR TRIM(folderName) = '')
@@ -501,8 +510,10 @@ def delete_unclassified_novel(req: DeleteNovelRequest):
         deleted_count = cursor.rowcount
 
         conn.commit()
-        from server.backup_utils import record_legitimate_deletion
+        from server.backup_utils import record_legitimate_deletion, record_tombstone
         record_legitimate_deletion(deleted_count, reason=f"unclassified_delete_{req.work_id}")
+        for d_url in del_urls:
+            record_tombstone("chapter", d_url)
         return {
             "success": True,
             "message": f"{deleted_count}개 미분류 번역 단락이 삭제되었습니다.",

@@ -1104,6 +1104,16 @@ class LocalDbService {
     return await db.query('offline_change_queue', orderBy: 'id ASC');
   }
 
+  static Future<int> getPendingChangeCount() async {
+    try {
+      final db = await database;
+      final res = await db.rawQuery('SELECT COUNT(*) as cnt FROM offline_change_queue');
+      return (res.first['cnt'] as num?)?.toInt() ?? 0;
+    } catch (_) {
+      return 0;
+    }
+  }
+
   static Future<void> clearPendingChanges(List<int> ids) async {
     if (ids.isEmpty) return;
     final db = await database;
