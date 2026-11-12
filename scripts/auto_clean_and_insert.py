@@ -1,7 +1,6 @@
 import sys
 import os
 import re
-import time
 
 if sys.platform == 'win32':
     try:
@@ -15,8 +14,6 @@ if APP_ROOT not in sys.path:
 
 from scripts.fetch_unreviewed import get_items
 from scripts.test_auto_cleaner import clean_text_advanced
-from server.database import SessionLocal
-from server.models import AiReviewQueue, Translation
 from server.routers.ai_review import clean_ai_translation
 
 def run_auto_clean_batch():

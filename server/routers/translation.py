@@ -25,7 +25,6 @@ from server.quota import (
     is_us_dst,
     get_quota_reset_hour,
     get_next_quota_reset_dt,
-    get_next_quota_reset_hour,
     get_current_quota_window_start_ts,
 )
 from server.rule_classifier import (
@@ -300,7 +299,7 @@ def translate_texts(req: TranslateRequest, db: Session = Depends(get_db)):
                 paragraphs = [it.text for it in items_to_translate]
                 hd_translations = translate_paragraphs(paragraphs)
                 translated_results = {}
-                for it, trans in zip(items_to_translate, hd_translations):
+                for it, trans in zip(items_to_translate, hd_translations, strict=False):
                     cleaned = process_repeated_chars(trans)
                     cleaned = restore_brackets(it.text, cleaned)
                     translated_results[str(it.id)] = {

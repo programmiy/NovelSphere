@@ -12,7 +12,7 @@ import json
 import time
 import argparse
 import re
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urljoin
 import requests
 from bs4 import BeautifulSoup
 
@@ -305,7 +305,7 @@ def get_next_batch(batch_size=40, toc_url_arg=None):
             if state.get("current_chapter_url") == chapter_url:
                 offset = state.get("current_offset", 0)
 
-            print(f"\n⚡ [대상 회차 선정 완료]")
+            print("\n⚡ [대상 회차 선정 완료]")
             print(f"   * 소설명 : {novel_title}")
             print(f"   * 회차   : 제 {chapter_index}화 - '{chapter_title}'")
             print(f"   * URL    : {chapter_url}")

@@ -54,7 +54,6 @@ def insert_batch(translated_data: list, pending_info: dict) -> int:
     chapter_title = pending_info["chapter_title"]
     chapter_index = pending_info["chapter_index"]
 
-    orig_map = {it["id"]: it["text"] for it in pending_info.get("items", [])}
     trans_map = {}
 
     for t in translated_data:
@@ -155,5 +154,5 @@ if __name__ == '__main__':
     print(f" * 소설    : {pending_info['novel_title']}")
     print(f" * 회차    : 제 {pending_info['chapter_index']}화 - {pending_info['chapter_title']}")
     print(f" * 배치 ID : {pending_info['batch_id']}")
-    print(f" * 상태    : staged (전용 검수 페이지 /special_batch 에서 확인 가능)")
+    print(" * 상태    : staged (전용 검수 페이지 /special_batch 에서 확인 가능)")
     print("=" * 65)

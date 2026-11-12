@@ -21,7 +21,6 @@ from urllib.parse import urljoin, urlparse
 
 import requests
 from bs4 import BeautifulSoup
-from sqlalchemy.orm import Session
 
 import server.database as sdb
 from server.models import ManualTranslationNovel, Translation
@@ -628,7 +627,6 @@ class RawCollectorRunner:
                     save_title = scraped_title or ep_title
 
                     # translations 테이블에 원문 저장 및 번역문 빈칸("")으로 일괄 적재
-                    now = int(time.time())
                     # 기존 레코드 제거 후 신규 적재 (단락 순서 정돈)
                     db.query(Translation).filter_by(url=ep_url).delete()
 

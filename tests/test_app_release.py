@@ -1,4 +1,3 @@
-import pytest
 from fastapi.testclient import TestClient
 from server.server import app
 
@@ -47,8 +46,12 @@ def test_broadcast_app_update():
     assert "version" in data
 
 
-def test_update_release_notes():
-    """POST /api/app/release_notes 및 영속화 검증"""
+def test_update_release_notes(monkeypatch, tmp_path):
+    """POST /api/app/release_notes 및 영속화 검증 (격리된 임시 파일 사용)"""
+    from server.routers import app_release
+    temp_notes = tmp_path / "release_notes.json"
+    monkeypatch.setattr(app_release, "RELEASE_NOTES_PATH", temp_notes)
+
     test_note = "테스트 릴리즈: 초고속 동기화 및 버그 수정"
     res = client.post("/api/app/release_notes", json={"release_notes": test_note})
     assert res.status_code == 200
@@ -59,8 +62,13 @@ def test_update_release_notes():
     assert ver_res.json()["release_notes"] == test_note
 
 
-def test_bump_app_version():
-    """POST /api/app/bump_version 버전 갱신 검증"""
+def test_bump_app_version(monkeypatch, tmp_path):
+    """POST /api/app/bump_version 버전 갱신 검증 (격리된 임시 pubspec 사용)"""
+    from server.routers import app_release
+    temp_pubspec = tmp_path / "pubspec.yaml"
+    temp_pubspec.write_text("name: lanovel_reader\nversion: 1.8.2+2026111301\n", encoding="utf-8")
+    monkeypatch.setattr(app_release, "PUBSPEC_PATH", temp_pubspec)
+
     ver_res = client.get("/api/app/version")
     cur_build = ver_res.json()["build_number"]
 
@@ -68,9 +76,6 @@ def test_bump_app_version():
     assert bump_res.status_code == 200
     bump_data = bump_res.json()
     assert bump_data["build_number"] == cur_build + 1
-
-    # 원복 (테스트 후 원래 빌드 번호로 복구)
-    client.post("/api/app/bump_version", json={"build_number": cur_build})
 
 
 def test_upload_apk_validation():

@@ -648,7 +648,6 @@ def get_admin_analytics(folder_name: Optional[str] = None):
                 "weekend_pct": weekend_pct
             },
             "efficiency": efficiency_stats,
-            "efficiency": efficiency_stats,
             "performance": performance_stats,
             "quality": {
                 "health_score": health_score,

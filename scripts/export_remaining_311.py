@@ -1,6 +1,5 @@
 import sys
 import os
-import re
 
 if sys.platform == 'win32':
     try:
@@ -23,4 +22,4 @@ with open(os.path.join(APP_ROOT, 'scripts', 'remaining_311_inspect.txt'), 'w', e
         f.write(f"  ORIG: {it['original']}\n")
         f.write(f"  CURR: {it['translated']}\n\n")
 
-print(f"Wrote to scripts/remaining_311_inspect.txt")
+print("Wrote to scripts/remaining_311_inspect.txt")

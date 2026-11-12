@@ -428,7 +428,7 @@ def _fallback_hdtrans_or_split(
         try:
             texts = [it.text for it in items]
             hd_results = translate_paragraphs(texts)
-            translated_map = {str(it.id): trans for it, trans in zip(items, hd_results)}
+            translated_map = {str(it.id): trans for it, trans in zip(items, hd_results, strict=False)}
             return translated_map, set()
         except Exception as e:
             logger.error(f"[hdTrans 대체 번역 실패] {e}. 기존 분할/폴백 로직으로 진행합니다.")

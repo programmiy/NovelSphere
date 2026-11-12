@@ -7,8 +7,7 @@ from typing import List, Dict, Any, Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
-from server.models import Translation, ManualTranslationNovel
-from server.services import reviewed_service
+from server.models import Translation
 import server.database as sdb
 
 logger = logging.getLogger(__name__)
@@ -119,7 +118,7 @@ def translate_episode_in_db(
     originals = [r.original for r in target_rows]
     translated_texts = translate_paragraphs(originals)
 
-    for r, trans in zip(target_rows, translated_texts):
+    for r, trans in zip(target_rows, translated_texts, strict=False):
         r.translated = trans
         r.timestamp = 0  # 통계 집계(오늘 번역 등)에서 영구 제외되도록 0 처리
 

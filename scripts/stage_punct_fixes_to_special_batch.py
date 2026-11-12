@@ -172,7 +172,7 @@ def stage_exact_symbol_copypaste(batch_id: str = "batch_repeat_punct_fix_2026101
         else:
             skipped_count += 1
 
-    print(f"[원문 기호 직접 복붙 결과]")
+    print("[원문 기호 직접 복붙 결과]")
     print(f" - 순수 원문 기호 복붙 완료 (적재 대상): {len(staged_records)}건")
     print(f" - 글자/의성어 반복 건 (일체 변경 없이 100% 보존): {skipped_count}건")
 
