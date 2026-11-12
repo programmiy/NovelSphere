@@ -396,6 +396,11 @@ class SyncService {
           await pinBatch.commit(noResult: true);
         }
 
+        final highlights = pullData['highlights'] as List? ?? [];
+        if (highlights.isNotEmpty) {
+          await LocalDbService.syncHighlightsFromPc(highlights);
+        }
+
         hasMore = pullData['has_more'] == true;
         currentSince = pullData['next_since'] as int? ?? currentSince;
         currentLastId = pullData['next_last_id'] as int? ?? 0;
@@ -478,6 +483,7 @@ class SyncService {
       List<Map<String, dynamic>> modifiedTrans = [];
       List<Map<String, dynamic>> activities = [];
       List<Map<String, dynamic>> glossaryRules = [];
+      List<Map<String, dynamic>> highlightsPayload = [];
       List<int> processedQueueIds = [];
 
       bool hasPinChange = false;
@@ -492,6 +498,8 @@ class SyncService {
           activities.add(payload);
         } else if (type == 'glossary_rule') {
           glossaryRules.add(payload);
+        } else if (type == 'highlight_add') {
+          highlightsPayload.add(payload);
         } else if (type == 'pin') {
           hasPinChange = true;
         }
@@ -526,6 +534,7 @@ class SyncService {
         'reading_logs': readingLogsPayload,
         'pinned_books': pinnedPayload,
         'glossary_rules': glossaryRules,
+        'highlights': highlightsPayload,
       };
 
       final rawBytes = utf8.encode(jsonEncode(pushPayload));

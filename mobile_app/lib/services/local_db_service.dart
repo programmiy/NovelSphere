@@ -9,6 +9,7 @@ import 'package:sqflite/sqflite.dart';
 import '../models/book.dart';
 import '../models/chapter.dart';
 import '../models/sentence.dart';
+import '../models/sentence_highlight.dart';
 import '../models/glossary_rule.dart';
 import '../models/find_replace_item.dart';
 import 'text_diff_helper.dart';
@@ -65,6 +66,7 @@ class LocalDbService {
     List<Map<String, dynamic>> backupQueue = [];
     List<Map<String, dynamic>> backupLogs = [];
     List<Map<String, dynamic>> backupGlossary = [];
+    List<Map<String, dynamic>> backupHighlights = [];
     List<String> backupPinned = [];
 
     try {
@@ -77,6 +79,9 @@ class LocalDbService {
         } catch (_) {}
         try {
           backupGlossary = await _database!.query('local_glossary');
+        } catch (_) {}
+        try {
+          backupHighlights = await _database!.query('sentence_highlights');
         } catch (_) {}
         try {
           final pinnedRows = await _database!.query('books', columns: ['folder_name'], where: 'is_pinned = 1');
@@ -119,6 +124,10 @@ class LocalDbService {
     for (var g in backupGlossary) {
       final map = Map<String, dynamic>.from(g)..remove('id');
       batch.insert('local_glossary', map);
+    }
+    for (var h in backupHighlights) {
+      final map = Map<String, dynamic>.from(h)..remove('id');
+      batch.insert('sentence_highlights', map, conflictAlgorithm: ConflictAlgorithm.replace);
     }
     for (var pFolder in backupPinned) {
       batch.update('books', {'is_pinned': 1}, where: 'folder_name = ?', whereArgs: [pFolder]);
@@ -212,6 +221,26 @@ class LocalDbService {
         } catch (_) {}
         try {
           await db.execute('ALTER TABLE local_glossary ADD COLUMN is_favorite INTEGER DEFAULT 0;');
+        } catch (_) {}
+        try {
+          await db.execute('''
+            CREATE TABLE IF NOT EXISTS sentence_highlights (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              book_name TEXT NOT NULL,
+              chapter_title TEXT NOT NULL,
+              url TEXT NOT NULL,
+              pid TEXT NOT NULL,
+              original TEXT NOT NULL,
+              translated TEXT NOT NULL,
+              note TEXT,
+              created_at INTEGER NOT NULL,
+              updated_at INTEGER,
+              is_resolved INTEGER NOT NULL DEFAULT 0,
+              UNIQUE(url, pid)
+            );
+          ''');
+          await db.execute('CREATE INDEX IF NOT EXISTS ix_sh_book_res ON sentence_highlights(book_name, is_resolved);');
+          await db.execute('CREATE INDEX IF NOT EXISTS ix_sh_url_pid ON sentence_highlights(url, pid);');
         } catch (_) {}
       },
     );
@@ -1203,6 +1232,88 @@ class LocalDbService {
     }
 
     return results;
+  }
+
+  // --- 문장 하이라이트 (수정 대기 마킹) 관리 ---
+  /// 태블릿/모바일에서 독서 중 어색한 문장 하이라이트 등록
+  static Future<void> addSentenceHighlight(SentenceHighlight item) async {
+    final db = await database;
+    await db.insert('sentence_highlights', item.toJson(), conflictAlgorithm: ConflictAlgorithm.replace);
+    await _enqueueChange('highlight_add', '${item.url}#${item.pid}', item.toJson());
+  }
+
+  /// 하이라이트 해제(삭제)
+  static Future<void> removeSentenceHighlight(String url, String pid) async {
+    final db = await database;
+    await db.delete('sentence_highlights', where: 'url = ? AND pid = ?', whereArgs: [url, pid]);
+    await _enqueueChange('highlight_delete', '$url#$pid', {'url': url, 'pid': pid});
+  }
+
+  /// 특정 소설의 하이라이트 목록 조회 (미해결 우선)
+  static Future<List<SentenceHighlight>> getHighlightsByBook(String bookName, {bool unresolvedOnly = true}) async {
+    final db = await database;
+    final where = unresolvedOnly ? 'book_name = ? AND is_resolved = 0' : 'book_name = ?';
+    final rows = await db.query(
+      'sentence_highlights',
+      where: where,
+      whereArgs: [bookName],
+      orderBy: 'created_at DESC, id DESC',
+    );
+    return rows.map((r) => SentenceHighlight.fromJson(r)).toList();
+  }
+
+  /// 도서별 미해결 하이라이트 수 집계 맵 반환
+  static Future<Map<String, int>> getHighlightCountsByBook() async {
+    final db = await database;
+    try {
+      final rows = await db.rawQuery('''
+        SELECT book_name, COUNT(*) as cnt
+        FROM sentence_highlights
+        WHERE is_resolved = 0
+        GROUP BY book_name
+      ''');
+      final Map<String, int> result = {};
+      for (var r in rows) {
+        final bName = r['book_name'] as String?;
+        final cnt = (r['cnt'] as num?)?.toInt() ?? 0;
+        if (bName != null && bName.isNotEmpty) {
+          result[bName] = cnt;
+        }
+      }
+      return result;
+    } catch (_) {
+      return {};
+    }
+  }
+
+  /// 특정 챕터(URL)의 미해결 하이라이트된 pid 집합 반환
+  static Future<Set<String>> getHighlightedPids(String url) async {
+    final db = await database;
+    try {
+      final rows = await db.query(
+        'sentence_highlights',
+        columns: ['pid'],
+        where: 'url = ? AND is_resolved = 0',
+        whereArgs: [url],
+      );
+      return rows.map((r) => r['pid'] as String).toSet();
+    } catch (_) {
+      return {};
+    }
+  }
+
+  /// PC 동기화 데이터 수신 시 로컬 하이라이트 테이블 반영
+  static Future<void> syncHighlightsFromPc(List<dynamic> highlightsList) async {
+    if (highlightsList.isEmpty) return;
+    final db = await database;
+    final batch = db.batch();
+    for (var raw in highlightsList) {
+      if (raw is Map<String, dynamic>) {
+        final map = Map<String, dynamic>.from(raw)..remove('id');
+        batch.insert('sentence_highlights', map, conflictAlgorithm: ConflictAlgorithm.replace);
+      }
+    }
+    await batch.commit(noResult: true);
   }
 }
 

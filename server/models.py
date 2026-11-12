@@ -283,3 +283,30 @@ class ManualTranslationNovel(Base):
     source_url = Column(Text, nullable=True)
     created_at = Column(BigInteger, nullable=False)
     is_completed = Column(Integer, nullable=False, default=0)
+
+
+class SentenceHighlight(Base):
+    """
+    태블릿/모바일 독서 중 어색한 번역문 하이라이트(수정 대기 마킹).
+    - 독서 흐름을 깨지 않고 태블릿에서 원문 대조 후 콕 찍어둔 단락을 보관.
+    - PC 관리자(admin)나 폰에서 바로 조회하여 키보드로 신속 수정.
+    - 수정 완료 시 자동으로 is_resolved = 1 처리.
+    """
+    __tablename__ = 'sentence_highlights'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    book_name = Column(Text, nullable=False, index=True)
+    chapter_title = Column(Text, nullable=False)
+    url = Column(Text, nullable=False, index=True)
+    pid = Column(Text, nullable=False, index=True)
+    original = Column(Text, nullable=False)
+    translated = Column(Text, nullable=False)
+    note = Column(Text, nullable=True)
+    created_at = Column(BigInteger, nullable=False)
+    updated_at = Column(BigInteger, nullable=True)
+    is_resolved = Column(Integer, nullable=False, default=0, index=True)
+
+    __table_args__ = (
+        UniqueConstraint('url', 'pid', name='uq_sentence_highlight_url_pid'),
+    )
+

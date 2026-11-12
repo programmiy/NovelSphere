@@ -60,6 +60,7 @@ class PushPayload(BaseModel):
     reading_logs: Optional[List[ReadingLogItem]] = []
     pinned_books: Optional[List[str]] = None
     glossary_rules: Optional[List[Dict[str, Any]]] = []
+    highlights: Optional[List[Dict[str, Any]]] = []
 
 class RescueChapterItem(BaseModel):
     book_name: str
@@ -546,6 +547,36 @@ def pull_changes_from_pc(since: int = 0, last_id: int = 0, limit: int = 10000):
         except Exception as de:
             logger.warning(f"Error fetching deleted_records for sync: {de}")
 
+    # 5. 하이라이트(수정 대기 및 해결 목록) 동기화
+    highlights = []
+    if last_id == 0:
+        try:
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS sentence_highlights (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    book_name TEXT NOT NULL,
+                    chapter_title TEXT NOT NULL,
+                    url TEXT NOT NULL,
+                    pid TEXT NOT NULL,
+                    original TEXT NOT NULL,
+                    translated TEXT NOT NULL,
+                    note TEXT,
+                    created_at INTEGER NOT NULL,
+                    updated_at INTEGER,
+                    is_resolved INTEGER NOT NULL DEFAULT 0,
+                    UNIQUE(url, pid)
+                )
+            """)
+            cursor.execute("""
+                SELECT id, book_name, chapter_title, url, pid, original, translated, note, created_at, updated_at, is_resolved
+                FROM sentence_highlights
+                WHERE (updated_at IS NOT NULL AND updated_at > ?) OR (created_at > ?)
+                ORDER BY id ASC
+            """, (since, since))
+            highlights = cursor.fetchall()
+        except Exception as he:
+            logger.warning(f"Error fetching sentence_highlights for sync: {he}")
+
     conn.close()
 
     payload = {
@@ -559,6 +590,7 @@ def pull_changes_from_pc(since: int = 0, last_id: int = 0, limit: int = 10000):
         "translations": new_translations,
         "updated_chapters": updated_chapters,
         "deletions": deletions,
+        "highlights": highlights,
         "activities": activities,
         "pinned_books": pinned,
         "book_tags": dict(book_tags)
@@ -626,6 +658,15 @@ async def push_changes_to_pc(request: Request, db: Session = Depends(get_db)):
                     """, (item.translated, item.timestamp, item.id))
                     if cursor.rowcount > 0:
                         updated_trans_count += 1
+                        if chk_url and item.pid:
+                            try:
+                                cursor.execute("""
+                                    UPDATE sentence_highlights
+                                    SET is_resolved = 1, updated_at = ?
+                                    WHERE url = ? AND pid = ? AND is_resolved = 0
+                                """, (int(time.time()), chk_url, item.pid))
+                            except Exception:
+                                pass
                 elif item.url and item.pid:
                     cursor.execute("""
                         UPDATE translations 
@@ -634,6 +675,14 @@ async def push_changes_to_pc(request: Request, db: Session = Depends(get_db)):
                     """, (item.translated, item.timestamp, item.url, item.pid))
                     if cursor.rowcount > 0:
                         updated_trans_count += 1
+                        try:
+                            cursor.execute("""
+                                UPDATE sentence_highlights
+                                SET is_resolved = 1, updated_at = ?
+                                WHERE url = ? AND pid = ? AND is_resolved = 0
+                            """, (int(time.time()), item.url, item.pid))
+                        except Exception:
+                            pass
 
         # 2. 독서 활동 정보 동기화 (앱에서 읽은 최신 위치/진도/북마크 우선 반영)
         if payload.activities:
@@ -733,13 +782,60 @@ async def push_changes_to_pc(request: Request, db: Session = Depends(get_db)):
                 applied_rules_count += 1
             conn.commit()
 
-        logger.info(f"[Sync Push Success] Translations: {updated_trans_count}, Activities: {updated_act_count}, Rules: {applied_rules_count}")
+        # 4. 모바일/태블릿에서 등록한 하이라이트(수정 대기 마킹) 반영
+        applied_highlights_count = 0
+        if payload.highlights:
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS sentence_highlights (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    book_name TEXT NOT NULL,
+                    chapter_title TEXT NOT NULL,
+                    url TEXT NOT NULL,
+                    pid TEXT NOT NULL,
+                    original TEXT NOT NULL,
+                    translated TEXT NOT NULL,
+                    note TEXT,
+                    created_at INTEGER NOT NULL,
+                    updated_at INTEGER,
+                    is_resolved INTEGER NOT NULL DEFAULT 0,
+                    UNIQUE(url, pid)
+                )
+            """)
+            for h in payload.highlights:
+                cursor.execute("""
+                    INSERT INTO sentence_highlights (book_name, chapter_title, url, pid, original, translated, note, created_at, updated_at, is_resolved)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(url, pid) DO UPDATE SET
+                        book_name = excluded.book_name,
+                        chapter_title = excluded.chapter_title,
+                        original = excluded.original,
+                        translated = excluded.translated,
+                        note = excluded.note,
+                        updated_at = excluded.updated_at,
+                        is_resolved = excluded.is_resolved
+                """, (
+                    h.get('book_name', ''),
+                    h.get('chapter_title', ''),
+                    h.get('url', ''),
+                    h.get('pid', ''),
+                    h.get('original', ''),
+                    h.get('translated', ''),
+                    h.get('note'),
+                    h.get('created_at', int(time.time())),
+                    h.get('updated_at', int(time.time())),
+                    h.get('is_resolved', 0),
+                ))
+                applied_highlights_count += 1
+            conn.commit()
+
+        logger.info(f"[Sync Push Success] Translations: {updated_trans_count}, Activities: {updated_act_count}, Rules: {applied_rules_count}, Highlights: {applied_highlights_count}")
         return {
             "status": "success",
             "server_ack_time": int(time.time()),
             "updated_translations": updated_trans_count,
             "updated_activities": updated_act_count,
-            "applied_glossary_rules": applied_rules_count
+            "applied_glossary_rules": applied_rules_count,
+            "applied_highlights": applied_highlights_count
         }
 
     except Exception as e:

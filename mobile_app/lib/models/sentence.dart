@@ -5,6 +5,7 @@ class Sentence {
   String translated;
   final int timestamp;
   bool isModified;
+  bool isHighlighted;
 
   Sentence({
     this.id,
@@ -13,6 +14,7 @@ class Sentence {
     required this.translated,
     required this.timestamp,
     this.isModified = false,
+    this.isHighlighted = false,
   });
 
   factory Sentence.fromJson(Map<String, dynamic> json) {

@@ -7,6 +7,7 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../../models/chapter.dart';
 import '../../models/sentence.dart';
+import '../../models/sentence_highlight.dart';
 import '../../services/local_db_service.dart';
 import '../../services/preferences_service.dart';
 import '../../services/sync_service.dart';
@@ -22,11 +23,13 @@ import 'tts_player_panel.dart';
 class ReaderScreen extends StatefulWidget {
   final String bookName;
   final String? initialChapterTitle;
+  final String? initialPid;
 
   const ReaderScreen({
     super.key,
     required this.bookName,
     this.initialChapterTitle,
+    this.initialPid,
   });
 
   @override
@@ -44,6 +47,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
   bool _showTtsPanel = false;
   bool _isTransitioningChapter = false;
   String? _similarSearchKeyword;
+  final Set<String> _expandedOriginalPids = {};
 
   // 페이징 및 스크롤 컨트롤러
   PageController _pageController = PageController();
@@ -312,7 +316,9 @@ class _ReaderScreenState extends State<ReaderScreen> {
         final found = _chapters.indexWhere((c) => c.title == widget.initialChapterTitle);
         if (found != -1) {
           initialIdx = found;
-          if (book?.lastReadChapterTitle == widget.initialChapterTitle) {
+          if (widget.initialPid != null) {
+            initialPid = widget.initialPid;
+          } else if (book?.lastReadChapterTitle == widget.initialChapterTitle) {
             initialPid = book?.lastReadPid;
           }
         }
@@ -347,6 +353,12 @@ class _ReaderScreenState extends State<ReaderScreen> {
     final targetChapter = _chapters[index];
     SyncService.activeReadingUrl = targetChapter.url;
     final sentences = await LocalDbService.loadChapterSentences(targetChapter.id!);
+    final highlightedPids = await LocalDbService.getHighlightedPids(targetChapter.url);
+    for (var s in sentences) {
+      if (s.pid != null && highlightedPids.contains(s.pid)) {
+        s.isHighlighted = true;
+      }
+    }
 
     final perPage = _sentencesPerPage;
     final pageCount = (sentences.length / perPage).ceil().clamp(1, 9999);
@@ -487,9 +499,267 @@ class _ReaderScreenState extends State<ReaderScreen> {
     );
   }
 
-  void _onSentenceLongPressed(Sentence sentence) {
-    final theme = ReaderThemes.getTheme(PreferencesService.theme);
+  Future<void> _toggleHighlight(Sentence sentence) async {
+    final currentChap = _chapters[_currentChapterIndex];
+    final isNowHighlighted = !sentence.isHighlighted;
 
+    setState(() {
+      sentence.isHighlighted = isNowHighlighted;
+    });
+
+    if (isNowHighlighted) {
+      final item = SentenceHighlight(
+        bookName: currentChap.bookName,
+        chapterTitle: currentChap.title,
+        url: currentChap.url,
+        pid: sentence.pid ?? 'p0',
+        original: sentence.original,
+        translated: sentence.translated,
+        createdAt: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+        isResolved: 0,
+      );
+      await LocalDbService.addSentenceHighlight(item);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('수정 대기 하이라이트가 등록되었습니다. (PC/폰에서 바로 조회 및 수정 가능)'),
+            duration: Duration(seconds: 2),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } else {
+      await LocalDbService.removeSentenceHighlight(currentChap.url, sentence.pid ?? 'p0');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('하이라이트가 해제되었습니다.'),
+            duration: Duration(seconds: 2),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
+  }
+
+  void _onSentenceLongPressed(Sentence sentence) {
+    _showSentenceActionSheet(sentence);
+  }
+
+  void _showSentenceActionSheet(Sentence sentence) {
+    final theme = ReaderThemes.getTheme(PreferencesService.theme);
+    final primary = HyperAestheticTheme.getAmbientPrimary(theme);
+    final isOriginalExpanded = _expandedOriginalPids.contains(sentence.pid);
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            final isHl = sentence.isHighlighted;
+            return Container(
+              margin: const EdgeInsets.all(16),
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+              decoration: HyperAestheticTheme.glassBox(
+                theme: theme,
+                borderRadius: 24,
+                opacity: 0.96,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      margin: const EdgeInsets.only(bottom: 16),
+                      decoration: BoxDecoration(
+                        color: theme.subTextColor.withOpacity(0.3),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                          color: (isHl ? Colors.amber : primary).withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Icon(
+                          isHl ? Icons.edit_note_rounded : Icons.translate_rounded,
+                          color: isHl ? Colors.amber : primary,
+                          size: 20,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              sentence.translated.isNotEmpty ? sentence.translated : '(빈 번역문)',
+                              style: TextStyle(
+                                color: theme.textColor,
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600,
+                                height: 1.4,
+                              ),
+                              maxLines: 3,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            if (sentence.original.isNotEmpty) ...[
+                              const SizedBox(height: 6),
+                              Text(
+                                sentence.original,
+                                style: TextStyle(
+                                  color: theme.originalTextColor,
+                                  fontSize: 13,
+                                  height: 1.35,
+                                ),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  const Divider(height: 1),
+                  const SizedBox(height: 12),
+                  // 액션 버튼 1: [수정 대기 하이라이트 토글] (원터치 콕)
+                  InkWell(
+                    onTap: () async {
+                      Navigator.pop(ctx);
+                      await _toggleHighlight(sentence);
+                    },
+                    borderRadius: BorderRadius.circular(14),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                      decoration: BoxDecoration(
+                        color: (isHl ? Colors.amber : primary).withOpacity(0.12),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
+                          color: (isHl ? Colors.amber : primary).withOpacity(0.35),
+                          width: 1.2,
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            isHl ? Icons.bookmark_remove_rounded : Icons.bookmark_add_rounded,
+                            color: isHl ? Colors.amber : primary,
+                            size: 22,
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  isHl ? '수정 대기 마킹 해제' : '수정 대기 하이라이트 콕 찍기',
+                                  style: TextStyle(
+                                    color: theme.textColor,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  isHl ? '마킹을 해제하고 정상 표시로 되돌립니다.' : '태블릿에서 콕 찍어두고 PC/폰에서 키보드로 바로 수정',
+                                  style: TextStyle(
+                                    color: theme.subTextColor,
+                                    fontSize: 11,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: (isHl ? Colors.amber : primary).withOpacity(0.2),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              isHl ? 'ON' : 'OFF',
+                              style: TextStyle(
+                                color: isHl ? Colors.amber : primary,
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  if (sentence.original.isNotEmpty)
+                    ListTile(
+                      dense: true,
+                      leading: Icon(
+                        isOriginalExpanded ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                        color: theme.subTextColor,
+                      ),
+                      title: Text(
+                        isOriginalExpanded ? '본문에서 원문 숨기기' : '본문에서 원문 항상 펼치기',
+                        style: TextStyle(color: theme.textColor, fontSize: 14),
+                      ),
+                      onTap: () {
+                        Navigator.pop(ctx);
+                        setState(() {
+                          if (isOriginalExpanded) {
+                            _expandedOriginalPids.remove(sentence.pid);
+                          } else {
+                            if (sentence.pid != null) _expandedOriginalPids.add(sentence.pid!);
+                          }
+                        });
+                      },
+                    ),
+                  ListTile(
+                    dense: true,
+                    leading: Icon(Icons.edit_outlined, color: theme.subTextColor),
+                    title: Text(
+                      '키보드로 직접 수정하기',
+                      style: TextStyle(color: theme.textColor, fontSize: 14),
+                    ),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      _openQuickEditDialog(sentence);
+                    },
+                  ),
+                  if (sentence.original.isNotEmpty)
+                    ListTile(
+                      dense: true,
+                      leading: Icon(Icons.copy_rounded, color: theme.subTextColor),
+                      title: Text('일본어 원문 복사', style: TextStyle(color: theme.textColor, fontSize: 14)),
+                      onTap: () {
+                        Clipboard.setData(ClipboardData(text: sentence.original));
+                        Navigator.pop(ctx);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('원문이 클립보드에 복사되었습니다.')),
+                        );
+                      },
+                    ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _openQuickEditDialog(Sentence sentence) {
+    final theme = ReaderThemes.getTheme(PreferencesService.theme);
     showDialog(
       context: context,
       builder: (ctx) => QuickEditDialog(
@@ -1347,11 +1617,12 @@ class _ReaderScreenState extends State<ReaderScreen> {
     );
   }
 
-  // 문장 렌더러 (독립 한/일 폰트 적용 & 롱프레스 오역 수정 & 원문 대역 지원 & 탭 시 화면 컨트롤/네비게이션 연동)
+  // 문장 렌더러 (독립 한/일 폰트 적용 & 하이라이트(수정 대기) 시각화 & 롱프레스 액션 시트 & 원문 대역 지원)
   Widget _buildSentenceItem(Sentence sentence, ReaderThemeData theme) {
     final originalMode = PreferencesService.originalTextMode;
-    final showOriginal = originalMode == 'bilingual';
-    final showTooltip = originalMode == 'tooltip' && sentence.original.isNotEmpty;
+    final isOriginalExpanded = sentence.pid != null && _expandedOriginalPids.contains(sentence.pid);
+    final showOriginal = (originalMode == 'bilingual') || isOriginalExpanded;
+    final isHl = sentence.isHighlighted;
 
     return Padding(
       padding: EdgeInsets.only(bottom: PreferencesService.paragraphSpacing),
@@ -1359,11 +1630,46 @@ class _ReaderScreenState extends State<ReaderScreen> {
         behavior: HitTestBehavior.opaque,
         onTapUp: (details) => _handleScreenTap(details.globalPosition),
         onLongPress: () => _onSentenceLongPressed(sentence),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 2),
+        child: Container(
+          decoration: isHl
+              ? BoxDecoration(
+                  color: Colors.amber.withOpacity(theme.isDark ? 0.16 : 0.22),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border(
+                    left: BorderSide(
+                      color: Colors.amber.shade600,
+                      width: 3.5,
+                    ),
+                  ),
+                )
+              : null,
+          padding: isHl
+              ? const EdgeInsets.fromLTRB(10, 6, 8, 6)
+              : const EdgeInsets.symmetric(vertical: 2),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // 하이라이트(수정 대기) 배지
+              if (isHl)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 3),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.edit_note_rounded, size: 14, color: Colors.amber.shade700),
+                      const SizedBox(width: 4),
+                      Text(
+                        '수정 대기 마킹됨',
+                        style: TextStyle(
+                          color: Colors.amber.shade700,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 0.2,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               // 한국어 번역문 (루비/방점 자동 전환 및 선택한 한국어 폰트 적용)
               NovelRubyText(
                 text: sentence.translated,
@@ -1377,80 +1683,113 @@ class _ReaderScreenState extends State<ReaderScreen> {
                   fontName: PreferencesService.koreanFont,
                 ),
               ),
-              // 원문 툴팁 모드 (원문 말풍선 팝업)
-              if (showTooltip) ...[
+              // 원문 툴팁 또는 인라인 토글 버튼
+              if (sentence.original.isNotEmpty && originalMode != 'bilingual') ...[
                 const SizedBox(height: 3),
-                Tooltip(
-                  message: sentence.original,
-                  triggerMode: TooltipTriggerMode.tap,
-                  preferBelow: false,
-                  showDuration: const Duration(seconds: 5),
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: theme.surfaceColor,
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: theme.accentColor.withOpacity(0.45), width: 1.2),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(theme.isDark ? 0.35 : 0.08),
-                        blurRadius: 10,
-                        offset: const Offset(0, 3),
-                      ),
-                    ],
-                  ),
-                  textStyle: FontHelper.getJapaneseStyle(
-                    baseStyle: TextStyle(
-                      color: theme.textColor,
-                      fontSize: 13,
-                      height: 1.45,
-                    ),
-                    fontName: PreferencesService.japaneseFont,
-                  ),
-                  child: Container(
-                    margin: const EdgeInsets.only(top: 2),
-                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: theme.accentColor.withOpacity(0.10),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    InkWell(
+                      onTap: () {
+                        setState(() {
+                          if (sentence.pid != null) {
+                            if (_expandedOriginalPids.contains(sentence.pid)) {
+                              _expandedOriginalPids.remove(sentence.pid);
+                            } else {
+                              _expandedOriginalPids.add(sentence.pid!);
+                            }
+                          }
+                        });
+                      },
                       borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: theme.accentColor.withOpacity(0.25), width: 0.8),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          '原',
-                          style: TextStyle(
-                            color: theme.accentColor,
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: (isOriginalExpanded ? theme.accentColor : theme.accentColor.withOpacity(0.10)),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(
+                            color: theme.accentColor.withOpacity(0.35),
+                            width: 0.8,
                           ),
                         ),
-                        const SizedBox(width: 4),
-                        Text(
-                          '원문 보기',
-                          style: TextStyle(
-                            color: theme.subTextColor,
-                            fontSize: 10,
-                            fontWeight: FontWeight.w500,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              '原',
+                              style: TextStyle(
+                                color: isOriginalExpanded ? Colors.white : theme.accentColor,
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              isOriginalExpanded ? '원문 접기' : '원문 대조',
+                              style: TextStyle(
+                                color: isOriginalExpanded ? Colors.white : theme.subTextColor,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    // 원터치 하이라이트 콕 찍기 미니 버튼
+                    InkWell(
+                      onTap: () => _toggleHighlight(sentence),
+                      borderRadius: BorderRadius.circular(6),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: (isHl ? Colors.amber.shade700 : theme.subTextColor.withOpacity(0.08)),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(
+                            color: isHl ? Colors.amber.shade700 : theme.subTextColor.withOpacity(0.2),
+                            width: 0.8,
                           ),
                         ),
-                      ],
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              isHl ? Icons.bookmark_added_rounded : Icons.bookmark_add_outlined,
+                              size: 11,
+                              color: isHl ? Colors.white : theme.subTextColor,
+                            ),
+                            const SizedBox(width: 3),
+                            Text(
+                              isHl ? '마킹됨' : '마킹',
+                              style: TextStyle(
+                                color: isHl ? Colors.white : theme.subTextColor,
+                                fontSize: 10,
+                                fontWeight: isHl ? FontWeight.bold : FontWeight.normal,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
-                  ),
+                  ],
                 ),
               ],
               // 원문 대역 표시 (선택한 일본어 폰트 적용)
               if (showOriginal && sentence.original.isNotEmpty) ...[
                 const SizedBox(height: 4),
-                Text(
-                  sentence.original,
-                  style: FontHelper.getJapaneseStyle(
-                    baseStyle: TextStyle(
-                      color: theme.originalTextColor,
-                      fontSize: PreferencesService.fontSize * 0.85,
-                      height: 1.4,
+                Container(
+                  padding: const EdgeInsets.only(left: 4, top: 2),
+                  child: Text(
+                    sentence.original,
+                    style: FontHelper.getJapaneseStyle(
+                      baseStyle: TextStyle(
+                        color: theme.originalTextColor,
+                        fontSize: PreferencesService.fontSize * 0.85,
+                        height: 1.4,
+                      ),
+                      fontName: PreferencesService.japaneseFont,
                     ),
-                    fontName: PreferencesService.japaneseFont,
                   ),
                 ),
               ],

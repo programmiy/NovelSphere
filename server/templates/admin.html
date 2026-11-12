@@ -35,6 +35,9 @@
                     <p class="cyber-subtitle">NEURAL TEXT COMPILATION & DIAGNOSTIC CONSOLE</p>
                 </div>
                 <div class="header-actions-deck">
+                    <button type="button" id="openTabletHighlightsBtn" class="btn btn-cyber-amber glow-amber" title="태블릿/모바일 독서 중 마킹한 수정 대기 문장 조회 및 즉시 수정">
+                        <span class="btn-icon">🖊️</span> 태블릿 마킹 <span id="tabletHighlightBadge" class="badge font-hud" style="background:#f59e0b; color:#000; border-radius:10px; padding:2px 7px; font-size:11px; font-weight:bold; margin-left:4px;">0</span>
+                    </button>
                     <button onclick="window.location.href='/special_batch';" class="btn btn-cyber-purple glow-purple" title="특별 적재 배치 검수기"><span class="btn-icon">⚡</span> 특별 적재 검수 &rarr;</button>
                     <button onclick="window.location.href='/ai_review';" class="btn btn-cyber-cyan glow-cyan" title="AI 단락 번역 품질 검수"><span class="btn-icon">🧠</span> AI 번역 검수 &rarr;</button>
                     <button onclick="window.location.href='/ai_reretranslate';" class="btn btn-cyber-amber glow-amber" title="AI 2차 재번역 센터"><span class="btn-icon">⚡</span> AI 재재번역 센터 &rarr;</button>
@@ -311,6 +314,30 @@
         <div class="empty-state" id="emptyState" style="display: none;">
             <h2>기록이 없습니다</h2>
             <p>웹페이지에서 일본어를 번역하면 여기에 기록이 저장됩니다.</p>
+        </div>
+    </div>
+
+    <!-- 태블릿/모바일 수정 대기 마킹 모달 -->
+    <div class="edit-modal" id="tabletHighlightsModal" style="display: none;">
+        <div class="modal-content" style="max-width: 920px; width: 94%;">
+            <div class="modal-header">
+                <div class="modal-title" style="display: flex; align-items: center; gap: 8px;">
+                    <span style="color: #f59e0b; font-size: 20px;">🖊️</span>
+                    <span>태블릿/모바일 수정 대기 마킹 목록</span>
+                    <span id="tabletModalCountBadge" class="badge font-hud" style="background:#f59e0b; color:#000; font-size:12px; font-weight:bold; border-radius:12px; padding:2px 8px;">0건</span>
+                </div>
+                <button class="close-btn" id="closeTabletHighlightsModalBtn">×</button>
+            </div>
+            <div style="padding: 12px 20px; font-size: 13px; color: var(--text-muted); border-bottom: 1px solid var(--border-color);">
+                태블릿(갤럭시 탭 S8)이나 폰에서 독서 중 콕 찍어둔 어색한 문장들입니다. 클릭 시 해당 단락 행으로 순간이동하거나 인라인에서 즉시 수정할 수 있습니다.
+            </div>
+            <div id="tabletHighlightsList" style="max-height: 60vh; overflow-y: auto; padding: 16px 20px; display: flex; flex-direction: column; gap: 12px;">
+                <div style="text-align: center; padding: 40px; color: var(--text-muted);">불러오는 중...</div>
+            </div>
+            <div class="modal-actions" style="justify-content: space-between;">
+                <button type="button" class="btn btn-outline" id="refreshTabletHighlightsBtn">🔄 새로고침</button>
+                <button type="button" class="btn btn-cyber-primary" id="closeTabletHighlightsModalBottomBtn">닫기</button>
+            </div>
         </div>
     </div>
 

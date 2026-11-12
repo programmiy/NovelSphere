@@ -76,6 +76,11 @@ import {
     checkAndLoadUnclassifiedNovels
 } from './admin-drawer.js';
 
+import {
+    initTabletHighlights,
+    loadTabletHighlightBadge
+} from './admin-highlights.js';
+
 // Theme toggling
 export function toggleDarkMode() {
     const isDark = document.body.classList.toggle('dark-mode');
@@ -370,6 +375,7 @@ export function setupEventListeners() {
     initStatsAnalyticsModal();
     initAppReleaseModal();
     initUnclassifiedDrawer();
+    initTabletHighlights();
 
     // 키워드 칩 클릭 → 찾아바꾸기 모달 열기
     document.addEventListener('click', (e) => {

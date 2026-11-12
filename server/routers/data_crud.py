@@ -24,6 +24,7 @@ from server.models import (
     AppliedUrl,
     CleanupQueuedItem,
     ManualTranslationNovel,
+    SentenceHighlight,
     Translation,
     TranslationTrash,
     UrlMetadata,
@@ -340,6 +341,16 @@ def upsert_translations(items: List[TranslationItem], db: Session = Depends(get_
             if not existing_translation.timestamp:
                 existing_translation.timestamp = item.timestamp
             existing_translation.updated_at = int(time.time())
+
+            # 태블릿/모바일에서 꽂아둔 수정 대기 하이라이트가 있다면 수정 완료(is_resolved=1)로 자동 해제
+            db.query(SentenceHighlight).filter(
+                SentenceHighlight.url == item.url,
+                SentenceHighlight.pid == item.pid,
+                SentenceHighlight.is_resolved == 0,
+            ).update(
+                {"is_resolved": 1, "updated_at": int(time.time())},
+                synchronize_session=False,
+            )
 
             # 폴더명 보정: 검열 회피/수동 소설만 폴더명 강제 귀속 허용. 일반 소설은 기존 폴더(미분류는 계속 미분류) 보존
             if is_manual_novel:
