@@ -543,7 +543,20 @@ class _ReaderScreenState extends State<ReaderScreen> {
   }
 
   void _onSentenceLongPressed(Sentence sentence) {
-    _showSentenceActionSheet(sentence);
+    if (sentence.original.isEmpty) {
+      _showSentenceActionSheet(sentence);
+      return;
+    }
+    HapticFeedback.lightImpact();
+    setState(() {
+      if (sentence.pid != null) {
+        if (_expandedOriginalPids.contains(sentence.pid)) {
+          _expandedOriginalPids.remove(sentence.pid);
+        } else {
+          _expandedOriginalPids.add(sentence.pid!);
+        }
+      }
+    });
   }
 
   void _showSentenceActionSheet(Sentence sentence) {
@@ -1683,112 +1696,109 @@ class _ReaderScreenState extends State<ReaderScreen> {
                   fontName: PreferencesService.koreanFont,
                 ),
               ),
-              // 원문 툴팁 또는 인라인 토글 버튼
-              if (sentence.original.isNotEmpty && originalMode != 'bilingual') ...[
-                const SizedBox(height: 3),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    InkWell(
-                      onTap: () {
-                        setState(() {
-                          if (sentence.pid != null) {
-                            if (_expandedOriginalPids.contains(sentence.pid)) {
-                              _expandedOriginalPids.remove(sentence.pid);
-                            } else {
-                              _expandedOriginalPids.add(sentence.pid!);
-                            }
-                          }
-                        });
-                      },
+              // 원문 대역 표시 (선택한 일본어 폰트 적용 & 길게 누르면 다시 원문 닫힘)
+              if (showOriginal && sentence.original.isNotEmpty) ...[
+                const SizedBox(height: 6),
+                GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () {}, // 배경 탭 흡수로 상하단 바 불필요한 토글 방지
+                  onLongPress: () {
+                    HapticFeedback.lightImpact();
+                    setState(() {
+                      if (sentence.pid != null) {
+                        _expandedOriginalPids.remove(sentence.pid);
+                      }
+                    });
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+                    decoration: BoxDecoration(
+                      color: theme.isDark
+                          ? Colors.white.withOpacity(0.04)
+                          : Colors.black.withOpacity(0.03),
                       borderRadius: BorderRadius.circular(6),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: (isOriginalExpanded ? theme.accentColor : theme.accentColor.withOpacity(0.10)),
-                          borderRadius: BorderRadius.circular(6),
-                          border: Border.all(
-                            color: theme.accentColor.withOpacity(0.35),
-                            width: 0.8,
-                          ),
+                      border: Border(
+                        left: BorderSide(
+                          color: theme.accentColor.withOpacity(0.6),
+                          width: 2.5,
                         ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
                           children: [
                             Text(
-                              '原',
+                              '日本語 原文',
                               style: TextStyle(
-                                color: isOriginalExpanded ? Colors.white : theme.accentColor,
+                                color: theme.accentColor,
                                 fontSize: 10,
                                 fontWeight: FontWeight.bold,
+                                letterSpacing: 0.5,
                               ),
                             ),
-                            const SizedBox(width: 4),
-                            Text(
-                              isOriginalExpanded ? '원문 접기' : '원문 대조',
-                              style: TextStyle(
-                                color: isOriginalExpanded ? Colors.white : theme.subTextColor,
-                                fontSize: 10,
-                                fontWeight: FontWeight.w500,
+                            const Spacer(),
+                            // 원터치 하이라이트 콕 찍기 버튼
+                            InkWell(
+                              onTap: () => _toggleHighlight(sentence),
+                              borderRadius: BorderRadius.circular(4),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: isHl ? Colors.amber.shade700 : theme.subTextColor.withOpacity(0.12),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      isHl ? Icons.bookmark_added_rounded : Icons.bookmark_add_outlined,
+                                      size: 11,
+                                      color: isHl ? Colors.white : theme.subTextColor,
+                                    ),
+                                    const SizedBox(width: 3),
+                                    Text(
+                                      isHl ? '마킹됨' : '마킹',
+                                      style: TextStyle(
+                                        color: isHl ? Colors.white : theme.subTextColor,
+                                        fontSize: 10,
+                                        fontWeight: isHl ? FontWeight.bold : FontWeight.normal,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            // 상세 액션 시트 (키보드 수정, 복사 등)
+                            InkWell(
+                              onTap: () => _showSentenceActionSheet(sentence),
+                              borderRadius: BorderRadius.circular(4),
+                              child: Padding(
+                                padding: const EdgeInsets.all(2),
+                                child: Icon(
+                                  Icons.more_horiz_rounded,
+                                  size: 16,
+                                  color: theme.subTextColor,
+                                ),
                               ),
                             ),
                           ],
                         ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    // 원터치 하이라이트 콕 찍기 미니 버튼
-                    InkWell(
-                      onTap: () => _toggleHighlight(sentence),
-                      borderRadius: BorderRadius.circular(6),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: (isHl ? Colors.amber.shade700 : theme.subTextColor.withOpacity(0.08)),
-                          borderRadius: BorderRadius.circular(6),
-                          border: Border.all(
-                            color: isHl ? Colors.amber.shade700 : theme.subTextColor.withOpacity(0.2),
-                            width: 0.8,
+                        const SizedBox(height: 4),
+                        Text(
+                          sentence.original,
+                          style: FontHelper.getJapaneseStyle(
+                            baseStyle: TextStyle(
+                              color: theme.originalTextColor,
+                              fontSize: PreferencesService.fontSize * 0.88,
+                              height: 1.45,
+                            ),
+                            fontName: PreferencesService.japaneseFont,
                           ),
                         ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              isHl ? Icons.bookmark_added_rounded : Icons.bookmark_add_outlined,
-                              size: 11,
-                              color: isHl ? Colors.white : theme.subTextColor,
-                            ),
-                            const SizedBox(width: 3),
-                            Text(
-                              isHl ? '마킹됨' : '마킹',
-                              style: TextStyle(
-                                color: isHl ? Colors.white : theme.subTextColor,
-                                fontSize: 10,
-                                fontWeight: isHl ? FontWeight.bold : FontWeight.normal,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-              // 원문 대역 표시 (선택한 일본어 폰트 적용)
-              if (showOriginal && sentence.original.isNotEmpty) ...[
-                const SizedBox(height: 4),
-                Container(
-                  padding: const EdgeInsets.only(left: 4, top: 2),
-                  child: Text(
-                    sentence.original,
-                    style: FontHelper.getJapaneseStyle(
-                      baseStyle: TextStyle(
-                        color: theme.originalTextColor,
-                        fontSize: PreferencesService.fontSize * 0.85,
-                        height: 1.4,
-                      ),
-                      fontName: PreferencesService.japaneseFont,
+                      ],
                     ),
                   ),
                 ),
