@@ -1,6 +1,7 @@
 import time
 import logging
-from typing import List, Dict, Any
+from datetime import datetime
+from typing import List, Dict, Any, Optional
 from collections import defaultdict
 from server.database import get_sqlite_conn
 
@@ -75,20 +76,43 @@ def update_book_toc_order(folder_name: str, urls: List[Dict[str, str]]) -> int:
         else:
             cursor.execute("UPDATE translations SET toc_sort_order = NULL WHERE folderName = ?", (folder_name,))
 
-        now_ts = int(time.time())
+        # 타임스탬프 다중 폴백: time 모듈 -> datetime 모듈 -> SQLite 내장 함수 (time 모듈 부재 시에도 100% 정상 작동)
+        now_ts = None
+        try:
+            import time
+            now_ts = int(time.time())
+        except Exception:
+            try:
+                from datetime import datetime
+                now_ts = int(datetime.utcnow().timestamp())
+            except Exception:
+                now_ts = None
+
         for i, item in enumerate(urls):
             normalized_url = item["url"].rstrip('/')
             
             if folder_name == "미분류":
-                cursor.execute(
-                    "UPDATE translations SET toc_sort_order = ?, title = ?, updated_at = ? WHERE folderName IS NULL AND (RTRIM(url, '/') = ? OR url = ?)",
-                    (i, item["title"], now_ts, normalized_url, item["url"])
-                )
+                if now_ts is not None:
+                    cursor.execute(
+                        "UPDATE translations SET toc_sort_order = ?, title = ?, updated_at = ? WHERE folderName IS NULL AND (RTRIM(url, '/') = ? OR url = ?)",
+                        (i, item["title"], now_ts, normalized_url, item["url"])
+                    )
+                else:
+                    cursor.execute(
+                        "UPDATE translations SET toc_sort_order = ?, title = ?, updated_at = CAST(strftime('%s', 'now') AS INTEGER) WHERE folderName IS NULL AND (RTRIM(url, '/') = ? OR url = ?)",
+                        (i, item["title"], normalized_url, item["url"])
+                    )
             else:
-                cursor.execute(
-                    "UPDATE translations SET toc_sort_order = ?, title = ?, updated_at = ? WHERE folderName = ? AND (RTRIM(url, '/') = ? OR url = ?)",
-                    (i, item["title"], now_ts, folder_name, normalized_url, item["url"])
-                )
+                if now_ts is not None:
+                    cursor.execute(
+                        "UPDATE translations SET toc_sort_order = ?, title = ?, updated_at = ? WHERE folderName = ? AND (RTRIM(url, '/') = ? OR url = ?)",
+                        (i, item["title"], now_ts, folder_name, normalized_url, item["url"])
+                    )
+                else:
+                    cursor.execute(
+                        "UPDATE translations SET toc_sort_order = ?, title = ?, updated_at = CAST(strftime('%s', 'now') AS INTEGER) WHERE folderName = ? AND (RTRIM(url, '/') = ? OR url = ?)",
+                        (i, item["title"], folder_name, normalized_url, item["url"])
+                    )
             if cursor.rowcount > 0:
                 updated_count += 1
 

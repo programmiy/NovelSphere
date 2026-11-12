@@ -4,6 +4,8 @@ import json
 import re
 import requests
 import logging
+import time
+from datetime import datetime
 from fastapi import APIRouter, HTTPException, BackgroundTasks
 from fastapi.responses import JSONResponse, HTMLResponse
 from pydantic import BaseModel
@@ -157,7 +159,10 @@ def update_folder_name(folder_name: str, req: FolderUpdate):
         if cursor.fetchone():
             raise HTTPException(status_code=409, detail=f"폴더 '{new_name}'이(가) 이미 존재합니다.")
 
-        now_ts = int(time.time())
+        try:
+            now_ts = int(time.time())
+        except Exception:
+            now_ts = int(datetime.utcnow().timestamp())
         cursor.execute("UPDATE translations SET folderName = ?, updated_at = ? WHERE folderName = ?", (new_name, now_ts, old_name))
         cursor.execute("UPDATE book_activity SET folderName = ? WHERE folderName = ?", (new_name, old_name))
         cursor.execute("UPDATE pinned_books SET folderName = ? WHERE folderName = ?", (new_name, old_name))
