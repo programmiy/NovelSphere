@@ -123,6 +123,7 @@ class TranslateRequest(BaseModel):
     url: str
     is_retranslation: Optional[bool] = False
     model: Optional[str] = None
+    force_hdtrans: Optional[bool] = False
 
 
 class ExcludeRequest(BaseModel):
@@ -286,6 +287,52 @@ def translate_texts(req: TranslateRequest, db: Session = Depends(get_db)):
         ])
 
     items_to_translate = actual_items_to_translate
+
+    # ⚡ [hdTrans 오프라인 직접 번역 가드: force_hdtrans 또는 모델이 hdtrans인 경우]
+    # 마지막 번역 꾸러미 이후 발생하는 보완 번역이나 실패 재시도 시 Gemini API 쿼터 소모를 방지하기 위해
+    # 로컬 hdTrans 오프라인 엔진으로 직접 초고속 번역을 수행합니다. (API 쿼터 소모 0건)
+    if getattr(req, "force_hdtrans", False) or (req.model and "hdtrans" in req.model.lower()):
+        if is_hdtrans_available():
+            logger.info(
+                f"[hdTrans 오프라인 직접 번역] {len(items_to_translate)}개 문장을 로컬 hdTrans 엔진으로 번역합니다. (Gemini API 쿼터 소모 0건)"
+            )
+            try:
+                paragraphs = [it.text for it in items_to_translate]
+                hd_translations = translate_paragraphs(paragraphs)
+                translated_results = {}
+                for it, trans in zip(items_to_translate, hd_translations):
+                    cleaned = process_repeated_chars(trans)
+                    cleaned = restore_brackets(it.text, cleaned)
+                    translated_results[str(it.id)] = {
+                        "id": it.id,
+                        "original": it.text,
+                        "translated": cleaned,
+                        "censored": False,
+                        "verbatim": False,
+                        "verbatim_category": None,
+                        "engine": "hdtrans"
+                    }
+                final_translations = []
+                for item in req.items:
+                    if str(item.id) in translated_results:
+                        final_translations.append(translated_results[str(item.id)])
+                    elif str(item.id) in fast_pass_results:
+                        final_translations.append(fast_pass_results[str(item.id)])
+                    else:
+                        final_translations.append({
+                            "id": item.id,
+                            "original": item.text,
+                            "translated": item.text,
+                            "censored": False,
+                            "verbatim": False,
+                            "verbatim_category": None,
+                            "engine": "hdtrans"
+                        })
+                return _build_translate_response(final_translations)
+            except Exception as e:
+                logger.error(f"[hdTrans 직접 번역 실패] {e}. Gemini API 호출로 폴백합니다.")
+        else:
+            logger.warning("[hdTrans 직접 번역 요청] 로컬 hdtrans.exe를 찾을 수 없어 Gemini API로 폴백합니다.")
 
     if not settings.gemini_api_key or "YOUR_GEMINI_API_KEY_HERE" in settings.gemini_api_key:
         raise HTTPException(status_code=500, detail="Gemini API 키가 설정되지 않았습니다. .env 파일을 확인해주세요.")

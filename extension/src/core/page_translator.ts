@@ -394,6 +394,7 @@ export async function translateAllPTags(isRetranslation = false): Promise<void> 
   isTranslatingInProgress = true;
   state.hasScannedForPTags = true;
   state.isTranslationCancelled = false;
+  state.isAfterLastChunk = false; // ⚡ 새 페이지/새 회차 번역 시작 시 갱신(초기화)
   state.notifyInflightStart();
 
   const stopBtn = document.getElementById('stop-translation-btn');
@@ -539,13 +540,20 @@ export async function translateAllPTags(isRetranslation = false): Promise<void> 
     sortSidebarDescending(allParagraphs.map((p) => p.id));
 
     // 묶음 번역 헬퍼
-    async function translateChunk(items: Array<{ id: string; text: string }>, chunkSize: number): Promise<void> {
+    async function translateChunk(
+      items: Array<{ id: string; text: string }>,
+      chunkSize: number,
+      isCurrentChunkLast = false
+    ): Promise<void> {
       if (state.isTranslationCancelled) return;
 
       // ⚡ 실시간 번역 제외 반영: 사용자가 번역 진행 중 제외한 문단(및 그 이후 문단)은 API 호출 목록에서 즉시 필터링
       const activeItems = items.filter((item) => !state.isPidExcluded(item.id, item.text));
       if (activeItems.length === 0) {
         logToSidebar(`[실시간 제외] 묶음의 모든 문단(${items.length}개)이 번역 제외되어 Gemini API 호출을 건너뜁니다.`);
+        if (isCurrentChunkLast) {
+          state.isAfterLastChunk = true;
+        }
         return;
       }
       if (activeItems.length < items.length) {
@@ -559,10 +567,19 @@ export async function translateAllPTags(isRetranslation = false): Promise<void> 
 
       for (let attempt = 0; attempt < MAX_MESSAGE_RETRIES; attempt++) {
         try {
+          const shouldUseHdTrans = state.isAfterLastChunk;
+          if (shouldUseHdTrans) {
+            logToSidebar(
+              `⚡ [hdTrans 오프라인 번역] 마지막 번역 꾸러미 이후 요청(${items.length}문장)을 로컬 hdTrans로 번역합니다. (API 쿼터 소모 0회)`,
+              'info'
+            );
+          }
+
           const response = await chrome.runtime.sendMessage({
             action: 'batchTranslate',
             items: items,
             isRetranslation: isRetranslation,
+            forceHdtrans: shouldUseHdTrans,
           });
 
           if (state.isTranslationCancelled) return;
@@ -618,6 +635,11 @@ export async function translateAllPTags(isRetranslation = false): Promise<void> 
           }
 
           if (response && response.translations) {
+            // 정규 마지막 청크의 최초 1회 요청이 완료된 시점부터는 '마지막 꾸러미 진행 이후'로 트리거 발동
+            if (isCurrentChunkLast) {
+              state.isAfterLastChunk = true;
+            }
+
             // 요청 중 사용자가 제외를 눌렀을 수 있으므로 실시간 제외 필터링
             response.translations = response.translations.filter(
               (t: any) => !state.isPidExcluded(String(t.id), t.original)
@@ -713,6 +735,9 @@ export async function translateAllPTags(isRetranslation = false): Promise<void> 
             logToSidebar(`통신 오류. ${Math.round(delay / 1000)}초 후 재시도... (${attempt + 1}/${MAX_MESSAGE_RETRIES})`, 'log-error');
             await new Promise((resolve) => setTimeout(resolve, delay));
           } else {
+            if (isCurrentChunkLast) {
+              state.isAfterLastChunk = true;
+            }
             logToSidebar(`${items.length}개 항목 통신 최종 실패. 단위를 줄여 재시도합니다.`, 'log-error');
             await handleFailure(items, chunkSize);
           }
@@ -750,6 +775,7 @@ export async function translateAllPTags(isRetranslation = false): Promise<void> 
                 action: 'batchTranslate',
                 items: subItems,
                 isRetranslation: true,
+                forceHdtrans: state.isAfterLastChunk,
               });
               if (res && res.translations) {
                 const combined = res.translations.map((t: any) => t.translated || '').join(' ');
@@ -837,7 +863,7 @@ export async function translateAllPTags(isRetranslation = false): Promise<void> 
         subtext: `묶음 ${index + 1}/${chunks.length} 요청 중 (약 ${currentChunkChars.toLocaleString()}자)`,
       });
 
-      await translateChunk(currentChunk, currentChunk.length);
+      await translateChunk(currentChunk, currentChunk.length, isLastChunk);
 
       showLanovelProgressHud({
         title: state.isTurboMode ? '번역 진행 중 (⚡쾌속)' : '번역 진행 중',
@@ -884,6 +910,9 @@ export async function translateAllPTags(isRetranslation = false): Promise<void> 
       }
     }
 
+    // ⚡ 정규 청크 순회 완료: 이후 발생하는 보완 번역꾸러미 및 잔여 재시도는 hdTrans 오프라인 모드로 확실히 전환
+    state.isAfterLastChunk = true;
+
     // [번역 완료 직전 최종 빈칸 확인 및 보완 마지막 번역꾸러미]
     if (!state.isTranslationCancelled) {
       const remainingEmptyItems = getPendingEmptyItems(
@@ -896,7 +925,7 @@ export async function translateAllPTags(isRetranslation = false): Promise<void> 
       );
       if (remainingEmptyItems.length > 0) {
         logToSidebar(
-          `[보완 번역꾸러미] 번역 완료 직전, 미완료 빈칸 번역 ${remainingEmptyItems.length}개가 감지되어 마지막 번역꾸러미로 추가 번역을 진행합니다.`
+          `[보완 번역꾸러미 - hdTrans] 번역 완료 직전, 미완료 빈칸 번역 ${remainingEmptyItems.length}개를 hdTrans 오프라인 엔진으로 추가 번역합니다. (API 쿼터 소모 0회)`
         );
         showLanovelProgressHud({
           title: '보완 번역 진행 중',

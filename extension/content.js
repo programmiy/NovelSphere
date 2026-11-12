@@ -333,6 +333,8 @@
         translationsLoadedPromise = null;
         userDeletedTranslationPids = /* @__PURE__ */ new Set();
         manualExcludedPids = /* @__PURE__ */ new Set();
+        // ⚡ hdTrans 폴백 트리거 (마지막 번역 꾸러미를 진행한 이후 발생하는 모든 번역은 로컬 hdTrans로 전환, 새 페이지/다음 회차 번역시 갱신)
+        isAfterLastChunk = false;
         // 소설 및 구분선 상태
         currentNovelTitle = "";
         activeSeparators = [...DEFAULT_GLOBAL_SEPARATORS];
@@ -5254,6 +5256,7 @@
     isTranslatingInProgress = true;
     state.hasScannedForPTags = true;
     state.isTranslationCancelled = false;
+    state.isAfterLastChunk = false;
     state.notifyInflightStart();
     const stopBtn = document.getElementById("stop-translation-btn");
     if (stopBtn) stopBtn.style.display = "inline-block";
@@ -5377,11 +5380,14 @@
       });
       addPlaceholderRows(textsToTranslate);
       sortSidebarDescending(allParagraphs.map((p) => p.id));
-      async function translateChunk(items, chunkSize) {
+      async function translateChunk(items, chunkSize, isCurrentChunkLast = false) {
         if (state.isTranslationCancelled) return;
         const activeItems = items.filter((item) => !state.isPidExcluded(item.id, item.text));
         if (activeItems.length === 0) {
           logToSidebar(`[\uC2E4\uC2DC\uAC04 \uC81C\uC678] \uBB36\uC74C\uC758 \uBAA8\uB4E0 \uBB38\uB2E8(${items.length}\uAC1C)\uC774 \uBC88\uC5ED \uC81C\uC678\uB418\uC5B4 Gemini API \uD638\uCD9C\uC744 \uAC74\uB108\uB701\uB2C8\uB2E4.`);
+          if (isCurrentChunkLast) {
+            state.isAfterLastChunk = true;
+          }
           return;
         }
         if (activeItems.length < items.length) {
@@ -5393,10 +5399,18 @@
         const MAX_MESSAGE_RETRIES = 5;
         for (let attempt = 0; attempt < MAX_MESSAGE_RETRIES; attempt++) {
           try {
+            const shouldUseHdTrans = state.isAfterLastChunk;
+            if (shouldUseHdTrans) {
+              logToSidebar(
+                `\u26A1 [hdTrans \uC624\uD504\uB77C\uC778 \uBC88\uC5ED] \uB9C8\uC9C0\uB9C9 \uBC88\uC5ED \uAFB8\uB7EC\uBBF8 \uC774\uD6C4 \uC694\uCCAD(${items.length}\uBB38\uC7A5)\uC744 \uB85C\uCEEC hdTrans\uB85C \uBC88\uC5ED\uD569\uB2C8\uB2E4. (API \uCFFC\uD130 \uC18C\uBAA8 0\uD68C)`,
+                "info"
+              );
+            }
             const response = await chrome.runtime.sendMessage({
               action: "batchTranslate",
               items,
-              isRetranslation
+              isRetranslation,
+              forceHdtrans: shouldUseHdTrans
             });
             if (state.isTranslationCancelled) return;
             if (chrome.runtime.lastError) {
@@ -5445,6 +5459,9 @@
               }
             }
             if (response && response.translations) {
+              if (isCurrentChunkLast) {
+                state.isAfterLastChunk = true;
+              }
               response.translations = response.translations.filter(
                 (t) => !state.isPidExcluded(String(t.id), t.original)
               );
@@ -5535,6 +5552,9 @@
               logToSidebar(`\uD1B5\uC2E0 \uC624\uB958. ${Math.round(delay / 1e3)}\uCD08 \uD6C4 \uC7AC\uC2DC\uB3C4... (${attempt + 1}/${MAX_MESSAGE_RETRIES})`, "log-error");
               await new Promise((resolve) => setTimeout(resolve, delay));
             } else {
+              if (isCurrentChunkLast) {
+                state.isAfterLastChunk = true;
+              }
               logToSidebar(`${items.length}\uAC1C \uD56D\uBAA9 \uD1B5\uC2E0 \uCD5C\uC885 \uC2E4\uD328. \uB2E8\uC704\uB97C \uC904\uC5EC \uC7AC\uC2DC\uB3C4\uD569\uB2C8\uB2E4.`, "log-error");
               await handleFailure(items, chunkSize);
             }
@@ -5570,7 +5590,8 @@
                 const res = await chrome.runtime.sendMessage({
                   action: "batchTranslate",
                   items: subItems,
-                  isRetranslation: true
+                  isRetranslation: true,
+                  forceHdtrans: state.isAfterLastChunk
                 });
                 if (res && res.translations) {
                   const combined = res.translations.map((t) => t.translated || "").join(" ");
@@ -5641,7 +5662,7 @@
           icon: "\u{1F4D6}",
           subtext: `\uBB36\uC74C ${index + 1}/${chunks.length} \uC694\uCCAD \uC911 (\uC57D ${currentChunkChars.toLocaleString()}\uC790)`
         });
-        await translateChunk(currentChunk, currentChunk.length);
+        await translateChunk(currentChunk, currentChunk.length, isLastChunk);
         showLanovelProgressHud({
           title: state.isTurboMode ? "\uBC88\uC5ED \uC9C4\uD589 \uC911 (\u26A1\uCF8C\uC18D)" : "\uBC88\uC5ED \uC9C4\uD589 \uC911",
           current: Math.min(progress, textsToTranslate.length),
@@ -5683,6 +5704,7 @@
           }
         }
       }
+      state.isAfterLastChunk = true;
       if (!state.isTranslationCancelled) {
         const remainingEmptyItems = getPendingEmptyItems(
           textsToTranslate,
@@ -5694,7 +5716,7 @@
         );
         if (remainingEmptyItems.length > 0) {
           logToSidebar(
-            `[\uBCF4\uC644 \uBC88\uC5ED\uAFB8\uB7EC\uBBF8] \uBC88\uC5ED \uC644\uB8CC \uC9C1\uC804, \uBBF8\uC644\uB8CC \uBE48\uCE78 \uBC88\uC5ED ${remainingEmptyItems.length}\uAC1C\uAC00 \uAC10\uC9C0\uB418\uC5B4 \uB9C8\uC9C0\uB9C9 \uBC88\uC5ED\uAFB8\uB7EC\uBBF8\uB85C \uCD94\uAC00 \uBC88\uC5ED\uC744 \uC9C4\uD589\uD569\uB2C8\uB2E4.`
+            `[\uBCF4\uC644 \uBC88\uC5ED\uAFB8\uB7EC\uBBF8 - hdTrans] \uBC88\uC5ED \uC644\uB8CC \uC9C1\uC804, \uBBF8\uC644\uB8CC \uBE48\uCE78 \uBC88\uC5ED ${remainingEmptyItems.length}\uAC1C\uB97C hdTrans \uC624\uD504\uB77C\uC778 \uC5D4\uC9C4\uC73C\uB85C \uCD94\uAC00 \uBC88\uC5ED\uD569\uB2C8\uB2E4. (API \uCFFC\uD130 \uC18C\uBAA8 0\uD68C)`
           );
           showLanovelProgressHud({
             title: "\uBCF4\uC644 \uBC88\uC5ED \uC9C4\uD589 \uC911",

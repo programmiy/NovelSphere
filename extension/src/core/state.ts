@@ -15,6 +15,9 @@ export class ExtensionState {
   public userDeletedTranslationPids = new Set<string>();
   public manualExcludedPids = new Set<string>();
 
+  // ⚡ hdTrans 폴백 트리거 (마지막 번역 꾸러미를 진행한 이후 발생하는 모든 번역은 로컬 hdTrans로 전환, 새 페이지/다음 회차 번역시 갱신)
+  public isAfterLastChunk = false;
+
   // 소설 및 구분선 상태
   public currentNovelTitle = '';
   public activeSeparators: string[] = [...DEFAULT_GLOBAL_SEPARATORS];

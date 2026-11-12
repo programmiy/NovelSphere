@@ -439,7 +439,8 @@
             request.items,
             cleanTabUrl,
             request.isRetranslation || false,
-            request.model || null
+            request.model || null,
+            request.forceHdtrans || false
           );
           try {
             sendResponse({
@@ -598,7 +599,7 @@
       throw new Error(`\uC81C\uBAA9 \uAC00\uC838\uC624\uAE30 \uC2E4\uD328: ${e.message}`);
     }
   }
-  async function handleBatchTranslate(items, sourceUrl, isRetranslation = false, model = null) {
+  async function handleBatchTranslate(items, sourceUrl, isRetranslation = false, model = null, forceHdtrans = false) {
     try {
       const cleanSourceUrl = (sourceUrl || "").split("#")[0].trim();
       const bodyPayload = { items, url: cleanSourceUrl };
@@ -607,6 +608,9 @@
       }
       if (model) {
         bodyPayload.model = model;
+      }
+      if (forceHdtrans) {
+        bodyPayload.force_hdtrans = true;
       }
       const response = await fetch("http://127.0.0.1:8001/translate", {
         method: "POST",

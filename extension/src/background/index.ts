@@ -107,7 +107,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           request.items,
           cleanTabUrl,
           request.isRetranslation || false,
-          request.model || null
+          request.model || null,
+          request.forceHdtrans || false
         );
         try {
           sendResponse({
@@ -285,7 +286,8 @@ async function handleBatchTranslate(
   items: Array<{ id: string; text: string }>,
   sourceUrl: string,
   isRetranslation = false,
-  model: string | null = null
+  model: string | null = null,
+  forceHdtrans = false
 ): Promise<{ translations: any[]; recommended_turbo_delay_ms: number; rpm_status?: any }> {
   try {
     const cleanSourceUrl = (sourceUrl || '').split('#')[0].trim();
@@ -295,6 +297,9 @@ async function handleBatchTranslate(
     }
     if (model) {
       bodyPayload.model = model;
+    }
+    if (forceHdtrans) {
+      bodyPayload.force_hdtrans = true;
     }
 
     const response = await fetch('http://127.0.0.1:8001/translate', {
