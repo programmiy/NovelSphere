@@ -52,9 +52,32 @@ def handle_verbatim_cleanup_items(
 
     clean_url = (url or "").split('#')[0].strip()
 
+    # 소설명 및 회차명 탐색 (동일 URL 우선, 미발견 시 동일 작품 prefix 역조회로 미분류 방지)
     sample_meta = db.query(Translation.folderName, Translation.title).filter(
-        (Translation.url == clean_url) | (Translation.url == url)
+        (Translation.url == clean_url) | (Translation.url == url),
+        Translation.folderName.isnot(None),
+        Translation.folderName != "",
+        Translation.folderName != "미분류",
+        Translation.folderName != "Unknown"
     ).first()
+
+    if not sample_meta and not folder_name:
+        novel_base_match = re.search(r'(https?://[^/]+/(?:works/\d+|n[a-z0-9]+|novels/\d+|novel/\d+))', clean_url)
+        if novel_base_match:
+            novel_base = novel_base_match.group(1)
+            sample_meta = db.query(Translation.folderName, Translation.title).filter(
+                Translation.url.startswith(novel_base),
+                Translation.folderName.isnot(None),
+                Translation.folderName != "",
+                Translation.folderName != "미분류",
+                Translation.folderName != "Unknown"
+            ).first()
+
+    if not sample_meta:
+        sample_meta = db.query(Translation.folderName, Translation.title).filter(
+            (Translation.url == clean_url) | (Translation.url == url)
+        ).first()
+
     novel_title = folder_name or (sample_meta[0] if sample_meta else None) or "미분류"
     episode_title = title or (sample_meta[1] if sample_meta else None) or clean_url
 
@@ -126,18 +149,56 @@ def handle_verbatim_cleanup_items(
         )
         db.add(trash_item)
 
-    # 알림 시스템(CleanupNotification)에 등록
-    notif = CleanupNotification(
-        batch_id=batch_id,
-        novel_title=novel_title,
-        episode_title=episode_title,
-        url=clean_url,
-        deleted_count=len(verbatim_items),
-        is_dismissed=0,
-        created_at=now_ms,
-        dismissed_at=None
-    )
-    db.add(notif)
+    # 해당 회차(동일 URL)에 보관된 전체 휴지통 건수 계산 (SSOT)
+    trash_count = db.query(TranslationTrash).filter(
+        (TranslationTrash.url == clean_url) | (TranslationTrash.url.startswith(clean_url + "#"))
+    ).count()
+    if trash_count == 0:
+        trash_count = len(verbatim_items)
+
+    # 동일 회차의 기존 활성 알림 조회 (중복 생성 방지 및 기존 알림 UPSERT)
+    existing_notif = db.query(CleanupNotification).filter(
+        CleanupNotification.is_dismissed == 0,
+        (CleanupNotification.url == clean_url) | (CleanupNotification.url.startswith(clean_url + "#"))
+    ).order_by(CleanupNotification.created_at.desc()).first()
+
+    if existing_notif:
+        existing_notif.batch_id = batch_id
+        if novel_title and novel_title not in ("미분류", "Unknown"):
+            existing_notif.novel_title = novel_title
+        if episode_title and episode_title != clean_url:
+            existing_notif.episode_title = episode_title
+        existing_notif.deleted_count = trash_count
+        existing_notif.created_at = now_ms
+        notif = existing_notif
+
+        # 동일 회차에 남아있던 과거 중복 활성 알림들은 대표 1건을 제외하고 모두 자동 정리
+        other_active_notifs = db.query(CleanupNotification).filter(
+            CleanupNotification.is_dismissed == 0,
+            CleanupNotification.id != existing_notif.id,
+            (CleanupNotification.url == clean_url) | (CleanupNotification.url.startswith(clean_url + "#"))
+        ).all()
+        for o_notif in other_active_notifs:
+            o_notif.is_dismissed = 1
+            o_notif.dismissed_at = now_ms // 1000
+
+        # 해당 회차의 기존 TranslationTrash 항목들의 cleanup_batch_id도 이번 batch_id로 동기화
+        db.query(TranslationTrash).filter(
+            (TranslationTrash.url == clean_url) | (TranslationTrash.url.startswith(clean_url + "#"))
+        ).update({TranslationTrash.cleanup_batch_id: batch_id}, synchronize_session=False)
+    else:
+        # 알림 시스템(CleanupNotification)에 신규 등록
+        notif = CleanupNotification(
+            batch_id=batch_id,
+            novel_title=novel_title,
+            episode_title=episode_title,
+            url=clean_url,
+            deleted_count=trash_count,
+            is_dismissed=0,
+            created_at=now_ms,
+            dismissed_at=None
+        )
+        db.add(notif)
     db.commit()
 
     logger.warning(

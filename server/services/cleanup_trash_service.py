@@ -361,6 +361,43 @@ def get_cleanup_notifications_data(db: Session) -> Dict[str, Any]:
         CleanupNotification.is_dismissed == 0
     ).order_by(CleanupNotification.created_at.desc()).all()
 
+    # 과거 중복 생성된 활성 알림(동일 회차/URL) 통합 및 정리 (Deduplication)
+    url_to_master: Dict[str, CleanupNotification] = {}
+    duplicated_ids = []
+
+    for n in active_notifs:
+        clean_u = (n.url or "").split('#')[0].strip()
+        if clean_u not in url_to_master:
+            url_to_master[clean_u] = n
+        else:
+            master = url_to_master[clean_u]
+            # 마스터의 소설명이 미분류인데 현재 알림이 유효한 소설명이면 승격
+            if (not master.novel_title or master.novel_title in ('미분류', 'Unknown')) and (n.novel_title and n.novel_title not in ('미분류', 'Unknown')):
+                master.novel_title = n.novel_title
+            # 마스터의 회차명이 없거나 URL인데 현재 알림이 유효한 회차명이면 승격
+            if (not master.episode_title or master.episode_title == clean_u) and (n.episode_title and n.episode_title != clean_u):
+                master.episode_title = n.episode_title
+            duplicated_ids.append(n.id)
+
+    if duplicated_ids:
+        db.query(CleanupNotification).filter(
+            CleanupNotification.id.in_(duplicated_ids)
+        ).update({
+            CleanupNotification.is_dismissed: 1,
+            CleanupNotification.dismissed_at: now
+        }, synchronize_session=False)
+        db.commit()
+
+    # 대표 알림들의 deleted_count를 실제 휴지통 건수로 동기화
+    final_active_list = list(url_to_master.values())
+    for master in final_active_list:
+        clean_u = (master.url or "").split('#')[0].strip()
+        actual_trash_cnt = db.query(TranslationTrash).filter(
+            (TranslationTrash.url == clean_u) | (TranslationTrash.url.startswith(clean_u + "#"))
+        ).count()
+        if actual_trash_cnt > 0:
+            master.deleted_count = actual_trash_cnt
+
     dismissed_notifs = db.query(CleanupNotification).filter(
         CleanupNotification.is_dismissed == 1,
         CleanupNotification.dismissed_at >= seven_days_ago
@@ -380,7 +417,7 @@ def get_cleanup_notifications_data(db: Session) -> Dict[str, Any]:
         }
 
     return {
-        "active_notifications": [_to_dict(n) for n in active_notifs],
+        "active_notifications": [_to_dict(n) for n in final_active_list],
         "recent_dismissed": [_to_dict(n) for n in dismissed_notifs]
     }
 
@@ -477,21 +514,16 @@ def get_cleanup_review_targets_data(
     if not active_notif:
         active_notif = notif_query.order_by(CleanupNotification.created_at.desc()).first()
 
-    # 2. TranslationTrash에서 해당 URL의 삭제 이력 조회
+    # 2. TranslationTrash에서 해당 URL의 삭제 이력 조회 (분할 배치 누락 방지: 해당 회차 최근 7일 전체 포괄)
     trash_url_condition = (
         (TranslationTrash.url == clean_url) |
         (TranslationTrash.url.startswith(clean_url + "#"))
     )
-    trash_query = db.query(TranslationTrash).filter(trash_url_condition)
-    if active_notif:
-        trash_query = trash_query.filter(TranslationTrash.cleanup_batch_id == active_notif.batch_id)
-    elif batch_id:
-        trash_query = trash_query.filter(TranslationTrash.cleanup_batch_id == batch_id)
-    else:
-        twenty_four_hours_ago = int((time.time() - 86400) * 1000)
-        trash_query = trash_query.filter(TranslationTrash.deleted_at >= twenty_four_hours_ago)
-
-    trash_items = trash_query.order_by(TranslationTrash.deleted_at.desc()).all()
+    seven_days_ago_ms = int((time.time() - 7 * 86400) * 1000)
+    trash_items = db.query(TranslationTrash).filter(
+        trash_url_condition,
+        TranslationTrash.deleted_at >= seven_days_ago_ms
+    ).order_by(TranslationTrash.deleted_at.desc()).all()
 
     seen_pids = set()
     targets = []

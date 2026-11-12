@@ -594,3 +594,91 @@ def test_recover_verbatim_items_smart_minibatch(monkeypatch):
     for i in range(1, 36):
         assert translated_results[f"L{i}"]["translated"] == f"번역 완료: これはテスト文{i}입니다." or "번역 완료" in translated_results[f"L{i}"]["translated"]
         assert translated_results[f"L{i}"]["verbatim"] is False
+
+
+def test_handle_verbatim_cleanup_upsert_prevents_duplicate_notifications(db_session):
+    """동일 회차에서 분할 재시도나 재번역으로 여러 번 원문 복제가 감지되어도 알림이 중복 생성되지 않고 1개로 UPSERT 갱신되는지 검증"""
+    url = "https://kakuyomu.jp/works/16818093081624854077/episodes/16818093084259784470"
+
+    # 1차 트리거 (청크 1 또는 최초 번역: 소설명 미분류 상태)
+    items1 = [{"id": "p1", "original": "あいつはバカだ", "translated": "あいつはバカだ"}]
+    batch_id1 = handle_verbatim_cleanup_items(db_session, url, items1, None, "1화")
+
+    notifs = db_session.query(CleanupNotification).filter(
+        CleanupNotification.url == url,
+        CleanupNotification.is_dismissed == 0
+    ).all()
+    assert len(notifs) == 1
+    assert notifs[0].novel_title == "미분류"
+    assert notifs[0].deleted_count == 1
+
+    # 2차 트리거 (청크 2 또는 분할 재시도: 유효한 소설명 전달)
+    items2 = [{"id": "p2", "original": "風が吹く", "translated": "風が吹く"}]
+    batch_id2 = handle_verbatim_cleanup_items(db_session, url, items2, "정조 역전 세계", "1화")
+
+    notifs = db_session.query(CleanupNotification).filter(
+        CleanupNotification.url == url,
+        CleanupNotification.is_dismissed == 0
+    ).all()
+    # 중복 없이 단 1개만 유지되어야 함
+    assert len(notifs) == 1
+    # 소설명이 유효한 소설명으로 자동 승격되어야 함
+    assert notifs[0].novel_title == "정조 역전 세계"
+    # 총 삭제 건수가 2건(p1, p2)으로 동기화되어야 함
+    assert notifs[0].deleted_count == 2
+
+    # 3차 트리거 (단일 문장 재번역으로 또 실패한 경우)
+    items3 = [{"id": "p3", "original": "雨が降る", "translated": "雨が降る"}]
+    batch_id3 = handle_verbatim_cleanup_items(db_session, url, items3, "정조 역전 세계", "1화")
+
+    notifs = db_session.query(CleanupNotification).filter(
+        CleanupNotification.url == url,
+        CleanupNotification.is_dismissed == 0
+    ).all()
+    assert len(notifs) == 1
+    assert notifs[0].deleted_count == 3
+
+
+def test_get_cleanup_notifications_data_deduplicates_legacy_rows(db_session):
+    """과거 DB에 이미 동일 URL로 중복 생성된 알림들이 있을 때, 조회 시 1개로 자동 통합 및 정리되는지 검증"""
+    from server.services.cleanup_trash_service import get_cleanup_notifications_data
+
+    url = "https://kakuyomu.jp/works/16818093081624854077/episodes/16818093084259784470"
+    now_ms = int(time.time() * 1000)
+
+    # 과거 중복 알림 2건 직접 삽입 (1건은 미분류, 1건은 실제 소설명)
+    n1 = CleanupNotification(
+        batch_id="verbatim_auto_111",
+        novel_title="미분류",
+        episode_title="1화",
+        url=url,
+        deleted_count=1,
+        is_dismissed=0,
+        created_at=now_ms - 10000
+    )
+    n2 = CleanupNotification(
+        batch_id="verbatim_auto_222",
+        novel_title="정조 역전 세계",
+        episode_title="1화",
+        url=url,
+        deleted_count=1,
+        is_dismissed=0,
+        created_at=now_ms
+    )
+    db_session.add_all([n1, n2])
+    db_session.commit()
+
+    # 조회 함수 실행
+    result = get_cleanup_notifications_data(db_session)
+
+    # 반환된 활성 알림은 단 1건이어야 함
+    active_list = result["active_notifications"]
+    assert len(active_list) == 1
+    assert active_list[0]["novel_title"] == "정조 역전 세계"
+
+    # DB에서도 과거 중복 알림(n1)은 is_dismissed = 1로 정리되어 있어야 함
+    db_session.refresh(n1)
+    db_session.refresh(n2)
+    assert n1.is_dismissed == 1
+    assert n2.is_dismissed == 0
+
