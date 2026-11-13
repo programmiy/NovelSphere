@@ -9,7 +9,6 @@ from server.services.reviewed_service import reviewed_service
 from server.services.collector_service import (
     fetch_toc_and_title,
     fetch_episode_paragraphs,
-    raw_collector
 )
 from server.services.cleanup_trash_service import get_cleanup_queue_data
 import server.database as sdb
@@ -136,12 +135,17 @@ def test_cleanup_trash_service_excludes_manual_novel(db_session):
     assert normal_folder in cleanup_data
 
 
-def test_save_manual_translations_with_review_completion(db_session, client):
+def test_save_manual_translations_with_review_completion(db_session, client, tmp_path, monkeypatch):
     """
     수동 번역 저장 API 호출 시:
     1. folderName이 확실히 유지되어 미분류 보관함으로 들어가지 않는지
     2. 서재 검수완료(reviewed_service)가 즉시 자동 적용되는지 검증
     """
+    temp_registry = tmp_path / "reviewed_registry.json"
+    monkeypatch.setattr(reviewed_service, "file_path", str(temp_registry))
+    monkeypatch.setattr(reviewed_service, "_reviewed_books", set())
+    monkeypatch.setattr(reviewed_service, "_reviewed_chapters", set())
+
     folder = "직접_번역할_소설"
     ep_url = "https://ncode.syosetu.com/n4444dd/1/"
 
@@ -381,7 +385,7 @@ def test_admin_analytics_and_today_excludes_censored_novel(client, db_session):
     res_analytics = client.get("/admin/analytics")
     assert res_analytics.status_code == 200
     data = res_analytics.json()
-    summary = data["summary"]
+    assert "summary" in data
 
     # 검열 소설 단독 조회 시 오늘 번역 0건 확인
     res_censored = client.get(f"/admin/analytics?folder_name={censored_folder}")

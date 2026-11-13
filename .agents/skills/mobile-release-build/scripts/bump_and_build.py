@@ -10,7 +10,6 @@ LANOVEL 모바일 버전 판올림 & 릴리즈 빌드 자동화 스크립트
 import argparse
 import datetime
 import json
-import os
 import re
 import subprocess
 import sys
