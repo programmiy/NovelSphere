@@ -45,16 +45,16 @@ Strong HDR, plastic skin, unnecessary limbs, extra hands, extra fingers, distort
 
 모든 크기는 32의 배수이며, RTX 2070 SUPER (8GB VRAM) 기준 `1.0~1.15 MP` 범위가 속도와 메모리 면에서 가장 안정적입니다.
 
-| 프리셋 | `--width` | `--height` | 용도 및 추가 프롬프트 지시 |
+| 프리셋 (`--preset`) | `--width` | `--height` | 용도 및 추가 프롬프트 지시 |
 | :--- | :---: | :---: | :--- |
-| **기본 삽화 (세로 라노벨)** | `896` | `1152` | 가장 권장. 캐릭터 3/4~전신·대화 구도에 최적 |
-| **표지 일러스트 (Cover)** | `896` | `1280` | 프롬프트 끝에 `clean uncluttered negative space in the upper third for book title placement, no text` 추가 |
-| **와이드 장면 (풍경·대치)** | `1152` | `896` | 2인 대치, 실내·야외 배경 비중이 큰 장면 |
-| **정사각 (1:1)** | `1024` | `1024` | 인물 클로즈업, 프로필/썸네일용 |
+| **기본 삽화 (`illust`, 기본값)** | `896` | `1152` | 가장 권장. 캐릭터 3/4~전신·대화 구도에 최적 |
+| **표지 일러스트 (`cover`)** | `896` | `1280` | 프롬프트 끝에 `clean uncluttered negative space in the upper third for book title placement, no text` 추가 |
+| **와이드 장면 (`wide`)** | `1152` | `896` | 2인 대치, 실내·야외 배경 비중이 큰 장면 |
+| **정사각 (`square`)** | `1024` | `1024` | 인물 클로즈업, 프로필/썸네일용 |
 
-### 공통 권장 CLI 플래그 (`qwen_batch.py t2i`)
+### 기본 적용 CLI 플래그 (`qwen_batch.py t2i` 내장 기본값)
 ```text
---steps 27 --cfg 3.5 --sampler res_multistep --scheduler beta --cache-device auto --cache-dtype int8
+--preset illust --steps 27 --cfg 3.5 --sampler res_multistep --scheduler beta --cache-device auto --cache-dtype int8
 ```
 
 ---

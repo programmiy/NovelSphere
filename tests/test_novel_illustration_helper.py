@@ -163,3 +163,47 @@ def test_readonly_connection_blocks_writes(tmp_path: Path) -> None:
         assert raised is True
     finally:
         conn.close()
+
+
+def test_character_registry_save_and_list(tmp_path: Path) -> None:
+    """Verify saving, merging, and listing per-book character anchor sheets."""
+    registry_path = tmp_path / "nested" / "characters_registry.json"
+
+    saved = helper.save_character_anchor(
+        book="테스트 소설",
+        name="쿠레하",
+        anchor="21-year-old woman with crimson side-tail hair and amber eyes",
+        outfit="loose off-white knit sweater",
+        seed=20261113,
+        ref_images=["img1.png"],
+        notes="첫 등록",
+        registry_path=registry_path,
+    )
+    assert registry_path.is_file()
+    assert saved["seed"] == 20261113
+    assert saved["outfit"] == "loose off-white knit sweater"
+
+    # Updating only anchor/notes should preserve existing outfit, seed, and ref_images.
+    updated = helper.save_character_anchor(
+        book="테스트 소설",
+        name="쿠레하",
+        anchor="21-year-old woman with crimson side-tail hair and amber eyes, updated",
+        notes="메모 갱신",
+        registry_path=registry_path,
+    )
+    assert updated["outfit"] == "loose off-white knit sweater"
+    assert updated["seed"] == 20261113
+    assert updated["ref_images"] == ["img1.png"]
+    assert updated["notes"] == "메모 갱신"
+
+    helper.save_character_anchor(
+        book="다른 소설",
+        name="니룬",
+        anchor="black-haired witch in dark robe",
+        registry_path=registry_path,
+    )
+
+    filtered = helper.list_character_anchors(book="테스트 소설", registry_path=registry_path)
+    assert len(filtered) == 1
+    assert filtered[0]["name"] == "쿠레하"
+    assert len(helper.list_character_anchors(registry_path=registry_path)) == 2

@@ -54,6 +54,10 @@ c:\LANOVEL\venv\Scripts\python.exe .agents/skills/novel-illustration/scripts/nov
 
 # 3. 특정 회차 및 PID 구간 본문 추출
 c:\LANOVEL\venv\Scripts\python.exe .agents/skills/novel-illustration/scripts/novel_scene_helper.py scene --book "소설폴더명" --chapter "1" --pid-start "L5" --pid-end "L30"
+
+# 4. 저장된 캐릭터 외형 시트 조회 / 저장 (연속 삽화 일관성 유지)
+c:\LANOVEL\venv\Scripts\python.exe .agents/skills/novel-illustration/scripts/novel_scene_helper.py character-list --book "소설폴더명"
+c:\LANOVEL\venv\Scripts\python.exe .agents/skills/novel-illustration/scripts/novel_scene_helper.py character-save --book "소설폴더명" --name "캐릭터명" --anchor "<영어 외형 앵커>" --outfit "<기본 의상>" --seed 20261113
 ```
 
 ---
@@ -62,26 +66,24 @@ c:\LANOVEL\venv\Scripts\python.exe .agents/skills/novel-illustration/scripts/nov
 상세 템플릿과 해상도 프리셋은 [prompt_presets.md](./references/prompt_presets.md)를 읽고 따릅니다.
 
 1. **생성 모드 선택 원칙 (`t2i` 우선)**:
-   * **`t2i` 모드를 기본으로 사용합니다.** `edit` 모드는 `TextEncodeQwenImage21`이 `qwen3vl_8b` 비전 인코더, VAE, 참조 잠재벡터(`reference_latents`)를 한꺼번에 적재하므로 Windows 가상 커밋 메모리 여유(`commit_avail_gib`)가 부족하면 `c10.dll` (`0xc0000005`) 크래시가 발생할 수 있습니다.
+   * **`t2i` 모드를 기본으로 사용합니다.** `edit` 모드는 `TextEncodeQwenImage21`이 `qwen3vl_8b` 비전 인코더, VAE, 참조 잠재벡터(`reference_latents`)를 한꺼번에 적재하므로 Windows 가상 커밋 메모리 여유(`commit_avail_gib`)가 부족하면 `c10.dll` (`0xc0000005`) 크래시가 발생할 수 있습니다. (`nodes_qwen.py`에 타일드 VAE 인코딩·캐시 정리 가드 및 `qwen_batch.py edit` 기본 `--resolution 768`이 적용되어 있으나, 대량 연속 생성 시에는 `t2i`를 우선합니다.)
    * `edit` 모드는 사용자가 명시적으로 원하고 `env-check`에서 `edit_mode_safe=True` (`commit_avail_gib >= 18 GiB`)일 때만 사용합니다.
 2. **연속 장면 일관성 유지**:
-   * 같은 작품의 2장 이상 삽화를 생성할 때는 **캐릭터 외형 앵커**(머리색·헤어스타일·눈동자·기본 의상·체형)와 **배경/화풍 앵커**를 영어 문장으로 고정하고, 장면별 포즈·표정·카메라 구도·소품만 변경합니다.
+   * 같은 작품의 첫 캐릭터 삽화를 만들 때는 `character-save`로 **캐릭터 외형 앵커**(머리색·헤어스타일·눈동자·기본 의상·체형)와 시드·참조 이미지를 `C:\qwen loRa\outputs_novels\characters_registry.json`에 기록하고, 이후 회차에서는 `character-list`로 조회해 그대로 고정한 채 장면별 포즈·표정·카메라 구도·소품만 변경합니다.
 3. **삽화 vs 표지 프리셋**:
-   * **기본 삽화**: `--width 896 --height 1152` (세로 3:4 라노벨 판형)
-   * **표지 일러스트**: `--width 896 --height 1280` + 상단 제목 여백 지시 및 텍스트/타이포그래피 네거티브 강화
-   * **와이드 장면**: `--width 1152 --height 896`
+   * **기본 삽화 (`--preset illust`)**: `896×1152` (세로 3:4 라노벨 판형, `qwen_batch.py t2i` 기본값)
+   * **표지 일러스트 (`--preset cover`)**: `896×1280` + 상단 제목 여백 지시 및 텍스트/타이포그래피 네거티브 강화
+   * **와이드 장면 (`--preset wide`)**: `1152×896`
 
 ---
 
 ### Step 4. 이미지 생성 및 GPU 쿨다운 (1장씩 순차 실행)
-RTX 2070 SUPER (8GB VRAM) 부하와 발열을 억제하기 위해 **1회 호출당 1장씩** 생성하고, **이미지 사이에 반드시 90~120초 휴지기**를 둡니다.
+RTX 2070 SUPER (8GB VRAM) 부하와 발열을 억제하기 위해 **1회 호출당 1장씩** 생성하고, **이미지 사이에 반드시 90~120초 휴지기**를 둡니다. (`qwen_batch.py t2i` 기본값이 `--preset illust` / `steps=27` / `cfg=3.5` / `sampler=res_multistep` / `scheduler=beta` / `cache-dtype=int8`로 맞춰져 있습니다.)
 
 ```powershell
 & "C:\qwen loRa\venv\Scripts\python.exe" "C:\qwen loRa\qwen_batch.py" t2i `
+  --preset illust `
   --out-dir "C:\qwen loRa\outputs_novels\<작품슬러그>" `
-  --width 896 --height 1152 --steps 27 --cfg 3.5 `
-  --sampler res_multistep --scheduler beta `
-  --cache-device auto --cache-dtype int8 `
   --seed <고유시드> `
   --prompt "<5블록 영어 프롬프트>" `
   --negative "<기본 네거티브 + 장면 배제어>"

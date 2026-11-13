@@ -16,12 +16,14 @@ import sys
 import urllib.error
 import urllib.parse
 import urllib.request
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 DEFAULT_DB_PATH = Path(__file__).resolve().parents[4] / "server" / "translations.db"
 DEFAULT_COMFY_URL = "http://127.0.0.1:8188"
 DEFAULT_LANOVEL_URL = "http://127.0.0.1:8001"
+DEFAULT_CHARACTERS_PATH = Path(r"C:\qwen loRa\outputs_novels\characters_registry.json")
 
 
 class _MemoryStatusEx(ctypes.Structure):
@@ -333,6 +335,150 @@ def register_illustration(
         raise RuntimeError(f"LANOVEL 서버 등록 실패 (HTTP {exc.code}): {body}") from exc
 
 
+def load_character_registry(registry_path: Path = DEFAULT_CHARACTERS_PATH) -> dict[str, Any]:
+    """Load the per-book character visual anchor registry JSON."""
+    if not registry_path.is_file():
+        return {"books": {}}
+    data = json.loads(registry_path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        return {"books": {}}
+    books = data.get("books")
+    if not isinstance(books, dict):
+        data["books"] = {}
+    return data
+
+
+def save_character_anchor(
+    *,
+    book: str,
+    name: str,
+    anchor: str,
+    outfit: str = "",
+    negative: str = "",
+    seed: int | None = None,
+    ref_images: list[str] | None = None,
+    notes: str = "",
+    registry_path: Path = DEFAULT_CHARACTERS_PATH,
+) -> dict[str, Any]:
+    """Save or merge a character's visual anchor sheet under a novel book entry."""
+    book_key = book.strip()
+    char_key = name.strip()
+    if not book_key or not char_key:
+        raise ValueError("소설명(--book)과 캐릭터명(--name)은 비어 있을 수 없습니다.")
+    if not anchor.strip():
+        raise ValueError("외형 앵커(--anchor)는 비어 있을 수 없습니다.")
+
+    registry = load_character_registry(registry_path)
+    books = registry.setdefault("books", {})
+    book_entry = books.setdefault(book_key, {})
+    characters = book_entry.setdefault("characters", {})
+
+    existing = dict(characters.get(char_key) or {})
+    merged: dict[str, Any] = {
+        "book": book_key,
+        "name": char_key,
+        "anchor": anchor.strip(),
+        "outfit": outfit.strip() if outfit.strip() else existing.get("outfit", ""),
+        "negative": negative.strip() if negative.strip() else existing.get("negative", ""),
+        "seed": seed if seed is not None else existing.get("seed"),
+        "ref_images": list(ref_images) if ref_images else list(existing.get("ref_images") or []),
+        "notes": notes.strip() if notes.strip() else existing.get("notes", ""),
+        "updated_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+    }
+    characters[char_key] = merged
+
+    registry_path.parent.mkdir(parents=True, exist_ok=True)
+    registry_path.write_text(json.dumps(registry, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return merged
+
+
+def list_character_anchors(
+    book: str = "",
+    registry_path: Path = DEFAULT_CHARACTERS_PATH,
+) -> list[dict[str, Any]]:
+    """Return saved character anchor sheets filtered optionally by book name."""
+    registry = load_character_registry(registry_path)
+    books = registry.get("books", {})
+    book_filter = book.strip()
+    results: list[dict[str, Any]] = []
+
+    for book_name, book_entry in books.items():
+        if book_filter and book_name != book_filter:
+            continue
+        characters = (book_entry or {}).get("characters") or {}
+        for char_name, entry in characters.items():
+            item = dict(entry or {})
+            item.setdefault("book", book_name)
+            item.setdefault("name", char_name)
+            results.append(item)
+    return results
+
+
+def add_character_subparsers(sub: argparse._SubParsersAction) -> None:
+    """Attach shared character-save and character-list CLI subcommands."""
+    p_csave = sub.add_parser("character-save", help="작품별 고정 캐릭터 외형 앵커 시트 저장/갱신")
+    p_csave.add_argument("--book", required=True, help="소설 폴더명")
+    p_csave.add_argument("--name", required=True, help="캐릭터 이름")
+    p_csave.add_argument("--anchor", required=True, help="고정 영어 외형 앵커 문장")
+    p_csave.add_argument("--outfit", default="", help="기본 의상 영어 묘사 (선택)")
+    p_csave.add_argument("--negative", default="", help="캐릭터 전용 추가 네거티브 (선택)")
+    p_csave.add_argument("--seed", type=int, default=None, help="검증된 기준 시드 (선택)")
+    p_csave.add_argument("--ref-image", nargs="*", default=None, help="참조 이미지 경로 목록 (선택)")
+    p_csave.add_argument("--notes", default="", help="캐릭터 메모 (선택)")
+    p_csave.add_argument("--registry", type=Path, default=DEFAULT_CHARACTERS_PATH, help="레지스트리 JSON 경로")
+    p_csave.add_argument("--json", action="store_true", help="JSON 형식으로 출력")
+
+    p_clist = sub.add_parser("character-list", help="저장된 캐릭터 외형 앵커 시트 조회")
+    p_clist.add_argument("--book", default="", help="특정 소설 폴더명 필터 (미지정 시 전체)")
+    p_clist.add_argument("--registry", type=Path, default=DEFAULT_CHARACTERS_PATH, help="레지스트리 JSON 경로")
+    p_clist.add_argument("--json", action="store_true", help="JSON 형식으로 출력")
+
+
+def handle_character_command(args: argparse.Namespace) -> int | None:
+    """Handle character-save / character-list CLI commands; return None if unrelated."""
+    if args.command == "character-save":
+        saved = save_character_anchor(
+            book=args.book,
+            name=args.name,
+            anchor=args.anchor,
+            outfit=args.outfit,
+            negative=args.negative,
+            seed=args.seed,
+            ref_images=args.ref_image,
+            notes=args.notes,
+            registry_path=args.registry,
+        )
+        if args.json:
+            print(json.dumps(saved, ensure_ascii=False, indent=2))
+        else:
+            print(f"캐릭터 시트 저장 완료: [{saved['book']}] {saved['name']} -> {args.registry}")
+        return 0
+
+    if args.command == "character-list":
+        items = list_character_anchors(book=args.book, registry_path=args.registry)
+        if args.json:
+            print(json.dumps(items, ensure_ascii=False, indent=2))
+            return 0
+        if not items:
+            print("저장된 캐릭터 외형 시트가 없습니다.")
+            return 0
+        for item in items:
+            seed_txt = f" | seed={item['seed']}" if item.get("seed") is not None else ""
+            print(f"[{item['book']}] {item['name']}{seed_txt}")
+            print(f"  anchor  : {item.get('anchor', '')}")
+            if item.get("outfit"):
+                print(f"  outfit  : {item['outfit']}")
+            if item.get("negative"):
+                print(f"  negative: {item['negative']}")
+            if item.get("ref_images"):
+                print(f"  refs    : {', '.join(item['ref_images'])}")
+            if item.get("notes"):
+                print(f"  notes   : {item['notes']}")
+        return 0
+
+    return None
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Build the CLI argument parser."""
     parser = argparse.ArgumentParser(
@@ -375,6 +521,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_reg.add_argument("--base64", action="store_true", help="source_path 대신 image_base64 전송 강제")
     p_reg.add_argument("--json", action="store_true", help="JSON 형식으로 출력")
 
+    add_character_subparsers(sub)
     return parser
 
 
@@ -438,6 +585,10 @@ def main(argv: list[str] | None = None) -> int:
                 f"after_pid={created.get('after_pid')} ({created.get('width')}x{created.get('height')})"
             )
         return 0
+
+    char_exit = handle_character_command(args)
+    if char_exit is not None:
+        return char_exit
 
     conn = open_readonly_db(args.db)
     try:
