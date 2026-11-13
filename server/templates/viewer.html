@@ -12,7 +12,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;900&family=Special+Elite&family=Courier+Prime:ital,wght@0,400;0,700;1,400&family=Gowun+Batang:wght@400;700&family=Nanum+Myeongjo:wght@400;700&family=Noto+Sans+KR:wght@400;500;700&family=Noto+Serif+KR:wght@400;600&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
-    <link rel="stylesheet" href="/static/viewer.css?v=3.4">
+    <link rel="stylesheet" href="/static/viewer.css?v=3.5">
 </head>
 <body class="theme-paper">
     <!-- 독서 진행률 표시줄 -->
@@ -474,6 +474,15 @@
         <span class="pill-label">사전·용례</span>
     </div>
 
+    <!-- 본문 삽화 라이트박스(전체화면 확대) 모달 -->
+    <div id="illustration-lightbox" class="illu-lightbox" style="display: none;" role="dialog" aria-modal="true" aria-label="삽화 확대 보기">
+        <button type="button" id="illu-lightbox-close" class="illu-lightbox-close" title="닫기 (Esc)">&times;</button>
+        <figure class="illu-lightbox-stage">
+            <img id="illu-lightbox-img" class="illu-lightbox-img" src="" alt="확대 삽화">
+            <figcaption id="illu-lightbox-caption" class="illu-lightbox-caption"></figcaption>
+        </figure>
+    </div>
+
     <!-- 배경 어둡게 오버레이 -->
     <div id="overlay" class="overlay"></div>
 
@@ -481,7 +490,7 @@
     <div id="viewer-toast" class="toast" style="display: none;"></div>
 
     <script src="/static/steampunk-sound.js?v=2.0"></script>
-    <script type="module" src="/static/viewer.js?v=3.2"></script>
+    <script type="module" src="/static/viewer.js?v=3.3"></script>
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {

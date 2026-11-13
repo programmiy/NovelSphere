@@ -180,6 +180,26 @@ def _build_mobile_optimized_db(temp_db_path: str):
             payload_json TEXT NOT NULL,
             created_at INTEGER NOT NULL
         );
+
+        -- 회차 본문 인라인 삽화 메타데이터 테이블 (실제 이미지 파일은 앱 캐시로 별도 동기화)
+        CREATE TABLE novel_illustrations (
+            id INTEGER PRIMARY KEY,
+            book_name TEXT NOT NULL,
+            chapter_url TEXT NOT NULL,
+            chapter_title TEXT DEFAULT '',
+            after_pid TEXT DEFAULT 'END',
+            sort_order INTEGER DEFAULT 0,
+            caption TEXT,
+            file_rel_path TEXT NOT NULL,
+            mime_type TEXT DEFAULT 'image/png',
+            width INTEGER,
+            height INTEGER,
+            file_size INTEGER,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        );
+        CREATE INDEX ix_m_illu_book ON novel_illustrations(book_name);
+        CREATE INDEX ix_m_illu_url ON novel_illustrations(chapter_url);
     """)
 
     src_cursor = src_conn.cursor()
@@ -312,6 +332,41 @@ def _build_mobile_optimized_db(temp_db_path: str):
         chapter_rows.clear()
 
     del sentences_by_chap
+
+    # 6. 본문 인라인 삽화 메타데이터 적재
+    try:
+        src_cursor.execute("""
+            SELECT id, book_name, chapter_url, chapter_title, after_pid, sort_order,
+                   caption, file_rel_path, mime_type, width, height, file_size, created_at, updated_at
+            FROM novel_illustrations
+            ORDER BY id ASC
+        """)
+        illu_rows = [
+            (
+                r['id'],
+                r['book_name'],
+                r['chapter_url'],
+                r['chapter_title'] or '',
+                r['after_pid'] or 'END',
+                r['sort_order'] or 0,
+                r['caption'],
+                r['file_rel_path'],
+                r['mime_type'] or 'image/png',
+                r['width'],
+                r['height'],
+                r['file_size'],
+                r['created_at'],
+                r['updated_at'],
+            )
+            for r in src_cursor.fetchall()
+        ]
+        if illu_rows:
+            dst_cursor.executemany(
+                "INSERT INTO novel_illustrations VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                illu_rows,
+            )
+    except Exception as ie:
+        logger.warning(f"Skip copying novel_illustrations into seed DB: {ie}")
 
     dst_conn.commit()
     dst_conn.execute("VACUUM")
@@ -577,6 +632,39 @@ def pull_changes_from_pc(since: int = 0, last_id: int = 0, limit: int = 10000):
         except Exception as he:
             logger.warning(f"Error fetching sentence_highlights for sync: {he}")
 
+    # 6. 본문 인라인 삽화 메타데이터 증분 동기화
+    illustrations = []
+    if last_id == 0:
+        try:
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS novel_illustrations (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    book_name TEXT NOT NULL,
+                    chapter_url TEXT NOT NULL,
+                    chapter_title TEXT NOT NULL DEFAULT '',
+                    after_pid TEXT NOT NULL DEFAULT 'END',
+                    sort_order INTEGER NOT NULL DEFAULT 0,
+                    caption TEXT,
+                    file_rel_path TEXT NOT NULL,
+                    mime_type TEXT NOT NULL DEFAULT 'image/png',
+                    width INTEGER,
+                    height INTEGER,
+                    file_size INTEGER,
+                    created_at INTEGER NOT NULL,
+                    updated_at INTEGER NOT NULL
+                )
+            """)
+            cursor.execute("""
+                SELECT id, book_name, chapter_url, chapter_title, after_pid, sort_order,
+                       caption, file_rel_path, mime_type, width, height, file_size, created_at, updated_at
+                FROM novel_illustrations
+                WHERE updated_at > ? OR created_at > ?
+                ORDER BY id ASC
+            """, (since, since))
+            illustrations = cursor.fetchall()
+        except Exception as ie:
+            logger.warning(f"Error fetching novel_illustrations for sync: {ie}")
+
     conn.close()
 
     payload = {
@@ -591,6 +679,7 @@ def pull_changes_from_pc(since: int = 0, last_id: int = 0, limit: int = 10000):
         "updated_chapters": updated_chapters,
         "deletions": deletions,
         "highlights": highlights,
+        "illustrations": illustrations,
         "activities": activities,
         "pinned_books": pinned,
         "book_tags": dict(book_tags)

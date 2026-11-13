@@ -95,3 +95,21 @@ RTX 2070 SUPER (8GB VRAM) 부하와 발열을 억제하기 위해 **1회 호출�
 ### Step 5. 결과 검수 및 보고
 1. 생성된 PNG 파일을 `read_file`로 직접 확인하여 손가락/사지 왜곡, 캐릭터 외형 일치 여부, 소설 장면 반영도를 점검합니다.
 2. 이상이 없다면 결과 이미지 클릭 링크(`file:///C:/qwen%20loRa/outputs_novels/...`), 사용된 시드·해상도·소요 시간·GPU 온도를 간결하게 보고합니다.
+
+---
+
+### Step 6. LANOVEL 서재 본문 삽화 자동 등록 (선택 또는 요청 시)
+검수가 끝난 삽화를 LANOVEL PC 웹 뷰어와 모바일/태블릿 앱 본문에 바로 반영하려면 실행 중인 LANOVEL 서버(`http://127.0.0.1:8001`)에 `register-illustration` 명령으로 등록합니다.
+
+```powershell
+c:\LANOVEL\venv\Scripts\python.exe .agents/skills/novel-illustration/scripts/novel_scene_helper.py register-illustration `
+  --book "소설폴더명" `
+  --chapter-url "회차URL" `
+  --after-pid "L10" `
+  --image "C:\qwen loRa\outputs_novels\<작품슬러그>\001_t2i_....png" `
+  --caption "장면 설명 (선택)"
+```
+
+* **배치 기준**: `--after-pid`에 지정한 문단(`L10`, `p15` 등) 바로 뒤에 삽화가 삽입되며, `TOP`(회차 최상단) 또는 `END`(회차 최하단)도 지원합니다.
+* **사후 위치 조정**: 등록 후 PC/모바일 웹 서재의 **책 설정 모달 → `본문 삽화` 탭**에서 언제든 문단 위치·회차·캡션을 변경하거나 삭제할 수 있습니다.
+* **직접 DB 수정 금지**: 삽화 등록/삭제는 반드시 LANOVEL FastAPI 엔드포인트(`/api/illustrations`)를 통해서만 수행합니다. (모바일 동기화 및 파일 정리 일관성 보장)

@@ -167,6 +167,13 @@ def update_folder_name(folder_name: str, req: FolderUpdate):
         cursor.execute("UPDATE book_activity SET folderName = ? WHERE folderName = ?", (new_name, old_name))
         cursor.execute("UPDATE pinned_books SET folderName = ? WHERE folderName = ?", (new_name, old_name))
         cursor.execute("UPDATE book_tags SET book_folderName = ? WHERE book_folderName = ?", (new_name, old_name))
+        try:
+            cursor.execute(
+                "UPDATE novel_illustrations SET book_name = ?, updated_at = ? WHERE book_name = ?",
+                (new_name, now_ts, old_name),
+            )
+        except Exception as ie:
+            logger.debug(f"Skip novel_illustrations rename update: {ie}")
 
         conn.commit()
     except HTTPException:
@@ -235,11 +242,26 @@ def get_book_urls(folder_name: str):
 
     cursor.execute(query, tuple(params + params))
     urls = cursor.fetchall()
+
+    illu_counts = {}
+    try:
+        cursor.execute(
+            "SELECT chapter_url, COUNT(*) as cnt FROM novel_illustrations WHERE book_name = ? GROUP BY chapter_url",
+            (decoded_folder_name,),
+        )
+        for row in cursor.fetchall():
+            ch_key = (row.get('chapter_url') or '').rstrip('/')
+            if ch_key:
+                illu_counts[ch_key] = illu_counts.get(ch_key, 0) + (row.get('cnt') or 0)
+    except Exception:
+        illu_counts = {}
+
     conn.close()
 
-    # 각 회차의 검수완료(잠금) 여부 주입
+    # 각 회차의 검수완료(잠금) 여부 및 삽화 건수 주입
     for u in urls:
         u['is_reviewed'] = reviewed_service.is_chapter_reviewed(u.get('url'), decoded_folder_name)
+        u['illustration_count'] = illu_counts.get((u.get('url') or '').rstrip('/'), 0)
 
     # 자연 정렬: toc_sort_order 우선, 없으면 min_id 우선, 그 다음 URL 및 제목 자연 정렬 (001 -> 002 -> 010 -> 100)
     urls.sort(key=lambda x: (

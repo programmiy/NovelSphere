@@ -4054,3 +4054,176 @@ body.dark-mode .tome-inner-parchment {
     color: var(--brass-gold);
     margin: 0 4px;
 }
+
+/* ==========================================================================
+   본문 삽화 관리 탭 & TOC 삽화 뱃지
+   ========================================================================== */
+.illu-upload-grid {
+    display: grid;
+    grid-template-columns: 165px 1fr;
+    gap: 16px;
+    align-items: start;
+}
+
+@media (max-width: 640px) {
+    .illu-upload-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+.illu-file-dropzone {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 210px;
+    border: 2px dashed var(--brass-border, rgba(180, 140, 70, 0.45));
+    border-radius: 10px;
+    background: var(--hover-bg-color, rgba(0, 0, 0, 0.04));
+    cursor: pointer;
+    overflow: hidden;
+    text-align: center;
+    padding: 8px;
+    transition: border-color 0.2s ease, background-color 0.2s ease;
+}
+
+.illu-file-dropzone:hover {
+    border-color: var(--primary-color, #d97706);
+}
+
+.illu-dropzone-placeholder {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    color: var(--text-muted);
+    font-size: 12px;
+}
+
+.illu-dropzone-placeholder .material-icons {
+    font-size: 34px;
+    color: var(--brass-gold, #d97706);
+}
+
+.illu-preview-img {
+    width: 100%;
+    max-height: 215px;
+    object-fit: contain;
+    border-radius: 6px;
+}
+
+.illu-form-fields {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.illu-field-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-muted);
+}
+
+.illu-list-container {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    max-height: 280px;
+    overflow-y: auto;
+    padding-right: 4px;
+}
+
+.illu-empty-text {
+    font-size: 13px;
+    color: var(--text-muted);
+    padding: 16px 0;
+    text-align: center;
+}
+
+.illu-item-card {
+    display: grid;
+    grid-template-columns: 72px 1fr auto;
+    gap: 12px;
+    align-items: center;
+    padding: 10px;
+    border-radius: 10px;
+    border: 1px solid var(--border-color, rgba(148, 163, 184, 0.28));
+    background: var(--card-bg, rgba(255, 255, 255, 0.03));
+}
+
+.illu-item-thumb {
+    width: 72px;
+    height: 92px;
+    object-fit: cover;
+    border-radius: 6px;
+    border: 1px solid var(--border-color, rgba(148, 163, 184, 0.3));
+}
+
+.illu-item-info {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.illu-item-chapter {
+    font-size: 13px;
+    font-weight: 700;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.illu-item-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+.illu-pid-pill {
+    display: inline-block;
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: rgba(245, 158, 11, 0.14);
+    border: 1px solid rgba(245, 158, 11, 0.35);
+    color: #d97706;
+    font-weight: 700;
+}
+
+.illu-item-caption {
+    font-size: 12px;
+    color: var(--text-color);
+    word-break: break-word;
+}
+
+.illu-item-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.illu-item-actions .btn-sm {
+    padding: 4px 8px;
+    font-size: 11px;
+}
+
+.toc-illu-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 3px 7px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 700;
+    background: rgba(245, 158, 11, 0.14);
+    color: #d97706;
+    border: 1px solid rgba(245, 158, 11, 0.35);
+}
+
+.toc-illu-badge .material-icons {
+    font-size: 13px;
+}
+

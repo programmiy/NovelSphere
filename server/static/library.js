@@ -86,6 +86,20 @@ document.addEventListener('DOMContentLoaded', () => {
     const tagModalCancelBtn = document.getElementById('tag-editor-cancel');
     const tagModalSaveBtn = document.getElementById('tag-editor-save');
 
+    // Illustrations Tab Elements
+    const illuFileInput = document.getElementById('illu-file-input');
+    const illuPreviewImg = document.getElementById('illu-preview-img');
+    const illuDropPlaceholder = document.getElementById('illu-dropzone-placeholder');
+    const illuChapterSelect = document.getElementById('illu-chapter-select');
+    const illuPidSelect = document.getElementById('illu-pid-select');
+    const illuCaptionInput = document.getElementById('illu-caption-input');
+    const illuAddBtn = document.getElementById('illu-add-btn');
+    const illuListContainer = document.getElementById('illu-list-container');
+    const illuRegisteredCount = document.getElementById('illu-registered-count');
+    let pendingIlluBase64 = '';
+    let modalBookIllustrations = [];
+    let modalIlluChapters = [];
+
     // URL List Modal Elements (Royal Archive Chapter Index Ledger)
     const urlListModal = document.getElementById('url-list-modal');
     const urlListTitle = document.getElementById('url-list-title');
@@ -999,6 +1013,9 @@ document.addEventListener('DOMContentLoaded', () => {
             pane.classList.toggle('active', isTarget);
             pane.style.display = isTarget ? 'block' : 'none';
         });
+        if (tabKey === 'illustrations' && currentEditingBook) {
+            loadBookIllustrationsTab(currentEditingBook.name);
+        }
     }
 
     // Modal tab click delegation
@@ -1083,6 +1100,11 @@ document.addEventListener('DOMContentLoaded', () => {
         notesSummaryTextarea.value = '';
         summarySourceUrlInput.value = '';
         if (bookTocSourceUrlInput) bookTocSourceUrlInput.value = '';
+        resetIlluForm();
+        if (illuListContainer) illuListContainer.innerHTML = '';
+        if (illuRegisteredCount) illuRegisteredCount.textContent = '0';
+        modalBookIllustrations = [];
+        modalIlluChapters = [];
         tagModalSaveBtn.disabled = false;
         tagModalSaveBtn.innerHTML = '<span class="material-icons" style="font-size: 16px;">check</span> 변경사항 저장';
     }
@@ -1478,6 +1500,11 @@ document.addEventListener('DOMContentLoaded', () => {
                                     ${showUrlSub ? `<span class="toc-chapter-sub font-typewriter">${highlightedUrl}</span>` : ''}
                                 </div>
                                 <div class="toc-chapter-meta">
+                                    ${(item.illustration_count || 0) > 0 ? `
+                                        <span class="toc-illu-badge font-typewriter" title="등록된 본문 삽화 ${item.illustration_count}장">
+                                            <span class="material-icons">image</span> ${item.illustration_count}
+                                        </span>
+                                    ` : ''}
                                     <button type="button" class="toc-review-chip ${item.is_reviewed ? 'is-reviewed' : ''}" data-url="${escapeHtml(item.url)}" title="${item.is_reviewed ? '검수 완료됨 (클릭하여 검수 해제)' : '검수 대기 (클릭하여 검수 완료 지정)'}">
                                         <span class="material-icons">${item.is_reviewed ? 'check_circle' : 'radio_button_unchecked'}</span>
                                         <span class="review-label font-typewriter">${item.is_reviewed ? '검수완료' : '검수대기'}</span>
@@ -1764,6 +1791,17 @@ document.addEventListener('DOMContentLoaded', () => {
                         for (const u of urls) {
                             await fetch(`/api/books/${encodeURIComponent(book.name)}/chapter?title=${encodeURIComponent(u.title || u.url)}`);
                             downloadedCount++;
+                        }
+                    }
+                    const illuRes = await fetch(`/api/illustrations?book_name=${encodeURIComponent(book.name)}`);
+                    if (illuRes.ok) {
+                        const illus = await illuRes.json();
+                        for (const illu of illus) {
+                            if (illu.image_url) await fetch(illu.image_url);
+                            const p = new URLSearchParams({ book_name: book.name });
+                            if (illu.chapter_url) p.set('chapter_url', illu.chapter_url);
+                            if (illu.chapter_title) p.set('chapter_title', illu.chapter_title);
+                            await fetch(`/api/illustrations?${p.toString()}`);
                         }
                     }
                 } catch (err) {
@@ -2118,6 +2156,225 @@ document.addEventListener('DOMContentLoaded', () => {
             e.preventDefault();
             e.stopPropagation();
             requestCloseModal();
+        });
+    }
+
+    // --- 본문 삽화(Illustrations) 관리 탭 ---
+    function resetIlluForm() {
+        pendingIlluBase64 = '';
+        if (illuFileInput) illuFileInput.value = '';
+        if (illuPreviewImg) {
+            illuPreviewImg.src = '';
+            illuPreviewImg.style.display = 'none';
+        }
+        if (illuDropPlaceholder) illuDropPlaceholder.style.display = 'flex';
+        if (illuCaptionInput) illuCaptionInput.value = '';
+    }
+
+    async function loadChapterPidsSelect(bookName, chapterUrl) {
+        if (!illuPidSelect) return;
+        illuPidSelect.innerHTML = '<option value="END">불러오는 중...</option>';
+        try {
+            const res = await fetch(
+                `/api/illustrations/book/${encodeURIComponent(bookName)}/pids?chapter_url=${encodeURIComponent(chapterUrl)}`,
+                { cache: 'no-cache' }
+            );
+            const pids = res.ok ? await res.json() : [];
+            const opts = ['<option value="TOP">회차 맨 위 (본문 시작 전)</option>'];
+            for (const p of pids) {
+                opts.push(`<option value="${escapeHtml(p.pid)}">[${escapeHtml(p.pid)} 뒤] ${escapeHtml(p.preview || '')}</option>`);
+            }
+            opts.push('<option value="END">회차 맨 끝 (본문 마지막 뒤)</option>');
+            illuPidSelect.innerHTML = opts.join('');
+            illuPidSelect.value = 'END';
+        } catch (err) {
+            illuPidSelect.innerHTML = '<option value="TOP">회차 맨 위 (TOP)</option><option value="END" selected>회차 맨 끝 (END)</option>';
+        }
+    }
+
+    function formatPidLabel(afterPid) {
+        const val = (afterPid || 'END').toUpperCase();
+        if (val === 'TOP') return '회차 맨 위 (TOP)';
+        if (val === 'END') return '회차 맨 끝 (END)';
+        return `${afterPid} 단락 뒤`;
+    }
+
+    function renderModalIllustrationsList() {
+        if (!illuListContainer || !illuRegisteredCount) return;
+        illuRegisteredCount.textContent = String(modalBookIllustrations.length);
+        if (modalBookIllustrations.length === 0) {
+            illuListContainer.innerHTML = '<p class="illu-empty-text">등록된 본문 삽화가 없습니다.</p>';
+            return;
+        }
+        illuListContainer.innerHTML = modalBookIllustrations.map((illu) => {
+            const viewHref = `/viewer?book=${encodeURIComponent(illu.book_name)}&title=${encodeURIComponent(illu.chapter_title || '')}`;
+            return `
+                <div class="illu-item-card" data-illu-id="${illu.id}">
+                    <img class="illu-item-thumb" src="${escapeHtml(illu.image_url)}" alt="${escapeHtml(illu.caption || illu.chapter_title || '삽화')}">
+                    <div class="illu-item-info">
+                        <div class="illu-item-chapter" title="${escapeHtml(illu.chapter_title || illu.chapter_url)}">${escapeHtml(illu.chapter_title || illu.chapter_url)}</div>
+                        <div class="illu-item-meta">
+                            <span class="illu-pid-pill font-typewriter">${escapeHtml(formatPidLabel(illu.after_pid))}</span>
+                            ${illu.width && illu.height ? `<span>${illu.width}×${illu.height}</span>` : ''}
+                        </div>
+                        ${illu.caption ? `<div class="illu-item-caption">${escapeHtml(illu.caption)}</div>` : ''}
+                    </div>
+                    <div class="illu-item-actions">
+                        <a class="btn btn-outline btn-sm" href="${viewHref}" title="뷰어로 바로 가기">보기</a>
+                        <button type="button" class="btn btn-outline btn-sm illu-edit-pos-btn" data-id="${illu.id}">위치 수정</button>
+                        <button type="button" class="btn btn-outline btn-sm illu-delete-btn" data-id="${illu.id}" style="color: var(--danger-color, #ef4444);">삭제</button>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    async function loadBookIllustrationsTab(bookName) {
+        if (!illuListContainer) return;
+        illuListContainer.innerHTML = '<p class="illu-empty-text">삽화 목록을 불러오는 중...</p>';
+        try {
+            const [chapRes, illuRes] = await Promise.all([
+                fetch(`/api/illustrations/book/${encodeURIComponent(bookName)}/chapters`, { cache: 'no-cache' }),
+                fetch(`/api/illustrations?book_name=${encodeURIComponent(bookName)}`, { cache: 'no-cache' }),
+            ]);
+            modalIlluChapters = chapRes.ok ? await chapRes.json() : [];
+            modalBookIllustrations = illuRes.ok ? await illuRes.json() : [];
+
+            if (illuChapterSelect) {
+                if (modalIlluChapters.length === 0) {
+                    illuChapterSelect.innerHTML = '<option value="">등록된 회차가 없습니다</option>';
+                    if (illuPidSelect) illuPidSelect.innerHTML = '<option value="END">END</option>';
+                } else {
+                    illuChapterSelect.innerHTML = modalIlluChapters.map((ch) =>
+                        `<option value="${escapeHtml(ch.url)}" data-title="${escapeHtml(ch.title)}">${ch.index}화. ${escapeHtml(ch.title)}${ch.illustration_count ? ` (🖼️${ch.illustration_count})` : ''}</option>`
+                    ).join('');
+                    await loadChapterPidsSelect(bookName, illuChapterSelect.value);
+                }
+            }
+            renderModalIllustrationsList();
+        } catch (err) {
+            illuListContainer.innerHTML = `<p class="illu-empty-text" style="color: var(--danger-color);">불러오기 실패: ${escapeHtml(err.message)}</p>`;
+        }
+    }
+
+    if (illuFileInput) {
+        illuFileInput.addEventListener('change', (e) => {
+            const file = e.target.files && e.target.files[0];
+            if (!file) {
+                resetIlluForm();
+                return;
+            }
+            const reader = new FileReader();
+            reader.onload = () => {
+                pendingIlluBase64 = typeof reader.result === 'string' ? reader.result : '';
+                if (illuPreviewImg && pendingIlluBase64) {
+                    illuPreviewImg.src = pendingIlluBase64;
+                    illuPreviewImg.style.display = 'block';
+                }
+                if (illuDropPlaceholder) illuDropPlaceholder.style.display = 'none';
+            };
+            reader.readAsDataURL(file);
+        });
+    }
+
+    if (illuChapterSelect) {
+        illuChapterSelect.addEventListener('change', () => {
+            if (currentEditingBook && illuChapterSelect.value) {
+                loadChapterPidsSelect(currentEditingBook.name, illuChapterSelect.value);
+            }
+        });
+    }
+
+    if (illuAddBtn) {
+        illuAddBtn.addEventListener('click', async () => {
+            if (!currentEditingBook) return;
+            if (!pendingIlluBase64) {
+                alert('먼저 삽화 이미지(PNG/JPG/WEBP)를 선택해 주세요.');
+                return;
+            }
+            const chapterUrl = illuChapterSelect ? illuChapterSelect.value : '';
+            if (!chapterUrl) {
+                alert('삽화를 넣을 회차를 선택해 주세요.');
+                return;
+            }
+            const selectedOpt = illuChapterSelect.options[illuChapterSelect.selectedIndex];
+            const chapterTitle = selectedOpt ? (selectedOpt.dataset.title || '') : '';
+            const afterPid = illuPidSelect ? illuPidSelect.value : 'END';
+            const caption = illuCaptionInput ? illuCaptionInput.value.trim() : '';
+
+            illuAddBtn.disabled = true;
+            illuAddBtn.innerHTML = '<span class="material-icons" style="font-size: 16px;">sync</span> 등록 중...';
+            try {
+                const res = await fetch('/api/illustrations', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        book_name: currentEditingBook.name,
+                        chapter_url: chapterUrl,
+                        chapter_title: chapterTitle,
+                        after_pid: afterPid,
+                        caption,
+                        image_base64: pendingIlluBase64,
+                    }),
+                });
+                if (!res.ok) {
+                    const errData = await res.json().catch(() => ({}));
+                    throw new Error(errData.detail || res.statusText);
+                }
+                resetIlluForm();
+                await loadBookIllustrationsTab(currentEditingBook.name);
+                showToast('본문 삽화가 등록되었습니다.');
+            } catch (err) {
+                alert(`삽화 등록 실패: ${err.message}`);
+            } finally {
+                illuAddBtn.disabled = false;
+                illuAddBtn.innerHTML = '<span class="material-icons" style="font-size: 16px;">add_to_photos</span> 본문 삽화 등록';
+            }
+        });
+    }
+
+    if (illuListContainer) {
+        illuListContainer.addEventListener('click', async (e) => {
+            if (!currentEditingBook) return;
+            const editBtn = e.target.closest('.illu-edit-pos-btn');
+            const deleteBtn = e.target.closest('.illu-delete-btn');
+
+            if (editBtn) {
+                const id = parseInt(editBtn.dataset.id, 10);
+                const target = modalBookIllustrations.find((item) => item.id === id);
+                if (!target) return;
+                const newPid = prompt('삽입 위치 PID 입력 (TOP, L10, p15, END):', target.after_pid || 'END');
+                if (newPid === null) return;
+                const newCaption = prompt('장면 설명 / 캡션 수정 (비워두면 없음):', target.caption || '');
+                if (newCaption === null) return;
+
+                try {
+                    const res = await fetch(`/api/illustrations/${id}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            after_pid: newPid.trim() || 'END',
+                            caption: newCaption.trim(),
+                        }),
+                    });
+                    if (!res.ok) throw new Error(res.statusText);
+                    await loadBookIllustrationsTab(currentEditingBook.name);
+                    showToast('삽화 위치 및 캡션을 수정했습니다.');
+                } catch (err) {
+                    alert(`수정 실패: ${err.message}`);
+                }
+            } else if (deleteBtn) {
+                const id = parseInt(deleteBtn.dataset.id, 10);
+                if (!confirm('이 본문 삽화를 삭제하시겠습니까?')) return;
+                try {
+                    const res = await fetch(`/api/illustrations/${id}`, { method: 'DELETE' });
+                    if (!res.ok) throw new Error(res.statusText);
+                    await loadBookIllustrationsTab(currentEditingBook.name);
+                    showToast('삽화가 삭제되었습니다.');
+                } catch (err) {
+                    alert(`삭제 실패: ${err.message}`);
+                }
+            }
         });
     }
 

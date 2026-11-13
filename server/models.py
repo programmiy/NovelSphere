@@ -310,3 +310,32 @@ class SentenceHighlight(Base):
         UniqueConstraint('url', 'pid', name='uq_sentence_highlight_url_pid'),
     )
 
+
+class NovelIllustration(Base):
+    """
+    소설 회차 본문 인라인 삽화 메타데이터 및 파일 경로 매핑.
+    - 실제 이미지 바이너리는 settings.data_dir/illustrations/<book_slug>/ 아래에 저장.
+    - after_pid: 'TOP'(회차 맨 위), 'L10'/'p15'(해당 단락 직후), 'END'(회차 맨 끝).
+    """
+    __tablename__ = 'novel_illustrations'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    book_name = Column(Text, nullable=False, index=True)
+    chapter_url = Column(Text, nullable=False, index=True)
+    chapter_title = Column(Text, nullable=False, default="")
+    after_pid = Column(Text, nullable=False, default="END")
+    sort_order = Column(Integer, nullable=False, default=0)
+    caption = Column(Text, nullable=True)
+    file_rel_path = Column(Text, nullable=False)
+    mime_type = Column(String(64), nullable=False, default="image/png")
+    width = Column(Integer, nullable=True)
+    height = Column(Integer, nullable=True)
+    file_size = Column(Integer, nullable=True)
+    created_at = Column(BigInteger, nullable=False)
+    updated_at = Column(BigInteger, nullable=False, index=True)
+
+    __table_args__ = (
+        Index('ix_novel_illu_book_url', 'book_name', 'chapter_url'),
+    )
+
+

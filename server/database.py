@@ -135,6 +135,7 @@ PROTECTED_TABLES = {
     "novel_works",
     "system_tasks",
     "deleted_records",
+    "novel_illustrations",
 }
 
 def is_prod_db_write_allowed() -> bool:

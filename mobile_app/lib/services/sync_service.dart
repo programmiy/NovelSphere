@@ -7,6 +7,8 @@ import 'package:network_info_plus/network_info_plus.dart';
 
 import 'preferences_service.dart';
 import 'local_db_service.dart';
+import 'illustration_cache_service.dart';
+import '../models/novel_illustration.dart';
 
 enum SyncStatus {
   idle,
@@ -171,6 +173,14 @@ class SyncService {
 
       await LocalDbService.replaceSeedDatabase(tempFile);
 
+      try {
+        final allIllus = await LocalDbService.getAllIllustrations();
+        await IllustrationCacheService.pruneAllExcept(allIllus.map((e) => e.id).toSet());
+        await IllustrationCacheService.syncAllIllustrations(allIllus);
+      } catch (e) {
+        debugPrint('Full seed illustration cache warning: $e');
+      }
+
       final nowTs = DateTime.now().millisecondsSinceEpoch ~/ 1000;
       await PreferencesService.setLastSyncedTimestamp(nowTs);
 
@@ -279,19 +289,33 @@ class SyncService {
         if (deletions.isNotEmpty) {
           final delBatch = db.batch();
           final affectedBooks = <String>{};
+          final deletedIlluIds = <int>[];
           for (var item in deletions) {
             final eType = item['entity_type'] as String?;
             final eId = item['entity_id'] as String?;
             final pScope = item['parent_scope'] as String?;
             if (eType == 'chapter' && eId != null) {
               delBatch.delete('chapters', where: 'url = ?', whereArgs: [eId]);
+              delBatch.delete('novel_illustrations', where: 'chapter_url = ?', whereArgs: [eId]);
               if (pScope != null) affectedBooks.add(pScope);
             } else if (eType == 'novel' && eId != null) {
               delBatch.delete('chapters', where: 'book_name = ?', whereArgs: [eId]);
               delBatch.delete('books', where: 'folder_name = ?', whereArgs: [eId]);
+              delBatch.delete('novel_illustrations', where: 'book_name = ?', whereArgs: [eId]);
+            } else if (eType == 'illustration' && eId != null) {
+              final parsedId = int.tryParse(eId);
+              if (parsedId != null && parsedId > 0) {
+                deletedIlluIds.add(parsedId);
+              }
             }
           }
           await delBatch.commit(noResult: true);
+          if (deletedIlluIds.isNotEmpty) {
+            await LocalDbService.deleteIllustrationsByIds(deletedIlluIds);
+            try {
+              await IllustrationCacheService.deleteByIds(deletedIlluIds);
+            } catch (_) {}
+          }
 
           for (var bName in affectedBooks) {
             final countRow = await db.rawQuery('SELECT COUNT(*) as cnt FROM chapters WHERE book_name = ?', [bName]);
@@ -399,6 +423,21 @@ class SyncService {
         final highlights = pullData['highlights'] as List? ?? [];
         if (highlights.isNotEmpty) {
           await LocalDbService.syncHighlightsFromPc(highlights);
+        }
+
+        final illustrations = pullData['illustrations'] as List? ?? [];
+        if (illustrations.isNotEmpty) {
+          await LocalDbService.upsertIllustrationsFromPc(illustrations);
+          try {
+            final parsedIllus = illustrations
+                .whereType<Map>()
+                .map((raw) => NovelIllustration.fromMap(Map<String, dynamic>.from(raw)))
+                .where((item) => item.id > 0)
+                .toList();
+            await IllustrationCacheService.syncAllIllustrations(parsedIllus);
+          } catch (e) {
+            debugPrint('Incremental illustration cache warning: $e');
+          }
         }
 
         hasMore = pullData['has_more'] == true;

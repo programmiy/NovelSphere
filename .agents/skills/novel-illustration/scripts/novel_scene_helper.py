@@ -7,18 +7,21 @@ databases are never locked or modified.
 from __future__ import annotations
 
 import argparse
+import base64
 import ctypes
 import json
 import sqlite3
 import subprocess
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Any
 
 DEFAULT_DB_PATH = Path(__file__).resolve().parents[4] / "server" / "translations.db"
 DEFAULT_COMFY_URL = "http://127.0.0.1:8188"
+DEFAULT_LANOVEL_URL = "http://127.0.0.1:8001"
 
 
 class _MemoryStatusEx(ctypes.Structure):
@@ -275,6 +278,61 @@ def check_environment(server_url: str = DEFAULT_COMFY_URL) -> dict[str, Any]:
     }
 
 
+def register_illustration(
+    *,
+    book: str,
+    image_path: Path,
+    after_pid: str = "END",
+    chapter_url: str = "",
+    chapter_title: str = "",
+    caption: str = "",
+    sort_order: int = 0,
+    server_url: str = DEFAULT_LANOVEL_URL,
+    use_base64: bool = False,
+    timeout_sec: float = 30.0,
+) -> dict[str, Any]:
+    """Register an illustration image into the running LANOVEL server library."""
+    resolved_img = image_path.expanduser().resolve()
+    if not resolved_img.is_file():
+        raise FileNotFoundError(f"삽화 이미지 파일을 찾을 수 없습니다: {resolved_img}")
+    if not chapter_url.strip() and not chapter_title.strip():
+        raise ValueError("chapter_url 또는 chapter_title 중 하나 이상이 필요합니다.")
+
+    base = server_url.rstrip("/")
+    parsed = urllib.parse.urlparse(base)
+    is_loopback = (parsed.hostname or "").lower() in {"127.0.0.1", "localhost", "::1"}
+
+    payload: dict[str, Any] = {
+        "book_name": book.strip(),
+        "after_pid": (after_pid or "END").strip() or "END",
+        "sort_order": int(sort_order),
+        "caption": caption.strip() or None,
+    }
+    if chapter_url.strip():
+        payload["chapter_url"] = chapter_url.strip()
+    if chapter_title.strip():
+        payload["chapter_title"] = chapter_title.strip()
+
+    if use_base64 or not is_loopback:
+        encoded = base64.b64encode(resolved_img.read_bytes()).decode("ascii")
+        payload["image_base64"] = encoded
+    else:
+        payload["source_path"] = str(resolved_img)
+
+    req = urllib.request.Request(
+        f"{base}/api/illustrations",
+        data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+        headers={"Content-Type": "application/json; charset=utf-8"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout_sec) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"LANOVEL 서버 등록 실패 (HTTP {exc.code}): {body}") from exc
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Build the CLI argument parser."""
     parser = argparse.ArgumentParser(
@@ -304,6 +362,18 @@ def build_parser() -> argparse.ArgumentParser:
     p_sc.add_argument("--pid-start", default="", help="시작 PID (예: L5, p10)")
     p_sc.add_argument("--pid-end", default="", help="종료 PID (예: L20, p40)")
     p_sc.add_argument("--limit", type=int, default=120, help="최대 출력 문장 수")
+
+    p_reg = sub.add_parser("register-illustration", help="생성된 삽화를 LANOVEL 서재 본문에 자동 등록")
+    p_reg.add_argument("--server", default=DEFAULT_LANOVEL_URL, help="LANOVEL 서버 주소 (기본 http://127.0.0.1:8001)")
+    p_reg.add_argument("--book", required=True, help="소설 폴더명(book_name)")
+    p_reg.add_argument("--image", type=Path, required=True, help="등록할 PNG/JPG/WEBP 이미지 경로")
+    p_reg.add_argument("--chapter-url", default="", help="대상 회차 URL")
+    p_reg.add_argument("--chapter-title", default="", help="대상 회차 제목 (URL 미지정 시)")
+    p_reg.add_argument("--after-pid", default="END", help="삽입 위치 PID (예: TOP, L10, p15, END)")
+    p_reg.add_argument("--sort-order", type=int, default=0, help="동일 위치 정렬 순서")
+    p_reg.add_argument("--caption", default="", help="삽화 캡션/설명 (선택)")
+    p_reg.add_argument("--base64", action="store_true", help="source_path 대신 image_base64 전송 강제")
+    p_reg.add_argument("--json", action="store_true", help="JSON 형식으로 출력")
 
     return parser
 
@@ -345,6 +415,28 @@ def main(argv: list[str] | None = None) -> int:
             f"권장 설정 : mode={rec['default_mode']} | "
             f"edit_safe={rec['edit_mode_safe']} | gpu_cool={rec['gpu_ready_without_cooldown']}"
         )
+        return 0
+
+    if args.command == "register-illustration":
+        created = register_illustration(
+            book=args.book,
+            image_path=args.image,
+            after_pid=args.after_pid,
+            chapter_url=args.chapter_url,
+            chapter_title=args.chapter_title,
+            caption=args.caption,
+            sort_order=args.sort_order,
+            server_url=args.server,
+            use_base64=args.base64,
+        )
+        if args.json:
+            print(json.dumps(created, ensure_ascii=False, indent=2))
+        else:
+            print(
+                f"등록 완료: id={created.get('id')} | book={created.get('book_name')} | "
+                f"chapter={created.get('chapter_title') or created.get('chapter_url')} | "
+                f"after_pid={created.get('after_pid')} ({created.get('width')}x{created.get('height')})"
+            )
         return 0
 
     conn = open_readonly_db(args.db)

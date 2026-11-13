@@ -622,6 +622,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (mBookTocSourceUrl) mBookTocSourceUrl.value = '';
 
         tagModal.style.display = 'block';
+        loadMobileBookIllustrations(name);
 
         try {
             const res = await fetch(`/api/tags?_t=${Date.now()}`);
@@ -648,6 +649,136 @@ document.addEventListener('DOMContentLoaded', () => {
     function closeEditModal() {
         tagModal.style.display = 'none';
         currentEditingBook = null;
+        mPendingIlluBase64 = '';
+        const mIlluFile = document.getElementById('m-illu-file-input');
+        if (mIlluFile) mIlluFile.value = '';
+    }
+
+    let mPendingIlluBase64 = '';
+
+    async function loadMobileChapterPids(bookName, chapterUrl) {
+        const pidSel = document.getElementById('m-illu-pid-select');
+        if (!pidSel) return;
+        try {
+            const res = await fetch(`/api/illustrations/book/${encodeURIComponent(bookName)}/pids?chapter_url=${encodeURIComponent(chapterUrl)}`);
+            const pids = res.ok ? await res.json() : [];
+            const opts = ['<option value="TOP">회차 맨 위 (TOP)</option>'];
+            for (const p of pids) {
+                opts.push(`<option value="${escapeHtml(p.pid)}">[${escapeHtml(p.pid)} 뒤] ${escapeHtml(p.preview || '')}</option>`);
+            }
+            opts.push('<option value="END" selected>회차 맨 끝 (END)</option>');
+            pidSel.innerHTML = opts.join('');
+        } catch (_) {
+            pidSel.innerHTML = '<option value="TOP">TOP</option><option value="END" selected>END</option>';
+        }
+    }
+
+    async function loadMobileBookIllustrations(bookName) {
+        const listEl = document.getElementById('m-illu-list');
+        const countEl = document.getElementById('m-illu-count');
+        const chapSel = document.getElementById('m-illu-chapter-select');
+        if (!listEl) return;
+        try {
+            const [chapRes, illuRes] = await Promise.all([
+                fetch(`/api/illustrations/book/${encodeURIComponent(bookName)}/chapters`),
+                fetch(`/api/illustrations?book_name=${encodeURIComponent(bookName)}`),
+            ]);
+            const chapters = chapRes.ok ? await chapRes.json() : [];
+            const illus = illuRes.ok ? await illuRes.json() : [];
+            if (countEl) countEl.textContent = String(illus.length);
+
+            if (chapSel) {
+                chapSel.innerHTML = chapters.length
+                    ? chapters.map(ch => `<option value="${escapeHtml(ch.url)}" data-title="${escapeHtml(ch.title)}">${ch.index}화. ${escapeHtml(ch.title)}</option>`).join('')
+                    : '<option value="">회차 없음</option>';
+                if (chapters.length) await loadMobileChapterPids(bookName, chapSel.value);
+            }
+
+            listEl.innerHTML = illus.length === 0
+                ? '<p style="font-size:11px; color:var(--text-muted); text-align:center;">등록된 삽화가 없습니다.</p>'
+                : illus.map(it => `
+                    <div class="m-illu-row">
+                        <img src="${escapeHtml(it.image_url)}" alt="${escapeHtml(it.caption || '삽화')}">
+                        <div class="m-illu-row-meta">
+                            <div class="m-illu-row-title">${escapeHtml(it.chapter_title || it.chapter_url)}</div>
+                            <div>[${escapeHtml(it.after_pid)} 뒤] ${escapeHtml(it.caption || '')}</div>
+                        </div>
+                        <button type="button" class="btn-cancel m-illu-del-btn" data-id="${it.id}" style="padding:4px 8px; font-size:11px;">삭제</button>
+                    </div>
+                `).join('');
+        } catch (err) {
+            listEl.innerHTML = `<p style="font-size:11px; color:var(--danger-color);">불러오기 실패: ${escapeHtml(err.message)}</p>`;
+        }
+    }
+
+    const mIlluFileInput = document.getElementById('m-illu-file-input');
+    const mIlluChapSelect = document.getElementById('m-illu-chapter-select');
+    const mIlluAddBtn = document.getElementById('m-illu-add-btn');
+    const mIlluListEl = document.getElementById('m-illu-list');
+
+    if (mIlluFileInput) {
+        mIlluFileInput.addEventListener('change', (e) => {
+            const file = e.target.files && e.target.files[0];
+            if (!file) { mPendingIlluBase64 = ''; return; }
+            const reader = new FileReader();
+            reader.onload = () => { mPendingIlluBase64 = typeof reader.result === 'string' ? reader.result : ''; };
+            reader.readAsDataURL(file);
+        });
+    }
+    if (mIlluChapSelect) {
+        mIlluChapSelect.addEventListener('change', () => {
+            if (currentEditingBook && mIlluChapSelect.value) {
+                loadMobileChapterPids(currentEditingBook.name, mIlluChapSelect.value);
+            }
+        });
+    }
+    if (mIlluAddBtn) {
+        mIlluAddBtn.addEventListener('click', async () => {
+            if (!currentEditingBook || !mPendingIlluBase64 || !mIlluChapSelect || !mIlluChapSelect.value) {
+                alert('이미지와 회차를 선택해 주세요.');
+                return;
+            }
+            const opt = mIlluChapSelect.options[mIlluChapSelect.selectedIndex];
+            const pidSel = document.getElementById('m-illu-pid-select');
+            const capEl = document.getElementById('m-illu-caption-input');
+            mIlluAddBtn.disabled = true;
+            try {
+                const res = await fetch('/api/illustrations', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        book_name: currentEditingBook.name,
+                        chapter_url: mIlluChapSelect.value,
+                        chapter_title: opt ? (opt.dataset.title || '') : '',
+                        after_pid: pidSel ? pidSel.value : 'END',
+                        caption: capEl ? capEl.value.trim() : '',
+                        image_base64: mPendingIlluBase64,
+                    }),
+                });
+                if (!res.ok) throw new Error(res.statusText);
+                mPendingIlluBase64 = '';
+                if (mIlluFileInput) mIlluFileInput.value = '';
+                if (capEl) capEl.value = '';
+                await loadMobileBookIllustrations(currentEditingBook.name);
+                showToast('삽화 등록 완료');
+            } catch (err) {
+                alert(`삽화 등록 실패: ${err.message}`);
+            } finally {
+                mIlluAddBtn.disabled = false;
+            }
+        });
+    }
+    if (mIlluListEl) {
+        mIlluListEl.addEventListener('click', async (e) => {
+            const btn = e.target.closest('.m-illu-del-btn');
+            if (!btn || !currentEditingBook) return;
+            if (!confirm('삽화를 삭제하시겠습니까?')) return;
+            const res = await fetch(`/api/illustrations/${btn.dataset.id}`, { method: 'DELETE' });
+            if (res.ok) {
+                await loadMobileBookIllustrations(currentEditingBook.name);
+                showToast('삽화가 삭제되었습니다.');
+            }
+        });
     }
 
     if (tagModalCloseBtn) tagModalCloseBtn.addEventListener('click', closeEditModal);
@@ -776,7 +907,7 @@ document.addEventListener('DOMContentLoaded', () => {
         urlListBody.innerHTML = urls.map(u => `
             <a href="/viewer?book=${encodeURIComponent(bookName)}&title=${encodeURIComponent(u.title || u.url)}" class="m-toc-row">
                 <span class="m-toc-row-title">${escapeHtml(u.title || u.url)}</span>
-                <span class="m-toc-row-count">${u.count || 0} 단락</span>
+                <span class="m-toc-row-count">${(u.illustration_count || 0) > 0 ? `<span class="m-illu-badge">🖼️ ${u.illustration_count}</span>` : ''}${u.count || 0} 단락</span>
             </a>
         `).join('');
     }

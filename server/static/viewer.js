@@ -77,6 +77,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     const overlay = document.getElementById('overlay');
     const mobileNavSetting = document.getElementById('mobile-nav-setting');
 
+    // Illustration Lightbox
+    const illuLightbox = document.getElementById('illustration-lightbox');
+    const illuLightboxImg = document.getElementById('illu-lightbox-img');
+    const illuLightboxCaption = document.getElementById('illu-lightbox-caption');
+    const illuLightboxClose = document.getElementById('illu-lightbox-close');
+
     // --- State ---
     const urlParams = new URLSearchParams(window.location.search);
     const bookName = urlParams.get('book');
@@ -85,6 +91,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     let chapterTitles = [];
     let currentChapterIndex = -1;
     let currentChapterItems = [];
+    let currentChapterIllustrations = [];
+    let currentChapterFlowItems = [];
     let pages = [];
     let currentPageInChapter = 0;
     let saveTimeout = null;
@@ -447,11 +455,26 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             currentChapterItems = await contentRes.json();
             if (currentChapterItems.length === 0) {
+                currentChapterIllustrations = [];
+                currentChapterFlowItems = [];
                 isCurrentChapterReviewed = false;
                 updateReviewBadgeUI();
                 contentArea.innerHTML = '<p style="text-align: center; padding: 40px;">이 챕터에 번역된 내용이 없습니다.</p>';
                 return;
             }
+
+            // 회차 본문 삽화 로드 (오프라인 PWA 캐시 호환을 위해 동적 _t 생략)
+            const chapterUrl = currentChapterItems[0]?.url || '';
+            try {
+                const illuParams = new URLSearchParams({ book_name: bookName });
+                if (chapterUrl) illuParams.set('chapter_url', chapterUrl);
+                if (chapterTitle) illuParams.set('chapter_title', chapterTitle);
+                const illuRes = await fetch(`/api/illustrations?${illuParams.toString()}`, { cache: 'no-cache' });
+                currentChapterIllustrations = illuRes.ok ? await illuRes.json() : [];
+            } catch (_) {
+                currentChapterIllustrations = [];
+            }
+            currentChapterFlowItems = buildChapterFlowItems(currentChapterItems, currentChapterIllustrations);
 
             // 검수완료 상태 주입 및 헤더 뱃지 갱신
             isCurrentChapterReviewed = Boolean(currentChapterItems[0]?.is_reviewed);
@@ -562,9 +585,62 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
+    // --- Chapter Flow Assembly (Sentences + Inline Illustrations) ---
+    function buildChapterFlowItems(sentences, illustrations) {
+        const flow = [];
+        const list = Array.isArray(illustrations) ? illustrations : [];
+        const topList = [];
+        const byPid = new Map();
+        const endList = [];
+
+        const existingPids = new Set(
+            sentences.map(s => (s.pid || '').trim().toUpperCase()).filter(Boolean)
+        );
+
+        for (const illu of list) {
+            const rawPid = (illu.after_pid || 'END').trim();
+            const upperPid = rawPid.toUpperCase();
+            if (upperPid === 'TOP') {
+                topList.push({ ...illu, _isIllustration: true, pid: null });
+            } else if (upperPid === 'END' || !existingPids.has(upperPid)) {
+                endList.push({ ...illu, _isIllustration: true, pid: null });
+            } else {
+                if (!byPid.has(upperPid)) byPid.set(upperPid, []);
+                byPid.get(upperPid).push({ ...illu, _isIllustration: true, pid: null });
+            }
+        }
+
+        flow.push(...topList);
+        for (const sent of sentences) {
+            flow.push({ ...sent, _isIllustration: false });
+            const key = (sent.pid || '').trim().toUpperCase();
+            if (key && byPid.has(key)) {
+                flow.push(...byPid.get(key));
+            }
+        }
+        flow.push(...endList);
+        return flow;
+    }
+
+    function openIllustrationLightbox(imgUrl, caption) {
+        if (!illuLightbox || !illuLightboxImg) return;
+        illuLightboxImg.src = imgUrl;
+        if (illuLightboxCaption) {
+            illuLightboxCaption.textContent = caption || '';
+            illuLightboxCaption.style.display = caption ? 'block' : 'none';
+        }
+        illuLightbox.style.display = 'flex';
+    }
+
+    function closeIllustrationLightbox() {
+        if (!illuLightbox) return;
+        illuLightbox.style.display = 'none';
+        if (illuLightboxImg) illuLightboxImg.src = '';
+    }
+
     // --- Continuous Scroll Mode Rendering ---
     function renderScrollMode(targetPid = null) {
-        contentArea.innerHTML = currentChapterItems.map(createItemHtml).join('');
+        contentArea.innerHTML = currentChapterFlowItems.map(createFlowItemHtml).join('');
         const lenDigits = String(currentChapterItems.length).padStart(3, '0').split('');
         pageIndicator.innerHTML = `
             <div class="nixie-tube-bank scroll-indicator">
@@ -614,8 +690,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             measurer.style.fontFamily = getComputedStyle(contentArea).fontFamily;
             document.body.appendChild(measurer);
 
-            for (const item of currentChapterItems) {
-                const itemHtml = createItemHtml(item);
+            for (const item of currentChapterFlowItems) {
+                const itemHtml = createFlowItemHtml(item);
                 measurer.innerHTML += itemHtml;
 
                 if (measurer.scrollHeight > maxPageHeight) {
@@ -627,7 +703,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                         continue;
                     }
                     currentPageItems = [item];
-                    measurer.innerHTML = createItemHtml(item);
+                    measurer.innerHTML = createFlowItemHtml(item);
                 } else {
                     currentPageItems.push(item);
                 }
@@ -655,7 +731,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const pageItems = pages[currentPageInChapter];
             if (!pageItems) return;
 
-            contentArea.innerHTML = pageItems.map(createItemHtml).join('');
+            contentArea.innerHTML = pageItems.map(createFlowItemHtml).join('');
             pageIndicator.innerHTML = renderNixiePageIndicator(currentPageInChapter + 1, pages.length);
             contentArea.style.opacity = '1';
 
@@ -688,6 +764,24 @@ document.addEventListener('DOMContentLoaded', async () => {
             return m;
         });
         return html;
+    }
+
+    function createFlowItemHtml(item) {
+        if (item && item._isIllustration) {
+            const w = item.width || 896;
+            const h = item.height || 1152;
+            const aspectStyle = `width: min(100%, ${w}px); aspect-ratio: ${w} / ${h}; max-height: 58vh; height: auto;`;
+            const captionHtml = item.caption
+                ? `<figcaption class="novel-illustration-caption">${escapeHtml(item.caption)}</figcaption>`
+                : '';
+            return `
+                <figure class="novel-illustration-card" data-illu-id="${item.id}" data-img-url="${escapeHtml(item.image_url)}" data-caption="${escapeHtml(item.caption || '')}" title="클릭하여 크게 보기">
+                    <img class="novel-illustration-img" src="${escapeHtml(item.image_url)}" alt="${escapeHtml(item.caption || '소설 삽화')}" style="${aspectStyle}" loading="lazy">
+                    ${captionHtml}
+                </figure>
+            `;
+        }
+        return createItemHtml(item);
     }
 
     function createItemHtml(item) {
@@ -796,7 +890,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                 firstPid = currentChapterItems[0]?.pid || null;
             }
         } else {
-            firstPid = pages[currentPageInChapter]?.[0]?.pid || null;
+            const firstSentence = pages[currentPageInChapter]?.find(it => !it._isIllustration && it.pid);
+            firstPid = firstSentence?.pid || pages[currentPageInChapter]?.[0]?.pid || null;
         }
 
         const payload = {
@@ -823,12 +918,14 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             const meta = chapterUrlsMeta[index] || chapterUrlsMeta.find(m => m.title === title);
             const isChapReviewed = meta ? Boolean(meta.is_reviewed) : false;
+            const illuCnt = meta ? (meta.illustration_count || 0) : 0;
 
             const div = document.createElement('div');
             div.className = `toc-item ${index === currentChapterIndex ? 'active' : ''}`;
             div.dataset.index = index;
             div.innerHTML = `
                 <span class="toc-item-text">${index + 1}. ${escapeHtml(title || '(제목 없음)')}</span>
+                ${illuCnt > 0 ? `<span class="toc-item-illu-pill font-typewriter" title="등록된 본문 삽화 ${illuCnt}장">🖼️ ${illuCnt}</span>` : ''}
                 ${isChapReviewed ? '<span class="toc-item-review-pill font-typewriter" title="검수 완료된 회차">✅ 검수완료</span>' : ''}
             `;
             div.title = title;
@@ -1621,6 +1718,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             e.preventDefault();
             openShortcutModal();
         } else if (key === 'Escape') {
+            closeIllustrationLightbox();
             closeSidebar();
             closeSettingsDrawer();
             closeShortcutModal();
@@ -1666,7 +1764,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             return;
         }
         if (isMobile && mobileNavMode === 'swipe') return;
-        if (!window.getSelection().isCollapsed || e.target.closest('.paragraph-edit-btn')) {
+        if (!window.getSelection().isCollapsed || e.target.closest('.paragraph-edit-btn') || e.target.closest('.novel-illustration-card')) {
             return;
         }
 
@@ -1778,8 +1876,17 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (item) enableEditing(item);
     });
 
-    // Hover edit button click (PC only: hidden on mobile)
+    // Hover edit button click & inline illustration lightbox open
     contentArea.addEventListener('click', (e) => {
+        const illuCard = e.target.closest('.novel-illustration-card');
+        if (illuCard) {
+            e.stopPropagation();
+            const imgUrl = illuCard.dataset.imgUrl || '';
+            const caption = illuCard.dataset.caption || '';
+            if (imgUrl) openIllustrationLightbox(imgUrl, caption);
+            return;
+        }
+
         const editBtn = e.target.closest('.paragraph-edit-btn');
         if (editBtn) {
             if (isMobile || window.innerWidth <= 768) return;
@@ -1788,6 +1895,17 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (item) enableEditing(item);
         }
     });
+
+    if (illuLightboxClose) {
+        illuLightboxClose.addEventListener('click', closeIllustrationLightbox);
+    }
+    if (illuLightbox) {
+        illuLightbox.addEventListener('click', (e) => {
+            if (e.target === illuLightbox) {
+                closeIllustrationLightbox();
+            }
+        });
+    }
 
     // Top Header Buttons
     tocBtn.addEventListener('click', openSidebar);

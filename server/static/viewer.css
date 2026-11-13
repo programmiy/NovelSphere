@@ -2112,3 +2112,114 @@ body.theme-oled .dialogue-focus-mode .translation-item.is-dialogue {
 .ambient-chip .theme-name {
     font-size: 11.5px;
 }
+
+/* ==========================================================================
+   본문 인라인 삽화 카드 & 확대 라이트박스 (Inline Novel Illustrations)
+   ========================================================================== */
+.novel-illustration-card {
+    margin: 22px auto;
+    padding: 10px;
+    max-width: 100%;
+    border-radius: 12px;
+    border: 1px solid var(--border-color, rgba(148, 163, 184, 0.28));
+    background: var(--card-bg, rgba(0, 0, 0, 0.03));
+    box-shadow: 0 6px 22px rgba(0, 0, 0, 0.12);
+    text-align: center;
+    cursor: zoom-in;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    break-inside: avoid;
+}
+
+.novel-illustration-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.2);
+}
+
+.novel-illustration-img {
+    display: block;
+    margin: 0 auto;
+    max-width: 100%;
+    max-height: 58vh;
+    width: auto;
+    height: auto;
+    object-fit: contain;
+    border-radius: 8px;
+}
+
+.novel-illustration-caption {
+    margin-top: 8px;
+    font-size: 12.5px;
+    line-height: 1.45;
+    color: var(--text-muted);
+    font-style: italic;
+}
+
+.toc-item-illu-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    margin-left: 6px;
+    padding: 1px 6px;
+    border-radius: 10px;
+    font-size: 10.5px;
+    font-weight: 700;
+    background: rgba(245, 158, 11, 0.15);
+    color: #d97706;
+    border: 1px solid rgba(245, 158, 11, 0.35);
+    flex-shrink: 0;
+}
+
+.illu-lightbox {
+    position: fixed;
+    inset: 0;
+    z-index: 2500;
+    background: rgba(10, 12, 18, 0.92);
+    backdrop-filter: blur(8px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+}
+
+.illu-lightbox-stage {
+    max-width: 94vw;
+    max-height: 90vh;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+}
+
+.illu-lightbox-img {
+    max-width: 92vw;
+    max-height: 82vh;
+    object-fit: contain;
+    border-radius: 10px;
+    box-shadow: 0 18px 50px rgba(0, 0, 0, 0.65);
+}
+
+.illu-lightbox-caption {
+    color: #e2e8f0;
+    font-size: 13.5px;
+    text-align: center;
+    max-width: 720px;
+}
+
+.illu-lightbox-close {
+    position: fixed;
+    top: 16px;
+    right: 20px;
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    background: rgba(15, 23, 42, 0.8);
+    color: #fff;
+    font-size: 26px;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}

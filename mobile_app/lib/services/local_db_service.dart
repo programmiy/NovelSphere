@@ -10,6 +10,7 @@ import '../models/book.dart';
 import '../models/chapter.dart';
 import '../models/sentence.dart';
 import '../models/sentence_highlight.dart';
+import '../models/novel_illustration.dart';
 import '../models/glossary_rule.dart';
 import '../models/find_replace_item.dart';
 import 'text_diff_helper.dart';
@@ -211,6 +212,26 @@ class LocalDbService {
             created_at INTEGER NOT NULL
           );
         ''');
+
+        await db.execute('''
+          CREATE TABLE IF NOT EXISTS novel_illustrations (
+            id INTEGER PRIMARY KEY,
+            book_name TEXT NOT NULL,
+            chapter_url TEXT NOT NULL,
+            chapter_title TEXT NOT NULL DEFAULT '',
+            after_pid TEXT NOT NULL DEFAULT 'END',
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            caption TEXT NOT NULL DEFAULT '',
+            file_rel_path TEXT NOT NULL,
+            mime_type TEXT NOT NULL DEFAULT 'image/png',
+            width INTEGER,
+            height INTEGER,
+            file_size INTEGER NOT NULL DEFAULT 0,
+            created_at INTEGER NOT NULL DEFAULT 0,
+            updated_at INTEGER NOT NULL DEFAULT 0
+          );
+        ''');
+        await db.execute('CREATE INDEX IF NOT EXISTS ix_m_illu_book_url ON novel_illustrations(book_name, chapter_url);');
       },
       onOpen: (db) async {
         try {
@@ -241,6 +262,27 @@ class LocalDbService {
           ''');
           await db.execute('CREATE INDEX IF NOT EXISTS ix_sh_book_res ON sentence_highlights(book_name, is_resolved);');
           await db.execute('CREATE INDEX IF NOT EXISTS ix_sh_url_pid ON sentence_highlights(url, pid);');
+        } catch (_) {}
+        try {
+          await db.execute('''
+            CREATE TABLE IF NOT EXISTS novel_illustrations (
+              id INTEGER PRIMARY KEY,
+              book_name TEXT NOT NULL,
+              chapter_url TEXT NOT NULL,
+              chapter_title TEXT NOT NULL DEFAULT '',
+              after_pid TEXT NOT NULL DEFAULT 'END',
+              sort_order INTEGER NOT NULL DEFAULT 0,
+              caption TEXT NOT NULL DEFAULT '',
+              file_rel_path TEXT NOT NULL,
+              mime_type TEXT NOT NULL DEFAULT 'image/png',
+              width INTEGER,
+              height INTEGER,
+              file_size INTEGER NOT NULL DEFAULT 0,
+              created_at INTEGER NOT NULL DEFAULT 0,
+              updated_at INTEGER NOT NULL DEFAULT 0
+            );
+          ''');
+          await db.execute('CREATE INDEX IF NOT EXISTS ix_m_illu_book_url ON novel_illustrations(book_name, chapter_url);');
         } catch (_) {}
       },
     );
@@ -1314,6 +1356,93 @@ class LocalDbService {
       }
     }
     await batch.commit(noResult: true);
+  }
+
+  // --- 본문 삽화 (Novel Illustrations) 로컬 DB 조회/동기화 ---
+  static Future<void> upsertIllustrationsFromPc(List<dynamic> items) async {
+    if (items.isEmpty) return;
+    final db = await database;
+    final batch = db.batch();
+    for (final raw in items) {
+      if (raw is Map<String, dynamic>) {
+        final illu = NovelIllustration.fromMap(raw);
+        if (illu.id > 0 && illu.bookName.isNotEmpty && illu.chapterUrl.isNotEmpty) {
+          batch.insert('novel_illustrations', illu.toDbMap(), conflictAlgorithm: ConflictAlgorithm.replace);
+        }
+      } else if (raw is Map) {
+        final map = Map<String, dynamic>.from(raw);
+        final illu = NovelIllustration.fromMap(map);
+        if (illu.id > 0 && illu.bookName.isNotEmpty && illu.chapterUrl.isNotEmpty) {
+          batch.insert('novel_illustrations', illu.toDbMap(), conflictAlgorithm: ConflictAlgorithm.replace);
+        }
+      }
+    }
+    await batch.commit(noResult: true);
+  }
+
+  static Future<void> deleteIllustrationsByIds(List<int> ids) async {
+    if (ids.isEmpty) return;
+    final db = await database;
+    const chunkSize = 100;
+    for (var i = 0; i < ids.length; i += chunkSize) {
+      final chunk = ids.sublist(i, (i + chunkSize).clamp(0, ids.length));
+      final placeholders = List.filled(chunk.length, '?').join(',');
+      await db.delete('novel_illustrations', where: 'id IN ($placeholders)', whereArgs: chunk);
+    }
+  }
+
+  static Future<List<NovelIllustration>> getIllustrationsForChapter(
+    String bookName,
+    String chapterUrl,
+  ) async {
+    final db = await database;
+    try {
+      final rows = await db.query(
+        'novel_illustrations',
+        where: 'book_name = ? AND chapter_url = ?',
+        whereArgs: [bookName, chapterUrl],
+        orderBy: 'sort_order ASC, id ASC',
+      );
+      return rows.map((r) => NovelIllustration.fromMap(r)).toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  static Future<List<NovelIllustration>> getAllIllustrations() async {
+    final db = await database;
+    try {
+      final rows = await db.query(
+        'novel_illustrations',
+        orderBy: 'id ASC',
+      );
+      return rows.map((r) => NovelIllustration.fromMap(r)).toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  static Future<Map<String, int>> getIllustrationCountsByChapter(String bookName) async {
+    final db = await database;
+    try {
+      final rows = await db.rawQuery('''
+        SELECT chapter_url, COUNT(*) as cnt
+        FROM novel_illustrations
+        WHERE book_name = ?
+        GROUP BY chapter_url
+      ''', [bookName]);
+      final result = <String, int>{};
+      for (final r in rows) {
+        final url = r['chapter_url'] as String?;
+        final cnt = (r['cnt'] as num?)?.toInt() ?? 0;
+        if (url != null && url.isNotEmpty && cnt > 0) {
+          result[url] = cnt;
+        }
+      }
+      return result;
+    } catch (_) {
+      return {};
+    }
   }
 }
 

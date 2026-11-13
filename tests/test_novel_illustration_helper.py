@@ -98,6 +98,56 @@ def test_readonly_books_chapters_and_scene_range(tmp_path: Path) -> None:
         conn.close()
 
 
+def test_register_illustration_builds_payload(tmp_path: Path, monkeypatch) -> None:
+    """Verify register_illustration chooses source_path for loopback and base64 for remote."""
+    img_path = tmp_path / "sample.png"
+    img_path.write_bytes(b"fake-png-bytes")
+    captured: list[dict] = []
+
+    class _FakeResp:
+        def __init__(self, body: dict):
+            self._raw = json.dumps(body).encode("utf-8")
+
+        def read(self) -> bytes:
+            return self._raw
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    import json
+
+    def _fake_urlopen(req, timeout=30.0):
+        captured.append(json.loads(req.data.decode("utf-8")))
+        return _FakeResp({"id": 11, "book_name": "작품A", "after_pid": "L10"})
+
+    monkeypatch.setattr(helper.urllib.request, "urlopen", _fake_urlopen)
+
+    res_local = helper.register_illustration(
+        book="작품A",
+        image_path=img_path,
+        chapter_url="https://example.com/1",
+        after_pid="L10",
+        caption="레몬캔 장면",
+        server_url="http://127.0.0.1:8001",
+    )
+    assert res_local["id"] == 11
+    assert captured[0]["source_path"] == str(img_path.resolve())
+    assert "image_base64" not in captured[0]
+
+    helper.register_illustration(
+        book="작품A",
+        image_path=img_path,
+        chapter_url="https://example.com/1",
+        after_pid="END",
+        server_url="https://lanovel.tailscale.ts.net:8001",
+    )
+    assert "image_base64" in captured[1]
+    assert "source_path" not in captured[1]
+
+
 def test_readonly_connection_blocks_writes(tmp_path: Path) -> None:
     """Ensure open_readonly_db rejects write operations at the SQLite level."""
     db_file = tmp_path / "isolated_ro.db"

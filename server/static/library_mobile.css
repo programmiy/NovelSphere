@@ -1274,3 +1274,74 @@ textarea#m-book-notes-summary {
     font-weight: 700;
 }
 
+.m-illu-upload-box {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 10px;
+    border: 1px dashed var(--border-color);
+    border-radius: 8px;
+    background: var(--card-bg);
+}
+
+.m-illu-select,
+.m-illu-caption-input {
+    width: 100%;
+    height: 34px;
+    border-radius: 6px;
+    border: 1px solid var(--border-color);
+    background: var(--card-bg);
+    color: var(--text-color);
+    padding: 0 8px;
+    font-size: 12px;
+}
+
+.m-illu-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.m-illu-row {
+    display: grid;
+    grid-template-columns: 48px 1fr auto;
+    gap: 8px;
+    align-items: center;
+    padding: 6px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--card-bg);
+}
+
+.m-illu-row img {
+    width: 48px;
+    height: 62px;
+    object-fit: cover;
+    border-radius: 4px;
+}
+
+.m-illu-row-meta {
+    min-width: 0;
+    font-size: 11px;
+}
+
+.m-illu-row-title {
+    font-weight: 700;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.m-illu-badge {
+    display: inline-block;
+    margin-right: 6px;
+    padding: 2px 6px;
+    border-radius: 10px;
+    background: rgba(245, 158, 11, 0.16);
+    color: #d97706;
+    font-size: 10px;
+    font-weight: 700;
+}
+
+

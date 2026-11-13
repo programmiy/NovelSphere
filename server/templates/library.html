@@ -11,7 +11,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;900&family=Special+Elite&family=Courier+Prime:ital,wght@0,400;0,700;1,400&family=Gowun+Batang:wght@400;700&family=Noto+Serif+KR:wght@400;600;700&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
-    <link rel="stylesheet" href="/static/library.css?v=3.8">
+    <link rel="stylesheet" href="/static/library.css?v=3.9">
 </head>
 <body>
     <div class="library-container">
@@ -310,6 +310,9 @@
                 <button type="button" class="modal-tab-btn" data-tab="toc" role="tab" aria-selected="false">
                     <span class="material-icons">alt_route</span> 목차 동기화
                 </button>
+                <button type="button" class="modal-tab-btn" data-tab="illustrations" role="tab" aria-selected="false">
+                    <span class="material-icons">collections</span> 본문 삽화
+                </button>
             </div>
 
             <div class="modal-body custom-brass-scrollbar">
@@ -416,6 +419,52 @@
                             <button type="button" id="sync-toc-editor-btn" class="btn btn-outline">
                                 <span class="material-icons" style="font-size:16px;">alt_route</span> TOC 목차 동기화
                             </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 탭 5: 회차 본문 인라인 삽화 관리 -->
+                <div class="modal-tab-pane" id="modalTab-illustrations" role="tabpanel" style="display: none;">
+                    <div class="form-section">
+                        <div class="section-header">
+                            <label class="section-title">새 본문 삽화 등록</label>
+                            <span class="section-hint">등록한 삽화는 서재 양장본 표지는 유지한 채, 뷰어·모바일 앱의 지정 회차 본문 문단 뒤에 삽입됩니다.</span>
+                        </div>
+
+                        <div class="illu-upload-grid">
+                            <label class="illu-file-dropzone" for="illu-file-input" id="illu-file-dropzone">
+                                <img id="illu-preview-img" class="illu-preview-img" alt="삽화 미리보기" style="display: none;">
+                                <div id="illu-dropzone-placeholder" class="illu-dropzone-placeholder">
+                                    <span class="material-icons">add_photo_alternate</span>
+                                    <span>PNG / JPG / WEBP 이미지 선택</span>
+                                </div>
+                                <input type="file" id="illu-file-input" accept="image/png,image/jpeg,image/webp" hidden>
+                            </label>
+
+                            <div class="illu-form-fields">
+                                <label class="illu-field-label" for="illu-chapter-select">삽입 회차</label>
+                                <select id="illu-chapter-select" class="form-input"></select>
+
+                                <label class="illu-field-label" for="illu-pid-select">삽입 문단 위치</label>
+                                <select id="illu-pid-select" class="form-input"></select>
+
+                                <label class="illu-field-label" for="illu-caption-input">장면 설명 / 캡션 (선택)</label>
+                                <input type="text" id="illu-caption-input" class="form-input" placeholder="예: 1화 술 취한 쿠레하 선배">
+
+                                <button type="button" id="illu-add-btn" class="btn btn-primary" style="margin-top: 4px;">
+                                    <span class="material-icons" style="font-size: 16px;">add_to_photos</span> 본문 삽화 등록
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-section" style="margin-top: 18px;">
+                        <div class="section-header">
+                            <label class="section-title">등록된 본문 삽화 (<span id="illu-registered-count">0</span>건)</label>
+                            <span class="section-hint">회차별 삽입 위치를 변경하거나 삭제할 수 있습니다.</span>
+                        </div>
+                        <div id="illu-list-container" class="illu-list-container">
+                            <p class="illu-empty-text">등록된 삽화가 없습니다.</p>
                         </div>
                     </div>
                 </div>
@@ -561,7 +610,7 @@
     </div>
 
     <script src="/static/steampunk-sound.js?v=2.0"></script>
-    <script type="module" src="/static/library.js?v=3.8"></script>
+    <script type="module" src="/static/library.js?v=3.9"></script>
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {

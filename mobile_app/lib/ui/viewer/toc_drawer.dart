@@ -9,6 +9,7 @@ class TocDrawer extends StatefulWidget {
   final int currentChapterIndex;
   final ReaderThemeData theme;
   final Function(int selectedIndex) onSelectChapter;
+  final Map<String, int> illustrationCountsByUrl;
 
   const TocDrawer({
     super.key,
@@ -17,6 +18,7 @@ class TocDrawer extends StatefulWidget {
     required this.currentChapterIndex,
     required this.theme,
     required this.onSelectChapter,
+    this.illustrationCountsByUrl = const {},
   });
 
   @override
@@ -228,9 +230,36 @@ class _TocDrawerState extends State<TocDrawer> {
                         fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal,
                       ),
                     ),
-                    subtitle: Text(
-                      '${chap.sentenceCount}개 문장',
-                      style: TextStyle(fontSize: 11, color: theme.subTextColor),
+                    subtitle: Builder(
+                      builder: (context) {
+                        final illuCount = widget.illustrationCountsByUrl[chap.url] ?? 0;
+                        return Row(
+                          children: [
+                            Text(
+                              '${chap.sentenceCount}개 문장',
+                              style: TextStyle(fontSize: 11, color: theme.subTextColor),
+                            ),
+                            if (illuCount > 0) ...[
+                              const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                                decoration: BoxDecoration(
+                                  color: theme.accentColor.withOpacity(0.14),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Text(
+                                  '🖼️ $illuCount',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w600,
+                                    color: theme.accentColor,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
+                        );
+                      },
                     ),
                     trailing: isCurrent
                         ? Icon(Icons.menu_book_rounded, color: theme.accentColor, size: 18)

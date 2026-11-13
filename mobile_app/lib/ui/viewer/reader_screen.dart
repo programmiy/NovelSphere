@@ -1,13 +1,16 @@
 import '../../services/font_helper.dart';
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../../models/chapter.dart';
+import '../../models/novel_illustration.dart';
 import '../../models/sentence.dart';
 import '../../models/sentence_highlight.dart';
+import '../../services/illustration_cache_service.dart';
 import '../../services/local_db_service.dart';
 import '../../services/preferences_service.dart';
 import '../../services/sync_service.dart';
@@ -42,6 +45,13 @@ class _ReaderScreenState extends State<ReaderScreen> {
   List<Chapter> _chapters = [];
   int _currentChapterIndex = 0;
   List<Sentence> _sentences = [];
+  List<ReaderFlowItem> _flowItems = [];
+  Map<String, int> _chapterIllustrationCounts = {};
+  Map<int, String> _resolvedIlluLocalPaths = {};
+  int _flowRevision = 0;
+  int _cachedFlowRevision = -1;
+  int _cachedPagesPerPage = -1;
+  List<List<ReaderFlowItem>> _cachedFlowPages = const [];
   bool _isLoading = true;
   bool _showControls = false;
   bool _showTtsPanel = false;
@@ -77,8 +87,23 @@ class _ReaderScreenState extends State<ReaderScreen> {
     }
   }
 
+  List<List<ReaderFlowItem>> get _flowPages {
+    final perPage = _sentencesPerPage;
+    if (_cachedFlowRevision == _flowRevision && _cachedPagesPerPage == perPage) {
+      return _cachedFlowPages;
+    }
+    _cachedFlowPages = paginateReaderFlowItems(_flowItems, perPage);
+    _cachedFlowRevision = _flowRevision;
+    _cachedPagesPerPage = perPage;
+    return _cachedFlowPages;
+  }
+
   // 본문 순수 페이지 수
   int get _contentPageCount {
+    if (_flowItems.isNotEmpty) {
+      final pages = _flowPages;
+      return pages.isEmpty ? 1 : pages.length.clamp(1, 9999);
+    }
     if (_sentences.isEmpty) return 1;
     return (_sentences.length / _sentencesPerPage).ceil().clamp(1, 9999);
   }
@@ -261,13 +286,32 @@ class _ReaderScreenState extends State<ReaderScreen> {
 
     final isPaging = PreferencesService.viewMode == 'paging';
     if (isPaging) {
-      final startIdx = _currentPage * perPage;
-      pid = (startIdx < _sentences.length) ? _sentences[startIdx].pid : _sentences.first.pid;
+      final pages = _flowPages;
+      if (_currentPage >= 0 && _currentPage < pages.length) {
+        pid = firstPidInFlowPage(pages[_currentPage], _sentences);
+      } else {
+        final startIdx = _currentPage * perPage;
+        pid = (startIdx < _sentences.length) ? _sentences[startIdx].pid : _sentences.first.pid;
+      }
     } else {
       if (_scrollController.hasClients && _scrollController.position.maxScrollExtent > 0) {
         final ratio = (_scrollController.offset / _scrollController.position.maxScrollExtent).clamp(0.0, 1.0);
-        final sIdx = (ratio * (_sentences.length - 1)).round();
-        pid = _sentences[sIdx].pid;
+        if (_flowItems.isNotEmpty) {
+          final fIdx = (ratio * (_flowItems.length - 1)).round().clamp(0, _flowItems.length - 1);
+          pid = _flowItems[fIdx].sentence?.pid;
+          if (pid == null) {
+            for (var i = fIdx; i < _flowItems.length; i++) {
+              if (_flowItems[i].sentence?.pid != null) {
+                pid = _flowItems[i].sentence!.pid;
+                break;
+              }
+            }
+            pid ??= _sentences.first.pid;
+          }
+        } else {
+          final sIdx = (ratio * (_sentences.length - 1)).round();
+          pid = _sentences[sIdx].pid;
+        }
       } else {
         pid = _sentences.first.pid;
       }
@@ -306,6 +350,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
   Future<void> _initReader() async {
     setState(() => _isLoading = true);
     _chapters = await LocalDbService.getChapters(widget.bookName);
+    _chapterIllustrationCounts = await LocalDbService.getIllustrationCountsByChapter(widget.bookName);
 
     if (_chapters.isNotEmpty) {
       int initialIdx = 0;
@@ -360,17 +405,22 @@ class _ReaderScreenState extends State<ReaderScreen> {
       }
     }
 
+    final illustrations = await LocalDbService.getIllustrationsForChapter(
+      widget.bookName,
+      targetChapter.url,
+    );
+    final localPaths = await IllustrationCacheService.resolveLocalPaths(illustrations);
+    final flowItems = buildReaderFlowItems(sentences, illustrations);
+
     final perPage = _sentencesPerPage;
-    final pageCount = (sentences.length / perPage).ceil().clamp(1, 9999);
+    final flowPages = paginateReaderFlowItems(flowItems, perPage);
+    final pageCount = flowPages.isEmpty ? 1 : flowPages.length.clamp(1, 9999);
 
     int targetPage = 0;
     if (loadLastPage) {
       targetPage = pageCount - 1;
-    } else if (targetPid != null && sentences.isNotEmpty) {
-      final sIdx = sentences.indexWhere((s) => s.pid == targetPid);
-      if (sIdx != -1) {
-        targetPage = (sIdx / perPage).floor().clamp(0, pageCount - 1);
-      }
+    } else if (targetPid != null && flowPages.isNotEmpty) {
+      targetPage = findFlowPageForPid(flowPages, targetPid);
     }
 
     if (!mounted) return;
@@ -385,16 +435,37 @@ class _ReaderScreenState extends State<ReaderScreen> {
 
     setState(() {
       _sentences = sentences;
+      _flowItems = flowItems;
+      _resolvedIlluLocalPaths = localPaths;
+      _flowRevision++;
+      _cachedFlowPages = flowPages;
+      _cachedFlowRevision = _flowRevision;
+      _cachedPagesPerPage = perPage;
+      if (illustrations.isNotEmpty) {
+        _chapterIllustrationCounts[targetChapter.url] = illustrations.length;
+      } else {
+        _chapterIllustrationCounts.remove(targetChapter.url);
+      }
       _isLoading = false;
       _currentPage = targetPage;
     });
 
+    for (final illu in illustrations) {
+      if (!localPaths.containsKey(illu.id)) {
+        IllustrationCacheService.ensureDownloaded(illu).then((downloadedPath) {
+          if (downloadedPath != null && mounted && _currentChapterIndex == index) {
+            setState(() {
+              _resolvedIlluLocalPaths[illu.id] = downloadedPath;
+            });
+          }
+        });
+      }
+    }
+
     // 독서 진도 저장
-    final currentFirstPid = sentences.isNotEmpty
-        ? ((targetPage * perPage < sentences.length)
-            ? sentences[targetPage * perPage].pid
-            : sentences.first.pid)
-        : null;
+    final currentFirstPid = (targetPage >= 0 && targetPage < flowPages.length)
+        ? firstPidInFlowPage(flowPages[targetPage], sentences)
+        : (sentences.isNotEmpty ? sentences.first.pid : null);
 
     await LocalDbService.updateReadingProgress(
       bookName: widget.bookName,
@@ -407,11 +478,15 @@ class _ReaderScreenState extends State<ReaderScreen> {
       if (_scrollController.hasClients) {
         if (loadLastPage && _scrollController.position.maxScrollExtent > 0) {
           _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
-        } else if (targetPid != null && sentences.isNotEmpty && _scrollController.position.maxScrollExtent > 0) {
-          final sIdx = sentences.indexWhere((s) => s.pid == targetPid);
-          if (sIdx != -1) {
-            final ratio = sIdx / (sentences.length - 1);
-            final offset = (ratio * _scrollController.position.maxScrollExtent).clamp(0.0, _scrollController.position.maxScrollExtent);
+        } else if (targetPid != null && flowItems.length > 1 && _scrollController.position.maxScrollExtent > 0) {
+          final targetUpper = targetPid.trim().toUpperCase();
+          final fIdx = flowItems.indexWhere(
+            (item) => item.sentence?.pid?.trim().toUpperCase() == targetUpper,
+          );
+          if (fIdx != -1) {
+            final ratio = fIdx / (flowItems.length - 1);
+            final offset = (ratio * _scrollController.position.maxScrollExtent)
+                .clamp(0.0, _scrollController.position.maxScrollExtent);
             _scrollController.jumpTo(offset);
           }
         } else {
@@ -843,6 +918,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
         chapters: _chapters,
         currentChapterIndex: _currentChapterIndex,
         theme: theme,
+        illustrationCountsByUrl: _chapterIllustrationCounts,
         onSelectChapter: (idx) => _loadChapter(idx),
       ),
       body: Stack(
@@ -1308,7 +1384,6 @@ class _ReaderScreenState extends State<ReaderScreen> {
 
   // 페이징 뷰 (이전 화 & 다음 화 양방향 스와이프 전환 지원 + 하단 여백 및 잘림 방지 스크롤 지원)
   Widget _buildPagingView(ReaderThemeData theme) {
-    final perPage = _sentencesPerPage;
     final contentPages = _contentPageCount;
     final hasPrev = _currentChapterIndex > 0;
     final hasNext = _currentChapterIndex < _chapters.length - 1;
@@ -1333,9 +1408,10 @@ class _ReaderScreenState extends State<ReaderScreen> {
 
         // 3. 본문 페이지 렌더링
         final contentPageIndex = pageIndex - prevOffset;
-        final start = contentPageIndex * perPage;
-        final end = (start + perPage).clamp(0, _sentences.length);
-        final pageSentences = _sentences.sublist(start, end);
+        final flowPages = _flowPages;
+        final List<ReaderFlowItem> pageItems = (contentPageIndex >= 0 && contentPageIndex < flowPages.length)
+            ? flowPages[contentPageIndex]
+            : const [];
 
         return SafeArea(
           child: Padding(
@@ -1372,7 +1448,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
                       padding: const EdgeInsets.only(bottom: 24),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
-                        children: pageSentences.map((s) => _buildSentenceItem(s, theme)).toList(),
+                        children: pageItems.map((item) => _buildFlowItem(item, theme)).toList(),
                       ),
                     ),
                   ),
@@ -1535,12 +1611,12 @@ class _ReaderScreenState extends State<ReaderScreen> {
             PreferencesService.horizontalPadding,
             30,
           ),
-          itemCount: _sentences.length + 1,
+          itemCount: _flowItems.length + 1,
           itemBuilder: (context, index) {
-            if (index == _sentences.length) {
+            if (index == _flowItems.length) {
               return _buildScrollChapterFooter(theme);
             }
-            return _buildSentenceItem(_sentences[index], theme);
+            return _buildFlowItem(_flowItems[index], theme);
           },
         ),
       ),
@@ -1807,6 +1883,204 @@ class _ReaderScreenState extends State<ReaderScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildFlowItem(ReaderFlowItem item, ReaderThemeData theme) {
+    if (item.isIllustration && item.illustration != null) {
+      return _buildIllustrationItem(item.illustration!, theme);
+    }
+    return _buildSentenceItem(item.sentence!, theme);
+  }
+
+  Widget _buildIllustrationItem(NovelIllustration illu, ReaderThemeData theme) {
+    final localPath = _resolvedIlluLocalPaths[illu.id] ?? IllustrationCacheService.getCachedPathSync(illu);
+    final networkUrl = IllustrationCacheService.buildNetworkUrl(illu.id);
+    final maxImgHeight = (MediaQuery.of(context).size.height * 0.56).clamp(240.0, 560.0);
+
+    Widget buildErrorBox() {
+      return Container(
+        height: 180,
+        alignment: Alignment.center,
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: theme.isDark ? Colors.white.withOpacity(0.05) : Colors.black.withOpacity(0.04),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.broken_image_outlined, size: 28, color: theme.subTextColor),
+            const SizedBox(height: 8),
+            Text(
+              '오프라인 상태이거나 이미지를 불러올 수 없습니다.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: theme.subTextColor, fontSize: 12),
+            ),
+          ],
+        ),
+      );
+    }
+
+    Widget imageWidget;
+    if (localPath != null) {
+      imageWidget = Image.file(
+        File(localPath),
+        fit: BoxFit.contain,
+        errorBuilder: (_, __, ___) => buildErrorBox(),
+      );
+    } else if (networkUrl != null) {
+      imageWidget = Image.network(
+        networkUrl,
+        headers: IllustrationCacheService.buildAuthHeaders(),
+        fit: BoxFit.contain,
+        loadingBuilder: (context, child, loadingProgress) {
+          if (loadingProgress == null) return child;
+          return Container(
+            color: theme.isDark ? Colors.white.withOpacity(0.04) : Colors.black.withOpacity(0.03),
+            child: Center(
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: theme.accentColor,
+              ),
+            ),
+          );
+        },
+        errorBuilder: (_, __, ___) => buildErrorBox(),
+      );
+    } else {
+      imageWidget = buildErrorBox();
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 14),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => _showIllustrationLightbox(illu, theme),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: theme.isDark ? Colors.white.withOpacity(0.03) : Colors.black.withOpacity(0.025),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: theme.isDark ? Colors.white.withOpacity(0.10) : Colors.black.withOpacity(0.08),
+              width: 1,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(theme.isDark ? 0.25 : 0.06),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Center(
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(maxHeight: maxImgHeight),
+                  child: AspectRatio(
+                    aspectRatio: illu.aspectRatio,
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(10),
+                      child: imageWidget,
+                    ),
+                  ),
+                ),
+              ),
+              if (illu.caption.trim().isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text(
+                  illu.caption.trim(),
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: theme.subTextColor,
+                    fontSize: 12.5,
+                    fontStyle: FontStyle.italic,
+                    height: 1.4,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showIllustrationLightbox(NovelIllustration illu, ReaderThemeData theme) {
+    final localPath = _resolvedIlluLocalPaths[illu.id] ?? IllustrationCacheService.getCachedPathSync(illu);
+    final networkUrl = IllustrationCacheService.buildNetworkUrl(illu.id);
+
+    showDialog<void>(
+      context: context,
+      barrierColor: Colors.black.withOpacity(0.92),
+      builder: (ctx) {
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding: EdgeInsets.zero,
+          child: Scaffold(
+            backgroundColor: Colors.transparent,
+            body: Stack(
+              children: [
+                GestureDetector(
+                  behavior: HitTestBehavior.translucent,
+                  onTap: () => Navigator.of(ctx).pop(),
+                  child: Center(
+                    child: InteractiveViewer(
+                      minScale: 0.8,
+                      maxScale: 4.5,
+                      child: localPath != null
+                          ? Image.file(File(localPath), fit: BoxFit.contain)
+                          : (networkUrl != null
+                              ? Image.network(
+                                  networkUrl,
+                                  headers: IllustrationCacheService.buildAuthHeaders(),
+                                  fit: BoxFit.contain,
+                                )
+                              : const Icon(Icons.broken_image_outlined, color: Colors.white54, size: 48)),
+                    ),
+                  ),
+                ),
+                Positioned(
+                  top: MediaQuery.of(ctx).padding.top + 10,
+                  right: 16,
+                  child: Material(
+                    color: Colors.black54,
+                    shape: const CircleBorder(),
+                    child: IconButton(
+                      icon: const Icon(Icons.close_rounded, color: Colors.white, size: 24),
+                      onPressed: () => Navigator.of(ctx).pop(),
+                    ),
+                  ),
+                ),
+                if (illu.caption.trim().isNotEmpty)
+                  Positioned(
+                    left: 20,
+                    right: 20,
+                    bottom: MediaQuery.of(ctx).padding.bottom + 20,
+                    child: Center(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(0.65),
+                          borderRadius: BorderRadius.circular(18),
+                        ),
+                        child: Text(
+                          illu.caption.trim(),
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(color: Colors.white, fontSize: 13),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }

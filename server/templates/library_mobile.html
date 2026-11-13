@@ -12,7 +12,7 @@
     <!-- Fonts & Icons -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css">
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
-    <link rel="stylesheet" href="/static/library_mobile.css?v=2.2">
+    <link rel="stylesheet" href="/static/library_mobile.css?v=2.3">
 </head>
 <body>
     <div class="m-app-container">
@@ -261,6 +261,19 @@
                         <button type="button" id="m-sync-toc-btn" class="btn-sub btn-highlight">TOC 동기화</button>
                     </div>
                 </div>
+
+                <!-- 본문 삽화 관리 -->
+                <div class="m-form-section m-illu-section">
+                    <label class="m-section-label">본문 삽화 관리 (<span id="m-illu-count">0</span>건)</label>
+                    <div class="m-illu-upload-box">
+                        <input type="file" id="m-illu-file-input" accept="image/png,image/jpeg,image/webp" class="m-illu-file-input">
+                        <select id="m-illu-chapter-select" class="m-illu-select"></select>
+                        <select id="m-illu-pid-select" class="m-illu-select"></select>
+                        <input type="text" id="m-illu-caption-input" placeholder="장면 설명 / 캡션 (선택)" class="m-illu-caption-input">
+                        <button type="button" id="m-illu-add-btn" class="btn-sub btn-highlight" style="width:100%;">본문 삽화 등록</button>
+                    </div>
+                    <div id="m-illu-list" class="m-illu-list"></div>
+                </div>
             </div>
 
             <footer class="m-modal-footer">
@@ -301,7 +314,7 @@
     <!-- 전역 토스트 -->
     <div id="m-global-toast" class="m-toast" style="display: none;"></div>
 
-    <script src="/static/library_mobile.js?v=2.2"></script>
+    <script src="/static/library_mobile.js?v=2.3"></script>
     <script>
         // PWA Service Worker 등록
         if ('serviceWorker' in navigator) {
