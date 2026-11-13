@@ -232,7 +232,6 @@ def _recover_verbatim_items(
         return verbatim_detected_items
 
     recovered_ids = set()
-    gemini_session = get_gemini_session()
 
     # 복구 대상 원문 항목 매핑
     target_orig_items = []
@@ -357,7 +356,7 @@ def _recover_verbatim_items(
             }
             proactive_rpm_rest()
             _record_call_timestamp()
-            res = gemini_session.post(api_url, json=plain_payload, headers=headers, timeout=60)
+            res = get_gemini_session().post(api_url, json=plain_payload, headers=headers, timeout=60)
             model_name = api_url.split('/models/')[1].split(':')[0] if '/models/' in api_url else 'gemini'
             record_api_call(model=model_name, status_code=res.status_code)
             if res.status_code in (429, 503):

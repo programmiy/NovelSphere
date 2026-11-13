@@ -18,11 +18,13 @@ _gemini_session = requests.Session()
 _CALL_TIMESTAMPS = collections.deque()
 _EPISODE_RECORDS = collections.deque()  # tuple: (timestamp, url)
 _RPM_LOCK = threading.Lock()
+_SESSION_LOCK = threading.Lock()
 
 
 def get_gemini_session() -> requests.Session:
     """현재 활성화된 requests.Session 인스턴스를 반환합니다."""
-    return _gemini_session
+    with _SESSION_LOCK:
+        return _gemini_session
 
 
 def recycle_gemini_session():
@@ -31,10 +33,11 @@ def recycle_gemini_session():
     특정 엣지 노드에 고착된 TCP/TLS 연결 및 잠재적 과부하 상태를 해소합니다.
     """
     global _gemini_session
-    old_session = _gemini_session
     try:
         new_session = requests.Session()
-        _gemini_session = new_session
+        with _SESSION_LOCK:
+            old_session = _gemini_session
+            _gemini_session = new_session
         old_session.close()
         logger.info("[Session Rejuvenation] Gemini requests.Session이 성공적으로 재생성되었습니다.")
     except Exception as e:

@@ -58,6 +58,12 @@ import { updateReviewCardTranslation } from '../ui/review_panel';
 import { getScraper } from '../scrapers';
 import { onNothingToTranslate, reportNovelFinished, onAbortTurbo } from './queue_session';
 import {
+  MAX_COMMUNICATION_RETRIES,
+  createResponseError,
+  decideChunkRetryAction,
+  isServiceUnavailable503Error,
+} from './retry_policy';
+import {
   getCleanUrl,
   getTargetParagraphs,
   applyTranslationsToPage,
@@ -539,6 +545,42 @@ export async function translateAllPTags(isRetranslation = false): Promise<void> 
     addPlaceholderRows(textsToTranslate);
     sortSidebarDescending(allParagraphs.map((p) => p.id));
 
+    // 일시 중지(429 한도 초과 / 지속적 503 과부하) 후 사용자 재개(▶️)를 대기하는 공통 헬퍼
+    async function pauseTranslationForManualResume(
+      targetItems: Array<{ id: string; text: string }>,
+      chunkSize: number,
+      isCurrentChunkLast: boolean,
+      logMessage?: string,
+      hudMessage?: string
+    ): Promise<void> {
+      targetItems.forEach((item) => {
+        const row = document.querySelector<HTMLTableRowElement>(`tr[data-pid="${item.id}"]`);
+        if (row) {
+          const cell = row.querySelector('.translated-text');
+          if (cell && cell.textContent?.includes('번역 중')) {
+            cell.textContent = '';
+          }
+        }
+      });
+      state.retryDelayUntil = 0;
+      if (logMessage) {
+        logToSidebar(logMessage, 'log-error');
+      }
+      if (hudMessage) {
+        showLanovelHud(hudMessage, '⏸️', 4000);
+      }
+      if (stopBtn) stopBtn.style.display = 'none';
+      const resumeBtn = document.getElementById('resume-translation-btn');
+      if (resumeBtn) resumeBtn.style.display = 'inline-block';
+      logToSidebar('번역이 일시 중지되었습니다. 재개 버튼(▶️)을 눌러주세요.');
+
+      await new Promise((resolve) => {
+        state.resolveResume = resolve as () => void;
+        state.broadcastStatus();
+      });
+      return await translateChunk(targetItems, chunkSize, isCurrentChunkLast);
+    }
+
     // 묶음 번역 헬퍼
     async function translateChunk(
       items: Array<{ id: string; text: string }>,
@@ -563,9 +605,7 @@ export async function translateAllPTags(isRetranslation = false): Promise<void> 
       }
       items = activeItems;
 
-      const MAX_MESSAGE_RETRIES = 5;
-
-      for (let attempt = 0; attempt < MAX_MESSAGE_RETRIES; attempt++) {
+      for (let attempt = 0; attempt < MAX_COMMUNICATION_RETRIES; attempt++) {
         try {
           const shouldUseHdTrans = state.isAfterLastChunk;
           if (shouldUseHdTrans) {
@@ -593,7 +633,7 @@ export async function translateAllPTags(isRetranslation = false): Promise<void> 
               await abortTurboMode('초기화 시간 도달');
               return;
             }
-            throw new Error(response.error);
+            throw createResponseError(response.error, response.status);
           }
 
           if (response && response.notification) {
@@ -603,24 +643,7 @@ export async function translateAllPTags(isRetranslation = false): Promise<void> 
                 await abortTurboMode(response.isServerOffline ? '서버 오프라인' : '초기화 시간 도달');
                 return;
               }
-              items.forEach((item) => {
-                const row = document.querySelector<HTMLTableRowElement>(`tr[data-pid="${item.id}"]`);
-                if (row) {
-                  const cell = row.querySelector('.translated-text');
-                  if (cell && cell.textContent?.includes('번역 중')) {
-                    cell.textContent = '';
-                  }
-                }
-              });
-              if (stopBtn) stopBtn.style.display = 'none';
-              const resumeBtn = document.getElementById('resume-translation-btn');
-              if (resumeBtn) resumeBtn.style.display = 'inline-block';
-              logToSidebar('번역이 일시 중지되었습니다. 재개 버튼(▶️)을 눌러주세요.');
-
-              await new Promise((resolve) => {
-                state.resolveResume = resolve as () => void;
-              });
-              return await translateChunk(items, chunkSize);
+              return await pauseTranslationForManualResume(items, chunkSize, isCurrentChunkLast);
             }
             return;
           }
@@ -730,11 +753,33 @@ export async function translateAllPTags(isRetranslation = false): Promise<void> 
             await abortTurboMode('초기화 시간 도달');
             return;
           }
-          if (attempt < MAX_MESSAGE_RETRIES - 1) {
-            const delay = (40 + Math.pow(2, attempt)) * 1000 + Math.floor(Math.random() * 1000);
-            logToSidebar(`통신 오류. ${Math.round(delay / 1000)}초 후 재시도... (${attempt + 1}/${MAX_MESSAGE_RETRIES})`, 'log-error');
-            await new Promise((resolve) => setTimeout(resolve, delay));
+          const decision = decideChunkRetryAction(attempt, error);
+          if (decision.action === 'retry') {
+            const retrySec = Math.round(decision.delayMs / 1000);
+            if (decision.isOverload503) {
+              logToSidebar(
+                `API 과부하(503) 감지. 서버 세션 초기화 후 ${retrySec}초 후 재시도... (${decision.attempt}/${decision.maxAttempts})`,
+                'log-error'
+              );
+            } else {
+              logToSidebar(
+                `통신 오류. ${retrySec}초 후 재시도... (${decision.attempt}/${decision.maxAttempts})`,
+                'log-error'
+              );
+            }
+            await sleepResponsive(decision.delayMs);
+            state.retryDelayUntil = 0;
+            if (state.isTranslationCancelled) return;
+          } else if (decision.action === 'pause_503') {
+            return await pauseTranslationForManualResume(
+              items,
+              chunkSize,
+              isCurrentChunkLast,
+              `❌ API 과부하(503)가 ${decision.maxAttempts}회 연속 발생하여 재분할 없이 번역을 일시 중지했습니다.`,
+              'API 과부하(503) 지속으로 일시 중지됨'
+            );
           } else {
+            state.retryDelayUntil = 0;
             if (isCurrentChunkLast) {
               state.isAfterLastChunk = true;
             }
@@ -777,6 +822,28 @@ export async function translateAllPTags(isRetranslation = false): Promise<void> 
                 isRetranslation: true,
                 forceHdtrans: state.isAfterLastChunk,
               });
+              if (res && res.error) {
+                if (res.error.includes('초기화 시간') || res.error.includes('자동 번역을 중지')) {
+                  await abortTurboMode('초기화 시간 도달');
+                  return;
+                }
+                if (isServiceUnavailable503Error({ status: res.status, message: res.error })) {
+                  return await pauseTranslationForManualResume(
+                    [item],
+                    1,
+                    false,
+                    '❌ 문장 분할 재시도 중 API 과부하(503)가 발생해 추가 분할 시도를 중지했습니다.',
+                    'API 과부하(503) 발생으로 일시 중지됨'
+                  );
+                }
+              }
+              if (res && res.notification && res.stop) {
+                if (res.isQuotaResetStop || res.isServerOffline) {
+                  await abortTurboMode(res.isServerOffline ? '서버 오프라인' : '초기화 시간 도달');
+                  return;
+                }
+                return await pauseTranslationForManualResume([item], 1, false, res.notification);
+              }
               if (res && res.translations) {
                 const combined = res.translations.map((t: any) => t.translated || '').join(' ');
                 const finalResult = { id: item.id, original: item.text, translated: combined };

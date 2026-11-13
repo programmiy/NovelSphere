@@ -137,7 +137,7 @@ export class ExtensionState {
 
     let phase: RemotePhase = 'idle';
     if (turboAborted) phase = 'turbo_wait';
-    else if (cancelled) phase = 'paused';
+    else if (cancelled || this.resolveResume) phase = 'paused';
     else if (Date.now() < this.censorSplitUntil && this.inflight > 0) phase = 'censor_split';
     else if (delaySec > 0) phase = 'delay_wait';
     else if (this.inflight > 0) phase = 'translating';

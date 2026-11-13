@@ -439,7 +439,7 @@
           const delaySec = this.delayRemainingSec();
           let phase = "idle";
           if (turboAborted) phase = "turbo_wait";
-          else if (cancelled) phase = "paused";
+          else if (cancelled || this.resolveResume) phase = "paused";
           else if (Date.now() < this.censorSplitUntil && this.inflight > 0) phase = "censor_split";
           else if (delaySec > 0) phase = "delay_wait";
           else if (this.inflight > 0) phase = "translating";
@@ -4979,6 +4979,68 @@
     }
   });
 
+  // src/core/retry_policy.ts
+  function isServiceUnavailable503Error(error) {
+    if (!error || typeof error !== "object") {
+      if (typeof error === "string") {
+        return /\b503\b/.test(error) && /(HTTP\s*503|과부하|Service Unavailable|overload)/i.test(error);
+      }
+      return false;
+    }
+    const errObj = error;
+    if (Number(errObj.status) === 503) return true;
+    const rawMsg = typeof errObj.message === "string" ? errObj.message : typeof errObj.error === "string" ? errObj.error : "";
+    if (!rawMsg) return false;
+    return /HTTP\s*503\b/i.test(rawMsg) || /Gemini API 오류\s*\(\s*503\s*\)/i.test(rawMsg) || /503\s*(Service Unavailable|과부하|API 과부하)/i.test(rawMsg) || /(API 과부하|Service Unavailable).*503/i.test(rawMsg);
+  }
+  function createResponseError(message, status) {
+    const err = new Error(message || "Unknown translation error");
+    if (typeof status === "number" && !Number.isNaN(status)) {
+      err.status = status;
+    }
+    return err;
+  }
+  function decideChunkRetryAction(attempt, error, randomFn = Math.random) {
+    const safeRandom = Math.max(0, Math.min(1, randomFn()));
+    if (isServiceUnavailable503Error(error)) {
+      if (attempt < MAX_503_ATTEMPTS - 1) {
+        return {
+          action: "retry",
+          delayMs: OVERLOAD_503_RETRY_DELAY_MS + Math.floor(safeRandom * 500),
+          attempt: attempt + 1,
+          maxAttempts: MAX_503_ATTEMPTS,
+          isOverload503: true
+        };
+      }
+      return {
+        action: "pause_503",
+        maxAttempts: MAX_503_ATTEMPTS
+      };
+    }
+    if (attempt < MAX_COMMUNICATION_RETRIES - 1) {
+      return {
+        action: "retry",
+        delayMs: (40 + Math.pow(2, attempt)) * 1e3 + Math.floor(safeRandom * 1e3),
+        attempt: attempt + 1,
+        maxAttempts: MAX_COMMUNICATION_RETRIES,
+        isOverload503: false
+      };
+    }
+    return {
+      action: "split_fallback",
+      maxAttempts: MAX_COMMUNICATION_RETRIES
+    };
+  }
+  var MAX_COMMUNICATION_RETRIES, MAX_503_ATTEMPTS, OVERLOAD_503_RETRY_DELAY_MS;
+  var init_retry_policy = __esm({
+    "src/core/retry_policy.ts"() {
+      "use strict";
+      MAX_COMMUNICATION_RETRIES = 5;
+      MAX_503_ATTEMPTS = 2;
+      OVERLOAD_503_RETRY_DELAY_MS = 5e3;
+    }
+  });
+
   // src/core/page_translator.ts
   function sleepResponsive(getDelayFn) {
     return new Promise((resolve) => {
@@ -5380,6 +5442,33 @@
       });
       addPlaceholderRows(textsToTranslate);
       sortSidebarDescending(allParagraphs.map((p) => p.id));
+      async function pauseTranslationForManualResume(targetItems, chunkSize, isCurrentChunkLast, logMessage, hudMessage) {
+        targetItems.forEach((item) => {
+          const row = document.querySelector(`tr[data-pid="${item.id}"]`);
+          if (row) {
+            const cell = row.querySelector(".translated-text");
+            if (cell && cell.textContent?.includes("\uBC88\uC5ED \uC911")) {
+              cell.textContent = "";
+            }
+          }
+        });
+        state.retryDelayUntil = 0;
+        if (logMessage) {
+          logToSidebar(logMessage, "log-error");
+        }
+        if (hudMessage) {
+          showLanovelHud(hudMessage, "\u23F8\uFE0F", 4e3);
+        }
+        if (stopBtn) stopBtn.style.display = "none";
+        const resumeBtn = document.getElementById("resume-translation-btn");
+        if (resumeBtn) resumeBtn.style.display = "inline-block";
+        logToSidebar("\uBC88\uC5ED\uC774 \uC77C\uC2DC \uC911\uC9C0\uB418\uC5C8\uC2B5\uB2C8\uB2E4. \uC7AC\uAC1C \uBC84\uD2BC(\u25B6\uFE0F)\uC744 \uB20C\uB7EC\uC8FC\uC138\uC694.");
+        await new Promise((resolve) => {
+          state.resolveResume = resolve;
+          state.broadcastStatus();
+        });
+        return await translateChunk(targetItems, chunkSize, isCurrentChunkLast);
+      }
       async function translateChunk(items, chunkSize, isCurrentChunkLast = false) {
         if (state.isTranslationCancelled) return;
         const activeItems = items.filter((item) => !state.isPidExcluded(item.id, item.text));
@@ -5396,8 +5485,7 @@
           );
         }
         items = activeItems;
-        const MAX_MESSAGE_RETRIES = 5;
-        for (let attempt = 0; attempt < MAX_MESSAGE_RETRIES; attempt++) {
+        for (let attempt = 0; attempt < MAX_COMMUNICATION_RETRIES; attempt++) {
           try {
             const shouldUseHdTrans = state.isAfterLastChunk;
             if (shouldUseHdTrans) {
@@ -5421,7 +5509,7 @@
                 await abortTurboMode("\uCD08\uAE30\uD654 \uC2DC\uAC04 \uB3C4\uB2EC");
                 return;
               }
-              throw new Error(response.error);
+              throw createResponseError(response.error, response.status);
             }
             if (response && response.notification) {
               logToSidebar(response.notification, "log-error");
@@ -5430,23 +5518,7 @@
                   await abortTurboMode(response.isServerOffline ? "\uC11C\uBC84 \uC624\uD504\uB77C\uC778" : "\uCD08\uAE30\uD654 \uC2DC\uAC04 \uB3C4\uB2EC");
                   return;
                 }
-                items.forEach((item) => {
-                  const row = document.querySelector(`tr[data-pid="${item.id}"]`);
-                  if (row) {
-                    const cell = row.querySelector(".translated-text");
-                    if (cell && cell.textContent?.includes("\uBC88\uC5ED \uC911")) {
-                      cell.textContent = "";
-                    }
-                  }
-                });
-                if (stopBtn) stopBtn.style.display = "none";
-                const resumeBtn = document.getElementById("resume-translation-btn");
-                if (resumeBtn) resumeBtn.style.display = "inline-block";
-                logToSidebar("\uBC88\uC5ED\uC774 \uC77C\uC2DC \uC911\uC9C0\uB418\uC5C8\uC2B5\uB2C8\uB2E4. \uC7AC\uAC1C \uBC84\uD2BC(\u25B6\uFE0F)\uC744 \uB20C\uB7EC\uC8FC\uC138\uC694.");
-                await new Promise((resolve) => {
-                  state.resolveResume = resolve;
-                });
-                return await translateChunk(items, chunkSize);
+                return await pauseTranslationForManualResume(items, chunkSize, isCurrentChunkLast);
               }
               return;
             }
@@ -5547,11 +5619,33 @@
               await abortTurboMode("\uCD08\uAE30\uD654 \uC2DC\uAC04 \uB3C4\uB2EC");
               return;
             }
-            if (attempt < MAX_MESSAGE_RETRIES - 1) {
-              const delay = (40 + Math.pow(2, attempt)) * 1e3 + Math.floor(Math.random() * 1e3);
-              logToSidebar(`\uD1B5\uC2E0 \uC624\uB958. ${Math.round(delay / 1e3)}\uCD08 \uD6C4 \uC7AC\uC2DC\uB3C4... (${attempt + 1}/${MAX_MESSAGE_RETRIES})`, "log-error");
-              await new Promise((resolve) => setTimeout(resolve, delay));
+            const decision = decideChunkRetryAction(attempt, error);
+            if (decision.action === "retry") {
+              const retrySec = Math.round(decision.delayMs / 1e3);
+              if (decision.isOverload503) {
+                logToSidebar(
+                  `API \uACFC\uBD80\uD558(503) \uAC10\uC9C0. \uC11C\uBC84 \uC138\uC158 \uCD08\uAE30\uD654 \uD6C4 ${retrySec}\uCD08 \uD6C4 \uC7AC\uC2DC\uB3C4... (${decision.attempt}/${decision.maxAttempts})`,
+                  "log-error"
+                );
+              } else {
+                logToSidebar(
+                  `\uD1B5\uC2E0 \uC624\uB958. ${retrySec}\uCD08 \uD6C4 \uC7AC\uC2DC\uB3C4... (${decision.attempt}/${decision.maxAttempts})`,
+                  "log-error"
+                );
+              }
+              await sleepResponsive(decision.delayMs);
+              state.retryDelayUntil = 0;
+              if (state.isTranslationCancelled) return;
+            } else if (decision.action === "pause_503") {
+              return await pauseTranslationForManualResume(
+                items,
+                chunkSize,
+                isCurrentChunkLast,
+                `\u274C API \uACFC\uBD80\uD558(503)\uAC00 ${decision.maxAttempts}\uD68C \uC5F0\uC18D \uBC1C\uC0DD\uD558\uC5EC \uC7AC\uBD84\uD560 \uC5C6\uC774 \uBC88\uC5ED\uC744 \uC77C\uC2DC \uC911\uC9C0\uD588\uC2B5\uB2C8\uB2E4.`,
+                "API \uACFC\uBD80\uD558(503) \uC9C0\uC18D\uC73C\uB85C \uC77C\uC2DC \uC911\uC9C0\uB428"
+              );
             } else {
+              state.retryDelayUntil = 0;
               if (isCurrentChunkLast) {
                 state.isAfterLastChunk = true;
               }
@@ -5593,6 +5687,28 @@
                   isRetranslation: true,
                   forceHdtrans: state.isAfterLastChunk
                 });
+                if (res && res.error) {
+                  if (res.error.includes("\uCD08\uAE30\uD654 \uC2DC\uAC04") || res.error.includes("\uC790\uB3D9 \uBC88\uC5ED\uC744 \uC911\uC9C0")) {
+                    await abortTurboMode("\uCD08\uAE30\uD654 \uC2DC\uAC04 \uB3C4\uB2EC");
+                    return;
+                  }
+                  if (isServiceUnavailable503Error({ status: res.status, message: res.error })) {
+                    return await pauseTranslationForManualResume(
+                      [item],
+                      1,
+                      false,
+                      "\u274C \uBB38\uC7A5 \uBD84\uD560 \uC7AC\uC2DC\uB3C4 \uC911 API \uACFC\uBD80\uD558(503)\uAC00 \uBC1C\uC0DD\uD574 \uCD94\uAC00 \uBD84\uD560 \uC2DC\uB3C4\uB97C \uC911\uC9C0\uD588\uC2B5\uB2C8\uB2E4.",
+                      "API \uACFC\uBD80\uD558(503) \uBC1C\uC0DD\uC73C\uB85C \uC77C\uC2DC \uC911\uC9C0\uB428"
+                    );
+                  }
+                }
+                if (res && res.notification && res.stop) {
+                  if (res.isQuotaResetStop || res.isServerOffline) {
+                    await abortTurboMode(res.isServerOffline ? "\uC11C\uBC84 \uC624\uD504\uB77C\uC778" : "\uCD08\uAE30\uD654 \uC2DC\uAC04 \uB3C4\uB2EC");
+                    return;
+                  }
+                  return await pauseTranslationForManualResume([item], 1, false, res.notification);
+                }
                 if (res && res.translations) {
                   const combined = res.translations.map((t) => t.translated || "").join(" ");
                   const finalResult = { id: item.id, original: item.text, translated: combined };
@@ -5900,6 +6016,7 @@
       init_review_panel();
       init_scrapers();
       init_queue_session();
+      init_retry_policy();
       init_dom_applier();
       isTranslatingInProgress = false;
     }

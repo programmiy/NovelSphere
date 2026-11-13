@@ -713,3 +713,101 @@ test('state & dynamic exclusion: isPidExcluded accurately filters excluded PIDs 
   assert.strictEqual(activeItems.length, 2);
   assert.deepStrictEqual(activeItems.map((it: any) => it.id), ['p13', 'p14']);
 });
+
+import {
+  MAX_COMMUNICATION_RETRIES,
+  MAX_503_ATTEMPTS,
+  OVERLOAD_503_RETRY_DELAY_MS,
+  createResponseError,
+  decideChunkRetryAction,
+  isServiceUnavailable503Error,
+} from '../src/core/retry_policy.ts';
+
+test('retry_policy: distinguishes 503 overload from generic errors without false positives', () => {
+  assert.strictEqual(isServiceUnavailable503Error({ status: 503, message: '서버 혼잡' }), true);
+  assert.strictEqual(isServiceUnavailable503Error(createResponseError('overload', 503)), true);
+  assert.strictEqual(isServiceUnavailable503Error(new Error('Gemini API 오류 (503)')), true);
+  assert.strictEqual(isServiceUnavailable503Error('HTTP 503 Service Unavailable'), true);
+
+  assert.strictEqual(isServiceUnavailable503Error({ status: 500, message: 'Internal Server Error' }), false);
+  assert.strictEqual(isServiceUnavailable503Error({ status: 429, message: 'Too Many Requests' }), false);
+  assert.strictEqual(isServiceUnavailable503Error(new Error('p503 번역 실패')), false);
+  assert.strictEqual(isServiceUnavailable503Error('총 503자 처리 중 오류'), false);
+});
+
+test('retry_policy: caps 503 overload retries below 3/5 and disables half-chunk split fallback', () => {
+  assert.strictEqual(MAX_503_ATTEMPTS, 2);
+  assert.ok(MAX_503_ATTEMPTS < 3);
+
+  const err503 = createResponseError('API 서버가 과부하 상태입니다.', 503);
+
+  const firstDecision = decideChunkRetryAction(0, err503, () => 0);
+  assert.deepStrictEqual(firstDecision, {
+    action: 'retry',
+    delayMs: OVERLOAD_503_RETRY_DELAY_MS,
+    attempt: 1,
+    maxAttempts: 2,
+    isOverload503: true,
+  });
+
+  const secondDecision = decideChunkRetryAction(1, err503, () => 0);
+  assert.deepStrictEqual(secondDecision, {
+    action: 'pause_503',
+    maxAttempts: 2,
+  });
+
+  // 503으로 인한 어떤 시도 단계에서도 split_fallback(반갈 분할)로 전환되지 않아야 함
+  const fallback503 = decideChunkRetryAction(4, new Error('Gemini API 오류 (503)'), () => 0);
+  assert.strictEqual(fallback503.action, 'pause_503');
+});
+
+test('retry_policy: preserves 5-attempt backoff and split_fallback for generic communication errors', () => {
+  assert.strictEqual(MAX_COMMUNICATION_RETRIES, 5);
+  const netErr = new Error('Network disconnected');
+
+  const d0 = decideChunkRetryAction(0, netErr, () => 0);
+  assert.strictEqual(d0.action, 'retry');
+  if (d0.action === 'retry') {
+    assert.strictEqual(d0.isOverload503, false);
+    assert.strictEqual(d0.delayMs, 41000);
+    assert.strictEqual(d0.attempt, 1);
+    assert.strictEqual(d0.maxAttempts, 5);
+  }
+
+  const d3 = decideChunkRetryAction(3, netErr, () => 0);
+  assert.strictEqual(d3.action, 'retry');
+  if (d3.action === 'retry') {
+    assert.strictEqual(d3.delayMs, 48000);
+    assert.strictEqual(d3.attempt, 4);
+  }
+
+  const d4 = decideChunkRetryAction(4, netErr, () => 0);
+  assert.deepStrictEqual(d4, {
+    action: 'split_fallback',
+    maxAttempts: 5,
+  });
+});
+
+test('state: reports paused phase while awaiting manual resume after overload pause', () => {
+  const testState = new ExtensionState();
+  testState.inflight = 1;
+  testState.resolveResume = () => {};
+
+  const prevDoc = (globalThis as any).document;
+  const prevWin = (globalThis as any).window;
+  (globalThis as any).document = {
+    title: '테스트 1화',
+    querySelectorAll() { return []; },
+    getElementById() { return null; },
+  };
+  (globalThis as any).window = {
+    location: { href: 'https://ncode.syosetu.com/n0000aa/1/' },
+  };
+  try {
+    const payload = testState.buildStatusPayload();
+    assert.strictEqual(payload.phase, 'paused');
+  } finally {
+    (globalThis as any).document = prevDoc;
+    (globalThis as any).window = prevWin;
+  }
+});

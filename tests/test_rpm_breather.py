@@ -237,3 +237,20 @@ def test_rpm_status_endpoint():
     assert status["zone"] == "yellow"
     assert status["recommended_turbo_delay_seconds"] == 30.0
     assert status["recommended_normal_delay_seconds"] == 75.0
+
+
+def test_recycle_gemini_session_thread_safe():
+    """동시 다발적 recycle_gemini_session 호출 시에도 최종 활성 세션이 정상 인스턴스로 유지되는지 검증."""
+    import concurrent.futures
+    from server.services.rpm_manager import get_gemini_session
+
+    initial_session = get_gemini_session()
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+        futures = [executor.submit(recycle_gemini_session) for _ in range(8)]
+        for fut in futures:
+            fut.result()
+
+    final_session = get_gemini_session()
+    assert final_session is not initial_session
+    assert isinstance(final_session, requests.Session)
