@@ -9,6 +9,7 @@ import 'preferences_service.dart';
 import 'local_db_service.dart';
 import 'illustration_cache_service.dart';
 import '../models/novel_illustration.dart';
+import '../models/pending_upload.dart';
 
 enum SyncStatus {
   idle,
@@ -38,7 +39,7 @@ class SyncService {
   static final NetworkInfo _networkInfo = NetworkInfo();
 
   /// 모바일에서 수정된 미전송 변경사항(독서 잔디, 찾아바꾸기, 오프라인 번역) 대기 건수
-  static final ValueNotifier<int> unpushedCountNotifier = ValueNotifier<int>(0);
+  static ValueNotifier<int> get unpushedCountNotifier => LocalDbService.pendingCountNotifier;
 
   /// 백그라운드 무음 다운로드 완료 시 서재 화면 실시간 자동 갱신용 노티파이어
   static final ValueNotifier<int> libraryRefreshNotifier = ValueNotifier<int>(0);
@@ -52,9 +53,21 @@ class SyncService {
   /// 미업로드 큐 건수 갱신
   static Future<void> refreshUnpushedCount() async {
     try {
-      final cnt = await LocalDbService.getPendingChangeCount();
-      unpushedCountNotifier.value = cnt;
+      await LocalDbService.getPendingChangeCount();
     } catch (_) {}
+  }
+
+  /// 현재 폰/태블릿에 대기 중인 업로드 변경사항 상세 분석 리포트 반환
+  static Future<PendingUploadSummary> inspectPendingChanges() async {
+    final rows = await LocalDbService.getPendingChanges();
+    int readingLogsCount = 0;
+    try {
+      final db = await LocalDbService.database;
+      final res = await db.rawQuery('SELECT COUNT(*) as cnt FROM reading_logs');
+      readingLogsCount = (res.first['cnt'] as num?)?.toInt() ?? 0;
+    } catch (_) {}
+    await LocalDbService.getPendingChangeCount();
+    return PendingUploadSummary.fromQueueRows(rows, readingLogsCount: readingLogsCount);
   }
 
   /// 현재 연결된 Wi-Fi가 사용자가 지정한 2개의 신뢰 Wi-Fi 중 하나인지 확인
@@ -522,28 +535,47 @@ class SyncService {
       List<Map<String, dynamic>> modifiedTrans = [];
       List<Map<String, dynamic>> activities = [];
       List<Map<String, dynamic>> glossaryRules = [];
-      List<Map<String, dynamic>> highlightsPayload = [];
+      final Map<String, Map<String, dynamic>> highlightsToAdd = {};
+      final Map<String, Map<String, dynamic>> highlightsToDelete = {};
       List<int> processedQueueIds = [];
 
       bool hasPinChange = false;
       for (var change in pendingChanges) {
         final qId = change['id'] as int;
         final type = change['change_type'] as String;
-        final payload = jsonDecode(change['payload_json'] as String);
+        final decoded = jsonDecode(change['payload_json'] as String);
+        final payload = decoded is Map<String, dynamic>
+            ? Map<String, dynamic>.from(decoded)
+            : Map<String, dynamic>.from(decoded as Map);
 
         if (type == 'translation_edit') {
+          payload.remove('before_translated');
           modifiedTrans.add(payload);
         } else if (type == 'activity') {
+          payload.remove('change_reasons');
           activities.add(payload);
         } else if (type == 'glossary_rule') {
           glossaryRules.add(payload);
         } else if (type == 'highlight_add') {
-          highlightsPayload.add(payload);
+          final key = '${payload['url'] ?? ''}#${payload['pid'] ?? ''}';
+          highlightsToDelete.remove(key);
+          highlightsToAdd[key] = payload;
+        } else if (type == 'highlight_delete') {
+          final url = payload['url']?.toString() ?? '';
+          final pid = payload['pid']?.toString() ?? '';
+          final key = '$url#$pid';
+          highlightsToAdd.remove(key);
+          if (url.isNotEmpty && pid.isNotEmpty) {
+            highlightsToDelete[key] = {'url': url, 'pid': pid};
+          }
         } else if (type == 'pin') {
           hasPinChange = true;
         }
         processedQueueIds.add(qId);
       }
+
+      final highlightsPayload = highlightsToAdd.values.toList();
+      final deletedHighlightsPayload = highlightsToDelete.values.toList();
 
       final db = await LocalDbService.database;
       List<String>? pinnedPayload;
@@ -574,6 +606,7 @@ class SyncService {
         'pinned_books': pinnedPayload,
         'glossary_rules': glossaryRules,
         'highlights': highlightsPayload,
+        'deleted_highlights': deletedHighlightsPayload,
       };
 
       final rawBytes = utf8.encode(jsonEncode(pushPayload));
@@ -595,15 +628,27 @@ class SyncService {
       }
 
       final pushData = jsonDecode(pushRes.body);
-      final pushedTransCount = pushData['updated_translations'] ?? 0;
-      final pushedActCount = pushData['updated_activities'] ?? 0;
+      final pushedTransCount = (pushData['updated_translations'] as num?)?.toInt() ?? 0;
+      final pushedActCount = (pushData['updated_activities'] as num?)?.toInt() ?? 0;
+      final pushedRulesCount = (pushData['applied_glossary_rules'] as num?)?.toInt() ?? 0;
+      final pushedHlCount = (pushData['applied_highlights'] as num?)?.toInt() ?? 0;
+      final deletedHlCount = (pushData['deleted_highlights'] as num?)?.toInt() ?? 0;
 
       await LocalDbService.clearPendingChanges(processedQueueIds);
       await refreshUnpushedCount();
 
+      final resultParts = <String>[];
+      if (pushedTransCount > 0) resultParts.add('문장 수정 $pushedTransCount건');
+      if (pushedRulesCount > 0) resultParts.add('찾아바꾸기 $pushedRulesCount건');
+      if (pushedActCount > 0) resultParts.add('진도·상태 $pushedActCount건');
+      if (pinnedPayload != null) resultParts.add('상단고정 ${pinnedPayload.length}권 반영');
+      if (pushedHlCount > 0) resultParts.add('마킹 추가 $pushedHlCount건');
+      if (deletedHlCount > 0) resultParts.add('마킹 해제 $deletedHlCount건');
+      final detailMsg = resultParts.isEmpty ? '서버와 이미 동일함' : resultParts.join(', ');
+
       return SyncResult(
         success: true,
-        message: '모바일 변경사항 업로드 완료! (번역: $pushedTransCount건 / 활동: $pushedActCount건)',
+        message: '모바일 변경사항 업로드 완료! ($detailMsg)',
         updatedTranslations: pushedTransCount,
         updatedActivities: pushedActCount,
       );

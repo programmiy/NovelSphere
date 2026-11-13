@@ -61,6 +61,7 @@ class PushPayload(BaseModel):
     pinned_books: Optional[List[str]] = None
     glossary_rules: Optional[List[Dict[str, Any]]] = []
     highlights: Optional[List[Dict[str, Any]]] = []
+    deleted_highlights: Optional[List[Dict[str, Any]]] = []
 
 class RescueChapterItem(BaseModel):
     book_name: str
@@ -917,14 +918,50 @@ async def push_changes_to_pc(request: Request, db: Session = Depends(get_db)):
                 applied_highlights_count += 1
             conn.commit()
 
-        logger.info(f"[Sync Push Success] Translations: {updated_trans_count}, Activities: {updated_act_count}, Rules: {applied_rules_count}, Highlights: {applied_highlights_count}")
+        # 5. 모바일/태블릿에서 해제(삭제)한 하이라이트 반영
+        deleted_highlights_count = 0
+        if payload.deleted_highlights:
+            now_ts = int(time.time())
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS sentence_highlights (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    book_name TEXT NOT NULL,
+                    chapter_title TEXT NOT NULL,
+                    url TEXT NOT NULL,
+                    pid TEXT NOT NULL,
+                    original TEXT NOT NULL,
+                    translated TEXT NOT NULL,
+                    note TEXT,
+                    created_at INTEGER NOT NULL,
+                    updated_at INTEGER,
+                    is_resolved INTEGER NOT NULL DEFAULT 0,
+                    UNIQUE(url, pid)
+                )
+            """)
+            for dh in payload.deleted_highlights:
+                d_url = (dh.get("url") or "").strip()
+                d_pid = (dh.get("pid") or "").strip()
+                if not d_url or not d_pid:
+                    continue
+                cursor.execute(
+                    "UPDATE sentence_highlights SET is_resolved = 1, updated_at = ? WHERE url = ? AND pid = ?",
+                    (now_ts, d_url, d_pid),
+                )
+                deleted_highlights_count += cursor.rowcount
+            conn.commit()
+
+        logger.info(
+            f"[Sync Push Success] Translations: {updated_trans_count}, Activities: {updated_act_count}, "
+            f"Rules: {applied_rules_count}, Highlights: {applied_highlights_count}, DeletedHighlights: {deleted_highlights_count}"
+        )
         return {
             "status": "success",
             "server_ack_time": int(time.time()),
             "updated_translations": updated_trans_count,
             "updated_activities": updated_act_count,
             "applied_glossary_rules": applied_rules_count,
-            "applied_highlights": applied_highlights_count
+            "applied_highlights": applied_highlights_count,
+            "deleted_highlights": deleted_highlights_count,
         }
 
     except Exception as e:

@@ -10,6 +10,7 @@ import '../../models/chapter.dart';
 import '../../models/novel_illustration.dart';
 import '../../models/sentence.dart';
 import '../../models/sentence_highlight.dart';
+import '../../services/device_utils.dart';
 import '../../services/illustration_cache_service.dart';
 import '../../services/local_db_service.dart';
 import '../../services/preferences_service.dart';
@@ -575,6 +576,8 @@ class _ReaderScreenState extends State<ReaderScreen> {
   }
 
   Future<void> _toggleHighlight(Sentence sentence) async {
+    if (!DeviceUtils.isTablet(context)) return;
+
     final currentChap = _chapters[_currentChapterIndex];
     final isNowHighlighted = !sentence.isHighlighted;
 
@@ -597,14 +600,19 @@ class _ReaderScreenState extends State<ReaderScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('수정 대기 하이라이트가 등록되었습니다. (PC/폰에서 바로 조회 및 수정 가능)'),
+            content: Text('수정 대기 하이라이트가 등록되었습니다. (PC 관리자에서 바로 조회 및 수정 가능)'),
             duration: Duration(seconds: 2),
             behavior: SnackBarBehavior.floating,
           ),
         );
       }
     } else {
-      await LocalDbService.removeSentenceHighlight(currentChap.url, sentence.pid ?? 'p0');
+      await LocalDbService.removeSentenceHighlight(
+        currentChap.url,
+        sentence.pid ?? 'p0',
+        bookName: currentChap.bookName,
+        chapterTitle: currentChap.title,
+      );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -638,6 +646,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
     final theme = ReaderThemes.getTheme(PreferencesService.theme);
     final primary = HyperAestheticTheme.getAmbientPrimary(theme);
     final isOriginalExpanded = _expandedOriginalPids.contains(sentence.pid);
+    final isTablet = DeviceUtils.isTablet(context);
 
     showModalBottomSheet(
       context: context,
@@ -646,7 +655,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
       builder: (ctx) {
         return StatefulBuilder(
           builder: (context, setModalState) {
-            final isHl = sentence.isHighlighted;
+            final isHl = isTablet && sentence.isHighlighted;
             return Container(
               margin: const EdgeInsets.all(16),
               padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
@@ -722,74 +731,76 @@ class _ReaderScreenState extends State<ReaderScreen> {
                   const SizedBox(height: 16),
                   const Divider(height: 1),
                   const SizedBox(height: 12),
-                  // 액션 버튼 1: [수정 대기 하이라이트 토글] (원터치 콕)
-                  InkWell(
-                    onTap: () async {
-                      Navigator.pop(ctx);
-                      await _toggleHighlight(sentence);
-                    },
-                    borderRadius: BorderRadius.circular(14),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                      decoration: BoxDecoration(
-                        color: (isHl ? Colors.amber : primary).withOpacity(0.12),
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(
-                          color: (isHl ? Colors.amber : primary).withOpacity(0.35),
-                          width: 1.2,
+                  // 액션 버튼 1 (태블릿 전용): [수정 대기 하이라이트 토글]
+                  if (isTablet) ...[
+                    InkWell(
+                      onTap: () async {
+                        Navigator.pop(ctx);
+                        await _toggleHighlight(sentence);
+                      },
+                      borderRadius: BorderRadius.circular(14),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                        decoration: BoxDecoration(
+                          color: (isHl ? Colors.amber : primary).withOpacity(0.12),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: (isHl ? Colors.amber : primary).withOpacity(0.35),
+                            width: 1.2,
+                          ),
                         ),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(
-                            isHl ? Icons.bookmark_remove_rounded : Icons.bookmark_add_rounded,
-                            color: isHl ? Colors.amber : primary,
-                            size: 22,
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  isHl ? '수정 대기 마킹 해제' : '수정 대기 하이라이트 콕 찍기',
-                                  style: TextStyle(
-                                    color: theme.textColor,
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  isHl ? '마킹을 해제하고 정상 표시로 되돌립니다.' : '태블릿에서 콕 찍어두고 PC/폰에서 키보드로 바로 수정',
-                                  style: TextStyle(
-                                    color: theme.subTextColor,
-                                    fontSize: 11,
-                                  ),
-                                ),
-                              ],
+                        child: Row(
+                          children: [
+                            Icon(
+                              isHl ? Icons.bookmark_remove_rounded : Icons.bookmark_add_rounded,
+                              color: isHl ? Colors.amber : primary,
+                              size: 22,
                             ),
-                          ),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: (isHl ? Colors.amber : primary).withOpacity(0.2),
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: Text(
-                              isHl ? 'ON' : 'OFF',
-                              style: TextStyle(
-                                color: isHl ? Colors.amber : primary,
-                                fontSize: 11,
-                                fontWeight: FontWeight.bold,
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    isHl ? '수정 대기 마킹 해제' : '수정 대기 하이라이트 콕 찍기',
+                                    style: TextStyle(
+                                      color: theme.textColor,
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    isHl ? '마킹을 해제하고 정상 표시로 되돌립니다.' : '태블릿에서 콕 찍어두고 PC 관리자에서 바로 수정',
+                                    style: TextStyle(
+                                      color: theme.subTextColor,
+                                      fontSize: 11,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
-                          ),
-                        ],
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: (isHl ? Colors.amber : primary).withOpacity(0.2),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                isHl ? 'ON' : 'OFF',
+                                style: TextStyle(
+                                  color: isHl ? Colors.amber : primary,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 8),
+                    const SizedBox(height: 8),
+                  ],
                   if (sentence.original.isNotEmpty)
                     ListTile(
                       dense: true,
@@ -1711,7 +1722,8 @@ class _ReaderScreenState extends State<ReaderScreen> {
     final originalMode = PreferencesService.originalTextMode;
     final isOriginalExpanded = sentence.pid != null && _expandedOriginalPids.contains(sentence.pid);
     final showOriginal = (originalMode == 'bilingual') || isOriginalExpanded;
-    final isHl = sentence.isHighlighted;
+    final isTablet = DeviceUtils.isTablet(context);
+    final isHl = isTablet && sentence.isHighlighted;
 
     return Padding(
       padding: EdgeInsets.only(bottom: PreferencesService.paragraphSpacing),
@@ -1815,38 +1827,40 @@ class _ReaderScreenState extends State<ReaderScreen> {
                               ),
                             ),
                             const Spacer(),
-                            // 원터치 하이라이트 콕 찍기 버튼
-                            InkWell(
-                              onTap: () => _toggleHighlight(sentence),
-                              borderRadius: BorderRadius.circular(4),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: isHl ? Colors.amber.shade700 : theme.subTextColor.withOpacity(0.12),
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      isHl ? Icons.bookmark_added_rounded : Icons.bookmark_add_outlined,
-                                      size: 11,
-                                      color: isHl ? Colors.white : theme.subTextColor,
-                                    ),
-                                    const SizedBox(width: 3),
-                                    Text(
-                                      isHl ? '마킹됨' : '마킹',
-                                      style: TextStyle(
+                            // 원터치 하이라이트 콕 찍기 버튼 (태블릿 전용)
+                            if (isTablet) ...[
+                              InkWell(
+                                onTap: () => _toggleHighlight(sentence),
+                                borderRadius: BorderRadius.circular(4),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: isHl ? Colors.amber.shade700 : theme.subTextColor.withOpacity(0.12),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        isHl ? Icons.bookmark_added_rounded : Icons.bookmark_add_outlined,
+                                        size: 11,
                                         color: isHl ? Colors.white : theme.subTextColor,
-                                        fontSize: 10,
-                                        fontWeight: isHl ? FontWeight.bold : FontWeight.normal,
                                       ),
-                                    ),
-                                  ],
+                                      const SizedBox(width: 3),
+                                      Text(
+                                        isHl ? '마킹됨' : '마킹',
+                                        style: TextStyle(
+                                          color: isHl ? Colors.white : theme.subTextColor,
+                                          fontSize: 10,
+                                          fontWeight: isHl ? FontWeight.bold : FontWeight.normal,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               ),
-                            ),
-                            const SizedBox(width: 6),
+                              const SizedBox(width: 6),
+                            ],
                             // 상세 액션 시트 (키보드 수정, 복사 등)
                             InkWell(
                               onTap: () => _showSentenceActionSheet(sentence),

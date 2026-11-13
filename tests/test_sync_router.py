@@ -1,12 +1,9 @@
-import os
 import json
 import gzip
-import pytest
 from fastapi.testclient import TestClient
 
 from server.server import app
 from server.database import get_sqlite_conn
-from server.models import Translation, BookActivity
 
 client = TestClient(app)
 
@@ -201,4 +198,55 @@ def test_sync_push_skips_reviewed_chapter():
         conn.close()
     finally:
         reviewed_service.set_chapter_reviewed('http://test.com/reviewed_push', False, folder_name='잠금소설')
+
+
+def test_sync_push_highlights_and_deleted_highlights():
+    """태블릿에서 마킹 추가(highlights) 및 해제(deleted_highlights) 푸시 동기화 검증"""
+    # 1. 하이라이트 등록 Push
+    add_payload = {
+        "push_timestamp": 6000,
+        "highlights": [
+            {
+                "book_name": "마킹테스트소설",
+                "chapter_title": "3화",
+                "url": "http://test.com/hl/3",
+                "pid": "p9",
+                "original": "原文マーク",
+                "translated": "마킹 테스트 문장",
+                "created_at": 6000,
+                "is_resolved": 0,
+            }
+        ],
+    }
+    res_add = client.post("/api/sync/push", json=add_payload)
+    assert res_add.status_code == 200
+    assert res_add.json()["applied_highlights"] == 1
+
+    counts_res = client.get("/api/highlights/counts")
+    assert counts_res.status_code == 200
+    assert counts_res.json()["by_book"].get("마킹테스트소설") == 1
+
+    # 2. 마킹 해제 Push -> is_resolved=1 처리 및 미해결 카운트에서 제거 확인
+    del_payload = {
+        "push_timestamp": 6100,
+        "deleted_highlights": [
+            {"url": "http://test.com/hl/3", "pid": "p9"}
+        ],
+    }
+    res_del = client.post("/api/sync/push", json=del_payload)
+    assert res_del.status_code == 200
+    assert res_del.json()["deleted_highlights"] == 1
+
+    counts_after = client.get("/api/highlights/counts")
+    assert counts_after.status_code == 200
+    assert counts_after.json()["by_book"].get("마킹테스트소설", 0) == 0
+
+    conn = get_sqlite_conn(as_dict=True)
+    cursor = conn.cursor()
+    cursor.execute("SELECT is_resolved FROM sentence_highlights WHERE url = ? AND pid = ?", ("http://test.com/hl/3", "p9"))
+    row = cursor.fetchone()
+    assert row is not None
+    assert row["is_resolved"] == 1
+    conn.close()
+
 

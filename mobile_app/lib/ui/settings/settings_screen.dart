@@ -8,6 +8,7 @@ import '../../services/notification_service.dart';
 import '../../services/preferences_service.dart';
 import '../../services/status_dashboard_service.dart';
 import '../../services/sync_service.dart';
+import '../sync/pending_changes_sheet.dart';
 import '../themes/reader_themes.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -68,6 +69,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _autoSilentUpdate = PreferencesService.autoSilentUpdate;
     _checkCurrentWifi();
     _loadAppVersion();
+    SyncService.refreshUnpushedCount();
   }
 
   Future<void> _loadAppVersion() async {
@@ -273,7 +275,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
-  Future<void> _runIncrementalSync() async {
+  Future<void> _handleInspectPendingChanges() async {
+    final theme = ReaderThemes.getTheme(PreferencesService.theme);
+    final summary = await SyncService.inspectPendingChanges();
+    if (!mounted) return;
+    await showPendingChangesSheet(
+      context,
+      summary: summary,
+      theme: theme,
+    );
+  }
+
+  Future<void> _executeSyncWithProgress({
+    required Future<SyncResult> Function(
+      void Function(String statusMessage, int currentCount, int? totalEstimate) onProgress,
+    ) runner,
+    String initialMessage = '동기화 시작 준비 중...',
+  }) async {
     final typedUrl = PreferencesService.normalizeServerUrl(_serverUrlController.text.trim());
     _serverUrlController.text = typedUrl;
     await PreferencesService.setServerUrl(typedUrl);
@@ -281,22 +299,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
     setState(() {
       _isSyncing = true;
       _syncProgress = 0.0;
-      _syncStatusMessage = '동기화 시작 준비 중...';
+      _syncStatusMessage = initialMessage;
     });
 
-    final result = await SyncService.performIncrementalSync(
-      ignoreWifiCheck: true,
-      onProgress: (statusMessage, currentCount, totalEstimate) {
-        setState(() {
-          _syncStatusMessage = statusMessage;
-          if (totalEstimate != null && totalEstimate > 0) {
-            _syncProgress = (currentCount / totalEstimate).clamp(0.0, 1.0);
-          } else {
-            _syncProgress = 0.0;
-          }
-        });
-      },
-    );
+    final result = await runner((statusMessage, currentCount, totalEstimate) {
+      if (!mounted) return;
+      setState(() {
+        _syncStatusMessage = statusMessage;
+        if (totalEstimate != null && totalEstimate > 0) {
+          _syncProgress = (currentCount / totalEstimate).clamp(0.0, 1.0);
+        } else {
+          _syncProgress = 0.0;
+        }
+      });
+    });
+
+    await SyncService.refreshUnpushedCount();
+    if (!mounted) return;
 
     setState(() {
       _isSyncing = false;
@@ -304,15 +323,62 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _syncStatusMessage = result.message;
     });
 
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(result.message),
-          backgroundColor: result.success ? Colors.green : Colors.redAccent,
-          duration: const Duration(seconds: 4),
-        ),
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(result.message),
+        backgroundColor: result.success ? Colors.green : Colors.redAccent,
+        duration: const Duration(seconds: 4),
+      ),
+    );
+  }
+
+  Future<void> _runManualUploadOnly() async {
+    final theme = ReaderThemes.getTheme(PreferencesService.theme);
+    final summary = await SyncService.inspectPendingChanges();
+    if (!mounted) return;
+
+    if (summary.isNotEmpty) {
+      final confirmed = await showPendingChangesSheet(
+        context,
+        summary: summary,
+        theme: theme,
+        confirmUpload: true,
       );
+      if (!confirmed || !mounted) return;
     }
+
+    await _executeSyncWithProgress(
+      initialMessage: '모바일 변경사항 업로드 준비 중...',
+      runner: (onProgress) => SyncService.performManualUpload(
+        ignoreWifiCheck: true,
+        onProgress: onProgress,
+      ),
+    );
+  }
+
+  Future<void> _runIncrementalSync() async {
+    final theme = ReaderThemes.getTheme(PreferencesService.theme);
+    final summary = await SyncService.inspectPendingChanges();
+    if (!mounted) return;
+
+    if (summary.isNotEmpty) {
+      final confirmed = await showPendingChangesSheet(
+        context,
+        summary: summary,
+        theme: theme,
+        confirmUpload: true,
+        confirmButtonLabel: '업로드 후 동기화 (${summary.logicalCount}건)',
+      );
+      if (!confirmed || !mounted) return;
+    }
+
+    await _executeSyncWithProgress(
+      initialMessage: '동기화 시작 준비 중...',
+      runner: (onProgress) => SyncService.performIncrementalSync(
+        ignoreWifiCheck: true,
+        onProgress: onProgress,
+      ),
+    );
   }
 
   Future<void> _confirmResetLocalDatabase() async {
@@ -606,6 +672,74 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   Text(_syncStatusMessage, style: TextStyle(color: theme.subTextColor, fontSize: 12)),
                   const SizedBox(height: 16),
                 ],
+                ValueListenableBuilder<int>(
+                  valueListenable: SyncService.unpushedCountNotifier,
+                  builder: (_, unpushed, __) {
+                    final hasChanges = unpushed > 0;
+                    final bannerColor = hasChanges ? Colors.amber : theme.subTextColor;
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 12),
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: bannerColor.withOpacity(hasChanges ? 0.12 : 0.08),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: hasChanges ? Colors.amber.withOpacity(0.45) : theme.borderColor,
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            hasChanges ? Icons.pending_actions_rounded : Icons.check_circle_outline_rounded,
+                            size: 18,
+                            color: hasChanges ? Colors.amber : const Color(0xFF10B981),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              hasChanges
+                                  ? 'PC 미업로드 변경사항 $unpushed건 대기 중'
+                                  : '현재 업로드 대기 중인 변경사항 없음',
+                              style: TextStyle(
+                                color: theme.textColor,
+                                fontSize: 12.5,
+                                fontWeight: hasChanges ? FontWeight.bold : FontWeight.normal,
+                              ),
+                            ),
+                          ),
+                          TextButton(
+                            onPressed: _isSyncing ? null : _handleInspectPendingChanges,
+                            style: TextButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              minimumSize: Size.zero,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            ),
+                            child: Text(
+                              '내역 보기',
+                              style: TextStyle(
+                                color: hasChanges ? Colors.amber.shade700 : theme.accentColor,
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+                OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.amber.shade700,
+                    side: BorderSide(color: Colors.amber.withOpacity(0.6)),
+                    minimumSize: const Size(double.infinity, 44),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                  onPressed: _isSyncing ? null : _runManualUploadOnly,
+                  icon: const Icon(Icons.cloud_upload_rounded),
+                  label: const Text('모바일 변경사항 업로드 (내역 확인 ➔ PC)'),
+                ),
+                const SizedBox(height: 12),
                 ElevatedButton.icon(
                   style: ElevatedButton.styleFrom(
                     backgroundColor: theme.accentColor,

@@ -18,6 +18,7 @@ import 'preferences_service.dart';
 
 class LocalDbService {
   static Database? _database;
+  static final ValueNotifier<int> pendingCountNotifier = ValueNotifier<int>(0);
 
   static Future<Database> get database async {
     if (_database != null && _database!.isOpen) return _database!;
@@ -50,6 +51,7 @@ class LocalDbService {
       // DB 재오픈 및 기본 테이블 재생성
       _database = await _initDatabase();
       await PreferencesService.setLastSyncedTimestamp(0);
+      await _refreshPendingCountNotifier(_database!);
       debugPrint('[LocalDbService] 로컬 DB 완전 초기화 완료 (동기화 기준 시점 0으로 초기화)');
     } catch (e) {
       debugPrint('[LocalDbService] DB 초기화 실패: $e');
@@ -136,6 +138,7 @@ class LocalDbService {
     await batch.commit(noResult: true);
 
     await healDuplicateChapters();
+    await _refreshPendingCountNotifier(_database!);
     debugPrint('[LocalDbService] replaceSeedDatabase 성공: 무결성 유지 완료');
   }
 
@@ -445,6 +448,7 @@ class LocalDbService {
       'last_read_timestamp': book?.lastReadTimestamp,
       'last_read_pid': book?.lastReadPid,
       'last_read_chapter_title': book?.lastReadChapterTitle,
+      'change_reasons': ['bookmark'],
     });
   }
 
@@ -466,6 +470,7 @@ class LocalDbService {
       'last_read_timestamp': book?.lastReadTimestamp,
       'last_read_pid': book?.lastReadPid,
       'last_read_chapter_title': book?.lastReadChapterTitle,
+      'change_reasons': ['complete'],
     });
   }
 
@@ -487,6 +492,7 @@ class LocalDbService {
       'last_read_timestamp': book?.lastReadTimestamp,
       'last_read_pid': book?.lastReadPid,
       'last_read_chapter_title': book?.lastReadChapterTitle,
+      'change_reasons': ['visibility'],
     });
   }
 
@@ -661,6 +667,43 @@ class LocalDbService {
   static Future<void> updateSentence(int chapterId, Sentence updatedSentence, List<Sentence> allChapterSentences) async {
     final db = await database;
 
+    // 0. 기존 DB에서 변경 전 번역문(before_translated) 및 챕터 메타데이터 선조회
+    String chapBookName = '';
+    String chapTitle = '';
+    String chapUrl = '';
+    String? beforeTranslated;
+    try {
+      final chapRows = await db.query(
+        'chapters',
+        columns: ['book_name', 'title', 'url', 'compressed_content'],
+        where: 'id = ?',
+        whereArgs: [chapterId],
+        limit: 1,
+      );
+      if (chapRows.isNotEmpty) {
+        chapBookName = (chapRows.first['book_name'] as String? ?? '').trim();
+        chapTitle = (chapRows.first['title'] as String? ?? '').trim();
+        chapUrl = (chapRows.first['url'] as String? ?? '').trim();
+        final blob = chapRows.first['compressed_content'] as Uint8List?;
+        if (blob != null) {
+          final prevJson = utf8.decode(const ZLibDecoder().decodeBytes(blob));
+          final prevList = jsonDecode(prevJson) as List<dynamic>;
+          for (final raw in prevList) {
+            if (raw is Map) {
+              final matchId = updatedSentence.id != null && raw['id'] == updatedSentence.id;
+              final matchPid = updatedSentence.pid != null &&
+                  updatedSentence.pid!.isNotEmpty &&
+                  raw['pid'] == updatedSentence.pid;
+              if (matchId || matchPid) {
+                beforeTranslated = raw['translated']?.toString();
+                break;
+              }
+            }
+          }
+        }
+      }
+    } catch (_) {}
+
     // 1. 메모리 상의 문장 리스트 갱신
     final index = allChapterSentences.indexWhere((s) => (s.id != null && s.id == updatedSentence.id) || (s.pid != null && s.pid == updatedSentence.pid));
     if (index != -1) {
@@ -681,11 +724,17 @@ class LocalDbService {
     );
 
     // 4. 오프라인 동기화 큐에 등록 (PC 연결 시 자동 업로드)
-    await _enqueueChange('translation_edit', '${updatedSentence.id ?? updatedSentence.pid}', {
+    final sentenceKey = '${updatedSentence.pid ?? updatedSentence.id}';
+    final targetId = chapUrl.isNotEmpty ? '$chapUrl#$sentenceKey' : sentenceKey;
+    await _enqueueChange('translation_edit', targetId, {
       'id': updatedSentence.id,
       'pid': updatedSentence.pid,
       'original': updatedSentence.original,
       'translated': updatedSentence.translated,
+      if (beforeTranslated != null) 'before_translated': beforeTranslated,
+      if (chapBookName.isNotEmpty) 'folderName': chapBookName,
+      if (chapTitle.isNotEmpty) 'title': chapTitle,
+      if (chapUrl.isNotEmpty) 'url': chapUrl,
       'timestamp': DateTime.now().millisecondsSinceEpoch ~/ 1000,
     });
   }
@@ -771,6 +820,7 @@ class LocalDbService {
       'is_completed': isCompleted ? 1 : 0,
       'is_bookmarked': (currentBook?.isBookmarked ?? false) ? 1 : 0,
       'is_visible': (currentBook?.isVisible ?? true) ? 1 : 0,
+      'change_reasons': ['reading_progress'],
     });
   }
 
@@ -1160,14 +1210,119 @@ class LocalDbService {
   }
 
   // --- 동기화 큐 관리 ---
+  static Future<void> _refreshPendingCountNotifier(Database db) async {
+    try {
+      final res = await db.rawQuery('SELECT COUNT(*) as cnt FROM offline_change_queue');
+      pendingCountNotifier.value = (res.first['cnt'] as num?)?.toInt() ?? 0;
+    } catch (_) {
+      pendingCountNotifier.value = 0;
+    }
+  }
+
   static Future<void> _enqueueChange(String changeType, String? targetId, Map<String, dynamic> payload) async {
     final db = await database;
+    final nowTs = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    final cleanTarget = targetId?.trim() ?? '';
+
+    // glossary_rule은 순차 실행이 중요하므로 병합하지 않고 그대로 추가
+    final bool canCoalesce = cleanTarget.isNotEmpty &&
+        (changeType == 'activity' ||
+            changeType == 'pin' ||
+            changeType == 'translation_edit' ||
+            changeType == 'highlight_add' ||
+            changeType == 'highlight_delete');
+
+    if (canCoalesce) {
+      final bool isHighlightToggle = changeType == 'highlight_add' || changeType == 'highlight_delete';
+      final existingRows = await db.query(
+        'offline_change_queue',
+        where: isHighlightToggle
+            ? "change_type IN ('highlight_add', 'highlight_delete') AND target_id = ?"
+            : 'change_type = ? AND target_id = ?',
+        whereArgs: isHighlightToggle ? [cleanTarget] : [changeType, cleanTarget],
+        orderBy: 'id ASC',
+      );
+
+      if (existingRows.isNotEmpty) {
+        final mergedPayload = <String, dynamic>{};
+        final Set<String> mergedReasons = <String>{};
+        String? earliestBefore;
+
+        for (final row in existingRows) {
+          try {
+            final prev = jsonDecode(row['payload_json'] as String? ?? '{}');
+            if (prev is Map) {
+              if (earliestBefore == null && prev['before_translated'] != null) {
+                final b = prev['before_translated'].toString();
+                if (b.isNotEmpty) earliestBefore = b;
+              }
+              if (prev['change_reasons'] is List) {
+                for (final r in (prev['change_reasons'] as List)) {
+                  final rs = r?.toString().trim() ?? '';
+                  if (rs.isNotEmpty) mergedReasons.add(rs);
+                }
+              }
+              if (isHighlightToggle) {
+                if (prev['book_name'] != null && !payload.containsKey('book_name')) {
+                  mergedPayload['book_name'] = prev['book_name'];
+                }
+                if (prev['chapter_title'] != null && !payload.containsKey('chapter_title')) {
+                  mergedPayload['chapter_title'] = prev['chapter_title'];
+                }
+              }
+            }
+          } catch (_) {}
+        }
+
+        if (payload['change_reasons'] is List) {
+          for (final r in (payload['change_reasons'] as List)) {
+            final rs = r?.toString().trim() ?? '';
+            if (rs.isNotEmpty) mergedReasons.add(rs);
+          }
+        }
+
+        mergedPayload.addAll(payload);
+        if (earliestBefore != null) {
+          mergedPayload['before_translated'] = earliestBefore;
+        }
+        if (mergedReasons.isNotEmpty) {
+          mergedPayload['change_reasons'] = mergedReasons.toList();
+        }
+
+        final keepId = existingRows.last['id'] as int;
+        await db.update(
+          'offline_change_queue',
+          {
+            'change_type': changeType,
+            'target_id': cleanTarget,
+            'payload_json': jsonEncode(mergedPayload),
+            'created_at': nowTs,
+          },
+          where: 'id = ?',
+          whereArgs: [keepId],
+        );
+
+        if (existingRows.length > 1) {
+          final redundantIds = existingRows.take(existingRows.length - 1).map((r) => r['id'] as int).toList();
+          await db.delete(
+            'offline_change_queue',
+            where: 'id IN (${redundantIds.map((_) => '?').join(',')})',
+            whereArgs: redundantIds,
+          );
+        }
+
+        await _refreshPendingCountNotifier(db);
+        return;
+      }
+    }
+
     await db.insert('offline_change_queue', {
       'change_type': changeType,
       'target_id': targetId,
       'payload_json': jsonEncode(payload),
-      'created_at': DateTime.now().millisecondsSinceEpoch ~/ 1000,
+      'created_at': nowTs,
     });
+    await _refreshPendingCountNotifier(db);
   }
 
   static Future<List<Map<String, dynamic>>> getPendingChanges() async {
@@ -1179,7 +1334,9 @@ class LocalDbService {
     try {
       final db = await database;
       final res = await db.rawQuery('SELECT COUNT(*) as cnt FROM offline_change_queue');
-      return (res.first['cnt'] as num?)?.toInt() ?? 0;
+      final count = (res.first['cnt'] as num?)?.toInt() ?? 0;
+      pendingCountNotifier.value = count;
+      return count;
     } catch (_) {
       return 0;
     }
@@ -1193,6 +1350,7 @@ class LocalDbService {
       where: 'id IN (${ids.map((_) => '?').join(',')})',
       whereArgs: ids,
     );
+    await _refreshPendingCountNotifier(db);
   }
 
   // --- 유사 번역 용례 검색 (Similar Translations Explorer) ---
@@ -1285,10 +1443,32 @@ class LocalDbService {
   }
 
   /// 하이라이트 해제(삭제)
-  static Future<void> removeSentenceHighlight(String url, String pid) async {
+  static Future<void> removeSentenceHighlight(String url, String pid, {String? bookName, String? chapterTitle}) async {
     final db = await database;
+    String? resolvedBook = bookName;
+    String? resolvedChap = chapterTitle;
+    if (resolvedBook == null || resolvedChap == null) {
+      try {
+        final rows = await db.query(
+          'sentence_highlights',
+          columns: ['book_name', 'chapter_title'],
+          where: 'url = ? AND pid = ?',
+          whereArgs: [url, pid],
+          limit: 1,
+        );
+        if (rows.isNotEmpty) {
+          resolvedBook ??= rows.first['book_name'] as String?;
+          resolvedChap ??= rows.first['chapter_title'] as String?;
+        }
+      } catch (_) {}
+    }
     await db.delete('sentence_highlights', where: 'url = ? AND pid = ?', whereArgs: [url, pid]);
-    await _enqueueChange('highlight_delete', '$url#$pid', {'url': url, 'pid': pid});
+    await _enqueueChange('highlight_delete', '$url#$pid', {
+      'url': url,
+      'pid': pid,
+      if (resolvedBook != null && resolvedBook.isNotEmpty) 'book_name': resolvedBook,
+      if (resolvedChap != null && resolvedChap.isNotEmpty) 'chapter_title': resolvedChap,
+    });
   }
 
   /// 특정 소설의 하이라이트 목록 조회 (미해결 우선)

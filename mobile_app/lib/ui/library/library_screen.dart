@@ -3,10 +3,13 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../models/book.dart';
+import '../../models/pending_upload.dart';
 import '../../models/sentence_highlight.dart';
+import '../../services/device_utils.dart';
 import '../../services/local_db_service.dart';
 import '../../services/preferences_service.dart';
 import '../../services/sync_service.dart';
+import '../sync/pending_changes_sheet.dart';
 import '../themes/reader_themes.dart';
 import '../themes/hyper_aesthetic_theme.dart';
 import '../viewer/reader_screen.dart';
@@ -157,156 +160,310 @@ class _LibraryScreenState extends State<LibraryScreen> with WidgetsBindingObserv
   void _showSyncActionSheet(ReaderThemeData theme) {
     HapticFeedback.lightImpact();
     final primary = HyperAestheticTheme.getAmbientPrimary(theme);
+    final summaryFuture = SyncService.inspectPendingChanges();
 
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
+      isScrollControlled: true,
       builder: (ctx) => Container(
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(ctx).size.height * 0.85,
+        ),
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
         decoration: BoxDecoration(
           color: theme.surfaceColor,
           borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
           border: Border.all(color: theme.borderColor),
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(
-              child: Container(
-                width: 36,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: theme.subTextColor.withOpacity(0.3),
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Row(
+        child: SafeArea(
+          top: false,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(Icons.sync_rounded, color: primary, size: 22),
-                const SizedBox(width: 8),
-                Text(
-                  '동기화 스튜디오',
-                  style: TextStyle(
-                    color: theme.textColor,
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
+                Center(
+                  child: Container(
+                    width: 36,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: theme.subTextColor.withOpacity(0.3),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
                   ),
                 ),
-                const Spacer(),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Icon(Icons.sync_rounded, color: primary, size: 22),
+                    const SizedBox(width: 8),
+                    Text(
+                      '동기화 스튜디오',
+                      style: TextStyle(
+                        color: theme.textColor,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const Spacer(),
+                    ValueListenableBuilder<int>(
+                      valueListenable: SyncService.unpushedCountNotifier,
+                      builder: (_, count, __) {
+                        if (count <= 0) return const SizedBox.shrink();
+                        return Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: Colors.amber.withOpacity(0.2),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.amber.withOpacity(0.5)),
+                          ),
+                          child: Text(
+                            '미업로드 $count건',
+                            style: const TextStyle(color: Colors.amber, fontSize: 11, fontWeight: FontWeight.bold),
+                          ),
+                        );
+                      },
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '안전 백업 스냅샷 기반 무음 자동 다운로드 & 명시적 수동 업로드 파이프라인',
+                  style: TextStyle(color: theme.subTextColor, fontSize: 12),
+                ),
+                const SizedBox(height: 12),
+
+                // 대기 중인 업로드 변경 내역 인라인 미리보기 카드
+                FutureBuilder<PendingUploadSummary>(
+                  future: summaryFuture,
+                  builder: (_, snap) {
+                    if (!snap.hasData) return const SizedBox.shrink();
+                    final summary = snap.data!;
+                    return _buildPendingUploadPreviewCard(ctx, summary, theme, primary);
+                  },
+                ),
+
+                // 1. 최신 번역 다운로드
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF10B981).withOpacity(0.15),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.download_rounded, color: Color(0xFF10B981), size: 20),
+                  ),
+                  title: Text('최신 번역 다운로드 (PC ➔ 폰)', style: TextStyle(color: theme.textColor, fontWeight: FontWeight.bold)),
+                  subtitle: Text('PC에서 확정된 새 회차 및 폴더 저장을 즉시 가져옵니다.', style: TextStyle(color: theme.subTextColor, fontSize: 12)),
+                  onTap: () async {
+                    Navigator.pop(ctx);
+                    _runSyncTask(() => SyncService.performIncrementalDownload(ignoreWifiCheck: true));
+                  },
+                ),
+
+                // 2. 모바일 변경사항 업로드
                 ValueListenableBuilder<int>(
                   valueListenable: SyncService.unpushedCountNotifier,
-                  builder: (_, count, __) {
-                    if (count <= 0) return const SizedBox.shrink();
-                    return Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  builder: (_, unpushed, __) => ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: Container(
+                      padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
-                        color: Colors.amber.withOpacity(0.2),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.amber.withOpacity(0.5)),
+                        color: (unpushed > 0 ? Colors.amber : theme.subTextColor).withOpacity(0.15),
+                        shape: BoxShape.circle,
                       ),
-                      child: Text(
-                        '미업로드 $count건',
-                        style: const TextStyle(color: Colors.amber, fontSize: 11, fontWeight: FontWeight.bold),
-                      ),
+                      child: Icon(Icons.cloud_upload_rounded, color: unpushed > 0 ? Colors.amber : theme.subTextColor, size: 20),
+                    ),
+                    title: Text('모바일 변경사항 업로드 (폰 ➔ PC)', style: TextStyle(color: theme.textColor, fontWeight: FontWeight.bold)),
+                    subtitle: Text(
+                      unpushed > 0
+                          ? '업로드 전 변경 내역을 확인한 뒤 PC로 반영합니다. ($unpushed건 대기)'
+                          : '폰에서 수정한 단어, 독서 진도, 찾아바꾸기를 PC로 올립니다.',
+                      style: TextStyle(color: theme.subTextColor, fontSize: 12),
+                    ),
+                    onTap: () async {
+                      Navigator.pop(ctx);
+                      await _confirmAndRunUploadTask(
+                        theme: theme,
+                        task: () => SyncService.performManualUpload(ignoreWifiCheck: true),
+                      );
+                    },
+                  ),
+                ),
+
+                // 3. 양방향 일괄 동기화
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: primary.withOpacity(0.15),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(Icons.sync_rounded, color: primary, size: 20),
+                  ),
+                  title: Text('양방향 일괄 동기화', style: TextStyle(color: theme.textColor, fontWeight: FontWeight.bold)),
+                  subtitle: Text('업로드와 다운로드를 차례대로 순차 실행합니다.', style: TextStyle(color: theme.subTextColor, fontSize: 12)),
+                  onTap: () async {
+                    Navigator.pop(ctx);
+                    await _confirmAndRunUploadTask(
+                      theme: theme,
+                      confirmButtonLabel: '업로드 후 동기화',
+                      task: () => SyncService.performIncrementalSync(ignoreWifiCheck: true),
                     );
+                  },
+                ),
+
+                const Divider(height: 16),
+
+                // 4. 비상용 전체 시드 재구축
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.redAccent.withOpacity(0.15),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.restore_rounded, color: Colors.redAccent, size: 20),
+                  ),
+                  title: const Text('비상용: 30초 전체 서재 재구축 (시드팩)', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
+                  subtitle: Text('DB를 완전 초기화하고 PC의 전체 압축 DB를 1방에 새로 받습니다.', style: TextStyle(color: theme.subTextColor, fontSize: 12)),
+                  onTap: () async {
+                    Navigator.pop(ctx);
+                    _runSyncTask(() => SyncService.downloadFullSeed(ignoreWifiCheck: true));
                   },
                 ),
               ],
             ),
-            const SizedBox(height: 8),
-            Text(
-              '안전 백업 스냅샷 기반 무음 자동 다운로드 & 명시적 수동 업로드 파이프라인',
-              style: TextStyle(color: theme.subTextColor, fontSize: 12),
-            ),
-            const SizedBox(height: 16),
-
-            // 1. 최신 번역 다운로드
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF10B981).withOpacity(0.15),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(Icons.download_rounded, color: Color(0xFF10B981), size: 20),
-              ),
-              title: Text('최신 번역 다운로드 (PC ➔ 폰)', style: TextStyle(color: theme.textColor, fontWeight: FontWeight.bold)),
-              subtitle: Text('PC에서 확정된 새 회차 및 폴더 저장을 즉시 가져옵니다.', style: TextStyle(color: theme.subTextColor, fontSize: 12)),
-              onTap: () async {
-                Navigator.pop(ctx);
-                _runSyncTask(() => SyncService.performIncrementalDownload(ignoreWifiCheck: true));
-              },
-            ),
-
-            // 2. 모바일 변경사항 업로드
-            ValueListenableBuilder<int>(
-              valueListenable: SyncService.unpushedCountNotifier,
-              builder: (_, unpushed, __) => ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: (unpushed > 0 ? Colors.amber : theme.subTextColor).withOpacity(0.15),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(Icons.cloud_upload_rounded, color: unpushed > 0 ? Colors.amber : theme.subTextColor, size: 20),
-                ),
-                title: Text('모바일 변경사항 업로드 (폰 ➔ PC)', style: TextStyle(color: theme.textColor, fontWeight: FontWeight.bold)),
-                subtitle: Text('폰에서 수정한 단어, 독서 진도, 찾아바꾸기를 PC로 올립니다. ($unpushed건 대기)', style: TextStyle(color: theme.subTextColor, fontSize: 12)),
-                onTap: () async {
-                  Navigator.pop(ctx);
-                  _runSyncTask(() => SyncService.performManualUpload(ignoreWifiCheck: true));
-                },
-              ),
-            ),
-
-            // 3. 양방향 일괄 동기화
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: primary.withOpacity(0.15),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(Icons.sync_rounded, color: primary, size: 20),
-              ),
-              title: Text('양방향 일괄 동기화', style: TextStyle(color: theme.textColor, fontWeight: FontWeight.bold)),
-              subtitle: Text('업로드와 다운로드를 차례대로 순차 실행합니다.', style: TextStyle(color: theme.subTextColor, fontSize: 12)),
-              onTap: () async {
-                Navigator.pop(ctx);
-                _runSyncTask(() => SyncService.performIncrementalSync(ignoreWifiCheck: true));
-              },
-            ),
-
-            const Divider(height: 16),
-
-            // 4. 비상용 전체 시드 재구축
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Colors.redAccent.withOpacity(0.15),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(Icons.restore_rounded, color: Colors.redAccent, size: 20),
-              ),
-              title: const Text('비상용: 30초 전체 서재 재구축 (시드팩)', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
-              subtitle: Text('DB를 완전 초기화하고 PC의 전체 압축 DB를 1방에 새로 받습니다.', style: TextStyle(color: theme.subTextColor, fontSize: 12)),
-              onTap: () async {
-                Navigator.pop(ctx);
-                _runSyncTask(() => SyncService.downloadFullSeed(ignoreWifiCheck: true));
-              },
-            ),
-          ],
+          ),
         ),
       ),
     );
+  }
+
+  Widget _buildPendingUploadPreviewCard(
+    BuildContext sheetCtx,
+    PendingUploadSummary summary,
+    ReaderThemeData theme,
+    Color primary,
+  ) {
+    final hasChanges = summary.isNotEmpty;
+    final accent = hasChanges ? Colors.amber : const Color(0xFF10B981);
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: accent.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: accent.withOpacity(0.32)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                hasChanges ? Icons.pending_actions_rounded : Icons.check_circle_outline_rounded,
+                color: accent,
+                size: 16,
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  hasChanges
+                      ? '업로드 예정: ${summary.briefSummaryText}'
+                      : 'PC로 보낼 대기 변경사항 없음',
+                  style: TextStyle(
+                    color: theme.textColor,
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              if (hasChanges)
+                TextButton(
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  onPressed: () {
+                    Navigator.pop(sheetCtx);
+                    showPendingChangesSheet(
+                      context,
+                      summary: summary,
+                      theme: theme,
+                    );
+                  },
+                  child: Text(
+                    '자세히 (${summary.logicalCount})',
+                    style: TextStyle(
+                      color: Colors.amber.shade700,
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          if (hasChanges) ...[
+            const SizedBox(height: 6),
+            ...summary.items.take(3).map(
+              (item) => Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Text(
+                  '• ${item.title} — ${item.subtitle}',
+                  style: TextStyle(color: theme.subTextColor, fontSize: 11),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ),
+            if (summary.items.length > 3)
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Text(
+                  '외 ${summary.items.length - 3}건 더 있음',
+                  style: TextStyle(color: primary, fontSize: 11, fontWeight: FontWeight.w600),
+                ),
+              ),
+          ] else if (summary.readingLogsCount > 0) ...[
+            const SizedBox(height: 4),
+            Text(
+              '참고: 독서 잔디 기록 ${summary.readingLogsCount}건은 다음 업로드 시 함께 병합됩니다.',
+              style: TextStyle(color: theme.subTextColor, fontSize: 11),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Future<void> _confirmAndRunUploadTask({
+    required ReaderThemeData theme,
+    required Future<SyncResult> Function() task,
+    String? confirmButtonLabel,
+  }) async {
+    final summary = await SyncService.inspectPendingChanges();
+    if (!mounted) return;
+    if (summary.isNotEmpty) {
+      final confirmed = await showPendingChangesSheet(
+        context,
+        summary: summary,
+        theme: theme,
+        confirmUpload: true,
+        confirmButtonLabel: confirmButtonLabel,
+      );
+      if (!confirmed || !mounted) return;
+    }
+    await _runSyncTask(task);
   }
 
   Future<void> _runSyncTask(Future<SyncResult> Function() task) async {
@@ -328,6 +485,8 @@ class _LibraryScreenState extends State<LibraryScreen> with WidgetsBindingObserv
       );
       if (res.success) {
         await _loadLibrary();
+        await _loadHighlightCounts();
+        await SyncService.refreshUnpushedCount();
       }
     } finally {
       if (mounted) {
@@ -349,10 +508,12 @@ class _LibraryScreenState extends State<LibraryScreen> with WidgetsBindingObserv
     ).then((_) {
       _loadLibrary();
       _loadHighlightCounts();
+      SyncService.refreshUnpushedCount();
     });
   }
 
   Future<void> _showBookHighlightsSheet(Book book) async {
+    if (!DeviceUtils.isTablet(context)) return;
     final theme = ReaderThemes.getTheme(PreferencesService.theme);
     final List<SentenceHighlight> highlights = await LocalDbService.getHighlightsByBook(book.folderName, unresolvedOnly: true);
 
@@ -471,6 +632,7 @@ class _LibraryScreenState extends State<LibraryScreen> with WidgetsBindingObserv
                           ).then((_) {
                             _loadLibrary();
                             _loadHighlightCounts();
+                            SyncService.refreshUnpushedCount();
                           });
                         },
                         borderRadius: BorderRadius.circular(14),
@@ -553,6 +715,7 @@ class _LibraryScreenState extends State<LibraryScreen> with WidgetsBindingObserv
   }
 
   void _showBookActionSheet(Book book, ReaderThemeData theme) {
+    final isTablet = DeviceUtils.isTablet(context);
     HapticFeedback.heavyImpact();
     showModalBottomSheet(
       context: context,
@@ -637,45 +800,46 @@ class _LibraryScreenState extends State<LibraryScreen> with WidgetsBindingObserv
                 ),
                 const SizedBox(height: 16),
                 Divider(color: theme.borderColor.withOpacity(0.5)),
-                ListTile(
-                  leading: Container(
-                    padding: const EdgeInsets.all(9),
-                    decoration: BoxDecoration(
-                      color: Colors.amber.withOpacity(0.18),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: const Icon(Icons.edit_note_rounded, color: Colors.amber, size: 20),
-                  ),
-                  title: Row(
-                    children: [
-                      Text(
-                        '수정 대기 마킹 목록',
-                        style: TextStyle(color: theme.textColor, fontWeight: FontWeight.bold, fontSize: 14),
+                if (isTablet)
+                  ListTile(
+                    leading: Container(
+                      padding: const EdgeInsets.all(9),
+                      decoration: BoxDecoration(
+                        color: Colors.amber.withOpacity(0.18),
+                        borderRadius: BorderRadius.circular(10),
                       ),
-                      const SizedBox(width: 8),
-                      if ((_highlightCounts[book.folderName] ?? 0) > 0)
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: Colors.amber.shade700,
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Text(
-                            '${_highlightCounts[book.folderName]}건',
-                            style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
-                          ),
+                      child: const Icon(Icons.edit_note_rounded, color: Colors.amber, size: 20),
+                    ),
+                    title: Row(
+                      children: [
+                        Text(
+                          '수정 대기 마킹 목록',
+                          style: TextStyle(color: theme.textColor, fontWeight: FontWeight.bold, fontSize: 14),
                         ),
-                    ],
+                        const SizedBox(width: 8),
+                        if ((_highlightCounts[book.folderName] ?? 0) > 0)
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Colors.amber.shade700,
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Text(
+                              '${_highlightCounts[book.folderName]}건',
+                              style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                      ],
+                    ),
+                    subtitle: Text(
+                      '독서 중 콕 찍어둔 어색한 문장들을 모아보고 해당 단락으로 순간이동',
+                      style: TextStyle(color: theme.subTextColor, fontSize: 11),
+                    ),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      _showBookHighlightsSheet(book);
+                    },
                   ),
-                  subtitle: Text(
-                    '독서 중 콕 찍어둔 어색한 문장들을 모아보고 해당 단락으로 순간이동',
-                    style: TextStyle(color: theme.subTextColor, fontSize: 11),
-                  ),
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    _showBookHighlightsSheet(book);
-                  },
-                ),
                 ListTile(
                   leading: Container(
                     padding: const EdgeInsets.all(9),
@@ -869,7 +1033,11 @@ class _LibraryScreenState extends State<LibraryScreen> with WidgetsBindingObserv
                   onTap: () {
                     HapticFeedback.selectionClick();
                     setState(() => _currentNavIndex = idx);
-                    if (idx == 0) _loadLibrary();
+                    if (idx == 0) {
+                      _loadLibrary();
+                      _loadHighlightCounts();
+                      SyncService.refreshUnpushedCount();
+                    }
                   },
                   borderRadius: BorderRadius.circular(24),
                   child: ConstrainedBox(
@@ -924,10 +1092,9 @@ class _LibraryScreenState extends State<LibraryScreen> with WidgetsBindingObserv
   }
 
   Widget _buildLibraryView(ReaderThemeData theme) {
-    final shortestSide = MediaQuery.of(context).size.shortestSide;
-    final isTablet = shortestSide >= 600;
-
-    return isTablet ? _buildTabletLibraryView(theme) : _buildPhoneLibraryView(theme);
+    return DeviceUtils.isTablet(context)
+        ? _buildTabletLibraryView(theme)
+        : _buildPhoneLibraryView(theme);
   }
 
   /// ============================================================================
@@ -1170,12 +1337,8 @@ class _LibraryScreenState extends State<LibraryScreen> with WidgetsBindingObserv
             ),
           ),
           const SizedBox(width: 10),
-          // 수동 퀵 동기화 버튼
-          IconButton(
-            icon: Icon(Icons.sync_rounded, color: primary),
-            tooltip: '수동 동기화',
-            onPressed: () => _triggerQuickSync(),
-          ),
+          // 수동 퀵 동기화 및 업로드 대기 카운트 뱃지
+          _buildSyncStatusBadge(theme),
         ],
       ),
     );
@@ -2187,45 +2350,6 @@ class _LibraryScreenState extends State<LibraryScreen> with WidgetsBindingObserv
                                     color: Colors.white.withOpacity(0.9),
                                   ),
                                 ),
-                                // 수정 대기 하이라이트 뱃지 (있을 때 좌상단에 노출)
-                                if ((_highlightCounts[book.folderName] ?? 0) > 0)
-                                  Positioned(
-                                    top: 4,
-                                    left: 6,
-                                    child: InkWell(
-                                      onTap: () => _showBookHighlightsSheet(book),
-                                      borderRadius: BorderRadius.circular(10),
-                                      child: Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2.5),
-                                        decoration: BoxDecoration(
-                                          color: Colors.amber.shade800,
-                                          borderRadius: BorderRadius.circular(10),
-                                          boxShadow: [
-                                            BoxShadow(
-                                              color: Colors.black.withOpacity(0.35),
-                                              blurRadius: 4,
-                                              offset: const Offset(0, 2),
-                                            ),
-                                          ],
-                                        ),
-                                        child: Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            const Icon(Icons.edit_note_rounded, size: 12, color: Colors.white),
-                                            const SizedBox(width: 3),
-                                            Text(
-                                              '${_highlightCounts[book.folderName]}',
-                                              style: const TextStyle(
-                                                color: Colors.white,
-                                                fontSize: 10,
-                                                fontWeight: FontWeight.bold,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ),
-                                  ),
                                 // 즐겨찾기 별 뱃지 (안전한 터치 타깃)
                                 Positioned(
                                   top: 4,
@@ -2401,30 +2525,6 @@ class _LibraryScreenState extends State<LibraryScreen> with WidgetsBindingObserv
                                         ),
                                       ),
                                     ),
-                                    if ((_highlightCounts[book.folderName] ?? 0) > 0)
-                                      InkWell(
-                                        onTap: () => _showBookHighlightsSheet(book),
-                                        borderRadius: BorderRadius.circular(8),
-                                        child: Container(
-                                          margin: const EdgeInsets.only(left: 6),
-                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                          decoration: BoxDecoration(
-                                            color: Colors.amber.shade800,
-                                            borderRadius: BorderRadius.circular(8),
-                                          ),
-                                          child: Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              const Icon(Icons.edit_note_rounded, size: 12, color: Colors.white),
-                                              const SizedBox(width: 2),
-                                              Text(
-                                                '${_highlightCounts[book.folderName]}',
-                                                style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      ),
                                   ],
                                 ),
                                 const SizedBox(height: 3),
@@ -2705,24 +2805,43 @@ class _LibraryScreenState extends State<LibraryScreen> with WidgetsBindingObserv
       );
     }
 
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-      decoration: BoxDecoration(
-        color: theme.surfaceColor,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: theme.borderColor),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.cloud_off_rounded, color: theme.subTextColor, size: 13),
-          const SizedBox(width: 4),
-          Text(
-            '오프라인',
-            style: TextStyle(color: theme.subTextColor, fontSize: 11),
+    return ValueListenableBuilder<int>(
+      valueListenable: SyncService.unpushedCountNotifier,
+      builder: (_, unpushed, __) {
+        final hasUnpushed = unpushed > 0;
+        return GestureDetector(
+          onTap: _triggerQuickSync,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            decoration: BoxDecoration(
+              color: hasUnpushed ? Colors.amber.withOpacity(0.12) : theme.surfaceColor,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: hasUnpushed ? Colors.amber.withOpacity(0.45) : theme.borderColor,
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.cloud_off_rounded,
+                  color: hasUnpushed ? Colors.amber : theme.subTextColor,
+                  size: 13,
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  hasUnpushed ? '오프라인 · 대기 $unpushed건' : '오프라인',
+                  style: TextStyle(
+                    color: hasUnpushed ? Colors.amber : theme.subTextColor,
+                    fontSize: 11,
+                    fontWeight: hasUnpushed ? FontWeight.bold : FontWeight.normal,
+                  ),
+                ),
+              ],
+            ),
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 }
