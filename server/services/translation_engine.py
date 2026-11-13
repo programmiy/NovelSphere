@@ -1,13 +1,14 @@
 import json
 import logging
 import re
-from typing import Optional, List, Any
+from typing import Optional, List, Any, Tuple
 import requests
 from pydantic import BaseModel
 
 from server.settings import settings
 
 from server.quota import record_api_call
+from server.rule_classifier import classify_translation, is_verbatim_copy, restore_brackets
 from server.services.rpm_manager import (
     proactive_rpm_rest,
     _record_call_timestamp,
@@ -16,6 +17,26 @@ from server.services.rpm_manager import (
 )
 
 logger = logging.getLogger(__name__)
+
+# LLM 환각 HTML 태그/취소선 마크업 정제용 정규식
+_HTML_COMMENT_RE = re.compile(r"<!--[\s\S]*?-->")
+_HTML_STRIKETHROUGH_RE = re.compile(
+    r"<(s|del|strike)(?:\s+[^<>]*)?>.*?</\1>[ \t]*",
+    re.IGNORECASE | re.DOTALL,
+)
+_HTML_BLOCK_BREAK_RE = re.compile(
+    r"</(?:p|div)>\s*<(?:p|div)(?:\s+[^<>]*)?>|<br(?:\s+[^<>]*)?/?>",
+    re.IGNORECASE,
+)
+_HTML_TAG_RE = re.compile(
+    r"</?(?:"
+    r"a|abbr|article|aside|b|blockquote|br|cite|code|dd|del|dfn|div|dl|dt|"
+    r"em|figcaption|figure|font|footer|h[1-6]|header|hr|i|img|ins|kbd|label|"
+    r"li|main|mark|nav|ol|p|pre|q|rp|rt|ruby|s|samp|section|small|span|"
+    r"strike|strong|sub|sup|table|tbody|td|tfoot|th|thead|tr|u|ul|var"
+    r")(?:(?:\s+[^<>]*)|/)?>",
+    re.IGNORECASE,
+)
 
 TRANSLATION_SYSTEM_INSTRUCTION = {
     "parts": [{
@@ -41,7 +62,11 @@ TRANSLATION_SYSTEM_INSTRUCTION = {
             "4. STYLE & PUNCTUATION:\n"
             "   - Preserve original quotation marks (「...」, 『...』) and punctuation marks (……, 〜, !?).\n"
             "   - Maintain light novel storytelling tone (natural Korean web novel dialogue and narration).\n"
-            "5. OUTPUT FORMAT:\n"
+            "5. PLAIN TEXT ONLY (NO HTML / MARKUP HALLUCINATION):\n"
+            "   - Output plain Korean prose ONLY inside the 'translated' field.\n"
+            "   - NEVER emit HTML/XML tags (such as <span>, <s>, <del>, <b>, <strong>, <em>, <p>, <div>, <ruby>, <rt>, <br>, <td>) or strikethrough self-corrections.\n"
+            "   - If revising word choice while generating, output ONLY the final Korean phrasing directly.\n"
+            "6. OUTPUT FORMAT:\n"
             "   - Return ONLY a valid JSON array matching the schema, with each item containing 'id' and 'translated'.\n"
             "   - Do not add explanations, notes, or markdown formatting."
         )
@@ -132,6 +157,28 @@ def call_gemini_api(api_url: str, prompt: str, api_key: Optional[str] = None, sy
         raise
 
 
+def strip_html_hallucinations(text: Optional[str]) -> Optional[str]:
+    """
+    LLM이 환각으로 생성한 HTML/XML 태그(<span>, <b>, <p>, <ruby> 등)와
+    취소선 교정 블록(<s>...</s>, <del>...</del>, <strike>...</strike>)을 제거합니다.
+    소설 본문의 일반 꺾쇠 표현(<머리말>, <시스템>, <Level 1>, (>_<))은 보존합니다.
+    """
+    if not text or "<" not in text or ">" not in text:
+        return text
+
+    cleaned = _HTML_COMMENT_RE.sub("", text)
+    cleaned = _HTML_STRIKETHROUGH_RE.sub("", cleaned)
+    cleaned = _HTML_BLOCK_BREAK_RE.sub("\n", cleaned)
+    cleaned = _HTML_TAG_RE.sub("", cleaned)
+
+    if cleaned == text:
+        return text
+
+    cleaned = re.sub(r"[ \t]+\n", "\n", cleaned)
+    cleaned = re.sub(r"\n[ \t]+", "\n", cleaned)
+    return cleaned.strip()
+
+
 def process_repeated_chars(text: str) -> str:
     """
     LLM의 환각/무한 루프로 인해 비정상적으로 연속 반복되는 문자를 안전하게 최대 6글자로 캡핑합니다.
@@ -141,6 +188,34 @@ def process_repeated_chars(text: str) -> str:
         return text
     # 동일 문자가 6회 초과 반복될 경우, 6회로 캡핑 (예: !!!!!!!! -> !!!!!!, 하하하하하하하 -> 하하하하하하)
     return re.sub(r'(.)\1{6,}', r'\1\1\1\1\1\1', text)
+
+
+def post_process_translated_text(item_text: str, raw_trans: str) -> Tuple[str, bool, Optional[str]]:
+    """
+    번역문 공통 후처리: 화살표 분리 → HTML 환각 태그 제거 → 반복문자 캡핑 → 괄호 복원 → 품질분류.
+    반환: (processed_text: str, is_verbatim: bool, verbatim_cat: str | None)
+    """
+    translated_text = raw_trans
+    if "->" in translated_text or "=>" in translated_text:
+        parts = re.split(r"\s*[-=]>\s*", translated_text, maxsplit=1)
+        if len(parts) == 2 and any(ord("가") <= ord(c) <= ord("힣") for c in parts[1]):
+            translated_text = parts[1].strip()
+
+    translated_text = strip_html_hallucinations(translated_text) or ""
+    translated_text = process_repeated_chars(translated_text)
+    translated_text = restore_brackets(item_text, translated_text)
+
+    cls_cat = classify_translation(item_text, translated_text)
+    is_verbatim = False
+    verbatim_cat = None
+    if is_verbatim_copy(item_text, translated_text) or cls_cat in ("verbatim_or_empty", "paraphrased_jp", "paraphrased_zh"):
+        verbatim_cat = (
+            "verbatim"
+            if (is_verbatim_copy(item_text, translated_text) or cls_cat == "verbatim_or_empty")
+            else ("paraphrased_zh" if cls_cat == "paraphrased_zh" else "paraphrased_jp")
+        )
+        is_verbatim = True
+    return translated_text, is_verbatim, verbatim_cat
 
 
 def parse_translation_response(raw_text: str) -> dict:
@@ -378,7 +453,8 @@ def _build_translation_prompt(items: List[Any]) -> str:
         "1. Translate each item independently and uniquely based only on its own text.\n"
         "2. Do NOT echo or copy the original Japanese text into 'translated'.\n"
         "3. Do NOT repeat or carry over translations or text from preceding items.\n"
-        "4. Return ONLY a valid JSON array of objects with 'id' and 'translated':\n\n"
+        "4. Output plain Korean text ONLY — NEVER wrap or annotate text with HTML/XML tags (e.g., <span>, <s>, <b>, <p>) or strikethrough drafts.\n"
+        "5. Return ONLY a valid JSON array of objects with 'id' and 'translated':\n\n"
         f"{api_input_json}"
     )
 

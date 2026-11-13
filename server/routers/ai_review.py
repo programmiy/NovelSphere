@@ -15,6 +15,7 @@ from server.services.abnormal_service import get_abnormal_translations_data
 from server.services.similarity_service import get_cause_reference_data, get_cause_keywords
 from server.routers.translation import call_gemini_api
 from server.services.task_manager import task_manager
+from server.services.translation_engine import strip_html_hallucinations
 import re
 
 logger = logging.getLogger(__name__)
@@ -61,22 +62,22 @@ class ApproveRejectReq(BaseModel):
 class UndoReq(BaseModel):
     queue_id: int
 
-def clean_ai_translation(text: Any) -> str:
+def _extract_ai_translation_text(text: Any) -> str:
     if not text:
         return ""
     if isinstance(text, dict):
         val = text.get("translated") or text.get("translation") or text.get("text")
         if isinstance(val, (str, dict, list)):
-            return clean_ai_translation(val)
+            return _extract_ai_translation_text(val)
         return str(text).strip()
     if isinstance(text, list):
         if len(text) > 0:
-            return clean_ai_translation(text[0])
+            return _extract_ai_translation_text(text[0])
         return ""
     if not isinstance(text, str):
         text = str(text)
     cleaned = text.strip()
-    
+
     # 0. 마크다운 코드블록 내부에 들어있는 경우 추출
     codeblock_match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", cleaned, re.IGNORECASE)
     if codeblock_match:
@@ -88,7 +89,7 @@ def clean_ai_translation(text: Any) -> str:
             cleaned = cleaned[3:].strip()
         if cleaned.endswith("```"):
             cleaned = cleaned[:-3].strip()
-        
+
     # 1. Regex search for "translated", "translation", "text" key in JSON / dict format
     match = re.search(r"""(?:"|')(?:translated|translation|text)(?:"|')\s*:\s*(?:"|')((?:\\.|[^"'\\])*)(?:"|')""", cleaned, re.IGNORECASE)
     if match and match.group(1):
@@ -97,7 +98,7 @@ def clean_ai_translation(text: Any) -> str:
             return json.loads(f'"{raw_val}"').strip()
         except Exception:
             return raw_val.replace(r'\n', '\n').replace(r'\"', '"').replace(r"\'", "'").replace(r'\\', '\\').strip()
-            
+
     # 2. Try JSON parsing
     if (cleaned.startswith("[") and cleaned.endswith("]")) or (cleaned.startswith("{") and cleaned.endswith("}")):
         try:
@@ -116,13 +117,18 @@ def clean_ai_translation(text: Any) -> str:
                     return val.strip()
         except Exception:
             pass
-            
+
     # 3. Fallback markdown strip
     if cleaned.startswith("```json"): cleaned = cleaned[7:].strip()
     elif cleaned.startswith("```"): cleaned = cleaned[3:].strip()
     if cleaned.endswith("```"): cleaned = cleaned[:-3].strip()
-    
+
     return cleaned
+
+
+def clean_ai_translation(text: Any) -> str:
+    extracted = _extract_ai_translation_text(text)
+    return (strip_html_hallucinations(extracted) or "").strip()
 
 def get_percentiles(lengths: List[int], percentiles: List[int]) -> Dict[str, int]:
     if not lengths:
@@ -211,6 +217,7 @@ async def process_initial_translation_bg(items_to_translate: list, task_id: Opti
             
             prompt = f"""다음 일본어 소설 문장들을 한국어로 번역해줘. 의역을 최소화하고 원문의 형태, 문체, 어조(뉘앙스)를 최대한 원형 그대로 살려서(직역에 가깝게) 번역해줘. 고유명사도 원문의 발음을 최대한 유지해야 해.
 특히 원문에 작은 히라가나(ぁ, ぃ, ぅ, ぇ, ぉ, っ 등)가 쓰여 발음을 길게 늘이거나 강조하는 뉘앙스가 있다면, 한국어 번역에서도 모음을 연장해서(예: '말이야' -> '말이야아') 그 느낌을 정확히 반영해줘.
+번역문 안에는 <span>, <s>, <b> 같은 HTML 태그나 취소선 마크업을 절대 넣지 말고 순수 한국어 텍스트만 담아줘.
 결과는 반드시 입력된 원문 배열과 동일한 길이의 JSON 배열(Array of strings) 형식으로만 출력해줘. 백틱이나 마크다운 없이 순수 JSON 배열만 출력해.
 
 원문 목록:
@@ -441,6 +448,7 @@ async def process_specific_reretranslation_bg(queue_ids: List[int], model: str, 
             
             prompt = f"""다음 일본어 소설 문장들을 번역해줘. 이전 번역이 의역이 심하거나 원문의 맛을 살리지 못해 거절된 상태야. 원문의 구조, 어조, 세세한 뉘앙스 하나까지 훼손하지 말고 원문을 최대한 100% 살려서 정밀하고 충실하게 번역해야 해.
 특히 작은 히라가나(ぁ, ぃ, ぅ, ぇ, ぉ, っ 등)로 발음을 늘이거나 억양을 강조한 표현이 있다면, 한국어 번역에서도 반드시 모음을 연장하여(예: '그렇구나' -> '그렇구나아') 원문 특유의 감각을 살려줘.
+번역문 안에는 <span>, <s>, <b> 같은 HTML 태그나 취소선 마크업을 절대 넣지 말고 순수 한국어 텍스트만 담아줘.
 결과는 반드시 입력된 원문 배열과 동일한 길이의 JSON 배열(Array of objects with 'id' and 'translated', or array of strings) 형식으로만 출력해줘. 백틱이나 마크다운 없이 순수 JSON 배열만 출력해.
 
 원문 목록:
@@ -557,6 +565,7 @@ async def process_batch_reretranslation_bg(task_id: Optional[str] = None):
                 
                 prompt = f"""다음 일본어 문장들을 번역해줘. 이전 번역이 의역이 심하거나 원문의 맛을 살리지 못해 거절된 상태야. 원문의 구조, 어조, 세세한 뉘앙스 하나까지 훼손하지 말고 원문을 최대한 100% 살려서 정밀하고 충실하게 번역해야 해.
 특히 작은 히라가나(ぁ, ぃ, ぅ, ぇ, ぉ, っ 등)로 발음을 늘이거나 억양을 강조한 표현이 있다면, 한국어 번역에서도 반드시 모음을 연장하여(예: '그렇구나' -> '그렇구나아') 원문 특유의 감각을 살려줘.
+번역문 안에는 <span>, <s>, <b> 같은 HTML 태그나 취소선 마크업을 절대 넣지 말고 순수 한국어 텍스트만 담아줘.
 결과는 반드시 입력된 원문 배열과 동일한 길이의 JSON 배열(Array of objects with 'id' and 'translated', or array of strings) 형식으로만 출력해줘. 백틱이나 마크다운 없이 순수 JSON 배열만 출력해.
 
 원문 목록:
@@ -796,7 +805,7 @@ async def reroll_translation(queue_id: int, db: Session = Depends(get_db)):
 원문:
 {item.original_text}
 
-결과는 다른 설명이나 마크다운 없이 순수하게 번역된 한국어 문자열 한 줄만 출력해."""
+결과는 다른 설명, 마크다운, HTML 태그(<span>, <s>, <b> 등), 취소선 마크업 없이 순수하게 번역된 한국어 문자열 한 줄만 출력해."""
     
     try:
         res, actual_model = await asyncio.to_thread(call_gemini_with_model_fallback, model, prompt)

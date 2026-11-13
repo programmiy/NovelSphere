@@ -28,9 +28,7 @@ from server.quota import (
     get_current_quota_window_start_ts,
 )
 from server.rule_classifier import (
-    classify_translation,
     is_pure_punctuation_only,
-    is_verbatim_copy,
     restore_brackets,
 )
 from server.settings import settings
@@ -55,7 +53,9 @@ from server.services.translation_engine import (
     call_gemini_api,
     is_safety_blocked,
     parse_translation_response,
+    post_process_translated_text,
     process_repeated_chars,
+    strip_html_hallucinations,
 )
 from server.services.translation_recovery import (
     _recover_verbatim_items,
@@ -196,26 +196,10 @@ def _build_translate_response(final_translations: list) -> dict:
 
 def _post_process_translated_text(item_text: str, raw_trans: str) -> tuple:
     """
-    번역문 공통 후처리: 화살표 분리 → 반복문자 제거 → 괄호복원 → 품질분류
+    번역문 공통 후처리: 화살표 분리 → HTML 환각 태그 제거 → 반복문자 제거 → 괄호복원 → 품질분류.
     반환: (processed_text: str, is_verbatim: bool, verbatim_cat: str | None)
     """
-    translated_text = raw_trans
-    if '->' in translated_text or '=>' in translated_text:
-        parts = re.split(r'\s*[-=]>\s*', translated_text, maxsplit=1)
-        if len(parts) == 2 and any(ord('가') <= ord(c) <= ord('힣') for c in parts[1]):
-            translated_text = parts[1].strip()
-    translated_text = process_repeated_chars(translated_text)
-    translated_text = restore_brackets(item_text, translated_text)
-    cls_cat = classify_translation(item_text, translated_text)
-    is_verbatim = False
-    verbatim_cat = None
-    if is_verbatim_copy(item_text, translated_text) or cls_cat in ('verbatim_or_empty', 'paraphrased_jp', 'paraphrased_zh'):
-        verbatim_cat = (
-            'verbatim' if (is_verbatim_copy(item_text, translated_text) or cls_cat == 'verbatim_or_empty')
-            else ('paraphrased_zh' if cls_cat == 'paraphrased_zh' else 'paraphrased_jp')
-        )
-        is_verbatim = True
-    return translated_text, is_verbatim, verbatim_cat
+    return post_process_translated_text(item_text, raw_trans)
 
 
 # --- API Endpoints ---
@@ -300,7 +284,8 @@ def translate_texts(req: TranslateRequest, db: Session = Depends(get_db)):
                 hd_translations = translate_paragraphs(paragraphs)
                 translated_results = {}
                 for it, trans in zip(items_to_translate, hd_translations, strict=False):
-                    cleaned = process_repeated_chars(trans)
+                    cleaned = strip_html_hallucinations(trans) or ""
+                    cleaned = process_repeated_chars(cleaned)
                     cleaned = restore_brackets(it.text, cleaned)
                     translated_results[str(it.id)] = {
                         "id": it.id,

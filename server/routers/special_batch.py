@@ -15,6 +15,7 @@ from sqlalchemy import func, case
 
 from server.database import get_db
 from server.models import Translation, SpecialBatchQueue, UrlMetadata
+from server.services.translation_engine import strip_html_hallucinations
 from server.settings import settings
 
 logger = logging.getLogger(__name__)
@@ -240,7 +241,8 @@ def approve_staged_item(req: ApproveRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="해당 적재 항목을 찾을 수 없습니다.")
 
     now = int(time.time())
-    final_text = req.translated_text.strip() if req.translated_text else item.translated_text.strip()
+    raw_text = req.translated_text if req.translated_text else item.translated_text
+    final_text = (strip_html_hallucinations(raw_text) or "").strip()
     if not final_text:
         raise HTTPException(status_code=400, detail="번역문이 비어 있어 승인할 수 없습니다.")
 
@@ -375,10 +377,11 @@ def batch_approve_staged(req: BatchApproveRequest, db: Session = Depends(get_db)
     approved_count = 0
     for item in staged_items:
         clean_url = item.url.split('#')[0].strip()
-        t_text = item.translated_text.strip()
+        t_text = (strip_html_hallucinations(item.translated_text) or "").strip()
         if not t_text:
             continue
 
+        item.translated_text = t_text
         item.status = "approved"
         item.promoted_at = now
 

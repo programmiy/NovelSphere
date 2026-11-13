@@ -14,7 +14,6 @@ from sqlalchemy.orm import Session
 
 from server.models import Translation, TranslationTrash, CleanupNotification
 from server.quota import record_api_call
-from server.rule_classifier import classify_translation, is_verbatim_copy, restore_brackets
 from server.notifications import notify_verbatim_cleanup
 from server.settings import settings
 from server.services.rpm_manager import (
@@ -26,7 +25,7 @@ from server.services.rpm_manager import (
 from server.services.translation_engine import (
     call_gemini_api,
     parse_translation_response,
-    process_repeated_chars,
+    post_process_translated_text,
     _build_translation_prompt,
     is_safety_blocked,
     TranslationItemInput,
@@ -245,6 +244,25 @@ def _recover_verbatim_items(
     if not target_orig_items:
         return verbatim_detected_items
 
+    def _accept_if_valid(orig_item: TranslationItemInput, raw_trans: str, log_prefix: str) -> bool:
+        if not raw_trans:
+            return False
+        processed, is_bad, _ = post_process_translated_text(orig_item.text, raw_trans)
+        if is_bad:
+            return False
+        item_id_str = str(orig_item.id)
+        logger.info(f"[{log_prefix}] ID: {orig_item.id} -> '{processed[:30]}...'")
+        translated_results[item_id_str] = {
+            "id": orig_item.id,
+            "original": orig_item.text,
+            "translated": processed,
+            "censored": False,
+            "verbatim": False,
+            "verbatim_category": None,
+        }
+        recovered_ids.add(item_id_str)
+        return True
+
     # -------------------------------------------------------------
     # [Step 1: 스마트 미니배치 복구 (대량 불량 건: 4개 이상)]
     # 언어 이탈(중국어 환각 등)이나 배치 에코잉으로 수십 개가 동시 불량인 경우,
@@ -271,7 +289,8 @@ def _recover_verbatim_items(
                     "1. You MUST translate into natural, fluent KOREAN (한국어). Do NOT output Chinese (中文/汉字) or Japanese (日本語).\n"
                     "2. Translate each item independently and uniquely based only on its own text.\n"
                     "3. Do NOT repeat or carry over translations from other items.\n"
-                    "4. Return ONLY a valid JSON array of objects with 'id' and 'translated':\n\n"
+                    "4. Output plain Korean text ONLY without any HTML/XML tags (e.g., <span>, <s>, <b>, <p>) or strikethrough drafts.\n"
+                    "5. Return ONLY a valid JSON array of objects with 'id' and 'translated':\n\n"
                     f"{api_input_json}"
                 )
 
@@ -281,31 +300,9 @@ def _recover_verbatim_items(
                 if cand_text:
                     parsed_map = parse_translation_response(cand_text)
                     for item in chunk:
-                        item_id_str = str(item.id)
-                        new_trans = parsed_map.get(item_id_str)
-                        if not new_trans:
-                            continue
-
-                        if '->' in new_trans or '=>' in new_trans:
-                            parts = re.split(r'\s*[-=]>\s*', new_trans, maxsplit=1)
-                            if len(parts) == 2 and any(ord('가') <= ord(c) <= ord('힣') for c in parts[1]):
-                                new_trans = parts[1].strip()
-
-                        new_trans = process_repeated_chars(new_trans)
-                        new_trans = restore_brackets(item.text, new_trans)
-                        cat = classify_translation(item.text, new_trans)
-
-                        if not (is_verbatim_copy(item.text, new_trans) or cat in ('verbatim_or_empty', 'paraphrased_jp', 'paraphrased_zh')):
-                            logger.info(f"[스마트 미니배치 복구 성공] ID: {item.id} -> '{new_trans[:30]}...'")
-                            translated_results[item_id_str] = {
-                                "id": item.id,
-                                "original": item.text,
-                                "translated": new_trans,
-                                "censored": False,
-                                "verbatim": False,
-                                "verbatim_category": None
-                            }
-                            recovered_ids.add(item_id_str)
+                        new_trans = parsed_map.get(str(item.id))
+                        if new_trans:
+                            _accept_if_valid(item, new_trans, "스마트 미니배치 복구 성공")
             except Exception as e:
                 logger.warning(f"[스마트 미니배치 복구 중 예외 발생] chunk {i}~{i+len(chunk)}: {e}")
 
@@ -322,6 +319,7 @@ def _recover_verbatim_items(
             single_payload = json.dumps([{"id": orig_item.id, "text": orig_item.text}], ensure_ascii=False)
             single_prompt = (
                 "Translate this Japanese text into natural, fluent Korean.\n"
+                "Do NOT include any HTML/XML tags (e.g., <span>, <s>, <b>) or strikethrough markup.\n"
                 "Return ONLY a valid JSON array with 'id' and 'translated':\n"
                 + single_payload
             )
@@ -330,27 +328,7 @@ def _recover_verbatim_items(
             cand_text = cand.get('content', {}).get('parts', [{}])[0].get('text', '')
             parsed_map = parse_translation_response(cand_text)
             new_trans = parsed_map.get(str(orig_item.id), "")
-
-            if '->' in new_trans or '=>' in new_trans:
-                parts = re.split(r'\s*[-=]>\s*', new_trans, maxsplit=1)
-                if len(parts) == 2 and any(ord('가') <= ord(c) <= ord('힣') for c in parts[1]):
-                    new_trans = parts[1].strip()
-
-            new_trans = process_repeated_chars(new_trans)
-            new_trans = restore_brackets(orig_item.text, new_trans)
-            cat = classify_translation(orig_item.text, new_trans)
-
-            if not (is_verbatim_copy(orig_item.text, new_trans) or cat in ('verbatim_or_empty', 'paraphrased_jp', 'paraphrased_zh')):
-                logger.info(f"[기본모델 verbatim 복구 성공(단일 JSON)] ID: {orig_item.id} -> '{new_trans[:30]}...'")
-                translated_results[str(orig_item.id)] = {
-                    "id": orig_item.id,
-                    "original": orig_item.text,
-                    "translated": new_trans,
-                    "censored": False,
-                    "verbatim": False,
-                    "verbatim_category": None
-                }
-                recovered_ids.add(str(orig_item.id))
+            if _accept_if_valid(orig_item, new_trans, "기본모델 verbatim 복구 성공(단일 JSON)"):
                 continue
         except Exception as e:
             logger.debug(f"[verbatim 단일 JSON 복구 시도 중 오류] ID: {orig_item.id}: {e}")
@@ -365,7 +343,12 @@ def _recover_verbatim_items(
             plain_payload = {
                 "contents": [{
                     "parts": [{
-                        "text": f"Translate the following Japanese text into natural Korean. Output ONLY the translated Korean text, nothing else:\n{orig_item.text}"
+                        "text": (
+                            "Translate the following Japanese text into natural Korean. "
+                            "Output ONLY plain translated Korean text without any HTML/XML tags (e.g., <span>, <s>, <b>), "
+                            "strikethrough drafts, or explanations:\n"
+                            f"{orig_item.text}"
+                        )
                     }]
                 }],
                 "generationConfig": {
@@ -383,26 +366,8 @@ def _recover_verbatim_items(
                 c_json = res.json()
                 cand = c_json.get('candidates', [{}])[0]
                 cand_text = cand.get('content', {}).get('parts', [{}])[0].get('text', '').strip()
-                if cand_text:
-                    if '->' in cand_text or '=>' in cand_text:
-                        parts = re.split(r'\s*[-=]>\s*', cand_text, maxsplit=1)
-                        if len(parts) == 2 and any(ord('가') <= ord(c) <= ord('힣') for c in parts[1]):
-                            cand_text = parts[1].strip()
-                    cand_text = process_repeated_chars(cand_text)
-                    cand_text = restore_brackets(orig_item.text, cand_text)
-                    cat = classify_translation(orig_item.text, cand_text)
-                    if not (is_verbatim_copy(orig_item.text, cand_text) or cat in ('verbatim_or_empty', 'paraphrased_jp', 'paraphrased_zh')):
-                        logger.info(f"[기본모델 verbatim 복구 성공(단일 일반)] ID: {orig_item.id} -> '{cand_text[:30]}...'")
-                        translated_results[str(orig_item.id)] = {
-                            "id": orig_item.id,
-                            "original": orig_item.text,
-                            "translated": cand_text,
-                            "censored": False,
-                            "verbatim": False,
-                            "verbatim_category": None
-                        }
-                        recovered_ids.add(str(orig_item.id))
-                        continue
+                if _accept_if_valid(orig_item, cand_text, "기본모델 verbatim 복구 성공(단일 일반)"):
+                    continue
         except Exception as e:
             logger.debug(f"[verbatim 단일 일반 복구 시도 중 오류] ID: {orig_item.id}: {e}")
 

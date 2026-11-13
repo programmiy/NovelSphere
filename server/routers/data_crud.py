@@ -36,6 +36,7 @@ from server.rule_classifier import (
     is_verbatim_copy,
     restore_brackets,
 )
+from server.services.translation_engine import strip_html_hallucinations
 from server.utils import natural_sort_key, get_url_variants
 from server.services.search_helper import search_translation_ids
 
@@ -289,8 +290,9 @@ def upsert_translations(items: List[TranslationItem], db: Session = Depends(get_
         inherited_folder = url_to_folder.get(item.url) if item.url else None
 
         target_trans = item.translated
-        # 룰베이스 원문 괄호(「」, 『』) 누락 복원
+        # 환각 HTML 태그/취소선 제거 및 룰베이스 원문 괄호(「」, 『』) 누락 복원
         if target_trans:
+            target_trans = strip_html_hallucinations(target_trans)
             target_trans = restore_brackets(item.original, target_trans)
 
         # 원문 복붙(글자만 일치) 및 원문 변형(일본어/중국어) 방어
