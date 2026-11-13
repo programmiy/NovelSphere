@@ -1,9 +1,11 @@
 ---
 name: novel-illustration
 description: >-
-  Use this skill whenever the user wants to turn novel episodes from LANOVEL or
-  user-provided novel text into scene illustrations or book cover art using the
-  local ComfyUI Qwen-Image-2.1 pipeline (C:\qwen loRa\qwen_batch.py).
+  Use this skill whenever the user wants to turn specific novel episodes or
+  chapter scenes from LANOVEL or user-provided text into inline chapter scene
+  illustrations and optionally register them inside LANOVEL chapters (--after-pid)
+  using the local ComfyUI Qwen-Image-2.1 pipeline (C:\qwen loRa\qwen_batch.py).
+  For standalone book cover design/key visual art, prefer the novel-cover skill.
 ---
 
 # LANOVEL 소설 삽화 · 표지 생성 스킬 (Qwen-Image-2.1 Runbook)
