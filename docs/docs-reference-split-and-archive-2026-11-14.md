@@ -23,3 +23,17 @@
 - `docs/` 루트의 `codebase-functional-reference-*.md`는 최신 1개만 존재.
 - `.agents/`, `scripts/`, `.github/`에서 과거 레퍼런스 파일명을 참조하는 코드 없음. (일부 과거 작업 문서의 파일명 언급은 역사적 기록이므로 유지)
 - 코드 변경 없음(문서 전용).
+
+## 루트 정리 및 워크스페이스 클린업 내역
+- **영구 삭제 완료** (휴지통 경유 영구 삭제 및 디렉터리 삭제):
+  - 검색 덤프: `search_results.txt`, `search_todos.txt`, `search_wip.txt`
+  - 빈/더미 DB: `LANOVEL.db`, `test_translations_tasks.db`, 루트 12KB `translations.db`
+  - 빈 할 일 파일: `todo.md` (`git rm --cached` 추적 해제 포함)
+  - 중단 워크스페이스: `inspection_workspace/` (734MB Colab 검수 중단 워크스페이스)
+- **규칙 안내 추가**: `GEMINI.md`에 발화 매핑 사전(`docs/reference/intent-routing-dictionary.md`) 및 아카이브(`docs/archive/reference/`) 경로 안내 1줄 추가.
+- **사용자 지시로 보존(미스테이징 유지)**:
+  - `docs/v2-modernization-architecture-2026-11-02.md`, `docs/v2-strangler-masterplan-2026-11-02.md`, `v2_modernization_plan/`
+  - `execute_upload.py`, `repomix-lanovel-argon.md`, `repomix.config.json`
+  - `scripts/` 내 미추적 테스트/보정 스크립트 5종 (`repair_and_stage_shifts.py`, `sample_inspect.py`, `test_auto_cleaner.py`, `test_clean_remaining.py`, `test_final_cleaner.py`)
+  - `server/data/` 내 미추적 런타임 자산 (`character_rules_meta.json`, `illustrations/`)
+
