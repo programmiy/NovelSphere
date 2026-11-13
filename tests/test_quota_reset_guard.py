@@ -1,7 +1,6 @@
 import datetime
-import pytest
-from server.routers.translation import is_us_dst, get_quota_reset_hour, _stop_lock, _stop_state
-from server.quota import get_next_quota_reset_dt, get_next_quota_reset_hour, get_current_quota_window_start
+from server.routers.translation import is_us_dst, get_quota_reset_hour, _stop_state
+from server.quota import get_next_quota_reset_dt, get_next_quota_reset_hour
 
 
 def test_is_us_dst_summer():
@@ -75,3 +74,29 @@ def test_quota_stop_state_boundary_crossing():
     # 3. 16:01 재시작 (다음 타깃은 11월 2일 17:00) -> 오작동 없음
     target_next = datetime.datetime(2026, 11, 2, 17, 0, 0)
     assert _stop_state.check_and_update(datetime.datetime(2026, 11, 1, 16, 1, 0), target_next) is False
+
+
+def test_quota_stop_state_dynamic_next_reset_dt():
+    """
+    실제 translate_texts() 라우터와 동일하게 매 시점 get_next_quota_reset_dt(now)를 동적으로 전달할 때,
+    정각(17:00:00) 돌파 순간 next_reset_dt가 익일 17:00로 바뀌더라도 자가 무장 해제되지 않고
+    정확히 최초 1회 중단(True)을 반환하는지 검증합니다.
+    """
+    _stop_state.reset()
+
+    # 1. 16:59:48 KST (정각 12초 전) -> 오늘 17:00 타깃으로 무장됨, 중단 안 함
+    t_before = datetime.datetime(2026, 11, 13, 16, 59, 48)
+    assert _stop_state.check_and_update(t_before, get_next_quota_reset_dt(t_before)) is False
+    assert _stop_state._armed is True
+
+    # 2. 17:00:01 KST (정각 1초 후) -> get_next_quota_reset_dt는 내일(11/14 17:00)을 반환하지만,
+    #    방금 통과한 오늘 17:00 타깃에 대해 정확히 1회 중단(True) 발동 후 무장 해제!
+    t_cross = datetime.datetime(2026, 11, 13, 17, 0, 1)
+    assert _stop_state.check_and_update(t_cross, get_next_quota_reset_dt(t_cross)) is True
+    assert _stop_state._armed is False
+
+    # 3. 17:00:06 KST (5초 뒤 재시작 또는 신데렐라 복구 요청) -> 추가 차단 없이 정상 통과(False)
+    t_after = datetime.datetime(2026, 11, 13, 17, 0, 6)
+    assert _stop_state.check_and_update(t_after, get_next_quota_reset_dt(t_after)) is False
+    assert _stop_state._armed is False
+

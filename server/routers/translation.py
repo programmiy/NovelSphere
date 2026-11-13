@@ -82,23 +82,34 @@ class _QuotaStopState:
         """
         현재 시각과 다음 리셋 정각 시각(next_reset_dt)을 비교하여 정각 중단 여부를 반환합니다.
         - 리셋 시각 1시간 전 이내에 번역 중이면 무장(_armed = True).
-        - 리셋 시각 이상이 되는 순간 최초 1회 중단(True 반환) 후 무장 해제.
+        - 정각 도달 시 get_next_quota_reset_dt(now)가 익일 리셋 시각으로 넘어가더라도,
+          이미 무장된 이전 타깃(_target_reset_ts) 돌파 여부를 먼저 판별하여 최초 1회 중단(True) 반환 후 무장 해제.
         """
         now_ts = int(now.timestamp())
         reset_ts = int(next_reset_dt.timestamp())
 
         with self.lock:
+            # 1. 이미 무장된 타깃 리셋 시각(_target_reset_ts)에 도달(정각~10분 이내)한 경우:
+            #    next_reset_dt가 익일 정각으로 바뀌더라도 덮어쓰기 전에 즉시 1회 중단 발동 후 무장 해제
+            if self._armed and self._target_reset_ts > 0:
+                if self._target_reset_ts <= now_ts < (self._target_reset_ts + 600):
+                    self._armed = False
+                    self._target_reset_ts = reset_ts
+                    return True
+                if now_ts >= (self._target_reset_ts + 600) or now_ts < (self._target_reset_ts - 3600):
+                    self._armed = False
+
             if self._target_reset_ts != reset_ts:
                 self._target_reset_ts = reset_ts
                 self._armed = False
 
-            # 리셋 60분 전부터 리셋 직전까지 번역 중이면 무장
+            # 2. 리셋 60분 전부터 리셋 직전까지 번역 중이면 무장
             if (reset_ts - 3600) <= now_ts < reset_ts:
                 self._armed = True
             elif now_ts < (reset_ts - 3600) or now_ts >= (reset_ts + 600):
                 self._armed = False
 
-            # 무장된 상태에서 정각 타임스탬프 도달 시 즉시 1회 중단 발동
+            # 3. 무장된 상태에서 정각 타임스탬프 도달 시 즉시 1회 중단 발동
             if self._armed and now_ts >= reset_ts:
                 self._armed = False
                 return True
@@ -212,10 +223,10 @@ def _post_process_translated_text(item_text: str, raw_trans: str) -> tuple:
 def translate_texts(req: TranslateRequest, db: Session = Depends(get_db)):
     now = datetime.datetime.now()
     next_reset_dt = get_next_quota_reset_dt(now)
-    cutoff_hour = next_reset_dt.hour
 
     # --- Quota Reset Boundary-Crossing Logic (Thread-safe via _QuotaStopState) ---
     if _stop_state.check_and_update(now, next_reset_dt):
+        cutoff_hour = get_quota_reset_hour(now)
         display_hour = cutoff_hour if cutoff_hour <= 12 else cutoff_hour - 12
         logger.critical(f"초기화 시간(오후 {display_hour}시)이 되어, 이전에 시작된 자동 번역 프로세스를 중지합니다.")
         raise HTTPException(
