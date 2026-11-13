@@ -9,11 +9,11 @@
 
 ## 2. 구현 내용
 1. **확장 503 과부하 전용 재시도 정책 모듈 신설 (`extension/src/core/retry_policy.ts`)**:
-   - `MAX_503_ATTEMPTS = 2` (최초 1회 + 서버 세션 초기화 직후 `OVERLOAD_503_RETRY_DELAY_MS = 5000`ms 쿨다운 재시도 1회, 3/5회 미만 상한), `MAX_COMMUNICATION_RETRIES = 5`.
+   - `MAX_503_ATTEMPTS = 3` (최초 1회 + 서버 세션 초기화 직후 `OVERLOAD_503_RETRY_DELAY_MS = 5000`ms 쿨다운 재시도 2회 = 503 최대 3회 연속 허용), `MAX_COMMUNICATION_RETRIES = 5`.
    - `createResponseError(message, status)`: 에러 throw 시 `status` 속성을 보존.
    - `isServiceUnavailable503Error(error)`: `status === 503` 또는 명확한 HTTP 503/과부하 에러 문자열을 판별하되, 본문/숫자 오탐(`p503`, `총 503자` 등) 배제.
    - `decideChunkRetryAction(attempt, error)`:
-     - `503` 오류: `attempt === 0`에서만 짧은 대기 후 1회 재시도(`retry`, `isOverload503: true`), `attempt >= 1`이면 `pause_503` 반환(반갈 분할 `split_fallback` 전면 차단).
+     - `503` 오류: `attempt < 2`(1·2회차 503)에서만 짧은 5초 대기 후 재시도(`retry`, `isOverload503: true`), `attempt >= 2`(3회 연속 503 발생)이면 4번째 호출 없이 `pause_503` 반환(반갈 분할 `split_fallback` 전면 차단).
      - 일반 통신 오류: 기존 `41s -> 42s -> 44s -> 48s` 5회 재시도 후 `split_fallback` 유지.
 2. **번역 루프 분리·일시정지 공통화 및 상태 보고 보강 (`extension/src/core/page_translator.ts`, `state.ts`)**:
    - `translateChunk()`가 `createResponseError(response.error, response.status)`를 throw하고 `decideChunkRetryAction()` 분기를 적용.
@@ -28,7 +28,7 @@
 ## 3. 검증 결과
 - **확장 타입체크 / 단위 테스트 / 빌드**:
   - `npm run typecheck` 통과 (`0` errors).
-  - `npm run test`: `27 passed, 0 failed` (`extension/tests/core.test.ts` 내 503 분류·2회 상한·반갈 분할 차단·일반 통신 오류 백오프·`resolveResume` 일시정지 상태 등 4건 신규 테스트 포함).
+  - `npm run test`: `27 passed, 0 failed` (`extension/tests/core.test.ts` 내 503 분류·3회 연속 상한·반갈 분할 차단·일반 통신 오류 백오프·`resolveResume` 일시정지 상태 등 4건 신규 테스트 포함).
   - `npm run build`: `content.js`, `background.js` 및 소스맵 번들링 완료.
 - **백엔드 린트 및 테스트**:
   - `.\venv\Scripts\ruff.exe check server/` 통과 (`All checks passed!`).

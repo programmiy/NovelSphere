@@ -5036,7 +5036,7 @@
     "src/core/retry_policy.ts"() {
       "use strict";
       MAX_COMMUNICATION_RETRIES = 5;
-      MAX_503_ATTEMPTS = 2;
+      MAX_503_ATTEMPTS = 3;
       OVERLOAD_503_RETRY_DELAY_MS = 5e3;
     }
   });

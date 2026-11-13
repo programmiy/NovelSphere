@@ -735,9 +735,8 @@ test('retry_policy: distinguishes 503 overload from generic errors without false
   assert.strictEqual(isServiceUnavailable503Error('총 503자 처리 중 오류'), false);
 });
 
-test('retry_policy: caps 503 overload retries below 3/5 and disables half-chunk split fallback', () => {
-  assert.strictEqual(MAX_503_ATTEMPTS, 2);
-  assert.ok(MAX_503_ATTEMPTS < 3);
+test('retry_policy: caps 503 overload retries at 3 consecutive attempts and disables half-chunk split fallback', () => {
+  assert.strictEqual(MAX_503_ATTEMPTS, 3);
 
   const err503 = createResponseError('API 서버가 과부하 상태입니다.', 503);
 
@@ -746,17 +745,27 @@ test('retry_policy: caps 503 overload retries below 3/5 and disables half-chunk 
     action: 'retry',
     delayMs: OVERLOAD_503_RETRY_DELAY_MS,
     attempt: 1,
-    maxAttempts: 2,
+    maxAttempts: 3,
     isOverload503: true,
   });
 
   const secondDecision = decideChunkRetryAction(1, err503, () => 0);
   assert.deepStrictEqual(secondDecision, {
-    action: 'pause_503',
-    maxAttempts: 2,
+    action: 'retry',
+    delayMs: OVERLOAD_503_RETRY_DELAY_MS,
+    attempt: 2,
+    maxAttempts: 3,
+    isOverload503: true,
   });
 
-  // 503으로 인한 어떤 시도 단계에서도 split_fallback(반갈 분할)로 전환되지 않아야 함
+  // 503이 3회 연속 발생(attempt=2)하면 4번째 재시도나 반갈 분할 없이 즉시 일시정지
+  const thirdDecision = decideChunkRetryAction(2, err503, () => 0);
+  assert.deepStrictEqual(thirdDecision, {
+    action: 'pause_503',
+    maxAttempts: 3,
+  });
+
+  // 어떤 이후 시도 단계에서도 503은 split_fallback(반갈 분할)로 전환되지 않아야 함
   const fallback503 = decideChunkRetryAction(4, new Error('Gemini API 오류 (503)'), () => 0);
   assert.strictEqual(fallback503.action, 'pause_503');
 });

@@ -3,10 +3,10 @@
 export const MAX_COMMUNICATION_RETRIES = 5;
 
 /**
- * 503 API 과부하 시 최대 총 시도 횟수 (최초 1회 + 서버 세션 초기화 후 재시도 1회 = 총 2회).
- * 일반 통신 오류(5회 + 반갈 분할)와 분리하여 3/5회 장기 대기 및 불필요한 RPD 소모를 차단합니다.
+ * 503 API 과부하 시 최대 총 시도 횟수 (최초 1회 + 서버 세션 초기화 후 재시도 2회 = 503 최대 3회 연속 허용).
+ * 4번째 연속 호출 및 일반 통신 오류의 5회 장기 대기·반갈 분할 재시도를 차단합니다.
  */
-export const MAX_503_ATTEMPTS = 2;
+export const MAX_503_ATTEMPTS = 3;
 export const OVERLOAD_503_RETRY_DELAY_MS = 5000;
 
 export type RetryDecision =
