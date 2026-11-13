@@ -63,6 +63,6 @@ title text, book cover typography, Japanese text overlay, kanji, hiragana, katak
 
 | 단계 | CLI 명령 & 파라미터 | 설명 |
 | :--- | :--- | :--- |
-| **표지 기본 생성** | `t2i --width 896 --height 1280 --steps 27 --cfg 3.5 --sampler res_multistep --scheduler beta --cache-device auto --cache-dtype int8` | 라노벨 단행본 7:10 황금비율, RTX 2070 SUPER 8GB 안정 (~3분대) |
+| **표지 기본 생성** | `t2i --preset cover` (`896×1280`, `steps=27`, `cfg=3.5`, `res_multistep`, `beta`, `cache-dtype int8` 내장 기본값) | 라노벨 단행본 7:10 황금비율, RTX 2070 SUPER 8GB 안정 (~3분대) |
 | **와이드 래핑/배너형 표지** | `t2i --width 1280 --height 896` | 앞·뒤 커버 펼침 일러스트 또는 가로형 헤더 아트용 |
 | **선택 업스케일(인쇄용)** | `upscale --image "<PNG>" --scale-by 1.5 --denoise 0.25 --steps 18 --cfg 3.0` | 확정된 표지 1장을 `1344×1920` 수준으로 선명하게 확대할 때만 사용 |

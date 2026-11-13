@@ -125,3 +125,33 @@ def test_cover_brief_minimal_schema_fallback(tmp_path: Path) -> None:
         assert brief["opening_excerpts"][0]["lines"][0]["text"] == "최소 스키마 테스트 문장"
     finally:
         ro_conn.close()
+
+
+def test_cover_helper_character_cli_integration(tmp_path: Path) -> None:
+    """Verify novel_cover_helper shares character-save/list CLI and registry helpers."""
+    registry_path = tmp_path / "shared_characters.json"
+
+    exit_code = cover_helper.main(
+        [
+            "character-save",
+            "--book",
+            "표지테스트",
+            "--name",
+            "리나",
+            "--anchor",
+            "silver-haired swordswoman with emerald eyes",
+            "--outfit",
+            "dark navy cloak over white tunic",
+            "--seed",
+            "777",
+            "--registry",
+            str(registry_path),
+        ]
+    )
+    assert exit_code == 0
+
+    anchors = cover_helper.list_character_anchors(book="표지테스트", registry_path=registry_path)
+    assert len(anchors) == 1
+    assert anchors[0]["name"] == "리나"
+    assert anchors[0]["seed"] == 777
+    assert anchors[0]["outfit"] == "dark navy cloak over white tunic"

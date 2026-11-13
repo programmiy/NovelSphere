@@ -37,12 +37,18 @@ _shared = _load_scene_helper()
 DEFAULT_DB_PATH = _shared.DEFAULT_DB_PATH
 DEFAULT_COMFY_URL = _shared.DEFAULT_COMFY_URL
 DEFAULT_LANOVEL_URL = _shared.DEFAULT_LANOVEL_URL
+DEFAULT_CHARACTERS_PATH = _shared.DEFAULT_CHARACTERS_PATH
 open_readonly_db = _shared.open_readonly_db
 list_books = _shared.list_books
 list_chapters = _shared.list_chapters
 extract_scene = _shared.extract_scene
 check_environment = _shared.check_environment
 register_illustration = _shared.register_illustration
+load_character_registry = _shared.load_character_registry
+save_character_anchor = _shared.save_character_anchor
+list_character_anchors = _shared.list_character_anchors
+add_character_subparsers = _shared.add_character_subparsers
+handle_character_command = _shared.handle_character_command
 
 
 def get_cover_brief(
@@ -161,6 +167,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_reg.add_argument("--base64", action="store_true", help="Base64 전송 강제")
     p_reg.add_argument("--json", action="store_true", help="JSON 형식으로 출력")
 
+    add_character_subparsers(sub)
     return parser
 
 
@@ -214,6 +221,10 @@ def main(argv: list[str] | None = None) -> int:
                 f"after_pid={created.get('after_pid')} ({created.get('width')}x{created.get('height')})"
             )
         return 0
+
+    char_exit = handle_character_command(args)
+    if char_exit is not None:
+        return char_exit
 
     conn = open_readonly_db(args.db)
     try:

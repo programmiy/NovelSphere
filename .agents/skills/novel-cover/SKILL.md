@@ -51,6 +51,10 @@ c:\LANOVEL\venv\Scripts\python.exe .agents/skills/novel-cover/scripts/novel_cove
 
 # 2. 표지 기획용 작품 브리프(줄거리 + 태그 + 초반 본문) 조회
 c:\LANOVEL\venv\Scripts\python.exe .agents/skills/novel-cover/scripts/novel_cover_helper.py brief --book "소설폴더명"
+
+# 3. 기존 저장된 캐릭터 외형 앵커 조회 / 새 캐릭터 앵커 등록
+c:\LANOVEL\venv\Scripts\python.exe .agents/skills/novel-cover/scripts/novel_cover_helper.py character-list --book "소설폴더명"
+c:\LANOVEL\venv\Scripts\python.exe .agents/skills/novel-cover/scripts/novel_cover_helper.py character-save --book "소설폴더명" --name "캐릭터명" --anchor "<영어 외형 앵커>" --outfit "<기본 의상>"
 ```
 
 ---
@@ -63,19 +67,17 @@ c:\LANOVEL\venv\Scripts\python.exe .agents/skills/novel-cover/scripts/novel_cove
    * **타이틀 세이프 상단 여백(Title-Safe Upper Third)**: 책 제목을 얹어도 인물 얼굴을 가리지 않도록 상단 25~30%에 하늘·실내 빛·배경 여백(`clean atmospheric breathing room in the upper third for book title composition`)을 확보합니다.
    * **타이포그래피 배제**: AI가 깨진 일본어/가짜 글자를 넣지 않도록 네거티브에 `title text, book cover typography, author name, obi strip, barcode, logo watermark`를 반드시 포함합니다.
    * **히어로/히로인 시선 유도 + 썸네일 대비**: 서재 작은 섬네일에서도 인물이 살아 보이도록 강한 림 라이트(`dramatic rim lighting`)와 중심 시선(`engaging eye contact toward viewer`) 또는 역동적인 2인 대칭/등맞대기 구도를 사용합니다.
-3. **`novel-illustration`과의 앵커 공유**: 같은 작품의 본문 삽화도 추후 생성할 계획이라면, 여기서 확정한 **주인공 외형 앵커(머리색·눈·대표 의상) 문구**를 그대로 복사해 사용합니다.
+3. **`novel-illustration`과의 앵커 공유**: 같은 작품의 본문 삽화도 추후 생성할 계획이라면, 여기서 확정한 **주인공 외형 앵커(머리색·눈·대표 의상) 문구**를 `character-save`로 저장해 `novel-illustration`에서도 `character-list`로 그대로 불러옵니다.
 
 ---
 
 ### Step 4. 표지 생성 및 선택적 업스케일 (`t2i` → 선택 `upscale`)
-단행본 라노벨 7:10 비율(`896×1280`)로 1장씩 생성합니다. 시안을 2장 이상 뽑을 때는 **반드시 이미지 사이에 `schedule` 도구(`DurationSeconds=90`~`120`)로 GPU 쿨다운**을 둡니다.
+단행본 라노벨 7:10 비율(`--preset cover`, `896×1280`)로 1장씩 생성합니다. 시안을 2장 이상 뽑을 때는 **반드시 이미지 사이에 `schedule` 도구(`DurationSeconds=90`~`120`)로 GPU 쿨다운**을 둡니다.
 
 ```powershell
 & "C:\qwen loRa\venv\Scripts\python.exe" "C:\qwen loRa\qwen_batch.py" t2i `
+  --preset cover `
   --out-dir "C:\qwen loRa\outputs_covers\<작품슬러그>" `
-  --width 896 --height 1280 --steps 27 --cfg 3.5 `
-  --sampler res_multistep --scheduler beta `
-  --cache-device auto --cache-dtype int8 `
   --seed <고유시드> `
   --prompt "<표지 5블록 영어 프롬프트>" `
   --negative "<표지 전용 네거티브>"
